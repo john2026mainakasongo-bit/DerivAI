@@ -42,6 +42,10 @@ const INITIAL_BOT_STATE = {
   wins: 0,
   losses: 0,
   profit: 0,
+  totalStake: 0,
+  totalPayout: 0,
+  completedAt: 0,
+  stopReason: "",
   consecutiveLosses: 0,
   martingaleStep: 0,
   currentStake: 1,
@@ -61,6 +65,38 @@ function accountId(account) {
 }
 
 function Field({ label, children }) {
+  async function testOneTrade() {
+    if (!auth.authenticated) {
+      auth.login();
+      return;
+    }
+
+    if (!isDemo) {
+      window.alert(
+        "The test trade is locked to a Demo Account."
+      );
+      return;
+    }
+
+    try {
+      if (!connected) {
+        await connect();
+      }
+
+      await engineRef.current?.testOneDemoTrade(
+        professionalDecision.setup === "FALL"
+          ? "FALL"
+          : "RISE"
+      );
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to complete the Demo test trade."
+      );
+    }
+  }
+
   return (
     <label className="botField">
       <span>{label}</span>
@@ -250,6 +286,18 @@ export default function Bot() {
         ).toFixed(1)
       : "0.0";
 
+  const roi =
+    botState.totalStake > 0
+      ? (
+          (botState.profit /
+            botState.totalStake) *
+          100
+        ).toFixed(1)
+      : "0.0";
+
+  const completed =
+    botState.status === "COMPLETED";
+
   const updateNumber = (key) => (event) => {
     setSettings((current) => ({
       ...current,
@@ -275,38 +323,6 @@ export default function Bot() {
     }
 
     await engineRef.current?.start();
-  }
-
-  async function testOneTrade() {
-    if (!auth.authenticated) {
-      auth.login();
-      return;
-    }
-
-    if (!isDemo) {
-      window.alert(
-        "The test trade is locked to a Demo Account."
-      );
-      return;
-    }
-
-    try {
-      if (!connected) {
-        await connect();
-      }
-
-      await engineRef.current?.testOneDemoTrade(
-        professionalDecision.setup === "FALL"
-          ? "FALL"
-          : "RISE"
-      );
-    } catch (error) {
-      window.alert(
-        error instanceof Error
-          ? error.message
-          : "Unable to complete the Demo test trade."
-      );
-    }
   }
 
   return (
@@ -686,6 +702,27 @@ export default function Bot() {
               />
             </div>
 
+            {completed ? (
+              <div className="botCompletionSummary">
+                <small>SESSION COMPLETE</small>
+                <h3>{botState.stopReason || "Bot session completed."}</h3>
+
+                <div className="botCompletionGrid">
+                  <Metric label="Runs" value={botState.runs} />
+                  <Metric label="Wins" value={botState.wins} />
+                  <Metric label="Losses" value={botState.losses} />
+                  <Metric label="Win rate" value={`${winRate}%`} />
+                  <Metric
+                    label="Net profit"
+                    value={`${botState.profit.toFixed(2)} ${
+                      auth.selectedAccount?.currency || "USD"
+                    }`}
+                  />
+                  <Metric label="ROI" value={`${roi}%`} />
+                </div>
+              </div>
+            ) : null}
+
             <div className="botHistory">
               <div className="botHistoryHeader">
                 <strong>Recent runs</strong>
@@ -701,15 +738,22 @@ export default function Bot() {
               ) : (
                 botState.history.map((item) => (
                   <div
-                    className="botHistoryRow"
+                    className="botHistoryRow botHistoryRowDetailed"
                     key={`${item.id}-${item.time}`}
                   >
-                    <div>
-                      <strong>{item.setup}</strong>
+                    <div className="botHistoryMain">
+                      <strong>
+                        {item.setup} · {item.symbol || market?.id || symbol}
+                      </strong>
                       <small>
-                        {new Date(
-                          item.time
-                        ).toLocaleTimeString()}
+                        {new Date(item.time).toLocaleTimeString()} · Contract{" "}
+                        {item.contractId || "—"}
+                      </small>
+                      <small>
+                        Entry {Number(item.entrySpot || 0).toFixed(3)} · Exit{" "}
+                        {Number(item.exitSpot || 0).toFixed(3)} · Stake{" "}
+                        {Number(item.stake || 0).toFixed(2)} · MG{" "}
+                        {Number(item.martingaleStep || 0)}
                       </small>
                     </div>
 
@@ -722,9 +766,8 @@ export default function Bot() {
                     </span>
 
                     <strong>
-                      {Number(
-                        item.profit || 0
-                      ).toFixed(2)}
+                      {Number(item.profit || 0) >= 0 ? "+" : ""}
+                      {Number(item.profit || 0).toFixed(2)}
                     </strong>
                   </div>
                 ))

@@ -311,3 +311,49 @@
 .testTradeButton:hover {
   background: rgba(176, 130, 24, 0.28);
 }
+
+
+.botCompletionSummary {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid rgba(49, 222, 171, 0.45);
+  border-radius: 12px;
+  background: rgba(18, 112, 83, 0.12);
+}
+
+.botCompletionSummary > small {
+  color: #37e6b1;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.botCompletionSummary h3 {
+  margin: 6px 0 14px;
+  color: #ffffff;
+}
+
+.botCompletionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.botHistoryRowDetailed {
+  align-items: flex-start;
+}
+
+.botHistoryMain {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.botHistoryMain small {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .botCompletionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

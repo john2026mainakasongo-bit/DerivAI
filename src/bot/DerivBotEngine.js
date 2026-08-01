@@ -102,6 +102,51 @@ function contractProfit(contract = {}) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function contractNumber(contract = {}, keys = [], fallback = 0) {
+  for (const key of keys) {
+    const value = Number(contract?.[key]);
+
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+
+  return fallback;
+}
+
+function contractDetails(contract = {}, bought = {}) {
+  const buy = bought?.buy || {};
+  const proposal = bought?.proposal || {};
+
+  const buyPrice = contractNumber(
+    contract,
+    ["buy_price", "purchase_price", "stake"],
+    contractNumber(buy, ["buy_price", "price"], contractNumber(proposal, ["ask_price"], 0))
+  );
+
+  const sellPrice = contractNumber(
+    contract,
+    ["sell_price", "payout", "bid_price"],
+    0
+  );
+
+  return {
+    buyPrice,
+    sellPrice,
+    payout: contractNumber(contract, ["payout", "sell_price"], sellPrice),
+    entrySpot: contractNumber(
+      contract,
+      ["entry_spot", "entry_tick", "entry_value"],
+      contractNumber(buy, ["start_spot"], 0)
+    ),
+    exitSpot: contractNumber(
+      contract,
+      ["exit_spot", "exit_tick", "current_spot", "sell_spot"],
+      0
+    ),
+  };
+}
+
 export default class DerivBotEngine {
   constructor({ client, onState }) {
     this.client = client;
@@ -124,6 +169,10 @@ export default class DerivBotEngine {
       wins: 0,
       losses: 0,
       profit: 0,
+      totalStake: 0,
+      totalPayout: 0,
+      completedAt: 0,
+      stopReason: "",
       consecutiveLosses: 0,
       martingaleStep: 0,
       currentStake: DEFAULTS.stake,
@@ -307,7 +356,7 @@ export default class DerivBotEngine {
     });
   }
 
-  stop(message = "Bot stopped.") {
+  stop(message = "Bot stopped.", status = "STOPPED") {
     this.stopping = true;
     this.running = false;
     this.paused = false;
@@ -320,8 +369,11 @@ export default class DerivBotEngine {
     this.contractWaiters.clear();
 
     this.patch({
-      status: "STOPPED",
+      status,
       message,
+      stopReason: message,
+      completedAt:
+        status === "COMPLETED" ? Date.now() : this.state.completedAt,
       activeContractId: "",
     });
   }
@@ -336,6 +388,10 @@ export default class DerivBotEngine {
       wins: 0,
       losses: 0,
       profit: 0,
+      totalStake: 0,
+      totalPayout: 0,
+      completedAt: 0,
+      stopReason: "",
       consecutiveLosses: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
@@ -349,35 +405,47 @@ export default class DerivBotEngine {
 
   riskStopReason() {
     if (this.state.runs >= this.settings.maxRuns) {
-      return `Maximum runs reached: ${this.settings.maxRuns}.`;
+      return {
+        message: `Completed ${this.settings.maxRuns} runs.`,
+        status: "COMPLETED",
+      };
     }
 
     if (
       this.settings.takeProfit > 0 &&
       this.state.profit >= this.settings.takeProfit
     ) {
-      return `Take profit reached: ${this.state.profit.toFixed(2)} ${
-        this.currency
-      }.`;
+      return {
+        message: `Take profit reached: ${this.state.profit.toFixed(2)} ${
+          this.currency
+        }.`,
+        status: "COMPLETED",
+      };
     }
 
     if (
       this.settings.stopLoss > 0 &&
       this.state.profit <= -this.settings.stopLoss
     ) {
-      return `Stop loss reached: ${this.state.profit.toFixed(2)} ${
-        this.currency
-      }.`;
+      return {
+        message: `Stop loss reached: ${this.state.profit.toFixed(2)} ${
+          this.currency
+        }.`,
+        status: "STOPPED",
+      };
     }
 
     if (
       this.state.consecutiveLosses >=
       this.settings.maxConsecutiveLosses
     ) {
-      return `Stopped after ${this.state.consecutiveLosses} consecutive losses.`;
+      return {
+        message: `Stopped after ${this.state.consecutiveLosses} consecutive losses.`,
+        status: "STOPPED",
+      };
     }
 
-    return "";
+    return null;
   }
 
   async loop() {
@@ -385,7 +453,7 @@ export default class DerivBotEngine {
       const stopReason = this.riskStopReason();
 
       if (stopReason) {
-        this.stop(stopReason);
+        this.stop(stopReason.message, stopReason.status);
         return;
       }
 
@@ -527,12 +595,16 @@ export default class DerivBotEngine {
 
     const settled = await this.waitForContract(this.activeContractId);
     const profit = contractProfit(settled);
+    const details = contractDetails(settled, bought);
     const won = profit > 0;
 
     const runs = this.state.runs + 1;
     const wins = this.state.wins + (won ? 1 : 0);
     const losses = this.state.losses + (won ? 0 : 1);
     const totalProfit = this.state.profit + profit;
+    const totalStake = this.state.totalStake + stake;
+    const totalPayout =
+      this.state.totalPayout + Math.max(0, details.payout);
     const consecutiveLosses = won ? 0 : this.state.consecutiveLosses + 1;
 
     let martingaleStep = 0;
@@ -556,8 +628,17 @@ export default class DerivBotEngine {
       result: won ? "WIN" : "LOSS",
       profit,
       stake,
+      payout: details.payout,
+      buyPrice: details.buyPrice,
+      sellPrice: details.sellPrice,
+      entrySpot: details.entrySpot,
+      exitSpot: details.exitSpot,
+      duration: this.settings.duration,
+      symbol: this.symbol,
       contractId: this.activeContractId,
       confidence: number(check.decision.confidence),
+      votes: number(check.decision.passedCount),
+      martingaleStep: this.state.martingaleStep,
     });
 
     this.activeContractId = "";
@@ -571,11 +652,19 @@ export default class DerivBotEngine {
       wins,
       losses,
       profit: totalProfit,
+      totalStake,
+      totalPayout,
       consecutiveLosses,
       martingaleStep,
       currentStake: Math.max(0.35, Number(nextStake.toFixed(2))),
       activeContractId: "",
     });
+
+    const finalStop = this.riskStopReason();
+
+    if (finalStop) {
+      this.stop(finalStop.message, finalStop.status);
+    }
   }
 
   waitForContract(contractId) {
