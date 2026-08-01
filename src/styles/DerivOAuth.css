@@ -1,0 +1,144 @@
+﻿
+.derivLoginButton,
+.derivLogoutButton,
+.derivAccountButton {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.derivLoginButton {
+  background: #ff3158;
+  color: #fff;
+}
+
+.derivLogoutButton {
+  background: #351525;
+  color: #ff8ca1;
+}
+
+.derivAccountButton {
+  background: #08233a;
+  color: #eaf5ff;
+  border: 1px solid #1c526f;
+}
+
+.derivAuthInlineError {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 5px);
+  z-index: 50;
+  max-width: 360px;
+  padding: 8px 10px;
+  border: 1px solid #8b2941;
+  border-radius: 8px;
+  background: #2b101a;
+  color: #ff9daf;
+  font-size: 9px;
+}
+
+.derivAuthModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(1, 8, 16, 0.8);
+  backdrop-filter: blur(7px);
+}
+
+.derivAuthModal {
+  width: min(520px, 100%);
+  padding: 20px;
+  border: 1px solid #235777;
+  border-radius: 16px;
+  background: #061725;
+  color: #fff;
+}
+
+.derivAuthModalHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.derivAuthModalHeader small {
+  color: #39e7a5;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.derivAuthModalHeader h2 {
+  margin: 5px 0 0;
+  font-size: 22px;
+}
+
+.derivAuthModalHeader > button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #294d65;
+  border-radius: 9px;
+  background: #0a2235;
+  color: #fff;
+  font-size: 20px;
+}
+
+.derivAuthModal label {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.derivAuthModal label span {
+  color: #9cb5c8;
+  font-size: 10px;
+}
+
+.derivAuthModal input {
+  width: 100%;
+  min-height: 43px;
+  padding: 0 11px;
+  box-sizing: border-box;
+  border: 1px solid #214966;
+  border-radius: 9px;
+  background: #04111c;
+  color: #fff;
+}
+
+.derivAuthSecurityNote {
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid rgba(57, 231, 165, 0.25);
+  border-radius: 9px;
+  color: #9bd9c2;
+}
+
+.derivAuthModalActions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.derivAuthModalActions button {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  font-weight: 900;
+}
+
+.derivAuthModalActions .secondary {
+  background: #0b263a;
+  color: #b9ccda;
+}
+
+.derivAuthModalActions .primary {
+  background: #ff3158;
+  color: #fff;
+}

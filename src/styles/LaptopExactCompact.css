@@ -1,0 +1,292 @@
+﻿/* EdgePilot Exact Compact Laptop V19
+   Fits the complete dashboard into one desktop viewport.
+   Desktop only; mobile/tablet remain unchanged.
+*/
+
+@media (min-width: 1100px) {
+  :root {
+    --ep-scale: 0.64;
+  }
+
+  html,
+  body {
+    width: 100vw !important;
+    height: 100vh !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #root {
+    width: calc(100vw / var(--ep-scale)) !important;
+    height: calc(100vh / var(--ep-scale)) !important;
+    min-width: calc(100vw / var(--ep-scale)) !important;
+    min-height: calc(100vh / var(--ep-scale)) !important;
+    max-width: none !important;
+    max-height: none !important;
+    zoom: var(--ep-scale);
+    overflow: hidden !important;
+  }
+
+  .appShell {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-width: none !important;
+    display: grid !important;
+    grid-template-columns: 150px minmax(0, 1fr) !important;
+    overflow: hidden !important;
+  }
+
+  .sidebar {
+    width: 150px !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    padding: 14px 10px !important;
+    overflow: hidden !important;
+  }
+
+  .mainContent {
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 12px 16px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-rows:
+      66px
+      42px
+      116px
+      320px
+      258px
+      88px !important;
+    gap: 8px !important;
+    align-content: start !important;
+  }
+
+  .topbar,
+  .toolbar,
+  .signalGrid,
+  .dashboardGrid,
+  .professionalDecision,
+  .finalProfessionalEntry {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .topbar {
+    min-height: 66px !important;
+    padding: 0 !important;
+  }
+
+  .topbar h1 {
+    margin: 0 !important;
+    font-size: 31px !important;
+    line-height: 1.05 !important;
+  }
+
+  .topbar p {
+    margin: 5px 0 0 !important;
+    font-size: 12px !important;
+  }
+
+  .toolbar {
+    min-height: 42px !important;
+  }
+
+  .signalGrid {
+    height: 116px !important;
+    min-height: 116px !important;
+    max-height: 116px !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .signalGrid > *,
+  .signalCard {
+    height: 116px !important;
+    min-height: 116px !important;
+    max-height: 116px !important;
+    padding: 12px 14px !important;
+    overflow: hidden !important;
+  }
+
+  .signalCard h3,
+  .signalGrid h3 {
+    margin: 7px 0 5px !important;
+    font-size: 19px !important;
+  }
+
+  .signalCard p,
+  .signalGrid p {
+    margin: 0 !important;
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+  }
+
+  .dashboardGrid {
+    height: 320px !important;
+    min-height: 320px !important;
+    max-height: 320px !important;
+    grid-template-columns: minmax(0, 2.45fr) minmax(310px, 0.9fr) !important;
+    gap: 9px !important;
+  }
+
+  .dashboardGrid > * {
+    height: 320px !important;
+    min-height: 320px !important;
+    max-height: 320px !important;
+    overflow: hidden !important;
+  }
+
+  .panel {
+    padding: 13px !important;
+  }
+
+  .panelHeader h2 {
+    margin: 3px 0 0 !important;
+    font-size: 31px !important;
+  }
+
+  .priceDigit {
+    width: 58px !important;
+    height: 58px !important;
+    font-size: 26px !important;
+  }
+
+  .liveChart,
+  .demoChart {
+    height: 195px !important;
+    min-height: 195px !important;
+    max-height: 195px !important;
+  }
+
+  .digitStrip {
+    margin-top: 6px !important;
+    gap: 5px !important;
+  }
+
+  .digitItem {
+    min-height: 38px !important;
+    padding: 5px 2px !important;
+  }
+
+  .statsGrid {
+    gap: 7px !important;
+  }
+
+  .aiStat {
+    min-height: 54px !important;
+    padding: 8px 9px !important;
+  }
+
+  .professionalDecision {
+    height: 258px !important;
+    min-height: 258px !important;
+    max-height: 258px !important;
+    padding: 12px !important;
+    overflow: hidden !important;
+  }
+
+  .professionalTop {
+    min-height: 50px !important;
+  }
+
+  .professionalTop h2 {
+    margin: 3px 0 !important;
+    font-size: 21px !important;
+  }
+
+  .professionalTop p {
+    font-size: 9px !important;
+  }
+
+  .professionalSetup {
+    min-width: 150px !important;
+    padding: 9px 10px !important;
+  }
+
+  .professionalChecks {
+    margin-top: 8px !important;
+    grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .professionalCheck {
+    height: 126px !important;
+    min-height: 126px !important;
+    max-height: 126px !important;
+    padding: 8px !important;
+    overflow: hidden !important;
+  }
+
+  .professionalCheck span,
+  .professionalCheck p {
+    font-size: 8px !important;
+  }
+
+  .professionalCheck > strong {
+    margin-top: 9px !important;
+    font-size: 16px !important;
+  }
+
+  .professionalFooter {
+    margin-top: 7px !important;
+    min-height: 30px !important;
+    padding: 7px 9px !important;
+    font-size: 9px !important;
+  }
+
+  .finalProfessionalEntry {
+    height: 88px !important;
+    min-height: 88px !important;
+    max-height: 88px !important;
+    padding: 10px 12px !important;
+    overflow: hidden !important;
+  }
+
+  .finalProfessionalEntry h2 {
+    margin: 2px 0 !important;
+    font-size: 20px !important;
+  }
+
+  .finalProfessionalEntry p {
+    font-size: 9px !important;
+    line-height: 1.2 !important;
+  }
+
+  .finalProfessionalStats {
+    min-width: 60% !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .finalProfessionalStats .aiStat {
+    min-height: 50px !important;
+  }
+
+  .connectionError {
+    display: none !important;
+  }
+}
+
+/* 768â€“820px-high laptops need a little more reduction */
+@media (min-width: 1100px) and (max-height: 820px) {
+  :root {
+    --ep-scale: 0.58;
+  }
+}
+
+/* Taller laptop screens */
+@media (min-width: 1100px) and (min-height: 950px) {
+  :root {
+    --ep-scale: 0.72;
+  }
+}
+
