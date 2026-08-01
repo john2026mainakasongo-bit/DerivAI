@@ -1,5 +1,5 @@
 ﻿const PUBLIC_SOCKET_URLS = [
-  "wss://ws.binaryws.com/websockets/v3",
+  "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
 const API_BASE_URL = "https://api.derivws.com";
