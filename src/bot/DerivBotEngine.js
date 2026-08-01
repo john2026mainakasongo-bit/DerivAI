@@ -701,25 +701,43 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
 
   const threshold =
     setup.startsWith("MATCH")
-      ? (isReal ? 95 : 76)
+      ? (isReal ? 95 : 93)
       : setup.startsWith("DIFFERS")
-        ? (isReal ? 92 : 72)
+        ? (isReal ? 92 : 89)
         : setup === "RISE" || setup === "FALL"
-          ? (isReal ? 91 : 70)
-          : (isReal ? 90 : 68);
+          ? (isReal ? 91 : 90)
+          : (isReal ? 90 : 88);
 
   let finalScore = clampScore(score);
 
   const demoOperationalPass =
     !isReal &&
     !setup.startsWith("MATCH") &&
-    samples >= 24 &&
-    confidence >= 60 &&
-    probability >= 70 &&
-    passedVotes >= 2;
+    samples >= 60 &&
+    confidence >= 80 &&
+    probability >= 85 &&
+    passedVotes >= 4 &&
+    strongVotes >= 2 &&
+    (
+      entropy <= 98.5 ||
+      (
+        probability >= 92 &&
+        transitionCount >= 10 &&
+        passedVotes >= 5
+      )
+    ) &&
+    (
+      setup !== "RISE" && setup !== "FALL" ||
+      (
+        !randomRegime &&
+        consensus.directionalAgreement &&
+        momentumStrength >= 65 &&
+        regimeStrength >= 55
+      )
+    );
 
-  if (demoOperationalPass && finalScore < 72) {
-    finalScore = 72;
+  if (demoOperationalPass && finalScore < 88) {
+    finalScore = 88;
   }
 
   let confirmations = 4;
@@ -733,9 +751,9 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
       confirmations = 5;
     }
   } else if (demoOperationalPass) {
-    confirmations = 1;
-  } else {
     confirmations = 2;
+  } else {
+    confirmations = 3;
   }
 
   return {
@@ -1283,40 +1301,9 @@ export default class DerivBotEngine {
         Number(b.edge) - Number(a.edge)
     );
 
-    // Prefer a candidate that has actually passed its gate.
-    // The old code always chose ranked[0], so a failing RISE/FALL candidate
-    // could block an approved EVEN/ODD or OVER/UNDER candidate beneath it.
-    let selected = ranked.find((candidate) => candidate.ok) || ranked[0];
-
-    // DEMO-ONLY long-scan smoke fallback:
-    // after enough live ticks, allow the best non-MATCH candidate with strong
-    // probability/confidence to verify proposal, buy and settlement.
-    if (
-      this.isDemoAccount &&
-      selected &&
-      !selected.ok &&
-      this.scanTickCount >= 60
-    ) {
-      const fallback = ranked.find(
-        (candidate) =>
-          candidate &&
-          !String(candidate.setup || "").startsWith("MATCH") &&
-          Number(candidate.samples || 0) >= 24 &&
-          Number(candidate.confidence || 0) >= 60 &&
-          Number(candidate.probability || 0) >= 70
-      );
-
-      if (fallback) {
-        selected = {
-          ...fallback,
-          ok: true,
-          demoOperationalPass: true,
-          confirmations: 1,
-          threshold: Math.min(Number(fallback.threshold || 72), 72),
-          score: Math.max(Number(fallback.score || 0), 72),
-        };
-      }
-    }
+    // Always prefer a candidate that has actually passed its quality gate.
+    // Failed candidates remain WAIT regardless of scan duration.
+    const selected = ranked.find((candidate) => candidate.ok) || ranked[0];
 
     if (!selected || !selected.ok) {
       this.strictSetupKey = "";
@@ -1331,7 +1318,7 @@ export default class DerivBotEngine {
       return {
         ok: false,
         reason:
-          `${bestText} Collecting data and comparing all contract families; no forced entry.`,
+          `${bestText} Waiting for 4+ agreeing engines, 80%+ confidence, 85%+ probability, 60+ samples and fresh confirmation. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
         gate: {
@@ -1458,7 +1445,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V28 fixes candidate selection: the engine now chooses an approved candidate before a higher-scoring failed candidate. Demo also has a long-scan execution fallback; Real remains strict and unchanged.",
+        "V29 removes permissive long-scan entries and applies a high-quality signal filter. Demo and Real both wait for stronger multi-engine alignment; Real remains the strictest mode.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1846,11 +1833,11 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V28 candidate-selection confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V29 high-quality signal confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V28 DEMO EXECUTION CONFIRMED`,
+      activeSetup: `${check.contract.label} · V29 QUALITY ENTRY CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

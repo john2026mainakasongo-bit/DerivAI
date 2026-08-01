@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V28 · Demo Candidate Selection Fix + Real Strict"
+          title="EdgePilot V29 · High-Quality Signal Filter + Real Strict"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>DEMO CANDIDATE FIX · REAL LOCKED STRICT</small>
+                <small>HIGH-QUALITY FILTER · REAL LOCKED STRICT</small>
                 <strong>
-                  DEMO: APPROVED CANDIDATE FIRST · 60-TICK FALLBACK · REAL STRICT
+                  DEMO: 85%+ PROB · 4 VOTES · 60 SAMPLES · REAL STRICTER
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              Demo now selects an approved candidate before any higher-scoring failed candidate. After a long 60-tick scan, a strong non-MATCH Demo candidate can use the smoke-test path to verify proposal, buy, settlement and history. Real remains fully strict, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              Demo no longer enters because it has waited for many ticks. It now requires 60+ samples, 80%+ confidence, 85%+ probability, at least four agreeing engines, two strong votes and two fresh confirmations. RISE/FALL additionally requires aligned momentum and a non-random regime. Real remains stricter, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1389,7 +1389,7 @@ export default function Bot() {
                 label="Gate mode"
                 value={
                   botState.gate?.demoOperationalPass
-                    ? "DEMO SMOKE TEST"
+                    ? "DEMO QUALITY FILTER"
                     : isDemo
                       ? "DEMO SCORED"
                       : "REAL STRICT"
