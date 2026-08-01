@@ -473,12 +473,95 @@ export default class DerivBotEngine {
 
     const analysis = signal.analysis || {};
     const intelligence = signal.syntheticIntelligence || {};
-    const gate = evaluateAnalysisAssistedSignal(analysis, {
+    let gate = evaluateAnalysisAssistedSignal(analysis, {
       minimumConfidence: this.settings.minConfidence,
       contractMode: this.settings.contractMode,
       prediction: this.settings.prediction,
       durationUnit: this.settings.durationUnit,
     });
+
+    /*
+     * V19_1_EXECUTION_SYNC
+     *
+     * The deep dashboard and the execution gate were using different
+     * acceptance layers. This caused the UI to show DEEP READY / strong
+     * OVER, UNDER, EVEN or ODD setups while the engine remained WAITING.
+     *
+     * This fallback uses the gate's own ranked candidates. It is only
+     * available in AUTO mode and still requires a meaningful statistical
+     * edge. It does not manufacture a random setup.
+     */
+    if (!gate.approved && this.settings.contractMode === "AUTO") {
+      const candidates = Array.isArray(gate.candidates)
+        ? gate.candidates.filter(Boolean)
+        : [];
+
+      const nearest = candidates
+        .slice()
+        .sort(
+          (a, b) =>
+            number(b.confidence) - number(a.confidence) ||
+            number(b.edge) - number(a.edge) ||
+            number(b.priority) - number(a.priority)
+        )[0];
+
+      if (nearest) {
+        const confidence = number(nearest.confidence);
+        const edge = number(nearest.edge);
+        const probability = number(nearest.probability);
+        const family = String(nearest.family || "").toUpperCase();
+        const setup = String(nearest.setup || "").toUpperCase();
+        const executionThreshold = Math.max(
+          65,
+          number(this.settings.minConfidence, 75) - 5
+        );
+
+        const strongOverUnder =
+          family === "OVER_UNDER" &&
+          edge >= 5 &&
+          confidence >= executionThreshold;
+
+        const strongParity =
+          family === "PARITY" &&
+          probability >= 56 &&
+          edge >= 6 &&
+          confidence >= executionThreshold;
+
+        const strongRiseFall =
+          family === "RISE_FALL" &&
+          confidence >= executionThreshold + 3;
+
+        const strongDiffers =
+          family === "MATCH_DIFFERS" &&
+          setup.includes("DIFFERS") &&
+          edge >= 3 &&
+          confidence >= executionThreshold + 2;
+
+        if (
+          strongOverUnder ||
+          strongParity ||
+          strongRiseFall ||
+          strongDiffers
+        ) {
+          gate = {
+            ...gate,
+            approved: true,
+            setup: nearest.setup,
+            confidence,
+            prediction:
+              nearest.prediction ?? gate.prediction ?? this.settings.prediction,
+            selectedProbability: probability,
+            baselineProbability: number(nearest.baseline),
+            edge,
+            reason:
+              `FAST EXECUTION · ${nearest.setup} · confidence ${confidence.toFixed(
+                1
+              )}% · edge ${edge.toFixed(1)}%`,
+            executionLane: "V19_1_FAST_VALIDATED",
+          };
+        }
+      }
+    }
 
     const startedAt =
       Number(this.state.scanStartedAt) > 0
