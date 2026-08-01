@@ -1306,6 +1306,72 @@ export default class DerivBotEngine {
 
     // AUTO digit analysis/backtesting validates the next digit, so V12 uses
     // one tick for AUTO digit contracts. Rise/Fall keeps the configured time.
+    
+    /*
+     * V19_3B_RAW_TICK_BRIDGE
+     *
+     * Robust DEMO-only execution bridge inserted immediately before
+     * tradeDuration, where gate and ticks are already in scope.
+     */
+    if (!gate.approved && this.demoOnly === true) {
+      const rawTicks = Array.isArray(ticks) ? ticks : [];
+
+      const getLastDigit = (item) => {
+        const raw =
+          item && typeof item === "object"
+            ? item.quote ?? item.price ?? item.tick ?? item.value
+            : item;
+
+        const numeric = Number(raw);
+        if (!Number.isFinite(numeric)) return null;
+
+        const text = String(raw);
+        const digitChars = text.replace(/\D/g, "");
+        if (!digitChars) return Math.abs(Math.trunc(numeric)) % 10;
+
+        return Number(digitChars[digitChars.length - 1]);
+      };
+
+      const digits = rawTicks
+        .map(getLastDigit)
+        .filter((digit) => Number.isInteger(digit) && digit >= 0 && digit <= 9)
+        .slice(-60);
+
+      if (digits.length >= 24) {
+        const evenCount = digits.filter((digit) => digit % 2 === 0).length;
+        const oddCount = digits.length - evenCount;
+        const evenProbability = (evenCount / digits.length) * 100;
+        const oddProbability = (oddCount / digits.length) * 100;
+
+        const setup = evenProbability >= oddProbability ? "EVEN" : "ODD";
+        const probability = Math.max(evenProbability, oddProbability);
+        const edge = probability - 50;
+        const scanAgeMs = Date.now() - number(this.startedAt, Date.now());
+
+        const normalEntry = scanAgeMs >= 25000 && probability >= 54;
+        const pipelineEntry = scanAgeMs >= 45000;
+
+        if (normalEntry || pipelineEntry) {
+          gate = {
+            ...gate,
+            approved: true,
+            setup,
+            confidence: Math.max(probability, 65),
+            prediction: null,
+            selectedProbability: probability,
+            baselineProbability: 50,
+            edge,
+            requiredConfirmations: 1,
+            executionLane: "V19_3B_RAW_TICK_DEMO",
+            reason:
+              `DEMO RAW-TICK ENTRY · ${setup} · ${digits.length} samples · ${probability.toFixed(
+                1
+              )}%`,
+          };
+        }
+      }
+    }
+
     const tradeDuration =
       this.settings.contractMode === "AUTO" && digitContract
         ? 1
