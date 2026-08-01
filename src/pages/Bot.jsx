@@ -644,7 +644,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V18.1 Dense-Fit Terminal + Market Switch"
+          title="56-Run Auto Bot V19 Clean Desktop Terminal + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1064,7 +1064,7 @@ export default function Bot() {
             <div className="botCardHeader botSectionHeader">
               <div>
                 <small>LIVE ANALYSIS</small>
-                <h2>Live AI terminal</h2>
+                <h2>Live AI</h2>
               </div>
 
               <span className={`botStatus ${analysisGate.approved ? "running" : "waiting"}`}>
@@ -1142,7 +1142,7 @@ export default function Bot() {
               <div className="botIntelligenceHeader">
                 <div>
                   <small>ACTIVE V12 DECISION LAYER</small>
-                  <h3>Metric / value stream</h3>
+                  <h3>Core decision metrics</h3>
                 </div>
 
                 <span
@@ -1163,23 +1163,23 @@ export default function Bot() {
 
               <div className="botIntelligenceGrid">
                 <Metric
-                  label="Deep consensus"
+                  label="Probability"
                   value={`${Number(
                     syntheticIntelligence.consensus || 0
                   ).toFixed(1)}%`}
                 />
                 <Metric
-                  label="Best deep setup"
+                  label="Bayesian setup"
                   value={`${syntheticIntelligence.bestSetup || "WAIT"} · ${Number(
                     syntheticIntelligence.bestScore || 0
                   ).toFixed(1)}%`}
                 />
                 <Metric
-                  label="Observed regime"
+                  label="Regime"
                   value={syntheticIntelligence.regime || "UNKNOWN"}
                 />
                 <Metric
-                  label="Observed cycle"
+                  label="Cycle"
                   value={
                     syntheticIntelligence.cycle?.period
                       ? `${syntheticIntelligence.cycle.period} ticks · ${Number(
@@ -1189,13 +1189,13 @@ export default function Bot() {
                   }
                 />
                 <Metric
-                  label="Momentum consensus"
+                  label="Momentum"
                   value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} · ${Number(
                     syntheticIntelligence.momentum?.agreement || 0
                   ).toFixed(0)}%`}
                 />
                 <Metric
-                  label="Digit entropy"
+                  label="Entropy"
                   value={`${Number(
                     syntheticIntelligence.entropy?.normalized || 0
                   ).toFixed(1)}% · ${
@@ -1203,13 +1203,13 @@ export default function Bot() {
                   }`}
                 />
                 <Metric
-                  label="Autocorrelation"
+                  label="Lag"
                   value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "—"} · ${Number(
                     syntheticIntelligence.autocorrelation?.strength || 0
                   ).toFixed(0)}%`}
                 />
                 <Metric
-                  label="Transition evidence"
+                  label="Transition"
                   value={`${syntheticIntelligence.transition?.observed || 0} matching transitions`}
                 />
                 <Metric
@@ -1225,7 +1225,7 @@ export default function Bot() {
                   ).toFixed(1)}%`}
                 />
                 <Metric
-                  label="Professional layer"
+                  label="Decision"
                   value={`${professionalDecision.bestContract || "WAIT"} · ${Number(
                     professionalDecision.professionalScore ||
                       professionalDecision.confidence ||
