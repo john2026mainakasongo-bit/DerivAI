@@ -644,7 +644,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V12 Deep Cycle AI + Market Switch"
+          title="56-Run Auto Bot V12.2 Fast Deep AI + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1480,5 +1480,7 @@ export default function Bot() {
     </div>
   );
 }
+
+
 
 
