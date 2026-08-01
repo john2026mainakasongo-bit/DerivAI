@@ -946,3 +946,341 @@ main .botLayout > *,
 }
 
 /* === EDGEPILOT V12.2 FORCE VERTICAL END === */
+
+/* === EDGEPILOT V12.3 DENSE FILL BEGIN === */
+
+/* Dense full-width execution form */
+.botFormGrid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+}
+
+/* Keep all fields compact and equal */
+.botField,
+.botToggle,
+.botRecoverySchedule {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+}
+
+.botField input,
+.botField select {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 7px 9px !important;
+}
+
+/* Toggle cards should not become tall empty boxes */
+.botToggle {
+  flex-direction: row !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 7px 10px !important;
+  box-sizing: border-box !important;
+}
+
+.botToggle input {
+  flex: 0 0 auto !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 !important;
+}
+
+.botToggle span {
+  min-width: 0 !important;
+  line-height: 1.15 !important;
+}
+
+/* Recovery schedule fills one grid cell without extra height */
+.botRecoverySchedule {
+  min-height: 36px !important;
+  padding: 6px 9px !important;
+  gap: 1px !important;
+  align-content: center !important;
+  box-sizing: border-box !important;
+}
+
+.botRecoverySchedule span,
+.botRecoverySchedule strong,
+.botRecoverySchedule small {
+  margin: 0 !important;
+  line-height: 1.1 !important;
+}
+
+.botRecoverySchedule small {
+  display: none !important;
+}
+
+/* Make long intelligence description use remaining width instead of creating a tall narrow box */
+.botStrictGate,
+.botTimedFallbackInfo {
+  grid-column: span 2 !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+/* Tighten major card sections */
+.botCard {
+  padding: 12px !important;
+}
+
+.botCardHeader {
+  margin-bottom: 8px !important;
+}
+
+.botDecisionBox {
+  margin-top: 8px !important;
+  gap: 7px !important;
+}
+
+.botIntelligence {
+  margin-top: 8px !important;
+  padding: 9px !important;
+}
+
+/* Performance metrics fill the row instead of leaving empty columns */
+.botMetrics {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: 7px !important;
+}
+
+.botMetric {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 8px 9px !important;
+}
+
+/* Remove large unused vertical blocks */
+.botLayout,
+.botLayout > *,
+.botCard,
+.botHistory,
+.botHistoryEmpty {
+  min-height: 0 !important;
+}
+
+.botHistoryEmpty {
+  padding: 12px 8px !important;
+}
+
+/* Dense responsive breakpoints */
+@media (max-width: 1350px) {
+  .botFormGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .botMetrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .botFormGrid,
+  .botIntelligenceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .botMetrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .botStrictGate,
+  .botTimedFallbackInfo {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .botFormGrid,
+  .botDecisionBox,
+  .botIntelligenceGrid,
+  .botMetrics {
+    grid-template-columns: 1fr !important;
+  }
+
+  .botToggle {
+    height: auto !important;
+    min-height: 38px !important;
+  }
+}
+
+/* === EDGEPILOT V12.3 DENSE FILL END === */
+
+/* === EDGEPILOT V12.3 DENSE FILL BEGIN === */
+
+/* Dense full-width execution form */
+.botFormGrid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+}
+
+/* Keep all fields compact and equal */
+.botField,
+.botToggle,
+.botRecoverySchedule {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+}
+
+.botField input,
+.botField select {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 7px 9px !important;
+}
+
+/* Toggle cards should not become tall empty boxes */
+.botToggle {
+  flex-direction: row !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 7px 10px !important;
+  box-sizing: border-box !important;
+}
+
+.botToggle input {
+  flex: 0 0 auto !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 !important;
+}
+
+.botToggle span {
+  min-width: 0 !important;
+  line-height: 1.15 !important;
+}
+
+/* Recovery schedule fills one grid cell without extra height */
+.botRecoverySchedule {
+  min-height: 36px !important;
+  padding: 6px 9px !important;
+  gap: 1px !important;
+  align-content: center !important;
+  box-sizing: border-box !important;
+}
+
+.botRecoverySchedule span,
+.botRecoverySchedule strong,
+.botRecoverySchedule small {
+  margin: 0 !important;
+  line-height: 1.1 !important;
+}
+
+.botRecoverySchedule small {
+  display: none !important;
+}
+
+/* Make long intelligence description use remaining width instead of creating a tall narrow box */
+.botStrictGate,
+.botTimedFallbackInfo {
+  grid-column: span 2 !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+/* Tighten major card sections */
+.botCard {
+  padding: 12px !important;
+}
+
+.botCardHeader {
+  margin-bottom: 8px !important;
+}
+
+.botDecisionBox {
+  margin-top: 8px !important;
+  gap: 7px !important;
+}
+
+.botIntelligence {
+  margin-top: 8px !important;
+  padding: 9px !important;
+}
+
+/* Performance metrics fill the row instead of leaving empty columns */
+.botMetrics {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: 7px !important;
+}
+
+.botMetric {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 8px 9px !important;
+}
+
+/* Remove large unused vertical blocks */
+.botLayout,
+.botLayout > *,
+.botCard,
+.botHistory,
+.botHistoryEmpty {
+  min-height: 0 !important;
+}
+
+.botHistoryEmpty {
+  padding: 12px 8px !important;
+}
+
+/* Dense responsive breakpoints */
+@media (max-width: 1350px) {
+  .botFormGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .botMetrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .botFormGrid,
+  .botIntelligenceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .botMetrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .botStrictGate,
+  .botTimedFallbackInfo {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .botFormGrid,
+  .botDecisionBox,
+  .botIntelligenceGrid,
+  .botMetrics {
+    grid-template-columns: 1fr !important;
+  }
+
+  .botToggle {
+    height: auto !important;
+    min-height: 38px !important;
+  }
+}
+
+/* === EDGEPILOT V12.3 DENSE FILL END === */
