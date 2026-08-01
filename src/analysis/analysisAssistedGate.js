@@ -19,6 +19,19 @@ const SUPPORTED_MODES = new Set([
   "DIFFERS",
 ]);
 
+// AUTO intentionally uses only contracts that can be checked by the
+// walk-forward validator already used by the page. Every manual contract
+// remains available, but AUTO no longer jumps into every barrier/digit.
+const AUTO_SAFE_SETUPS = new Set([
+  "RISE",
+  "FALL",
+  "EVEN",
+  "ODD",
+  "OVER 2",
+]);
+
+const MIN_DIGIT_SAMPLES = 120;
+
 function clamp(value, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Number(value) || 0));
 }
@@ -31,7 +44,7 @@ function normalizeMode(value = "AUTO") {
 function normalizeOptions(input) {
   if (typeof input === "number") {
     return {
-      minimumConfidence: clamp(input, 60, 95),
+      minimumConfidence: clamp(input, 70, 95),
       contractMode: "AUTO",
       prediction: 2,
       durationUnit: "t",
@@ -39,7 +52,7 @@ function normalizeOptions(input) {
   }
 
   return {
-    minimumConfidence: clamp(input?.minimumConfidence ?? 75, 60, 95),
+    minimumConfidence: clamp(input?.minimumConfidence ?? 84, 70, 95),
     contractMode: normalizeMode(input?.contractMode),
     prediction: Math.max(
       0,
@@ -49,19 +62,59 @@ function normalizeOptions(input) {
   };
 }
 
-function digitPercent(distribution = [], digit) {
+function rowsOf(analysis) {
+  return Array.isArray(analysis?.distribution)
+    ? analysis.distribution
+    : [];
+}
+
+function recencyRowsOf(analysis) {
+  return Array.isArray(analysis?.recency)
+    ? analysis.recency
+    : [];
+}
+
+function digitPercent(distribution = [], digit, key = "percent") {
   const row = (Array.isArray(distribution) ? distribution : []).find(
     (item) => Number(item?.digit) === Number(digit)
   );
 
-  return Number(row?.percent || 0);
+  return Number(row?.[key] || 0);
 }
 
-function sumDigits(distribution, digits) {
+function sumDigits(distribution, digits, key = "percent") {
   return digits.reduce(
-    (total, digit) => total + digitPercent(distribution, digit),
+    (total, digit) => total + digitPercent(distribution, digit, key),
     0
   );
+}
+
+function probabilityProfile(analysis, digits) {
+  const distribution = rowsOf(analysis);
+  const recency = recencyRowsOf(analysis);
+  const full = sumDigits(distribution, digits);
+
+  const hasRecency = recency.length >= 10;
+  const recent = hasRecency
+    ? sumDigits(recency, digits, "recentPercent")
+    : full;
+  const baseline = hasRecency
+    ? sumDigits(recency, digits, "baselinePercent")
+    : full;
+
+  const values = [full, recent, baseline].filter(Number.isFinite);
+  const conservative = values.length ? Math.min(...values) : 0;
+  const spread = values.length
+    ? Math.max(...values) - Math.min(...values)
+    : 100;
+
+  return {
+    full,
+    recent,
+    baseline,
+    conservative,
+    spread,
+  };
 }
 
 function candidate({
@@ -75,6 +128,8 @@ function candidate({
   edge = 0,
   probability = 0,
   baseline = 0,
+  stability = 0,
+  autoEligible = false,
   priority = 0,
 }) {
   return {
@@ -88,48 +143,53 @@ function candidate({
     edge: Number(edge) || 0,
     probability: Number(probability) || 0,
     baseline: Number(baseline) || 0,
+    stability: Number(stability) || 0,
+    autoEligible: Boolean(autoEligible),
     priority: Number(priority) || 0,
   };
 }
 
-function buildParityCandidates(analysis, minConfidence) {
-  const even = Number(analysis?.parity?.evenPercent || 0);
-  const odd = Number(analysis?.parity?.oddPercent || 0);
-  const baseConfidence = Number(analysis?.confidence || 0);
+function candidateConfidence(edge, spread, base = 65) {
+  return clamp(base + Math.max(0, edge) * 3.4 - Math.max(0, spread - 3) * 1.6);
+}
 
+function buildParityCandidates(analysis, minConfidence, sampleReady) {
   return [
-    ["EVEN", even],
-    ["ODD", odd],
-  ].map(([setup, selected]) => {
-    const edge = selected - 50;
-    const confidence = Math.max(
-      baseConfidence,
-      Math.min(95, 50 + Math.abs(edge) * 4)
-    );
+    ["EVEN", [0, 2, 4, 6, 8]],
+    ["ODD", [1, 3, 5, 7, 9]],
+  ].map(([setup, digits]) => {
+    const profile = probabilityProfile(analysis, digits);
+    const edge = profile.conservative - 50;
+    const confidence = candidateConfidence(edge, profile.spread, 65);
+    const approved =
+      sampleReady &&
+      profile.full >= 56 &&
+      profile.recent >= 55 &&
+      profile.baseline >= 53 &&
+      profile.conservative >= 56.5 &&
+      profile.spread <= 9 &&
+      confidence >= minConfidence;
 
     return candidate({
       setup,
       family: "PARITY",
       action: setup,
       confidence,
-      approved: selected >= 54 && confidence >= minConfidence,
-      reason:
-        selected >= 54
-          ? `${setup} ${selected.toFixed(1)}%`
-          : `WAIT · EVEN ${even.toFixed(1)}% / ODD ${odd.toFixed(1)}%`,
+      approved,
+      reason: approved
+        ? `${setup} stable · full ${profile.full.toFixed(1)}% · recent ${profile.recent.toFixed(1)}%`
+        : `WAIT · ${setup} full ${profile.full.toFixed(1)}% / recent ${profile.recent.toFixed(1)}% / base ${profile.baseline.toFixed(1)}%`,
       edge,
-      probability: selected,
+      probability: profile.conservative,
       baseline: 50,
+      stability: 100 - profile.spread,
+      autoEligible: true,
       priority: 30,
     });
   });
 }
 
-function buildOverUnderCandidates(analysis, minConfidence) {
-  const distribution = Array.isArray(analysis?.distribution)
-    ? analysis.distribution
-    : [];
-  const baseConfidence = Number(analysis?.confidence || 0);
+function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
   const rows = [];
 
   for (let barrier = 0; barrier <= 8; barrier += 1) {
@@ -137,13 +197,18 @@ function buildOverUnderCandidates(analysis, minConfidence) {
       { length: 9 - barrier },
       (_, index) => barrier + index + 1
     );
-    const probability = sumDigits(distribution, digits);
-    const baseline = (9 - barrier) * 10;
-    const edge = probability - baseline;
-    const confidence = Math.max(
-      baseConfidence,
-      Math.min(95, 60 + Math.max(0, edge) * 3)
-    );
+    const naturalBaseline = (9 - barrier) * 10;
+    const profile = probabilityProfile(analysis, digits);
+    const edge = profile.conservative - naturalBaseline;
+    const confidence = candidateConfidence(edge, profile.spread, 66);
+    const approved =
+      sampleReady &&
+      profile.full >= naturalBaseline + 5.5 &&
+      profile.recent >= naturalBaseline + 5 &&
+      profile.baseline >= naturalBaseline + 3.5 &&
+      profile.conservative >= naturalBaseline + 6 &&
+      profile.spread <= 10 &&
+      confidence >= minConfidence;
 
     rows.push(
       candidate({
@@ -152,33 +217,34 @@ function buildOverUnderCandidates(analysis, minConfidence) {
         action: "OVER",
         prediction: barrier,
         confidence,
-        approved: edge >= 3 && confidence >= minConfidence,
-        reason:
-          edge >= 3
-            ? `OVER ${barrier} · ${probability.toFixed(1)}%`
-            : `WAIT · OVER ${barrier} ${probability.toFixed(
-                1
-              )}% vs ${baseline.toFixed(1)}% baseline`,
+        approved,
+        reason: approved
+          ? `OVER ${barrier} stable · conservative ${profile.conservative.toFixed(1)}%`
+          : `WAIT · OVER ${barrier} ${profile.full.toFixed(1)}% / ${profile.recent.toFixed(1)}% recent vs ${naturalBaseline.toFixed(1)}% base`,
         edge,
-        probability,
-        baseline,
-        priority: 40,
+        probability: profile.conservative,
+        baseline: naturalBaseline,
+        stability: 100 - profile.spread,
+        autoEligible: barrier === 2,
+        priority: barrier === 2 ? 50 : 20,
       })
     );
   }
 
   for (let barrier = 1; barrier <= 9; barrier += 1) {
-    const digits = Array.from(
-      { length: barrier },
-      (_, index) => index
-    );
-    const probability = sumDigits(distribution, digits);
-    const baseline = barrier * 10;
-    const edge = probability - baseline;
-    const confidence = Math.max(
-      baseConfidence,
-      Math.min(95, 60 + Math.max(0, edge) * 3)
-    );
+    const digits = Array.from({ length: barrier }, (_, index) => index);
+    const naturalBaseline = barrier * 10;
+    const profile = probabilityProfile(analysis, digits);
+    const edge = profile.conservative - naturalBaseline;
+    const confidence = candidateConfidence(edge, profile.spread, 66);
+    const approved =
+      sampleReady &&
+      profile.full >= naturalBaseline + 5.5 &&
+      profile.recent >= naturalBaseline + 5 &&
+      profile.baseline >= naturalBaseline + 3.5 &&
+      profile.conservative >= naturalBaseline + 6 &&
+      profile.spread <= 10 &&
+      confidence >= minConfidence;
 
     rows.push(
       candidate({
@@ -187,85 +253,17 @@ function buildOverUnderCandidates(analysis, minConfidence) {
         action: "UNDER",
         prediction: barrier,
         confidence,
-        approved: edge >= 3 && confidence >= minConfidence,
-        reason:
-          edge >= 3
-            ? `UNDER ${barrier} · ${probability.toFixed(1)}%`
-            : `WAIT · UNDER ${barrier} ${probability.toFixed(
-                1
-              )}% vs ${baseline.toFixed(1)}% baseline`,
+        approved,
+        reason: approved
+          ? `UNDER ${barrier} stable · conservative ${profile.conservative.toFixed(1)}%`
+          : `WAIT · UNDER ${barrier} ${profile.full.toFixed(1)}% / ${profile.recent.toFixed(1)}% recent vs ${naturalBaseline.toFixed(1)}% base`,
         edge,
-        probability,
-        baseline,
-        priority: 40,
-      })
-    );
-  }
-
-  return rows;
-}
-
-function buildMatchDiffersCandidates(analysis, minConfidence) {
-  const distribution = Array.isArray(analysis?.distribution)
-    ? analysis.distribution
-    : [];
-  const signalConfidence = Number(
-    analysis?.signals?.matchDiff?.confidence || 0
-  );
-  const rows = [];
-
-  for (let digit = 0; digit <= 9; digit += 1) {
-    const probability = digitPercent(distribution, digit);
-    const matchConfidence = Math.max(
-      signalConfidence,
-      Math.min(95, 50 + Math.max(0, probability - 10) * 7)
-    );
-
-    rows.push(
-      candidate({
-        setup: `MATCH ${digit}`,
-        family: "MATCH_DIFFERS",
-        action: "MATCH",
-        prediction: digit,
-        confidence: matchConfidence,
-        approved:
-          probability >= 13.5 &&
-          matchConfidence >= minConfidence,
-        reason:
-          probability >= 13.5
-            ? `MATCH ${digit} · ${probability.toFixed(1)}%`
-            : `WAIT · MATCH ${digit} is ${probability.toFixed(1)}%`,
-        edge: probability - 10,
-        probability,
-        baseline: 10,
-        priority: 10,
-      })
-    );
-
-    const differsConfidence = Math.max(
-      signalConfidence,
-      Math.min(95, 50 + Math.max(0, 10 - probability) * 7)
-    );
-
-    rows.push(
-      candidate({
-        setup: `DIFFERS ${digit}`,
-        family: "MATCH_DIFFERS",
-        action: "DIFFERS",
-        prediction: digit,
-        confidence: differsConfidence,
-        approved:
-          probability <= 7.5 &&
-          differsConfidence >= minConfidence,
-        reason:
-          probability <= 7.5
-            ? `DIFFERS ${digit} · digit ${probability.toFixed(1)}%`
-            : `WAIT · DIFFERS ${digit}, digit is ${probability.toFixed(
-                1
-              )}%`,
-        edge: 10 - probability,
-        probability,
-        baseline: 10,
+        probability: profile.conservative,
+        baseline: naturalBaseline,
+        stability: 100 - profile.spread,
+        // UNDER barriers stay manual because the current walk-forward validator
+        // only validates UNDER 2, which is a high-variance contract.
+        autoEligible: false,
         priority: 20,
       })
     );
@@ -274,34 +272,118 @@ function buildMatchDiffersCandidates(analysis, minConfidence) {
   return rows;
 }
 
+function buildMatchDiffersCandidates(analysis, minConfidence, sampleReady) {
+  const rows = [];
+
+  for (let digit = 0; digit <= 9; digit += 1) {
+    const match = probabilityProfile(analysis, [digit]);
+    const matchEdge = match.conservative - 10;
+    const matchConfidence = candidateConfidence(matchEdge, match.spread, 60);
+    const matchApproved =
+      sampleReady &&
+      match.full >= 17 &&
+      match.recent >= 15 &&
+      match.baseline >= 13 &&
+      match.conservative >= 15 &&
+      match.spread <= 8 &&
+      matchConfidence >= minConfidence;
+
+    rows.push(
+      candidate({
+        setup: `MATCH ${digit}`,
+        family: "MATCH_DIFFERS",
+        action: "MATCH",
+        prediction: digit,
+        confidence: matchConfidence,
+        approved: matchApproved,
+        reason: matchApproved
+          ? `MATCH ${digit} stable · conservative ${match.conservative.toFixed(1)}%`
+          : `WAIT · MATCH ${digit} ${match.full.toFixed(1)}% / ${match.recent.toFixed(1)}% recent`,
+        edge: matchEdge,
+        probability: match.conservative,
+        baseline: 10,
+        stability: 100 - match.spread,
+        autoEligible: false,
+        priority: 5,
+      })
+    );
+
+    const targetWorst = Math.max(match.full, match.recent, match.baseline);
+    const differsProbability = 100 - targetWorst;
+    const differsEdge = differsProbability - 90;
+    const differsConfidence = candidateConfidence(
+      differsEdge,
+      match.spread,
+      62
+    );
+    const differsApproved =
+      sampleReady &&
+      targetWorst <= 4.5 &&
+      match.spread <= 6 &&
+      differsConfidence >= minConfidence;
+
+    rows.push(
+      candidate({
+        setup: `DIFFERS ${digit}`,
+        family: "MATCH_DIFFERS",
+        action: "DIFFERS",
+        prediction: digit,
+        confidence: differsConfidence,
+        approved: differsApproved,
+        reason: differsApproved
+          ? `DIFFERS ${digit} stable · target worst-case ${targetWorst.toFixed(1)}%`
+          : `WAIT · DIFFERS ${digit}, target worst-case ${targetWorst.toFixed(1)}%`,
+        edge: differsEdge,
+        probability: differsProbability,
+        baseline: 90,
+        stability: 100 - match.spread,
+        autoEligible: false,
+        priority: 5,
+      })
+    );
+  }
+
+  return rows;
+}
+
 function buildRiseFallCandidates(analysis, minConfidence) {
+  const direction = analysis?.direction || {};
+  const directionSignal = String(
+    direction?.signal?.signal || analysis?.signals?.riseFall?.signal || ""
+  ).toUpperCase();
   const momentumDirection = String(
     analysis?.momentum?.direction || ""
   ).toUpperCase();
-
-  const signal = String(
-    analysis?.direction?.signal?.signal ||
-      analysis?.signals?.riseFall?.signal ||
-      ""
-  ).toUpperCase();
-
-  const preferred =
-    signal === "RISE" || signal === "FALL"
-      ? signal
-      : momentumDirection === "UP"
+  const momentumSetup =
+    momentumDirection === "UP"
       ? "RISE"
       : momentumDirection === "DOWN"
       ? "FALL"
       : "";
 
-  const confidence = Math.max(
-    Number(analysis?.direction?.signal?.confidence || 0),
-    Number(analysis?.signals?.riseFall?.confidence || 0),
-    Number(analysis?.confidence || 0)
+  const preferred = ["RISE", "FALL"].includes(directionSignal)
+    ? directionSignal
+    : "";
+  const confidence = Number(
+    direction?.signal?.confidence || analysis?.signals?.riseFall?.confidence || 0
   );
+  const strength = Number(direction?.strength || 0);
+  const consistency = Number(direction?.consistency || 0);
+  const estimate =
+    preferred === "RISE"
+      ? Number(direction?.riseEstimate || 0)
+      : preferred === "FALL"
+      ? Number(direction?.fallEstimate || 0)
+      : 0;
 
   return ["RISE", "FALL"].map((setup) => {
-    const approved = preferred === setup && confidence >= minConfidence;
+    const approved =
+      preferred === setup &&
+      momentumSetup === setup &&
+      estimate >= 70 &&
+      strength >= 40 &&
+      consistency >= 62 &&
+      confidence >= minConfidence;
 
     return candidate({
       setup,
@@ -310,12 +392,14 @@ function buildRiseFallCandidates(analysis, minConfidence) {
       confidence,
       approved,
       reason: approved
-        ? `${setup} · momentum ${momentumDirection || "CONFIRMED"}`
-        : `WAIT · preferred direction ${preferred || "NEUTRAL"}`,
-      edge: approved ? confidence - minConfidence : 0,
-      probability: confidence,
-      baseline: minConfidence,
-      priority: 50,
+        ? `${setup} confirmed · estimate ${estimate.toFixed(1)}% · consistency ${consistency.toFixed(1)}%`
+        : `WAIT · direction ${preferred || "NEUTRAL"} / momentum ${momentumSetup || "NEUTRAL"} / consistency ${consistency.toFixed(1)}%`,
+      edge: Math.max(0, estimate - 50),
+      probability: estimate,
+      baseline: 50,
+      stability: consistency,
+      autoEligible: true,
+      priority: 60,
     });
   });
 }
@@ -323,8 +407,6 @@ function buildRiseFallCandidates(analysis, minConfidence) {
 function selectCandidates(candidates, options) {
   const { contractMode, prediction, durationUnit } = options;
 
-  // Digit contracts are kept on tick duration. In seconds mode,
-  // AUTO scans Rise/Fall only to avoid invalid contract combinations.
   if (durationUnit === "s" && DIGIT_MODES.has(contractMode)) {
     return {
       candidates: [],
@@ -335,10 +417,12 @@ function selectCandidates(candidates, options) {
 
   if (contractMode === "AUTO") {
     return {
-      candidates:
-        durationUnit === "s"
-          ? candidates.filter((item) => item.family === "RISE_FALL")
-          : candidates,
+      candidates: candidates.filter(
+        (item) =>
+          item.autoEligible &&
+          AUTO_SAFE_SETUPS.has(item.setup) &&
+          (durationUnit !== "s" || item.family === "RISE_FALL")
+      ),
       compatibilityError: "",
     };
   }
@@ -395,8 +479,9 @@ function selectCandidates(candidates, options) {
 }
 
 /**
- * Decides WAIT / ENTER for the selected contract, or finds the best contract
- * when AUTO is selected. Settlement and P&L are handled by the bot engine.
+ * Conservative Analysis Assisted gate.
+ * It only returns ENTER when full-window, recent-window and baseline-window
+ * evidence agree. AUTO is intentionally narrower than manual mode.
  */
 export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
   const options = normalizeOptions(input);
@@ -408,17 +493,17 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
   } = options;
 
   const sampleSize = Number(analysis?.sampleSize || 0);
-  const distribution = Array.isArray(analysis?.distribution)
-    ? analysis.distribution
-    : [];
+  const distribution = rowsOf(analysis);
+  const sampleReady =
+    sampleSize >= MIN_DIGIT_SAMPLES && distribution.length >= 10;
 
-  if (sampleSize < 60 || distribution.length < 10) {
+  if (DIGIT_MODES.has(contractMode) && !sampleReady) {
     return {
       approved: false,
       setup: "WAIT",
       confidence: 0,
       minConfidence: minimumConfidence,
-      reason: `Need more samples (${sampleSize}/60).`,
+      reason: `Need more digit samples (${sampleSize}/${MIN_DIGIT_SAMPLES}).`,
       candidates: [],
       contractMode,
       prediction,
@@ -428,9 +513,9 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
 
   const allCandidates = [
     ...buildRiseFallCandidates(analysis, minimumConfidence),
-    ...buildParityCandidates(analysis, minimumConfidence),
-    ...buildOverUnderCandidates(analysis, minimumConfidence),
-    ...buildMatchDiffersCandidates(analysis, minimumConfidence),
+    ...buildParityCandidates(analysis, minimumConfidence, sampleReady),
+    ...buildOverUnderCandidates(analysis, minimumConfidence, sampleReady),
+    ...buildMatchDiffersCandidates(analysis, minimumConfidence, sampleReady),
   ];
 
   const selection = selectCandidates(allCandidates, options);
@@ -454,8 +539,9 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
     .filter((item) => item.approved)
     .sort(
       (a, b) =>
-        b.confidence - a.confidence ||
         b.edge - a.edge ||
+        b.stability - a.stability ||
+        b.confidence - a.confidence ||
         b.priority - a.priority
     );
 
@@ -475,6 +561,8 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
       selectedProbability: best.probability,
       baselineProbability: best.baseline,
       edge: best.edge,
+      stability: best.stability,
+      riskMode: "CONSERVATIVE",
     };
   }
 
@@ -482,17 +570,23 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
     .slice()
     .sort(
       (a, b) =>
-        b.confidence - a.confidence ||
         b.edge - a.edge ||
+        b.stability - a.stability ||
+        b.confidence - a.confidence ||
         b.priority - a.priority
     )[0];
 
   const selectedLabel =
     contractMode === "AUTO"
-      ? "AUTO BEST"
+      ? "AUTO SAFE"
       : ["OVER", "UNDER", "MATCH", "DIFFERS"].includes(contractMode)
       ? `${contractMode} ${prediction}`
       : contractMode;
+
+  const sampleReason =
+    contractMode === "AUTO" && !sampleReady
+      ? ` Digit contracts need ${MIN_DIGIT_SAMPLES} samples; Rise/Fall is still being checked.`
+      : "";
 
   return {
     approved: false,
@@ -500,7 +594,8 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
     confidence: Number(nearest?.confidence || 0),
     minConfidence: minimumConfidence,
     reason:
-      nearest?.reason || `WAIT · no approved ${selectedLabel} entry yet.`,
+      (nearest?.reason || `WAIT · no approved ${selectedLabel} entry yet.`) +
+      sampleReason,
     candidates: selectedCandidates,
     contractMode,
     prediction,
@@ -508,6 +603,8 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
     selectedProbability: Number(nearest?.probability || 0),
     baselineProbability: Number(nearest?.baseline || 0),
     edge: Number(nearest?.edge || 0),
+    stability: Number(nearest?.stability || 0),
+    riskMode: "CONSERVATIVE",
   };
 }
 

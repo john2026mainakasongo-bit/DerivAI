@@ -2,23 +2,28 @@ import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate
 
 const DEFAULTS = {
   maxRuns: 56,
-  minConfidence: 80,
+  minConfidence: 84,
   minVotes: 1,
   stake: 1,
   duration: 5,
-  delaySeconds: 3,
+  delaySeconds: 8,
   takeProfit: 20,
-  stopLoss: 10,
-  cooldownAfterLosses: 3,
-  cooldownSeconds: 60,
-  hardStopLossStreak: 6,
+  stopLoss: 6,
+  cooldownAfterLosses: 1,
+  cooldownSeconds: 45,
+  hardStopLossStreak: 3,
   martingaleEnabled: false,
-  maxMartingaleSteps: 3,
-  recoveryMultipliers: [1.7, 2.2, 2.8],
+  maxMartingaleSteps: 1,
+  recoveryMultipliers: [1.35],
   analysisAssisted: true,
   contractMode: "AUTO",
   prediction: 2,
   durationUnit: "t",
+  confirmationCount: 3,
+  confirmationSeconds: 2,
+  signalMaxAgeSeconds: 7,
+  lossSetupBlockSeconds: 120,
+  minimumTradeGapSeconds: 8,
 };
 
 function sleep(ms) {
@@ -191,6 +196,21 @@ function smartRecoveryMultiplier(step, schedule = DEFAULTS.recoveryMultipliers) 
   return values[Math.min(safeStep - 1, values.length - 1)];
 }
 
+function normalizeSetup(value = "") {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+function validationAction(row = {}) {
+  return normalizeSetup(row?.action || row?.candidate || row?.setup || "WAIT");
+}
+
+function isDigitContract(contract = {}) {
+  return String(contract?.contractType || "").startsWith("DIGIT");
+}
+
 export default class DerivBotEngine {
   constructor({ client, onState }) {
     this.client = client;
@@ -205,6 +225,15 @@ export default class DerivBotEngine {
     this.paused = false;
     this.stopping = false;
     this.activeContractId = "";
+
+    this.signalUpdatedAt = 0;
+    this.pendingSetupKey = "";
+    this.pendingSignalCount = 0;
+    this.pendingSignalSince = 0;
+    this.pendingSignalVersion = 0;
+    this.blockedSetups = new Map();
+    this.lastTradeAt = 0;
+    this.lastLossSetup = "";
 
     this.state = {
       status: "IDLE",
@@ -232,6 +261,11 @@ export default class DerivBotEngine {
       scanElapsedSeconds: 0,
       lastBlockReason: "",
       fallbackTrades: 0,
+      signalConfirmations: 0,
+      requiredConfirmations: DEFAULTS.confirmationCount,
+      blockedSetupUntil: 0,
+      lastLossSetup: "—",
+      lossProtectionCount: 0,
       history: [],
     };
 
@@ -262,7 +296,7 @@ export default class DerivBotEngine {
       maxRuns: Math.max(1, Math.min(1000, number(input.maxRuns, 56))),
       minConfidence: Math.max(
         60,
-        Math.min(95, number(input.minConfidence, 75))
+        Math.min(95, number(input.minConfidence, DEFAULTS.minConfidence))
       ),
       minVotes: 1,
       stake: Math.max(0.35, number(input.stake, 1)),
@@ -281,27 +315,47 @@ export default class DerivBotEngine {
       ),
       delaySeconds: Math.max(
         0,
-        Math.min(60, number(input.delaySeconds, 3))
+        Math.min(60, number(input.delaySeconds, DEFAULTS.delaySeconds))
       ),
-      takeProfit: Math.max(0, number(input.takeProfit, 20)),
-      stopLoss: Math.max(0, number(input.stopLoss, 10)),
+      takeProfit: Math.max(0, number(input.takeProfit, DEFAULTS.takeProfit)),
+      stopLoss: Math.max(0, number(input.stopLoss, DEFAULTS.stopLoss)),
       cooldownAfterLosses: Math.max(
         1,
-        Math.min(10, number(input.cooldownAfterLosses, 3))
+        Math.min(10, number(input.cooldownAfterLosses, DEFAULTS.cooldownAfterLosses))
       ),
       cooldownSeconds: Math.max(
         10,
-        Math.min(900, number(input.cooldownSeconds, 60))
+        Math.min(900, number(input.cooldownSeconds, DEFAULTS.cooldownSeconds))
       ),
       hardStopLossStreak: Math.max(
         2,
-        Math.min(20, number(input.hardStopLossStreak, 6))
+        Math.min(20, number(input.hardStopLossStreak, DEFAULTS.hardStopLossStreak))
       ),
       maxMartingaleSteps: Math.max(
         0,
-        Math.min(3, number(input.maxMartingaleSteps, 3))
+        Math.min(3, number(input.maxMartingaleSteps, DEFAULTS.maxMartingaleSteps))
       ),
       recoveryMultipliers: DEFAULTS.recoveryMultipliers,
+      confirmationCount: Math.max(
+        2,
+        Math.min(6, number(input.confirmationCount, DEFAULTS.confirmationCount))
+      ),
+      confirmationSeconds: Math.max(
+        1,
+        Math.min(10, number(input.confirmationSeconds, DEFAULTS.confirmationSeconds))
+      ),
+      signalMaxAgeSeconds: Math.max(
+        3,
+        Math.min(30, number(input.signalMaxAgeSeconds, DEFAULTS.signalMaxAgeSeconds))
+      ),
+      lossSetupBlockSeconds: Math.max(
+        30,
+        Math.min(900, number(input.lossSetupBlockSeconds, DEFAULTS.lossSetupBlockSeconds))
+      ),
+      minimumTradeGapSeconds: Math.max(
+        3,
+        Math.min(60, number(input.minimumTradeGapSeconds, DEFAULTS.minimumTradeGapSeconds))
+      ),
       analysisAssisted:
         input.analysisAssisted === undefined
           ? true
@@ -314,12 +368,26 @@ export default class DerivBotEngine {
   }
 
   setMarket({ symbol, currency = "USD" }) {
-    this.symbol = String(symbol || "");
+    const nextSymbol = String(symbol || "");
+    const changed = Boolean(this.symbol && nextSymbol && this.symbol !== nextSymbol);
+
+    this.symbol = nextSymbol;
     this.currency = String(currency || "USD");
+
+    if (changed) {
+      // Never carry an approved signal from the previous market into the new one.
+      this.signal = null;
+      this.signalUpdatedAt = 0;
+      this.pendingSetupKey = "";
+      this.pendingSignalCount = 0;
+      this.pendingSignalSince = 0;
+      this.pendingSignalVersion = 0;
+    }
   }
 
   updateSignal(signal) {
     this.signal = signal;
+    this.signalUpdatedAt = Number(signal?.updatedAt || Date.now());
   }
 
   snapshot() {
@@ -347,8 +415,34 @@ export default class DerivBotEngine {
     if (!signal) {
       return {
         ok: false,
-        reason: "Waiting for market analysis.",
+        reason: "Waiting for fresh market analysis.",
         elapsedSeconds: 0,
+        confirmations: 0,
+      };
+    }
+
+    if (signal.symbol && this.symbol && String(signal.symbol) !== this.symbol) {
+      return {
+        ok: false,
+        reason: "Market changed. Waiting for analysis from the selected market.",
+        elapsedSeconds: 0,
+        confirmations: 0,
+      };
+    }
+
+    const ageMilliseconds = Date.now() - Number(
+      signal.updatedAt || this.signalUpdatedAt || 0
+    );
+
+    if (
+      !Number.isFinite(ageMilliseconds) ||
+      ageMilliseconds > this.settings.signalMaxAgeSeconds * 1000
+    ) {
+      return {
+        ok: false,
+        reason: "Analysis is stale. Waiting for a fresh tick.",
+        elapsedSeconds: 0,
+        confirmations: 0,
       };
     }
 
@@ -359,6 +453,7 @@ export default class DerivBotEngine {
         ok: false,
         reason: "Analysis Assisted is disabled.",
         elapsedSeconds: 0,
+        confirmations: 0,
       };
     }
 
@@ -380,10 +475,16 @@ export default class DerivBotEngine {
     );
 
     if (!gate.approved) {
+      this.pendingSetupKey = "";
+      this.pendingSignalCount = 0;
+      this.pendingSignalSince = 0;
+      this.pendingSignalVersion = 0;
+
       return {
         ok: false,
         reason: gate.reason,
         elapsedSeconds,
+        confirmations: 0,
         gate,
       };
     }
@@ -395,32 +496,166 @@ export default class DerivBotEngine {
         ok: false,
         reason: `Unsupported analysis setup: ${gate.setup}.`,
         elapsedSeconds,
+        confirmations: 0,
+        gate,
+      };
+    }
+
+    const setup = normalizeSetup(gate.setup);
+    const setupKey = `${this.symbol}:${setup}`;
+    const blockedUntil = Number(this.blockedSetups.get(setupKey) || 0);
+
+    if (blockedUntil > Date.now()) {
+      const remaining = Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000));
+
+      return {
+        ok: false,
+        reason: `Loss protection: ${setup} is blocked on this market for ${remaining}s.`,
+        elapsedSeconds,
+        confirmations: 0,
+        blockedSetupUntil: blockedUntil,
+        gate,
+      };
+    }
+
+    if (blockedUntil) {
+      this.blockedSetups.delete(setupKey);
+    }
+
+    const tradeGapRemaining = Math.ceil(
+      (this.lastTradeAt + this.settings.minimumTradeGapSeconds * 1000 - Date.now()) /
+        1000
+    );
+
+    if (tradeGapRemaining > 0) {
+      return {
+        ok: false,
+        reason: `Trade spacing protection: waiting ${tradeGapRemaining}s for new ticks.`,
+        elapsedSeconds,
+        confirmations: 0,
+        gate,
+      };
+    }
+
+    const validatedSignals = signal.validatedSignals || {};
+    const validationRows = Array.isArray(validatedSignals?.signals)
+      ? validatedSignals.signals
+      : [];
+    const matchingValidation = validationRows.find(
+      (row) => row?.approved && validationAction(row) === setup
+    );
+    const bestValidation = validatedSignals?.best;
+    const bestValidationAction = bestValidation?.approved
+      ? validationAction(bestValidation)
+      : "WAIT";
+
+    if (this.settings.contractMode === "AUTO") {
+      if (!matchingValidation || bestValidationAction !== setup) {
+        return {
+          ok: false,
+          reason: `Historical validation has not selected ${setup} as the best current setup.`,
+          elapsedSeconds,
+          confirmations: 0,
+          gate,
+        };
+      }
+    }
+
+    const professionalDecision = signal.professionalDecision || {};
+
+    if (["RISE", "FALL"].includes(setup)) {
+      const professionalSetup = normalizeSetup(professionalDecision.setup);
+
+      if (
+        !professionalDecision.validated ||
+        professionalSetup !== setup ||
+        Number(professionalDecision.confidence || 0) < this.settings.minConfidence
+      ) {
+        return {
+          ok: false,
+          reason: `Professional confirmation has not validated ${setup}.`,
+          elapsedSeconds,
+          confirmations: 0,
+          gate,
+        };
+      }
+    }
+
+    // First confirm that the same setup survives several fresh analysis ticks.
+    // Only after it is stable do we wait for the contract-specific entry trigger.
+    const version = Number(signal.updatedAt || this.signalUpdatedAt || Date.now());
+
+    if (this.pendingSetupKey !== setupKey) {
+      this.pendingSetupKey = setupKey;
+      this.pendingSignalCount = 1;
+      this.pendingSignalSince = Date.now();
+      this.pendingSignalVersion = version;
+    } else if (version > this.pendingSignalVersion) {
+      this.pendingSignalCount += 1;
+      this.pendingSignalVersion = version;
+    }
+
+    const confirmationAge = Date.now() - this.pendingSignalSince;
+    const enoughConfirmations =
+      this.pendingSignalCount >= this.settings.confirmationCount;
+    const enoughTime =
+      confirmationAge >= this.settings.confirmationSeconds * 1000;
+
+    if (!enoughConfirmations || !enoughTime) {
+      return {
+        ok: false,
+        reason: `Confirming ${setup}: ${this.pendingSignalCount}/${this.settings.confirmationCount} fresh ticks.`,
+        elapsedSeconds,
+        confirmations: this.pendingSignalCount,
+        gate,
+      };
+    }
+
+    const timing = signal.entryTiming || {};
+    const timingSetup = normalizeSetup(timing.setup);
+
+    if (timingSetup === setup && timing.readyNow === false) {
+      return {
+        ok: false,
+        reason: timing.instruction || `Waiting for the ${setup} entry trigger.`,
+        elapsedSeconds,
+        confirmations: this.pendingSignalCount,
         gate,
       };
     }
 
     return {
       ok: true,
-      mode: "V10_FLEX",
+      mode: "V11_CONSERVATIVE",
       decision: {
         setup: gate.setup,
         bestContract: gate.setup,
         confidence: gate.confidence,
-        professionalScore: gate.confidence,
-        marketQuality: 0,
-        riskLevel: "ANALYSIS",
-        passedCount: gate.candidates.filter(
-          (item) => item.approved
-        ).length,
+        professionalScore: Number(
+          professionalDecision.confidence || gate.confidence
+        ),
+        marketQuality: Number(
+          professionalDecision.marketQuality || gate.stability || 0
+        ),
+        riskLevel: "LOWER",
+        passedCount: Number(
+          professionalDecision.passedCount ||
+            validationRows.filter((item) => item?.approved).length ||
+            1
+        ),
         validated: true,
         gateReason: gate.reason,
+        historicalHitRate: Number(matchingValidation?.hitRate || 0),
+        historicalLowerBound: Number(matchingValidation?.lowerBound || 0),
       },
       timing: {
-        state: "ENTER",
+        ...timing,
+        state: timing.state || "ENTER",
         readyNow: true,
       },
       contract,
       elapsedSeconds,
+      confirmations: this.pendingSignalCount,
       gate,
     };
   }
@@ -435,11 +670,15 @@ export default class DerivBotEngine {
     this.running = true;
     this.paused = false;
     this.stopping = false;
+    this.pendingSetupKey = "";
+    this.pendingSignalCount = 0;
+    this.pendingSignalSince = 0;
+    this.pendingSignalVersion = 0;
 
     this.patch({
       status: "RUNNING",
       message:
-        "Analysis Assisted scanning. It will enter immediately when a contract-aware setup is approved.",
+        "V11 is scanning. It waits for historical agreement, entry timing, and fresh confirmations before buying.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       lastBlockReason: "",
@@ -518,6 +757,14 @@ export default class DerivBotEngine {
       activeContractId: "",
       history: [],
     };
+
+    this.pendingSetupKey = "";
+    this.pendingSignalCount = 0;
+    this.pendingSignalSince = 0;
+    this.pendingSignalVersion = 0;
+    this.blockedSetups.clear();
+    this.lastTradeAt = 0;
+    this.lastLossSetup = "";
 
     this.onState(this.snapshot());
   }
@@ -610,6 +857,8 @@ export default class DerivBotEngine {
       martingaleStep: 0,
       currentStake: this.settings.stake,
       activeSetup: "—",
+      signalConfirmations: 0,
+      lastBlockReason: "",
     });
   }
 
@@ -641,6 +890,9 @@ export default class DerivBotEngine {
           activeSetup: "—",
           scanElapsedSeconds: number(check.elapsedSeconds),
           lastBlockReason: check.reason,
+          signalConfirmations: number(check.confirmations),
+          requiredConfirmations: this.settings.confirmationCount,
+          blockedSetupUntil: number(check.blockedSetupUntil),
         });
 
         await sleep(1000);
@@ -739,15 +991,28 @@ export default class DerivBotEngine {
 
   async executeTrade(check) {
     const stake = Number(this.state.currentStake.toFixed(2));
+    const digitContract = isDigitContract(check.contract);
+
+    // AUTO digit analysis/backtesting validates the next digit, so V11 uses
+    // one tick for AUTO digit contracts. Rise/Fall keeps the configured time.
+    const tradeDuration =
+      this.settings.contractMode === "AUTO" && digitContract
+        ? 1
+        : this.settings.duration;
+    const tradeDurationUnit = digitContract
+      ? "t"
+      : this.settings.durationUnit;
 
     this.patch({
       status: "BUYING",
       message:
-        `Analysis Assisted approved ${check.contract.label} for ${durationText(
-          this.settings.duration,
-          this.settings.durationUnit
+        `V11 confirmed ${check.contract.label} for ${durationText(
+          tradeDuration,
+          tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · ANALYSIS ASSISTED`,
+      activeSetup: `${check.contract.label} · V11 CONFIRMED`,
+      signalConfirmations: this.settings.confirmationCount,
+      lastBlockReason: "",
     });
 
     const bought = await this.client.buyContract({
@@ -757,8 +1022,8 @@ export default class DerivBotEngine {
       amount: stake,
       basis: "stake",
       currency: this.currency,
-      duration: this.settings.duration,
-      durationUnit: this.settings.durationUnit,
+      duration: tradeDuration,
+      durationUnit: tradeDurationUnit,
     });
 
     if (!bought.contractId) {
@@ -775,8 +1040,8 @@ export default class DerivBotEngine {
 
     const settled = await this.waitForContract(
       this.activeContractId,
-      this.settings.duration,
-      this.settings.durationUnit
+      tradeDuration,
+      tradeDurationUnit
     );
     const profit = contractProfit(settled);
     const details = contractDetails(settled, bought);
@@ -818,9 +1083,23 @@ export default class DerivBotEngine {
         );
     }
 
+    const setup = normalizeSetup(check.contract.label);
+    const setupKey = `${this.symbol}:${setup}`;
+    const now = Date.now();
+    let blockedSetupUntil = 0;
+    let lossProtectionCount = this.state.lossProtectionCount;
+
+    if (!won) {
+      blockedSetupUntil =
+        now + this.settings.lossSetupBlockSeconds * 1000;
+      this.blockedSetups.set(setupKey, blockedSetupUntil);
+      this.lastLossSetup = setup;
+      lossProtectionCount += 1;
+    }
+
     this.addHistory({
       id: this.activeContractId,
-      time: Date.now(),
+      time: now,
       setup: check.contract.label,
       result: won ? "WIN" : "LOSS",
       profit,
@@ -830,8 +1109,8 @@ export default class DerivBotEngine {
       sellPrice: details.sellPrice,
       entrySpot: details.entrySpot,
       exitSpot: details.exitSpot,
-      duration: this.settings.duration,
-      durationUnit: this.settings.durationUnit,
+      duration: tradeDuration,
+      durationUnit: tradeDurationUnit,
       prediction: check.contract.barrier ?? null,
       symbol: this.symbol,
       contractId: this.activeContractId,
@@ -843,16 +1122,27 @@ export default class DerivBotEngine {
       entryStage: String(check.timing.state || "—"),
       votes: number(check.decision.passedCount),
       martingaleStep: this.state.martingaleStep,
-      executionMode: check.mode || "BALANCED",
+      executionMode: check.mode || "V11_CONSERVATIVE",
+      historicalHitRate: number(check.decision.historicalHitRate),
+      historicalLowerBound: number(check.decision.historicalLowerBound),
     });
 
     this.activeContractId = "";
+    this.lastTradeAt = now;
+    this.pendingSetupKey = "";
+    this.pendingSignalCount = 0;
+    this.pendingSignalSince = 0;
+    this.pendingSignalVersion = 0;
 
     this.patch({
       status: won ? "WON" : "LOST",
       message: `${won ? "Won" : "Lost"} ${profit.toFixed(2)} ${
         this.currency
-      }. Run ${runs}/${this.settings.maxRuns}.`,
+      }. Run ${runs}/${this.settings.maxRuns}.${
+        won
+          ? " Waiting for a new confirmed setup."
+          : ` ${setup} is now blocked on this market.`
+      }`,
       runs,
       wins,
       losses,
@@ -870,6 +1160,14 @@ export default class DerivBotEngine {
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       fallbackTrades: this.state.fallbackTrades,
+      signalConfirmations: 0,
+      requiredConfirmations: this.settings.confirmationCount,
+      blockedSetupUntil,
+      lastLossSetup: this.lastLossSetup || "—",
+      lossProtectionCount,
+      lastBlockReason: won
+        ? ""
+        : `Loss protection: ${setup} blocked on ${this.symbol}.`,
     });
 
     const finalStop = this.riskStopReason();
@@ -889,7 +1187,7 @@ export default class DerivBotEngine {
       this.patch({
         status: "RISK_COOLDOWN",
         message:
-          `Risk cooldown triggered after ${consecutiveLosses} consecutive losses.`,
+          `Loss protection active. Cooling down for ${this.settings.cooldownSeconds}s and blocking ${setup} on this market.`,
         cooldownUntil,
       });
     }

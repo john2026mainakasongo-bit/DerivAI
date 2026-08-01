@@ -27,22 +27,27 @@ const INITIAL_SETTINGS = {
   maxRuns: 56,
   stake: 1,
   duration: 5,
-  minConfidence: 75,
+  minConfidence: 84,
   minVotes: 1,
   takeProfit: 20,
-  stopLoss: 10,
-  cooldownAfterLosses: 3,
-  cooldownSeconds: 60,
-  hardStopLossStreak: 6,
-  delaySeconds: 3,
+  stopLoss: 6,
+  cooldownAfterLosses: 1,
+  cooldownSeconds: 45,
+  hardStopLossStreak: 3,
+  delaySeconds: 8,
   martingaleEnabled: false,
-  maxMartingaleSteps: 3,
+  maxMartingaleSteps: 1,
   analysisAssisted: true,
   contractMode: "AUTO",
   prediction: 2,
   durationUnit: "t",
   autoSwitchVolatility: true,
   marketScanSeconds: 20,
+  confirmationCount: 3,
+  confirmationSeconds: 2,
+  signalMaxAgeSeconds: 7,
+  lossSetupBlockSeconds: 120,
+  minimumTradeGapSeconds: 8,
 };
 
 const INITIAL_BOT_STATE = {
@@ -71,6 +76,11 @@ const INITIAL_BOT_STATE = {
   scanElapsedSeconds: 0,
   lastBlockReason: "",
   fallbackTrades: 0,
+  signalConfirmations: 0,
+  requiredConfirmations: 3,
+  blockedSetupUntil: 0,
+  lastLossSetup: "—",
+  lossProtectionCount: 0,
   history: [],
 };
 
@@ -339,14 +349,21 @@ export default function Bot() {
 
   useEffect(() => {
     engineRef.current?.updateSignal({
+      symbol,
+      updatedAt: Date.now(),
       professionalDecision,
       entryTiming,
+      validatedSignals,
       analysis,
+      snapshot,
     });
   }, [
+    symbol,
     professionalDecision,
     entryTiming,
+    validatedSignals,
     analysis,
+    snapshot,
   ]);
 
 
@@ -409,7 +426,16 @@ export default function Bot() {
         remaining,
       }));
 
-      if (analysisGate.approved || remaining > 0) {
+      const engineNeedsAnotherMarket =
+        botState.status === "WAITING" &&
+        /loss protection|historical validation|professional confirmation|market changed|stale/i.test(
+          String(botState.lastBlockReason || "")
+        );
+
+      if (
+        remaining > 0 ||
+        (analysisGate.approved && !engineNeedsAnotherMarket)
+      ) {
         return;
       }
 
@@ -454,6 +480,7 @@ export default function Bot() {
     markets,
     symbol,
     analysisGate.approved,
+    botState.lastBlockReason,
     changeSymbol,
   ]);
   const winRate =
@@ -592,8 +619,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V10 Flex + Market Switch"
-          subtitle="Ticks or seconds, any digit barrier, and automatic Volatility market scanning"
+          title="56-Run Auto Bot V11 Safer + Market Switch"
+          subtitle="Conservative confirmations, loss protection, and automatic Volatility market scanning"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -666,7 +693,7 @@ export default function Bot() {
                   disabled={running || paused}
                   onChange={updateContractMode}
                 >
-                  <option value="AUTO">Auto best contract / digit</option>
+                  <option value="AUTO">Auto SAFE — validated contract only</option>
                   <option value="RISE">Rise</option>
                   <option value="FALL">Fall</option>
                   <option value="EVEN">Even</option>
@@ -741,7 +768,7 @@ export default function Bot() {
               <Field label="Minimum confidence">
                 <input
                   type="number"
-                  min="60"
+                  min="70"
                   max="95"
                   value={settings.minConfidence}
                   disabled={running || paused}
@@ -836,9 +863,9 @@ export default function Bot() {
 
               <div className="botRecoverySchedule">
                 <span>Smart recovery schedule</span>
-                <strong>Step 1 ×1.7 · Step 2 ×2.2 · Step 3 ×2.8</strong>
+                <strong>Step 1 ×1.35 only</strong>
                 <small>
-                  Optional and capped. A win resets the stake to base.
+                  Safer cap. It remains OFF by default and a win resets to base.
                 </small>
               </div>
 
@@ -846,7 +873,7 @@ export default function Bot() {
                 <input
                   type="number"
                   min="0"
-                  max="3"
+                  max="1"
                   value={settings.maxMartingaleSteps}
                   disabled={
                     running ||
@@ -906,15 +933,15 @@ export default function Bot() {
               </Field>
 
               <div className="botTimedFallbackInfo">
-                <strong>V10 FLEXIBLE CONTRACT ENGINE</strong>
+                <strong>V11 CONSERVATIVE CONTRACT ENGINE</strong>
                 <span>
-                  AUTO scans Rise/Fall, Even/Odd, all valid Over/Under
-                  barriers, and every Match/Differs digit.
+                  AUTO SAFE uses only the best walk-forward validated setup:
+                  Rise/Fall, Even/Odd or Over 2. Other barriers and digits remain manual.
                 </span>
                 <small>
-                  If no good entry appears, market switching moves to the
-                  next Volatility index. Digit contracts use ticks; seconds
-                  mode scans Rise/Fall.
+                  It requires 3 fresh confirmations, uses 1 tick for AUTO digit trades,
+                  blocks a losing setup for 120 seconds, and can switch markets instead
+                  of repeating the same loss.
                 </small>
               </div>
             </div>
@@ -949,7 +976,11 @@ export default function Bot() {
               <div>
                 <small>ENTRY</small>
                 <strong>
-                  {analysisGate.approved ? "ENTER" : "WAIT"}
+                  {analysisGate.approved
+                    ? botState.status === "WAITING" && botState.lastBlockReason
+                      ? "CONFIRM"
+                      : "READY"
+                    : "WAIT"}
                 </strong>
               </div>
             </div>
@@ -957,13 +988,15 @@ export default function Bot() {
             <div className="botStrictGate">
               <strong>
                 {analysisGate.approved
-                  ? `GOOD ENTRY: ${analysisGate.setup}`
-                  : "SCANNING FOR GOOD ENTRY"}
+                  ? botState.status === "WAITING" && botState.lastBlockReason
+                    ? `PROTECTING / CONFIRMING: ${analysisGate.setup}`
+                    : `VALIDATED ENTRY: ${analysisGate.setup}`
+                  : "SCANNING FOR STABLE ENTRY"}
               </strong>
               <span>
                 {market?.label || symbol} · {settings.duration}{" "}
                 {settings.durationUnit === "s" ? "seconds" : "ticks"} ·{" "}
-                {analysisGate.reason}
+                {botState.lastBlockReason || analysisGate.reason}
               </span>
             </div>
 
@@ -1132,8 +1165,8 @@ export default function Bot() {
             </div>
 
             <div className="botSafetyNote">
-              Demo research tool only. Auto market switching searches more markets,
-              but it cannot guarantee a winning entry or remove trading risk.
+              Demo research tool only. V11 reduces repeated and weak entries, but no
+              bot can guarantee wins or remove Deriv contract risk.
             </div>
           </article>
 
@@ -1193,7 +1226,21 @@ export default function Bot() {
               />
               <Metric
                 label="Gate"
-                value={analysisGate.approved ? "ENTER" : "WAIT"}
+                value={analysisGate.approved ? "READY" : "WAIT"}
+              />
+              <Metric
+                label="Fresh confirmations"
+                value={`${botState.signalConfirmations || 0}/${
+                  botState.requiredConfirmations || settings.confirmationCount || 3
+                }`}
+              />
+              <Metric
+                label="Loss protection"
+                value={
+                  botState.blockedSetupUntil > Date.now()
+                    ? `${botState.lastLossSetup || "SETUP"} BLOCKED`
+                    : `${botState.lossProtectionCount || 0} used`
+                }
               />
               <Metric
                 label="Contract control"
@@ -1294,7 +1341,7 @@ export default function Bot() {
                         {Number(item.martingaleStep || 0)}
                       </small>
                       <small>
-                        Mode {item.executionMode || "V10_FLEX"} ·
+                        Mode {item.executionMode || "V11_CONSERVATIVE"} ·
                         Confidence {Number(item.confidence || 0).toFixed(1)}% ·{" "}
                         Entry {item.entryStage || "ENTER"}
                       </small>
