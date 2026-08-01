@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V32 · Sticky Candidate Lock + Real Strict"
+          title="EdgePilot V33 · Hard-Lock Execution + Real Strict"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>STICKY CANDIDATE LOCK · REAL STRICT</small>
+                <small>HARD-LOCK EXECUTION · REAL STRICT</small>
                 <strong>
-                  LOCK PERSISTS → TICKS CONFIRM → PROPOSAL → BUY
+                  LOCK ONE CONTRACT → SIGNAL CONFIRM → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              A valid candidate now remains locked while fresh ticks confirm it. Small score or ranking changes no longer reset confirmation to zero on every tick. The lock is released only when the setup weakens materially. Real remains stricter, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              V33 freezes one qualifying contract and ignores all competing candidates until it executes or materially collapses. Confirmation uses fresh signal versions, so missing or repeated tickKey values cannot keep it at 0/1. Demo uses one confirmation; Real uses two. Real still caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1456,6 +1456,10 @@ export default function Bot() {
                       : "DEEP READY"
                     : "WAIT"
                 }
+              />
+              <Metric
+                label="Signal version"
+                value={`${botState.signalVersion || 0} / lock ${botState.lockedSignalVersion || 0}`}
               />
               <Metric
                 label="Fresh confirmations"
