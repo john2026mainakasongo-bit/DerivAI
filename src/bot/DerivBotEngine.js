@@ -481,6 +481,90 @@ export default class DerivBotEngine {
     });
 
     /*
+     * V19_2_DEMO_EXECUTION_BRIDGE
+     *
+     * Demo-only fallback. The dashboard was finding strong candidates while
+     * the strict execution gate stayed WAIT because entropy/regime filters
+     * rejected every setup. After a short scan period, this bridge permits
+     * the best non-random candidate to enter on DEMO only.
+     *
+     * Real accounts are never allowed through this fallback.
+     */
+    const isDemoExecution =
+      this.demoOnly === true ||
+      this.isDemo === true ||
+      this.accountType === "demo" ||
+      String(this.accountType || "").toLowerCase().includes("demo");
+
+    const scanAgeMs = Date.now() - number(this.startedAt, Date.now());
+    const demoFallbackReady = scanAgeMs >= 20000;
+
+    if (
+      !gate.approved &&
+      isDemoExecution &&
+      demoFallbackReady &&
+      this.settings.contractMode === "AUTO"
+    ) {
+      const candidates = Array.isArray(gate.candidates)
+        ? gate.candidates.filter(Boolean)
+        : [];
+
+      const ranked = candidates
+        .filter((candidate) => {
+          const setup = String(candidate.setup || "").toUpperCase();
+          return setup && !setup.includes("WAIT") && !setup.includes("RANDOM");
+        })
+        .sort(
+          (a, b) =>
+            number(b.confidence) - number(a.confidence) ||
+            number(b.probability) - number(a.probability) ||
+            number(b.edge) - number(a.edge)
+        );
+
+      const best = ranked[0];
+
+      if (best) {
+        const confidence = number(best.confidence);
+        const probability = number(best.probability);
+        const edge = number(best.edge);
+        const family = String(best.family || "").toUpperCase();
+        const setup = String(best.setup || "").toUpperCase();
+
+        const usableDigit =
+          family === "PARITY" ||
+          family === "OVER_UNDER" ||
+          family === "MATCH_DIFFERS";
+
+        const usableRiseFall = family === "RISE_FALL";
+
+        const demoQuality =
+          confidence >= 62 ||
+          probability >= 58 ||
+          edge >= 2.5;
+
+        if ((usableDigit || usableRiseFall) && demoQuality) {
+          gate = {
+            ...gate,
+            approved: true,
+            setup: best.setup,
+            confidence: Math.max(confidence, probability),
+            prediction:
+              best.prediction ?? gate.prediction ?? this.settings.prediction,
+            selectedProbability: probability,
+            baselineProbability: number(best.baseline),
+            edge,
+            reason:
+              `DEMO FAST ENTRY · ${best.setup} · confidence ${confidence.toFixed(
+                1
+              )}% · probability ${probability.toFixed(1)}%`,
+            executionLane: "V19_2_DEMO_FAST_ENTRY",
+            requiredConfirmations: 1,
+          };
+        }
+      }
+    }
+
+    /*
      * V19_1_EXECUTION_SYNC
      *
      * The deep dashboard and the execution gate were using different
