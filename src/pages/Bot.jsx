@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V26 · Demo Execution Gate Fix + Real Strict"
+          title="EdgePilot V27 · Demo Smoke Test + Real Locked Strict"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>DEMO EXECUTION FIXED · REAL STRICT</small>
+                <small>DEMO SMOKE TEST · REAL LOCKED STRICT</small>
                 <strong>
-                  DEMO: HIGH-PROBABILITY 3-VOTE PATH · REAL: STRICT GATE
+                  DEMO: 70% + 2 VOTES + 1 CONFIRM · REAL: STRICT GATE
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              Demo can now execute high-probability non-MATCH candidates after three engine votes and two fresh confirmations. The engine-vote state is also displayed correctly. Real remains strict, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              Demo smoke test executes non-MATCH candidates after 24 samples, 70% probability, two engine votes and one fresh confirmation. This verifies proposal, buy, settlement and history. Real remains strict, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1389,7 +1389,7 @@ export default function Bot() {
                 label="Gate mode"
                 value={
                   botState.gate?.demoOperationalPass
-                    ? "DEMO OPERATIONAL"
+                    ? "DEMO SMOKE TEST"
                     : isDemo
                       ? "DEMO SCORED"
                       : "REAL STRICT"

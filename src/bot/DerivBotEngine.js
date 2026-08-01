@@ -708,7 +708,19 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
           ? (isReal ? 91 : 70)
           : (isReal ? 90 : 68);
 
-  const finalScore = clampScore(score);
+  let finalScore = clampScore(score);
+
+  const demoOperationalPass =
+    !isReal &&
+    !setup.startsWith("MATCH") &&
+    samples >= 24 &&
+    confidence >= 60 &&
+    probability >= 70 &&
+    passedVotes >= 2;
+
+  if (demoOperationalPass && finalScore < 72) {
+    finalScore = 72;
+  }
 
   let confirmations = 4;
 
@@ -720,27 +732,27 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     } else {
       confirmations = 5;
     }
+  } else if (demoOperationalPass) {
+    confirmations = 1;
   } else {
     confirmations = 2;
   }
 
   return {
-    ok:
-      (
-        finalScore >= threshold &&
-        passedVotes >= requiredVotes &&
-        samples >= (isReal
-          ? profile.minimumSamples
-          : Math.min(profile.minimumSamples, 20))
-      ) ||
-      (
-        !isReal &&
-        !setup.startsWith("MATCH") &&
-        samples >= 30 &&
-        confidence >= 65 &&
-        probability >= 78 &&
-        passedVotes >= 3
-      ),
+    ok: isReal
+      ? (
+          finalScore >= threshold &&
+          passedVotes >= requiredVotes &&
+          samples >= profile.minimumSamples
+        )
+      : (
+          (
+            finalScore >= threshold &&
+            passedVotes >= requiredVotes &&
+            samples >= Math.min(profile.minimumSamples, 20)
+          ) ||
+          demoOperationalPass
+        ),
     setup,
     family: candidateFamily(candidate),
     score: finalScore,
@@ -1413,7 +1425,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V26 fixes gate-state propagation and adds a practical Demo execution path for high-probability non-MATCH candidates. Real execution remains strict and unchanged.",
+        "V27 fixes the missing Demo gate variable and adds a Demo-only smoke-test path. Real execution remains strict and unchanged.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1801,11 +1813,11 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V26 execution gate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V27 demo smoke-test confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V26 CONSENSUS CONFIRMED`,
+      activeSetup: `${check.contract.label} · V27 DEMO CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
