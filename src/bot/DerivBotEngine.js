@@ -660,120 +660,123 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     requiredVotes,
     votes,
     randomRegime,
+    directionalAgreement,
   } = consensus;
 
-  let score = 0;
+  const family = candidateFamily(candidate);
 
-  score += Math.min(24, confidence * 0.24);
+  // Each contract is scored independently. Votes are evidence, not a rigid
+  // requirement that unrelated contract families must all agree.
+  const confidenceScore = clampScore(confidence);
+  const probabilityScore = setup.startsWith("MATCH")
+    ? clampScore(probability * 5)
+    : setup.startsWith("DIFFERS")
+      ? clampScore((10 - probability) * 10)
+      : clampScore(probability);
+
+  const transitionScore = clampScore((transitionCount / 15) * 100);
+  const cycleScore = clampScore(cycleStrength);
+  const momentumScore = clampScore(momentumStrength);
+  const autocorrelationScore = clampScore(autocorrelation);
+  const regimeScore = clampScore(regimeStrength);
+  const sampleScore = clampScore((samples / Math.max(60, profile.minimumSamples)) * 100);
+  const edgeScore = clampScore(edge * 10);
+
+  // Entropy is converted to a soft quality value. It no longer blocks a
+  // strong digit candidate on its own.
+  const entropyScore = clampScore(
+    100 - Math.max(0, entropy - 94) * 12
+  );
+
+  let weightedScore =
+    confidenceScore * 0.28 +
+    probabilityScore * 0.28 +
+    transitionScore * 0.13 +
+    edgeScore * 0.08 +
+    sampleScore * 0.07 +
+    entropyScore * 0.06 +
+    autocorrelationScore * 0.04 +
+    cycleScore * 0.03 +
+    regimeScore * 0.03;
+
+  if (setup === "RISE" || setup === "FALL") {
+    // Direction contracts rely more on momentum/regime and less on digit
+    // probability. They remain isolated from parity/over-under scoring.
+    weightedScore =
+      confidenceScore * 0.24 +
+      probabilityScore * 0.18 +
+      momentumScore * 0.20 +
+      regimeScore * 0.13 +
+      transitionScore * 0.10 +
+      cycleScore * 0.06 +
+      sampleScore * 0.05 +
+      entropyScore * 0.04;
+
+    if (!directionalAgreement) weightedScore -= 18;
+    if (randomRegime) weightedScore -= 12;
+  }
 
   if (setup.startsWith("MATCH")) {
-    score += Math.min(24, probability * 1.3);
-  } else if (setup.startsWith("DIFFERS")) {
-    score += Math.min(24, Math.max(0, 10 - probability) * 2.4);
-  } else {
-    score += Math.min(24, probability * 0.24);
-  }
-
-  score += Math.min(14, edge * 1.4);
-  score += Math.min(10, transitionCount * 0.7);
-  score += Math.min(7, cycleStrength * 0.07);
-  score += Math.min(7, momentumStrength * 0.07);
-  score += Math.min(5, autocorrelation * 0.05);
-  score += Math.min(5, regimeStrength * 0.05);
-  score += Math.min(8, passedVotes * 0.8);
-  score += Math.min(6, strongVotes * 0.75);
-  score += profile.scoreAdjustment;
-
-  if (entropy > profile.entropyTolerance) {
-    const excess = entropy - profile.entropyTolerance;
-    score -= Math.min(8, excess * 3);
-  } else {
-    score += 2;
-  }
-
-  if (randomRegime && (setup === "RISE" || setup === "FALL")) {
-    score -= 14;
+    weightedScore -= entropy >= 98.5 ? 10 : 0;
   }
 
   if (!candidate.approved && isReal) {
-    score -= 4;
+    weightedScore -= 5;
   }
 
-  const threshold =
-    setup.startsWith("MATCH")
-      ? (isReal ? 95 : 93)
-      : setup.startsWith("DIFFERS")
-        ? (isReal ? 92 : 89)
-        : setup === "RISE" || setup === "FALL"
-          ? (isReal ? 91 : 90)
-          : (isReal ? 90 : 88);
+  const score = clampScore(weightedScore);
 
-  let finalScore = clampScore(score);
+  const threshold = isReal
+    ? setup.startsWith("MATCH")
+      ? 96
+      : setup === "RISE" || setup === "FALL"
+        ? 94
+        : 93
+    : setup.startsWith("MATCH")
+      ? 93
+      : setup === "RISE" || setup === "FALL"
+        ? 90
+        : 86;
 
-  const demoOperationalPass =
-    !isReal &&
-    !setup.startsWith("MATCH") &&
-    samples >= 60 &&
-    confidence >= 80 &&
-    probability >= 85 &&
-    passedVotes >= 4 &&
-    strongVotes >= 2 &&
-    (
-      entropy <= 98.5 ||
-      (
-        probability >= 92 &&
-        transitionCount >= 10 &&
-        passedVotes >= 5
-      )
-    ) &&
-    (
-      setup !== "RISE" && setup !== "FALL" ||
-      (
+  const minimumSamples = isReal
+    ? Math.max(profile.minimumSamples, setup.startsWith("MATCH") ? 70 : 55)
+    : setup.startsWith("MATCH")
+      ? 60
+      : setup === "RISE" || setup === "FALL"
+        ? 45
+        : 36;
+
+  const familySafetyPass =
+    setup === "RISE" || setup === "FALL"
+      ? directionalAgreement &&
         !randomRegime &&
-        consensus.directionalAgreement &&
-        momentumStrength >= 65 &&
-        regimeStrength >= 55
-      )
-    );
+        momentumStrength >= (isReal ? 70 : 60) &&
+        regimeStrength >= (isReal ? 60 : 45)
+      : true;
 
-  if (demoOperationalPass && finalScore < 88) {
-    finalScore = 88;
-  }
+  const voteAdvisoryPass = isReal
+    ? passedVotes >= Math.max(4, requiredVotes - 1)
+    : passedVotes >= 2;
 
-  let confirmations = 4;
+  const ok =
+    score >= threshold &&
+    samples >= minimumSamples &&
+    familySafetyPass &&
+    voteAdvisoryPass;
+
+  let confirmations;
 
   if (isReal) {
-    if (finalScore >= 96 && strongVotes >= 5) {
-      confirmations = 3;
-    } else if (finalScore >= 92) {
-      confirmations = 4;
-    } else {
-      confirmations = 5;
-    }
-  } else if (demoOperationalPass) {
-    confirmations = 2;
+    confirmations = score >= 97 ? 3 : score >= 95 ? 4 : 5;
   } else {
-    confirmations = 3;
+    confirmations = score >= 92 ? 1 : score >= 88 ? 2 : 3;
   }
 
   return {
-    ok: isReal
-      ? (
-          finalScore >= threshold &&
-          passedVotes >= requiredVotes &&
-          samples >= profile.minimumSamples
-        )
-      : (
-          (
-            finalScore >= threshold &&
-            passedVotes >= requiredVotes &&
-            samples >= Math.min(profile.minimumSamples, 20)
-          ) ||
-          demoOperationalPass
-        ),
+    ok,
     setup,
-    family: candidateFamily(candidate),
-    score: finalScore,
+    family,
+    score,
     threshold,
     confirmations,
     confidence,
@@ -791,10 +794,19 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     requiredVotes,
     votes,
     marketProfile: profile.name,
-    demoOperationalPass,
+    independentContractScore: true,
+    scoreBreakdown: {
+      confidence: confidenceScore,
+      probability: probabilityScore,
+      transitions: transitionScore,
+      momentum: momentumScore,
+      entropy: entropyScore,
+      samples: sampleScore,
+      regime: regimeScore,
+      edge: edgeScore,
+    },
   };
 }
-
 function candidatePassesStrictChecks(candidate = {}, signal = {}, isReal = false) {
   const analysis = signal.analysis || {};
   const requirements = minimumRequirements(candidate, isReal);
@@ -1301,8 +1313,8 @@ export default class DerivBotEngine {
         Number(b.edge) - Number(a.edge)
     );
 
-    // Always prefer a candidate that has actually passed its quality gate.
-    // Failed candidates remain WAIT regardless of scan duration.
+    // Every contract family is ranked independently. Execute the highest
+    // scoring candidate that passed its own family-specific safety rules.
     const selected = ranked.find((candidate) => candidate.ok) || ranked[0];
 
     if (!selected || !selected.ok) {
@@ -1318,7 +1330,7 @@ export default class DerivBotEngine {
       return {
         ok: false,
         reason:
-          `${bestText} Waiting for 4+ agreeing engines, 80%+ confidence, 85%+ probability, 60+ samples and fresh confirmation. No forced entry.`,
+          `${bestText} Each contract is ranked independently. Waiting for the top contract to cross its weighted threshold and fresh confirmation. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
         gate: {
@@ -1330,7 +1342,8 @@ export default class DerivBotEngine {
           requiredEngineVotes: selected?.requiredVotes || 0,
           strongEngineVotes: selected?.strongVotes || 0,
           marketProfile: selected?.marketProfile || marketProfile(this.symbol).name,
-          demoOperationalPass: Boolean(selected?.demoOperationalPass),
+          independentContractScore: Boolean(selected?.independentContractScore),
+          scoreBreakdown: selected?.scoreBreakdown || null,
         },
       };
     }
@@ -1355,7 +1368,7 @@ export default class DerivBotEngine {
         ok: false,
         reason:
           `${setup} scored ${selected.score.toFixed(1)}/${selected.threshold}. ` +
-          `Votes ${selected.passedVotes}/${selected.requiredVotes}; strong ${selected.strongVotes}. ` +
+          `Independent rank ${selected.score.toFixed(1)}/${selected.threshold}; advisory votes ${selected.passedVotes}. ` +
           `Confirming ${this.strictConfirmations}/${selected.confirmations} fresh ticks. ` +
           `Samples ${selected.samples}; probability ${selected.probability.toFixed(1)}%.`,
         elapsedSeconds,
@@ -1369,7 +1382,8 @@ export default class DerivBotEngine {
           requiredEngineVotes: selected.requiredVotes,
           strongEngineVotes: selected.strongVotes,
           marketProfile: selected.marketProfile,
-        demoOperationalPass: Boolean(selected.demoOperationalPass),
+        independentContractScore: Boolean(selected.independentContractScore),
+        scoreBreakdown: selected.scoreBreakdown || null,
           demoOperationalPass: Boolean(selected.demoOperationalPass),
         },
       };
@@ -1445,7 +1459,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V29 removes permissive long-scan entries and applies a high-quality signal filter. Demo and Real both wait for stronger multi-engine alignment; Real remains the strictest mode.",
+        "V30 ranks OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL independently using weighted evidence. Unrelated contract engines no longer block the strongest valid setup. Real remains stricter than Demo.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1833,11 +1847,11 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V29 high-quality signal confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V30 independent contract rank confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V29 QUALITY ENTRY CONFIRMED`,
+      activeSetup: `${check.contract.label} · V30 TOP CONTRACT CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

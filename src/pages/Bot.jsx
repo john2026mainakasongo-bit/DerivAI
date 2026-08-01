@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V29 · High-Quality Signal Filter + Real Strict"
+          title="EdgePilot V30 · Independent Contract Ranker + Real Strict"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>HIGH-QUALITY FILTER · REAL LOCKED STRICT</small>
+                <small>INDEPENDENT CONTRACT RANKER · REAL STRICT</small>
                 <strong>
-                  DEMO: 85%+ PROB · 4 VOTES · 60 SAMPLES · REAL STRICTER
+                  TOP CONTRACT SCORE · FAMILY-SPECIFIC SAFETY · FRESH CONFIRMATION
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              Demo no longer enters because it has waited for many ticks. It now requires 60+ samples, 80%+ confidence, 85%+ probability, at least four agreeing engines, two strong votes and two fresh confirmations. RISE/FALL additionally requires aligned momentum and a non-random regime. Real remains stricter, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL are now scored independently. The strongest contract can enter after crossing its own weighted threshold and fresh confirmation; an unrelated RISE/FALL or digit engine can no longer block it. Real remains stricter, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1388,10 +1388,12 @@ export default function Bot() {
               <Metric
                 label="Gate mode"
                 value={
-                  botState.gate?.demoOperationalPass
-                    ? "DEMO QUALITY FILTER"
+                  botState.gate?.independentContractScore
+                    ? isDemo
+                      ? "DEMO TOP-RANKED"
+                      : "REAL TOP-RANKED"
                     : isDemo
-                      ? "DEMO SCORED"
+                      ? "DEMO WAIT"
                       : "REAL STRICT"
                 }
               />
@@ -1406,6 +1408,14 @@ export default function Bot() {
               <Metric
                 label="Market profile"
                 value={botState.gate?.marketProfile || symbol}
+              />
+              <Metric
+                label="Top contract"
+                value={
+                  botState.gate?.scoredCandidates?.[0]?.setup ||
+                  botState.activeSetup ||
+                  "WAIT"
+                }
               />
               <Metric
                 label="Execution score"
