@@ -21,7 +21,11 @@ const DEFAULTS = {
   contractMode: "AUTO",
   prediction: 2,
   durationUnit: "t",
-  confirmationCount: 1,
+  confirmationCount: 3,
+  realConfirmationCount: 4,
+  minimumDigitSamples: 140,
+  minimumRiseFallSamples: 100,
+  realStakeCap: 1,
   confirmationSeconds: 1,
   signalMaxAgeSeconds: 6,
   lossSetupBlockSeconds: 90,
@@ -215,6 +219,192 @@ function isDigitContract(contract = {}) {
   return String(contract?.contractType || "").startsWith("DIGIT");
 }
 
+
+function safeUpper(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function analysisSampleSize(signal = {}, analysis = {}) {
+  const candidates = [
+    signal.sampleSize,
+    signal.priceCount,
+    analysis.sampleSize,
+    analysis.samples,
+    analysis.tickCount,
+    analysis.dataQuality?.samples,
+    analysis.distributionSampleSize,
+  ]
+    .map(Number)
+    .filter(Number.isFinite);
+
+  return candidates.length ? Math.max(...candidates) : 0;
+}
+
+function candidateFamily(candidate = {}) {
+  return safeUpper(candidate.family || candidate.group || "");
+}
+
+function candidateAction(candidate = {}) {
+  return safeUpper(candidate.action || candidate.setup || "");
+}
+
+function minimumRequirements(candidate = {}, isReal = false) {
+  const setup = candidateAction(candidate);
+  const family = candidateFamily(candidate);
+
+  let confidence = 89;
+  let probability = 0;
+  let samples = 140;
+  let confirmations = isReal ? 4 : 3;
+
+  if (setup.startsWith("MATCH")) {
+    confidence = isReal ? 95 : 93;
+    probability = 15.5;
+    samples = isReal ? 220 : 180;
+    confirmations = isReal ? 5 : 4;
+  } else if (setup.startsWith("DIFFERS")) {
+    confidence = isReal ? 93 : 91;
+    samples = isReal ? 180 : 150;
+    confirmations = isReal ? 4 : 3;
+  } else if (
+    setup.startsWith("OVER") ||
+    setup.startsWith("UNDER") ||
+    family === "OVER_UNDER"
+  ) {
+    confidence = isReal ? 92 : 89;
+    probability = 67;
+    samples = isReal ? 180 : 140;
+  } else if (
+    setup === "EVEN" ||
+    setup === "ODD" ||
+    family === "PARITY"
+  ) {
+    confidence = isReal ? 92 : 90;
+    probability = 56;
+    samples = isReal ? 200 : 160;
+  } else if (
+    setup === "RISE" ||
+    setup === "FALL" ||
+    family === "RISE_FALL"
+  ) {
+    confidence = isReal ? 93 : 90;
+    probability = confidence;
+    samples = isReal ? 140 : 100;
+    confirmations = isReal ? 4 : 3;
+  }
+
+  return { confidence, probability, samples, confirmations };
+}
+
+function candidatePassesStrictChecks(candidate = {}, signal = {}, isReal = false) {
+  const analysis = signal.analysis || {};
+  const requirements = minimumRequirements(candidate, isReal);
+  const setup = candidateAction(candidate);
+  const confidence = Number(candidate.confidence || 0);
+  const probability = Number(candidate.probability || 0);
+  const edge = Number(candidate.edge || 0);
+  const samples = analysisSampleSize(signal, analysis);
+  const entropy = Number(
+    analysis.digitEntropy?.percentage ??
+      analysis.entropy?.percentage ??
+      analysis.entropy ??
+      100
+  );
+  const regime = safeUpper(
+    analysis.regime?.label ||
+      analysis.regime ||
+      analysis.marketRegime ||
+      ""
+  );
+  const momentum = safeUpper(
+    analysis.momentum?.direction ||
+      analysis.direction?.signal?.signal ||
+      analysis.signals?.riseFall?.signal ||
+      ""
+  );
+
+  if (!candidate.approved) {
+    return { ok: false, reason: "Candidate is not approved by the base analysis gate." };
+  }
+
+  if (samples < requirements.samples) {
+    return {
+      ok: false,
+      reason: `Collecting data ${samples}/${requirements.samples} samples.`,
+    };
+  }
+
+  if (confidence < requirements.confidence) {
+    return {
+      ok: false,
+      reason: `Confidence ${confidence.toFixed(1)}%/${requirements.confidence}%.`,
+    };
+  }
+
+  if (setup.startsWith("MATCH")) {
+    if (probability < requirements.probability || entropy >= 97) {
+      return {
+        ok: false,
+        reason: "MATCH blocked: probability or entropy is not strong enough.",
+      };
+    }
+  }
+
+  if (setup.startsWith("DIFFERS")) {
+    if (probability > 6.5 || edge < 3.5) {
+      return {
+        ok: false,
+        reason: "DIFFERS blocked: selected digit is not rare enough.",
+      };
+    }
+  }
+
+  if (setup.startsWith("OVER") || setup.startsWith("UNDER")) {
+    if (probability < requirements.probability || edge < 5) {
+      return {
+        ok: false,
+        reason: "OVER/UNDER blocked: probability edge is too small.",
+      };
+    }
+  }
+
+  if (setup === "EVEN" || setup === "ODD") {
+    if (probability < requirements.probability || edge < 4) {
+      return {
+        ok: false,
+        reason: "EVEN/ODD blocked: parity edge is too small.",
+      };
+    }
+  }
+
+  if (setup === "RISE" || setup === "FALL") {
+    const expected = setup === "RISE" ? ["UP", "RISE"] : ["DOWN", "FALL"];
+    if (!expected.includes(momentum)) {
+      return {
+        ok: false,
+        reason: `RISE/FALL blocked: momentum is ${momentum || "NEUTRAL"}.`,
+      };
+    }
+
+    if (regime.includes("RANDOM") || regime.includes("NO EDGE")) {
+      return {
+        ok: false,
+        reason: "RISE/FALL blocked: market regime has no directional edge.",
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    setup,
+    confidence,
+    probability,
+    edge,
+    samples,
+    requirements,
+  };
+}
+
 export default class DerivBotEngine {
   constructor({ client, onState }) {
     this.client = client;
@@ -242,6 +432,9 @@ export default class DerivBotEngine {
     this.blockedSetups = new Map();
     this.lastTradeAt = 0;
     this.lastLossSetup = "";
+    this.strictSetupKey = "";
+    this.strictConfirmations = 0;
+    this.strictLastTickKey = "";
 
     this.state = {
       status: "IDLE",
@@ -461,6 +654,9 @@ export default class DerivBotEngine {
     this.pendingSignalCount = 0;
     this.pendingSignalSince = 0;
     this.pendingSignalVersion = 0;
+    this.strictSetupKey = "";
+    this.strictConfirmations = 0;
+    this.strictLastTickKey = "";
     this.lastSignalTickKey = "";
     this.scanTickCount = 0;
     this.scanWindow = 1;
@@ -504,6 +700,7 @@ export default class DerivBotEngine {
         ok: false,
         reason: "Waiting for fresh market analysis.",
         elapsedSeconds: 0,
+        confirmations: 0,
       };
     }
 
@@ -516,20 +713,21 @@ export default class DerivBotEngine {
         ok: false,
         reason: "Waiting for analysis from the selected market.",
         elapsedSeconds: 0,
+        confirmations: 0,
       };
     }
-
-    const analysis = signal.analysis || {};
 
     if (this.settings.analysisAssisted === false) {
       return {
         ok: false,
         reason: "Analysis Assisted is disabled.",
         elapsedSeconds: 0,
+        confirmations: 0,
       };
     }
 
-    let gate = evaluateAnalysisAssistedSignal(analysis, {
+    const analysis = signal.analysis || {};
+    const gate = evaluateAnalysisAssistedSignal(analysis, {
       minimumConfidence: this.settings.minConfidence,
       contractMode: this.settings.contractMode,
       prediction: this.settings.prediction,
@@ -546,55 +744,132 @@ export default class DerivBotEngine {
       Math.floor((Date.now() - startedAt) / 1000)
     );
 
+    const candidates = Array.isArray(gate.candidates)
+      ? gate.candidates.filter(Boolean)
+      : [];
 
-    if (!gate.approved && this.scanTickCount >= this.settings.maxScanTicks) {
+    const ranked = candidates
+      .map((candidate) => ({
+        candidate,
+        check: candidatePassesStrictChecks(
+          candidate,
+          signal,
+          !this.isDemoAccount
+        ),
+      }))
+      .filter((item) => item.check.ok)
+      .sort(
+        (a, b) =>
+          Number(b.check.confidence) - Number(a.check.confidence) ||
+          Number(b.check.edge) - Number(a.check.edge) ||
+          Number(b.check.probability) - Number(a.check.probability)
+      );
+
+    const selected =
+      ranked[0] ||
+      (gate.approved
+        ? {
+            candidate: {
+              setup: gate.setup,
+              confidence: gate.confidence,
+              probability: gate.selectedProbability,
+              edge: gate.selectedEdge,
+              approved: true,
+            },
+            check: candidatePassesStrictChecks(
+              {
+                setup: gate.setup,
+                confidence: gate.confidence,
+                probability: gate.selectedProbability,
+                edge: gate.selectedEdge,
+                approved: true,
+              },
+              signal,
+              !this.isDemoAccount
+            ),
+          }
+        : null);
+
+    if (!selected || !selected.check.ok) {
+      this.strictSetupKey = "";
+      this.strictConfirmations = 0;
+
+      const bestReason =
+        selected?.check?.reason ||
+        ranked[0]?.check?.reason ||
+        gate.reason ||
+        "No high-conviction setup yet.";
+
       return {
         ok: false,
-        windowComplete: true,
-        reason: `No validated entry in ${this.settings.maxScanTicks} ticks. Resetting scan window.`,
+        reason: `${bestReason} Data is still being collected.`,
         elapsedSeconds,
+        confirmations: 0,
         gate,
       };
     }
 
-    if (!gate.approved) {
+    const setup = selected.check.setup;
+    const tickKey = String(signal.tickKey || signal.updatedAt || "");
+    const setupKey = `${this.symbol}:${setup}`;
+
+    if (setupKey !== this.strictSetupKey) {
+      this.strictSetupKey = setupKey;
+      this.strictConfirmations = 0;
+      this.strictLastTickKey = "";
+    }
+
+    if (tickKey && tickKey !== this.strictLastTickKey) {
+      this.strictLastTickKey = tickKey;
+      this.strictConfirmations += 1;
+    }
+
+    const requiredConfirmations =
+      selected.check.requirements.confirmations;
+
+    if (this.strictConfirmations < requiredConfirmations) {
       return {
         ok: false,
-        reason: `${gate.reason || "Waiting for a validated setup."} Scan ${this.scanTickCount}/${this.settings.maxScanTicks} ticks.`,
+        reason:
+          `${setup} high-conviction candidate. Confirming ` +
+          `${this.strictConfirmations}/${requiredConfirmations} fresh ticks. ` +
+          `Confidence ${selected.check.confidence.toFixed(1)}%, ` +
+          `samples ${selected.check.samples}.`,
         elapsedSeconds,
+        confirmations: this.strictConfirmations,
         gate,
       };
     }
 
-    const contract = contractFromSetup(gate.setup);
+    const contract = contractFromSetup(setup);
 
     if (!contract) {
       return {
         ok: false,
-        reason: `Unsupported analysis setup: ${gate.setup}.`,
+        reason: `Unsupported strict setup: ${setup}.`,
         elapsedSeconds,
+        confirmations: this.strictConfirmations,
         gate,
       };
     }
 
     return {
       ok: true,
-      mode: gate.executionLane || "STRICT_ANALYSIS",
+      mode: !this.isDemoAccount
+        ? "REAL_HIGH_CONVICTION"
+        : "DEMO_HIGH_CONVICTION",
       decision: {
-        setup: gate.setup,
-        bestContract: gate.setup,
-        confidence: number(gate.confidence),
-        professionalScore: number(gate.confidence),
-        marketQuality: number(gate.selectedProbability),
-        riskLevel:
-          gate.executionLane === "V19_6_DEMO_RUN"
-            ? "DEMO PIPELINE"
-            : "ANALYSIS",
-        passedCount: Array.isArray(gate.candidates)
-          ? gate.candidates.filter((item) => item?.approved).length
-          : 1,
+        setup,
+        bestContract: setup,
+        confidence: selected.check.confidence,
+        professionalScore: selected.check.confidence,
+        marketQuality: selected.check.probability,
+        riskLevel: !this.isDemoAccount ? "REAL STRICT" : "DEMO STRICT",
+        passedCount: ranked.length,
         validated: true,
-        gateReason: gate.reason,
+        gateReason:
+          `Strict consensus passed with ${this.strictConfirmations} fresh confirmations, ` +
+          `${selected.check.samples} samples and ${selected.check.confidence.toFixed(1)}% confidence.`,
       },
       timing: {
         state: "ENTER",
@@ -602,6 +877,7 @@ export default class DerivBotEngine {
       },
       contract,
       elapsedSeconds,
+      confirmations: this.strictConfirmations,
       gate,
     };
   }
@@ -624,7 +900,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V12 Deep Cycle AI is scanning momentum, volatility regimes, entropy, transitions, autocorrelation, observed cycles, walk-forward validation and entry timing.",
+        "V21 High-Conviction AI is matching digit distribution, probability edge, entropy, regime, momentum, transitions and fresh-tick confirmations. It will wait instead of forcing a trade.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -734,11 +1010,25 @@ export default class DerivBotEngine {
     this.blockedSetups.clear();
     this.lastTradeAt = 0;
     this.lastLossSetup = "";
+    this.strictSetupKey = "";
+    this.strictConfirmations = 0;
+    this.strictLastTickKey = "";
 
     this.onState(this.snapshot());
   }
 
   riskStopReason() {
+    if (
+      !this.isDemoAccount &&
+      this.state.lossesSinceWin >= 2
+    ) {
+      return {
+        message:
+          "REAL safety stop: two losses without a recovery win. Review the session before restarting.",
+        status: "STOPPED",
+      };
+    }
+
     if (this.state.runs >= this.settings.maxRuns) {
       return {
         message: `Completed ${this.settings.maxRuns} runs.`,
@@ -986,7 +1276,10 @@ export default class DerivBotEngine {
   }
 
   async executeTrade(check) {
-    const stake = Number(this.state.currentStake.toFixed(2));
+    const configuredStake = Number(this.state.currentStake.toFixed(2));
+    const stake = this.isDemoAccount
+      ? configuredStake
+      : Math.min(configuredStake, Number(this.settings.realStakeCap || 1));
     const digitContract = isDigitContract(check.contract);
 
     // Scan ticks and contract duration are separate.
@@ -1112,6 +1405,7 @@ export default class DerivBotEngine {
 
     if (
       !won &&
+      this.isDemoAccount &&
       this.settings.martingaleEnabled &&
       this.state.martingaleStep < this.settings.maxMartingaleSteps
     ) {

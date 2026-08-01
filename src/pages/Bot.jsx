@@ -374,6 +374,8 @@ export default function Bot() {
     engineRef.current?.updateSignal({
       symbol,
       tickKey: `${symbol}:${prices.length}:${currentPrice}:${lastDigit}`,
+      sampleSize: prices.length,
+      priceCount: prices.length,
       updatedAt: Date.now(),
       professionalDecision,
       entryTiming,
@@ -676,7 +678,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V20 · 56-Tick Entry Scanner + Demo/Real Execution"
+          title="EdgePilot V21 · High-Conviction Multi-Contract AI"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1016,9 +1018,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>ENTRY SCANNER</small>
+                <small>HIGH-CONVICTION GATE</small>
                 <strong>
-                  {botState.scanTicks || 0}/{settings.maxScanTicks} TICKS · WINDOW {botState.scanWindow || 1}
+                  STRICT CONSENSUS · FRESH CONFIRMATIONS
                 </strong>
               </div>
             </div>
@@ -1101,7 +1103,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              The 56-tick setting is a maximum scan window, not the contract duration. No bot can guarantee wins.
+              The AI waits for multi-analysis agreement across OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL. Real mode caps stake at 1 USD, disables martingale and stops after two unrecovered losses. No bot can guarantee wins.
             </div>
           </article>
 
