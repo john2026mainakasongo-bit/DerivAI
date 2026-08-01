@@ -26,7 +26,7 @@ import "../styles/Bot.css";
 
 const INITIAL_SETTINGS = {
   maxRuns: 56,
-  maxScanTicks: 56,
+  maxScanTicks: 36,
   stake: 1,
   duration: 5,
   minConfidence: 75,
@@ -79,7 +79,7 @@ const INITIAL_BOT_STATE = {
   scanStartedAt: 0,
   scanElapsedSeconds: 0,
   scanTicks: 0,
-  maxScanTicks: 56,
+  maxScanTicks: 36,
   scanWindow: 1,
   lastBlockReason: "",
   fallbackTrades: 0,
@@ -210,6 +210,19 @@ export default function Bot() {
 
   const [settings, setSettings] =
     useState(INITIAL_SETTINGS);
+
+  useEffect(() => {
+    setSettings((current) => {
+      const safeTarget = Math.max(
+        24,
+        Math.min(120, Number(current.maxScanTicks || 36))
+      );
+
+      return safeTarget === Number(current.maxScanTicks)
+        ? current
+        : { ...current, maxScanTicks: safeTarget };
+    });
+  }, []);
 
   const [botState, setBotState] =
     useState(INITIAL_BOT_STATE);
@@ -678,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V21 · High-Conviction Multi-Contract AI"
+          title="EdgePilot V22 · Adaptive Consensus Multi-Contract AI"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -741,7 +754,7 @@ export default function Bot() {
                 </select>
               </Field>
 
-              <Field label="Maximum scan ticks">
+              <Field label="Data target (adaptive ticks)">
                 <input
                   type="number"
                   min="1"
@@ -1018,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>HIGH-CONVICTION GATE</small>
+                <small>ADAPTIVE CONSENSUS</small>
                 <strong>
-                  STRICT CONSENSUS · FRESH CONFIRMATIONS
+                  NO FORCED ENTRY · MULTI-ENGINE ALIGNMENT
                 </strong>
               </div>
             </div>
@@ -1103,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              The AI waits for multi-analysis agreement across OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL. Real mode caps stake at 1 USD, disables martingale and stops after two unrecovered losses. No bot can guarantee wins.
+              The AI continuously compares OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL. The data target is not a waiting limit: a strict setup enters immediately when aligned, while weak setups keep collecting data. Real mode caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1373,11 +1386,11 @@ export default function Bot() {
                 value={botState.cooldownCount}
               />
               <Metric
-                label="Scan ticks"
+                label="Data readiness"
                 value={`${botState.scanTicks || 0}/${settings.maxScanTicks}`}
               />
               <Metric
-                label="Scan window"
+                label="Analysis cycle"
                 value={botState.scanWindow || 1}
               />
               <Metric

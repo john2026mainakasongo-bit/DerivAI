@@ -3,7 +3,7 @@ import { evaluateSyntheticSetup } from "../analysis/syntheticIntelligenceEngine"
 
 const DEFAULTS = {
   maxRuns: 56,
-  maxScanTicks: 56,
+  maxScanTicks: 36,
   minConfidence: 75,
   minVotes: 1,
   stake: 1,
@@ -23,13 +23,13 @@ const DEFAULTS = {
   durationUnit: "t",
   confirmationCount: 3,
   realConfirmationCount: 4,
-  minimumDigitSamples: 140,
-  minimumRiseFallSamples: 100,
-  realStakeCap: 1,
+  minimumDigitSamples: 36,
+  minimumRiseFallSamples: 30,
+  realStakeCap: 0.35,
   confirmationSeconds: 1,
-  signalMaxAgeSeconds: 6,
+  signalMaxAgeSeconds: 8,
   lossSetupBlockSeconds: 90,
-  minimumTradeGapSeconds: 5,
+  minimumTradeGapSeconds: 4,
   deepMinimumScore: 70,
   deepOverrideScore: 90,
 };
@@ -252,19 +252,19 @@ function minimumRequirements(candidate = {}, isReal = false) {
   const setup = candidateAction(candidate);
   const family = candidateFamily(candidate);
 
-  let confidence = 89;
+  let confidence = isReal ? 91 : 88;
   let probability = 0;
-  let samples = 140;
+  let samples = isReal ? 45 : 32;
   let confirmations = isReal ? 4 : 3;
 
   if (setup.startsWith("MATCH")) {
-    confidence = isReal ? 95 : 93;
-    probability = 15.5;
-    samples = isReal ? 220 : 180;
+    confidence = isReal ? 96 : 93;
+    probability = isReal ? 16.5 : 15.5;
+    samples = isReal ? 58 : 48;
     confirmations = isReal ? 5 : 4;
   } else if (setup.startsWith("DIFFERS")) {
-    confidence = isReal ? 93 : 91;
-    samples = isReal ? 180 : 150;
+    confidence = isReal ? 93 : 90;
+    samples = isReal ? 48 : 38;
     confirmations = isReal ? 4 : 3;
   } else if (
     setup.startsWith("OVER") ||
@@ -272,24 +272,26 @@ function minimumRequirements(candidate = {}, isReal = false) {
     family === "OVER_UNDER"
   ) {
     confidence = isReal ? 92 : 89;
-    probability = 67;
-    samples = isReal ? 180 : 140;
+    probability = isReal ? 70 : 67;
+    samples = isReal ? 45 : 34;
+    confirmations = isReal ? 4 : 3;
   } else if (
     setup === "EVEN" ||
     setup === "ODD" ||
     family === "PARITY"
   ) {
-    confidence = isReal ? 92 : 90;
-    probability = 56;
-    samples = isReal ? 200 : 160;
+    confidence = isReal ? 92 : 89;
+    probability = isReal ? 57 : 55;
+    samples = isReal ? 48 : 36;
+    confirmations = isReal ? 4 : 3;
   } else if (
     setup === "RISE" ||
     setup === "FALL" ||
     family === "RISE_FALL"
   ) {
-    confidence = isReal ? 93 : 90;
+    confidence = isReal ? 93 : 89;
     probability = confidence;
-    samples = isReal ? 140 : 100;
+    samples = isReal ? 38 : 28;
     confirmations = isReal ? 4 : 3;
   }
 
@@ -504,8 +506,8 @@ export default class DerivBotEngine {
       ...input,
       maxRuns: Math.max(1, Math.min(1000, number(input.maxRuns, 56))),
       maxScanTicks: Math.max(
-        1,
-        Math.min(1000, Math.floor(number(input.maxScanTicks, DEFAULTS.maxScanTicks)))
+        24,
+        Math.min(120, Math.floor(number(input.maxScanTicks, DEFAULTS.maxScanTicks)))
       ),
       minConfidence: Math.max(
         60,
@@ -900,7 +902,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V21 High-Conviction AI is matching digit distribution, probability edge, entropy, regime, momentum, transitions and fresh-tick confirmations. It will wait instead of forcing a trade.",
+        "V22 Adaptive Consensus AI is collecting live data and matching probability, digit distribution, entropy, regime, momentum, cycles, transitions and fresh confirmations. It enters immediately when strict consensus appears and never trades only because a tick target was reached.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1020,11 +1022,11 @@ export default class DerivBotEngine {
   riskStopReason() {
     if (
       !this.isDemoAccount &&
-      this.state.lossesSinceWin >= 2
+      this.state.lossesSinceWin >= 1
     ) {
       return {
         message:
-          "REAL safety stop: two losses without a recovery win. Review the session before restarting.",
+          "REAL safety stop: one loss reached. Review the session before manually restarting.",
         status: "STOPPED",
       };
     }
@@ -1143,12 +1145,6 @@ export default class DerivBotEngine {
       const check = this.validSignal();
 
       if (!check.ok) {
-        if (check.windowComplete) {
-          this.resetScanWindow(check.reason);
-          await sleep(250);
-          continue;
-        }
-
         this.patch({
           status: "WAITING",
           message: check.reason,
