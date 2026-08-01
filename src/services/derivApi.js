@@ -1,6 +1,6 @@
 ﻿const PUBLIC_SOCKET_URLS = [
-  "wss://api.derivws.com/trading/v1/options/ws/public",
-  "wss://ws.binaryws.com/websockets/v3",
+  "wss://ws.binaryws.com/websockets/v3?app_id=33ZwwSOS2hgdlG91Hbk8Q&l=EN&brand=deriv",
+  "wss://ws.binaryws.com/websockets/v3?app_id=33ZwwSOS2hgdlG91Hbk8Q",
 ];
 
 const API_BASE_URL = "https://api.derivws.com";
