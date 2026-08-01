@@ -1,16 +1,12 @@
-﻿const AUTH_URL = "https://auth.deriv.com/oauth2/auth";
+const AUTH_URL = "https://auth.deriv.com/oauth2/auth";
 
 const CONFIG_KEY = "edgepilot-deriv-oauth-config";
 const SESSION_KEY = "edgepilot-deriv-oauth-session";
 const VERIFIER_KEY = "edgepilot-deriv-pkce-verifier";
 const STATE_KEY = "edgepilot-deriv-oauth-state";
+const CALLBACK_LOCK_KEY = "edgepilot-deriv-oauth-callback-lock";
 
-const CALLBACK_LOCK_KEY =
-  "edgepilot-deriv-oauth-callback-lock";
-
-const DEFAULT_CLIENT_ID =
-  "33ZwwSOS2hgdlG91Hbk8Q";
-
+const DEFAULT_CLIENT_ID = "33ZwwSOS2hgdlG91Hbk8Q";
 const DEFAULT_REDIRECT_URI =
   "https://edgepilot-ai-tmdr.onrender.com/dashboard";
 
@@ -24,9 +20,7 @@ let oauthCompletionPromise = null;
 let oauthCompletionCode = "";
 
 function base64Url(bytes) {
-  return btoa(
-    String.fromCharCode(...bytes)
-  )
+  return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
@@ -39,20 +33,21 @@ function randomString(length = 48) {
 }
 
 async function sha256(value) {
-  const bytes = new TextEncoder().encode(
-    value
-  );
-
-  const digest =
-    await crypto.subtle.digest(
-      "SHA-256",
-      bytes
-    );
-
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return new Uint8Array(digest);
 }
 
-function cleanUrl(urlInput) {
+function readJsonStorage(storage, key, fallback = null) {
+  try {
+    const raw = storage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function cleanOAuthParams(urlInput) {
   const url =
     urlInput instanceof URL
       ? urlInput
@@ -65,42 +60,12 @@ function cleanUrl(urlInput) {
     "session_state",
     "error",
     "error_description",
-  ].forEach((key) =>
-    url.searchParams.delete(key)
-  );
-
-  const nextUrl =
-    `${url.pathname}${url.search}${url.hash}`;
+  ].forEach((key) => url.searchParams.delete(key));
 
   window.history.replaceState(
     {},
     document.title,
-    nextUrl
-  );
-}
-
-function readJsonStorage(
-  storage,
-  key,
-  fallback = null
-) {
-  try {
-    const raw = storage.getItem(key);
-
-    if (!raw) {
-      return fallback;
-    }
-
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
-function writeSession(session) {
-  sessionStorage.setItem(
-    SESSION_KEY,
-    JSON.stringify(session)
+    `${url.pathname}${url.search}${url.hash}`
   );
 }
 
@@ -113,8 +78,7 @@ function normalizeAccounts(payload) {
     payload,
   ];
 
-  const list =
-    candidates.find(Array.isArray) || [];
+  const list = candidates.find(Array.isArray) || [];
 
   return list.map((item, index) => ({
     id: String(
@@ -124,7 +88,6 @@ function normalizeAccounts(payload) {
         item?.login_id ||
         `account-${index}`
     ),
-
     label: String(
       item?.display_name ||
         item?.name ||
@@ -132,17 +95,12 @@ function normalizeAccounts(payload) {
         item?.loginid ||
         `Deriv account ${index + 1}`
     ),
-
     accountType: String(
       item?.account_type ||
         item?.type ||
         ""
     ),
-
-    currency: String(
-      item?.currency || ""
-    ),
-
+    currency: String(item?.currency || ""),
     balance:
       item?.balance == null
         ? null
@@ -150,21 +108,22 @@ function normalizeAccounts(payload) {
             item.balance?.value ??
               item.balance
           ),
-
     raw: item,
   }));
 }
 
-function callbackAlreadyProcessing(code) {
-  const lock = readJsonStorage(
+function getCallbackLock() {
+  return readJsonStorage(
     sessionStorage,
     CALLBACK_LOCK_KEY,
     null
   );
+}
 
-  if (!lock) {
-    return false;
-  }
+function callbackAlreadyProcessing(code) {
+  const lock = getCallbackLock();
+
+  if (!lock) return false;
 
   const sameCode =
     String(lock.code || "") === code;
@@ -173,10 +132,7 @@ function callbackAlreadyProcessing(code) {
     Date.now() -
     Number(lock.createdAt || 0);
 
-  /*
-   * Ignore a stale lock after 30 seconds.
-   */
-  return sameCode && age < 30_000;
+  return sameCode && age < 30000;
 }
 
 function setCallbackLock(code) {
@@ -195,9 +151,15 @@ function clearCallbackLock() {
   );
 }
 
+function saveOAuthSession(session) {
+  sessionStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify(session)
+  );
+}
+
 export function getDefaultRedirectUri() {
-  return window.location.hostname ===
-    "localhost"
+  return window.location.hostname === "localhost"
     ? "http://localhost:5173/dashboard"
     : DEFAULT_REDIRECT_URI;
 }
@@ -214,12 +176,10 @@ export function loadOAuthConfig() {
       saved?.clientId ||
         DEFAULT_CLIENT_ID
     ),
-
     redirectUri: String(
       saved?.redirectUri ||
         getDefaultRedirectUri()
     ),
-
     scope: String(
       saved?.scope ||
         "trade account_manage"
@@ -233,12 +193,10 @@ export function saveOAuthConfig(config) {
       config?.clientId ||
         DEFAULT_CLIENT_ID
     ).trim(),
-
     redirectUri: String(
       config?.redirectUri ||
         getDefaultRedirectUri()
     ).trim(),
-
     scope: String(
       config?.scope ||
         "trade account_manage"
@@ -265,34 +223,27 @@ export function clearOAuthSession() {
   sessionStorage.removeItem(SESSION_KEY);
   sessionStorage.removeItem(VERIFIER_KEY);
   sessionStorage.removeItem(STATE_KEY);
-  sessionStorage.removeItem(
-    CALLBACK_LOCK_KEY
-  );
+  clearCallbackLock();
 
   oauthCompletionPromise = null;
   oauthCompletionCode = "";
 }
 
-export async function beginDerivLogin(
-  configInput
-) {
+export async function beginDerivLogin(configInput) {
   const config = saveOAuthConfig(
     configInput || loadOAuthConfig()
   );
 
   const verifier = randomString(64);
-
   const challenge = base64Url(
     await sha256(verifier)
   );
-
   const state = randomString(32);
 
   sessionStorage.setItem(
     VERIFIER_KEY,
     verifier
   );
-
   sessionStorage.setItem(
     STATE_KEY,
     state
@@ -316,9 +267,7 @@ export async function beginDerivLogin(
 }
 
 export async function completeDerivLogin() {
-  const url = new URL(
-    window.location.href
-  );
+  const url = new URL(window.location.href);
 
   const code = String(
     url.searchParams.get("code") || ""
@@ -337,7 +286,7 @@ export async function completeDerivLogin() {
     );
 
   if (oauthError) {
-    cleanUrl(url);
+    cleanOAuthParams(url);
 
     throw new Error(
       oauthDescription || oauthError
@@ -348,10 +297,6 @@ export async function completeDerivLogin() {
     return loadOAuthSession();
   }
 
-  /*
-   * Multiple React renders must share
-   * the same token-exchange request.
-   */
   if (
     oauthCompletionPromise &&
     oauthCompletionCode === code
@@ -359,172 +304,155 @@ export async function completeDerivLogin() {
     return oauthCompletionPromise;
   }
 
-  /*
-   * The authorization code is one-time.
-   * Remove it from the browser URL before
-   * starting the network request.
-   */
-  cleanUrl(url);
-
   const existingSession =
     loadOAuthSession();
 
-  /*
-   * If another mounted provider already
-   * completed the callback, reuse its session.
-   */
   if (
     callbackAlreadyProcessing(code) &&
     existingSession?.accessToken
   ) {
+    cleanOAuthParams(url);
     return existingSession;
   }
 
   if (callbackAlreadyProcessing(code)) {
+    cleanOAuthParams(url);
+
     throw new Error(
       "Deriv login is already being completed. Wait a moment, then reload the dashboard."
     );
   }
 
+  const expectedState =
+    sessionStorage.getItem(STATE_KEY);
+
+  const verifier =
+    sessionStorage.getItem(
+      VERIFIER_KEY
+    );
+
+  const config = loadOAuthConfig();
+
+  if (
+    !expectedState ||
+    !returnedState ||
+    returnedState !== expectedState
+  ) {
+    cleanOAuthParams(url);
+
+    throw new Error(
+      "OAuth state verification failed. Start login again."
+    );
+  }
+
+  if (!verifier) {
+    cleanOAuthParams(url);
+
+    throw new Error(
+      "PKCE verifier is missing. Start login again."
+    );
+  }
+
+  if (!BACKEND_URL) {
+    cleanOAuthParams(url);
+
+    throw new Error(
+      "VITE_OAUTH_BACKEND_URL is not configured on Render."
+    );
+  }
+
   setCallbackLock(code);
+  cleanOAuthParams(url);
 
   oauthCompletionCode = code;
 
-  oauthCompletionPromise =
-    (async () => {
-      if (!BACKEND_URL) {
-        throw new Error(
-          "VITE_OAUTH_BACKEND_URL is not configured on Render."
-        );
+  oauthCompletionPromise = (async () => {
+    const response = await fetch(
+      `${BACKEND_URL}/api/oauth/exchange`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          code,
+          code_verifier: verifier,
+          redirect_uri:
+            config.redirectUri,
+        }),
       }
+    );
 
-      const expectedState =
-        sessionStorage.getItem(
-          STATE_KEY
-        );
+    const payload = await response
+      .json()
+      .catch(() => ({}));
 
-      const verifier =
-        sessionStorage.getItem(
-          VERIFIER_KEY
-        );
+    if (
+      !response.ok ||
+      !payload?.ok
+    ) {
+      throw new Error(
+        payload?.error ||
+          `Deriv login completion failed (${response.status}).`
+      );
+    }
 
-      const config =
-        loadOAuthConfig();
-
-      if (
-        !expectedState ||
-        !returnedState ||
-        returnedState !== expectedState
-      ) {
-        throw new Error(
-          "OAuth state verification failed. Start login again."
-        );
-      }
-
-      if (!verifier) {
-        throw new Error(
-          "PKCE verifier is missing. Start login again."
-        );
-      }
-
-      const response = await fetch(
-        `${BACKEND_URL}/api/oauth/exchange`,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            code,
-            code_verifier: verifier,
-            redirect_uri:
-              config.redirectUri,
-          }),
-        }
+    const accounts =
+      normalizeAccounts(
+        payload.accounts
       );
 
-      const payload = await response
-        .json()
-        .catch(() => ({}));
+    const previousSession =
+      loadOAuthSession();
 
-      if (
-        !response.ok ||
-        !payload?.ok
-      ) {
-        throw new Error(
-          payload?.error ||
-            `Deriv login completion failed (${response.status}).`
-        );
-      }
-
-      const accounts =
-        normalizeAccounts(
-          payload.accounts
-        );
-
-      const previousSession =
-        loadOAuthSession();
-
-      const selectedStillExists =
-        accounts.some(
-          (account) =>
-            account.id ===
-            previousSession
-              ?.selectedAccountId
-        );
-
-      const session = {
-        accessToken: String(
-          payload.access_token || ""
-        ),
-
-        refreshToken: String(
-          payload.refresh_token || ""
-        ),
-
-        tokenType: String(
-          payload.token_type ||
-            "Bearer"
-        ),
-
-        expiresIn: Number(
-          payload.expires_in || 0
-        ),
-
-        createdAt: Date.now(),
-
-        accounts,
-
-        selectedAccountId:
-          selectedStillExists
-            ? previousSession
-                .selectedAccountId
-            : accounts[0]?.id || "",
-      };
-
-      if (!session.accessToken) {
-        throw new Error(
-          "Deriv did not return an access token."
-        );
-      }
-
-      writeSession(session);
-
-      sessionStorage.removeItem(
-        VERIFIER_KEY
+    const selectedStillExists =
+      accounts.some(
+        (account) =>
+          account.id ===
+          previousSession?.selectedAccountId
       );
 
-      sessionStorage.removeItem(
-        STATE_KEY
+    const session = {
+      accessToken: String(
+        payload.access_token || ""
+      ),
+      refreshToken: String(
+        payload.refresh_token || ""
+      ),
+      tokenType: String(
+        payload.token_type ||
+          "Bearer"
+      ),
+      expiresIn: Number(
+        payload.expires_in || 0
+      ),
+      createdAt: Date.now(),
+      accounts,
+      selectedAccountId:
+        selectedStillExists
+          ? previousSession.selectedAccountId
+          : accounts[0]?.id || "",
+    };
+
+    if (!session.accessToken) {
+      throw new Error(
+        "Deriv did not return an access token."
       );
+    }
 
-      clearCallbackLock();
+    saveOAuthSession(session);
 
-      return session;
-    })();
+    sessionStorage.removeItem(
+      VERIFIER_KEY
+    );
+    sessionStorage.removeItem(
+      STATE_KEY
+    );
+    clearCallbackLock();
+
+    return session;
+  })();
 
   try {
     return await oauthCompletionPromise;
@@ -550,21 +478,13 @@ export async function fetchDerivAccounts(
     );
   }
 
-  /*
-   * The backend already returns accounts
-   * during OAuth exchange. Keep the same
-   * session instead of exchanging the
-   * authorization code again.
-   */
   return {
     ...session,
-
     accounts: Array.isArray(
       session.accounts
     )
       ? session.accounts
       : [],
-
     selectedAccountId:
       session.selectedAccountId ||
       session.accounts?.[0]?.id ||
