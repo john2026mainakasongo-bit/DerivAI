@@ -1283,7 +1283,40 @@ export default class DerivBotEngine {
         Number(b.edge) - Number(a.edge)
     );
 
-    const selected = ranked[0];
+    // Prefer a candidate that has actually passed its gate.
+    // The old code always chose ranked[0], so a failing RISE/FALL candidate
+    // could block an approved EVEN/ODD or OVER/UNDER candidate beneath it.
+    let selected = ranked.find((candidate) => candidate.ok) || ranked[0];
+
+    // DEMO-ONLY long-scan smoke fallback:
+    // after enough live ticks, allow the best non-MATCH candidate with strong
+    // probability/confidence to verify proposal, buy and settlement.
+    if (
+      this.isDemoAccount &&
+      selected &&
+      !selected.ok &&
+      this.scanTickCount >= 60
+    ) {
+      const fallback = ranked.find(
+        (candidate) =>
+          candidate &&
+          !String(candidate.setup || "").startsWith("MATCH") &&
+          Number(candidate.samples || 0) >= 24 &&
+          Number(candidate.confidence || 0) >= 60 &&
+          Number(candidate.probability || 0) >= 70
+      );
+
+      if (fallback) {
+        selected = {
+          ...fallback,
+          ok: true,
+          demoOperationalPass: true,
+          confirmations: 1,
+          threshold: Math.min(Number(fallback.threshold || 72), 72),
+          score: Math.max(Number(fallback.score || 0), 72),
+        };
+      }
+    }
 
     if (!selected || !selected.ok) {
       this.strictSetupKey = "";
@@ -1425,7 +1458,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V27 fixes the missing Demo gate variable and adds a Demo-only smoke-test path. Real execution remains strict and unchanged.",
+        "V28 fixes candidate selection: the engine now chooses an approved candidate before a higher-scoring failed candidate. Demo also has a long-scan execution fallback; Real remains strict and unchanged.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1813,11 +1846,11 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V27 demo smoke-test confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V28 candidate-selection confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V27 DEMO CONFIRMED`,
+      activeSetup: `${check.contract.label} · V28 DEMO EXECUTION CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

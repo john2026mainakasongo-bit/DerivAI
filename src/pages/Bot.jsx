@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V27 · Demo Smoke Test + Real Locked Strict"
+          title="EdgePilot V28 · Demo Candidate Selection Fix + Real Strict"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>DEMO SMOKE TEST · REAL LOCKED STRICT</small>
+                <small>DEMO CANDIDATE FIX · REAL LOCKED STRICT</small>
                 <strong>
-                  DEMO: 70% + 2 VOTES + 1 CONFIRM · REAL: STRICT GATE
+                  DEMO: APPROVED CANDIDATE FIRST · 60-TICK FALLBACK · REAL STRICT
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              Demo smoke test executes non-MATCH candidates after 24 samples, 70% probability, two engine votes and one fresh confirmation. This verifies proposal, buy, settlement and history. Real remains strict, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              Demo now selects an approved candidate before any higher-scoring failed candidate. After a long 60-tick scan, a strong non-MATCH Demo candidate can use the smoke-test path to verify proposal, buy, settlement and history. Real remains fully strict, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
