@@ -6,7 +6,7 @@ const VERIFIER_KEY = "edgepilot-deriv-pkce-verifier";
 const STATE_KEY = "edgepilot-deriv-oauth-state";
 
 const DEFAULT_CLIENT_ID = "33ZwwSOS2hgdlG91Hbk8Q";
-const DEFAULT_REDIRECT_URI = "https://derivai.onrender.com/dashboard";
+const DEFAULT_REDIRECT_URI = "https://edgepilot-ai-tmdr.onrender.com/dashboard";
 
 const BACKEND_URL = String(import.meta.env.VITE_OAUTH_BACKEND_URL || "")
   .trim()
@@ -225,3 +225,4 @@ export async function fetchDerivAccounts(sessionInput) {
 
   return session;
 }
+
