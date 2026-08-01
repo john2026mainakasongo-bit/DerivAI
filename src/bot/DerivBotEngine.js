@@ -965,9 +965,6 @@ export default class DerivBotEngine {
     this.lockedCandidate = null;
     this.lockedCandidateTick = 0;
     this.executionPhase = "SCAN";
-    this.lockedCandidate = null;
-    this.lockedCandidateTick = 0;
-    this.executionPhase = "SCAN";
 
     this.state = {
       status: "IDLE",
@@ -1197,8 +1194,6 @@ export default class DerivBotEngine {
     this.strictConfirmations = 0;
     this.strictLastTickKey = "";
     this.lastSignalTickKey = "";
-    this.scanTickCount = 0;
-    this.scanWindow = 1;
 
     this.patch({
       scanTicks: 0,
@@ -1340,13 +1335,59 @@ export default class DerivBotEngine {
         Number(b.edge) - Number(a.edge)
     );
 
-    // Every contract family is ranked independently. Execute the highest
-    // scoring candidate that passed its own family-specific safety rules.
-    const selected = ranked.find((candidate) => candidate.ok) || ranked[0];
+    // Sticky candidate lock:
+    // once a candidate passes and is locked, keep confirming that same setup
+    // instead of switching to a different top-ranked contract on every tick.
+    const previouslyLockedSetup = this.lockedCandidate?.setup || "";
+    const lockedRankedCandidate = previouslyLockedSetup
+      ? ranked.find((candidate) => candidate.setup === previouslyLockedSetup)
+      : null;
+
+    let selected =
+      (
+        lockedRankedCandidate &&
+        Number(lockedRankedCandidate.score || 0) >=
+          Math.max(0, Number(lockedRankedCandidate.threshold || 0) - 4) &&
+        Number(lockedRankedCandidate.samples || 0) >= 24
+      )
+        ? {
+            ...lockedRankedCandidate,
+            ok: true,
+            confirmations:
+              Number(this.lockedCandidate?.confirmations) ||
+              Number(lockedRankedCandidate.confirmations) ||
+              2,
+          }
+        : ranked.find((candidate) => candidate.ok) || ranked[0];
+
+    // If the locked candidate has genuinely collapsed, release it and scan again.
+    if (
+      this.lockedCandidate &&
+      (
+        !lockedRankedCandidate ||
+        Number(lockedRankedCandidate.score || 0) <
+          Math.max(0, Number(lockedRankedCandidate.threshold || 0) - 10)
+      )
+    ) {
+      this.lockedCandidate = null;
+      this.lockedCandidateTick = 0;
+      this.strictConfirmations = 0;
+      this.executionPhase = "SCAN";
+      selected = ranked.find((candidate) => candidate.ok) || ranked[0];
+    }
 
     if (!selected || !selected.ok) {
       this.strictSetupKey = "";
       this.strictConfirmations = 0;
+
+      if (
+        this.lockedCandidate &&
+        this.scanTickCount - this.lockedCandidateTick > 12
+      ) {
+        this.lockedCandidate = null;
+        this.lockedCandidateTick = 0;
+        this.executionPhase = "SCAN";
+      }
 
       const bestText = selected
         ? `${selected.setup || "Candidate"} score ${selected.score.toFixed(1)}/${selected.threshold}. ` +
@@ -1378,10 +1419,7 @@ export default class DerivBotEngine {
     const setup = selected.setup;
     const setupKey = `${this.symbol}:${setup}`;
 
-    if (
-      !this.lockedCandidate ||
-      this.lockedCandidate.setupKey !== setupKey
-    ) {
+    if (!this.lockedCandidate) {
       this.lockedCandidate = {
         setupKey,
         setup,
@@ -1389,6 +1427,7 @@ export default class DerivBotEngine {
         score: selected.score,
         probability: selected.probability,
         confidence: selected.confidence,
+        confirmations: Number(selected.confirmations || 2),
         lockedAtTick: this.scanTickCount,
       };
       this.lockedCandidateTick = this.scanTickCount;
@@ -1406,23 +1445,27 @@ export default class DerivBotEngine {
       0,
       this.scanTickCount - this.lockedCandidateTick
     );
+    const requiredConfirmations = Math.max(
+      1,
+      Number(this.lockedCandidate?.confirmations || selected.confirmations || 2)
+    );
 
     this.strictConfirmations = confirmationTicks;
     this.executionPhase =
-      confirmationTicks >= selected.confirmations
+      confirmationTicks >= requiredConfirmations
         ? "READY"
         : "CONFIRMING";
 
-    if (confirmationTicks < selected.confirmations) {
+    if (confirmationTicks < requiredConfirmations) {
       return {
         ok: false,
         reason:
           `${setup} LOCKED at ${selected.score.toFixed(1)}/${selected.threshold}. ` +
-          `Confirming ${confirmationTicks}/${selected.confirmations} new market ticks. ` +
+          `Confirming ${confirmationTicks}/${requiredConfirmations} new market ticks. ` +
           `Votes ${selected.passedVotes}; samples ${selected.samples}; probability ${selected.probability.toFixed(1)}%.`,
         elapsedSeconds,
         confirmations: confirmationTicks,
-        requiredConfirmations: selected.confirmations,
+        requiredConfirmations,
         gate: {
           ...gate,
           scoredCandidates: ranked,
@@ -1478,6 +1521,7 @@ export default class DerivBotEngine {
       contract,
       elapsedSeconds,
       confirmations: this.strictConfirmations,
+      requiredConfirmations,
       gate: {
         ...gate,
         scoredCandidates: ranked,
@@ -1513,7 +1557,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V31 separates scanning, candidate locking, tick confirmation, proposal, buy and monitoring into explicit execution phases. Demo digit candidates can qualify through strong probability, confidence, samples and three advisory votes. Real remains strict.",
+        "V32 makes candidate locking sticky. Once a valid setup is locked, small ranking changes cannot reset confirmation on every tick. The lock is released only if the setup collapses materially. Real remains strict.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1907,11 +1951,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V31 execution state machine confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V32 sticky candidate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V31 LOCKED CANDIDATE CONFIRMED`,
+      activeSetup: `${check.contract.label} · V32 STICKY LOCK CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

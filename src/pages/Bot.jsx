@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V31 · Execution State Machine + Real Strict"
+          title="EdgePilot V32 · Sticky Candidate Lock + Real Strict"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>EXECUTION STATE MACHINE · REAL STRICT</small>
+                <small>STICKY CANDIDATE LOCK · REAL STRICT</small>
                 <strong>
-                  SCAN → LOCK → CONFIRM → PROPOSAL → BUY → MONITOR
+                  LOCK PERSISTS → TICKS CONFIRM → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              The bot now uses explicit execution phases: SCAN, LOCKED, CONFIRMING, PROPOSAL, BUYING and MONITORING. A locked candidate is confirmed using new market ticks instead of repeatedly recalculating the same snapshot. Real remains stricter, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              A valid candidate now remains locked while fresh ticks confirm it. Small score or ranking changes no longer reset confirmation to zero on every tick. The lock is released only when the setup weakens materially. Real remains stricter, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
