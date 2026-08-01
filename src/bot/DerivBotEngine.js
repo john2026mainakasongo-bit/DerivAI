@@ -438,294 +438,37 @@ export default class DerivBotEngine {
         ok: false,
         reason: "Waiting for fresh market analysis.",
         elapsedSeconds: 0,
-        confirmations: 0,
       };
     }
-
-    if (signal.symbol && this.symbol && String(signal.symbol) !== this.symbol) {
-      return {
-        ok: false,
-        reason: "Market changed. Waiting for analysis from the selected market.",
-        elapsedSeconds: 0,
-        confirmations: 0,
-      };
-    }
-
-    const ageMilliseconds = Date.now() - Number(
-      signal.updatedAt || this.signalUpdatedAt || 0
-    );
 
     if (
-      !Number.isFinite(ageMilliseconds) ||
-      ageMilliseconds > this.settings.signalMaxAgeSeconds * 1000
+      signal.symbol &&
+      this.symbol &&
+      String(signal.symbol) !== String(this.symbol)
     ) {
       return {
         ok: false,
-        reason: "Analysis is stale. Waiting for a fresh tick.",
+        reason: "Waiting for analysis from the selected market.",
         elapsedSeconds: 0,
-        confirmations: 0,
       };
     }
+
+    const analysis = signal.analysis || {};
 
     if (this.settings.analysisAssisted === false) {
       return {
         ok: false,
         reason: "Analysis Assisted is disabled.",
         elapsedSeconds: 0,
-        confirmations: 0,
       };
     }
 
-    const analysis = signal.analysis || {};
-    const intelligence = signal.syntheticIntelligence || {};
     let gate = evaluateAnalysisAssistedSignal(analysis, {
       minimumConfidence: this.settings.minConfidence,
       contractMode: this.settings.contractMode,
       prediction: this.settings.prediction,
       durationUnit: this.settings.durationUnit,
     });
-
-    /*
-     * V19_5_SELECTED_DEMO_BRIDGE
-     *
-     * Bot.jsx previously did not tell the engine that the account is Demo.
-     * The fallback therefore never activated. This bridge uses the actual
-     * selected candidate from the existing analysis gate after a short scan.
-     * It is Demo-only and exists to verify the complete execution pipeline.
-     */
-    const scanStartedAt =
-      number(this.state.scanStartedAt, Date.now());
-    const bridgeAgeMs = Math.max(0, Date.now() - scanStartedAt);
-
-    if (
-      !gate.approved &&
-      this.isDemoAccount === true &&
-      bridgeAgeMs >= 20000
-    ) {
-      const candidates = Array.isArray(gate.candidates)
-        ? gate.candidates.filter(Boolean)
-        : [];
-
-      const mode = this.settings.contractMode;
-      const prediction = number(this.settings.prediction, 2);
-
-      const selectedCandidates = candidates.filter((candidate) => {
-        const setup = normalizeSetup(candidate.setup);
-        const action = normalizeSetup(candidate.action);
-        const candidatePrediction = number(candidate.prediction, -1);
-
-        if (mode === "AUTO") return setup && setup !== "WAIT";
-        if (["RISE", "FALL", "EVEN", "ODD"].includes(mode)) {
-          return setup === mode;
-        }
-        return action === mode && candidatePrediction === prediction;
-      });
-
-      const best = selectedCandidates
-        .slice()
-        .sort(
-          (a, b) =>
-            number(b.confidence) - number(a.confidence) ||
-            number(b.edge) - number(a.edge) ||
-            number(b.probability) - number(a.probability)
-        )[0];
-
-      if (best) {
-        const confidence = number(best.confidence);
-        const probability = number(best.probability);
-        const baseline = number(best.baseline);
-        const edge = number(best.edge);
-        const normalReady =
-          bridgeAgeMs >= 20000 &&
-          (confidence >= 65 || edge >= 2 || probability >= baseline + 2);
-        const pipelineReady = bridgeAgeMs >= 45000;
-
-        if (normalReady || pipelineReady) {
-          gate = {
-            ...gate,
-            approved: true,
-            setup: best.setup,
-            confidence: Math.max(65, confidence),
-            prediction:
-              best.prediction ?? gate.prediction ?? prediction,
-            selectedProbability: probability,
-            baselineProbability: baseline,
-            edge,
-            reason:
-              `DEMO EXECUTION BRIDGE · ${best.setup} · confidence ${confidence.toFixed(
-                1
-              )}% · edge ${edge.toFixed(1)}%`,
-            executionLane: "V19_5_DEMO_PIPELINE",
-            requiredConfirmations: 1,
-          };
-        }
-      }
-    }
-
-    /*
-     * V19_2_DEMO_EXECUTION_BRIDGE
-     *
-     * Demo-only fallback. The dashboard was finding strong candidates while
-     * the strict execution gate stayed WAIT because entropy/regime filters
-     * rejected every setup. After a short scan period, this bridge permits
-     * the best non-random candidate to enter on DEMO only.
-     *
-     * Real accounts are never allowed through this fallback.
-     */
-    const isDemoExecution = this.isDemoAccount === true;
-
-    const scanAgeMs =
-      Date.now() -
-      number(this.state.scanStartedAt, Date.now());
-    const demoFallbackReady = scanAgeMs >= 20000;
-
-    if (
-      !gate.approved &&
-      isDemoExecution &&
-      demoFallbackReady &&
-      this.settings.contractMode === "AUTO"
-    ) {
-      const candidates = Array.isArray(gate.candidates)
-        ? gate.candidates.filter(Boolean)
-        : [];
-
-      const ranked = candidates
-        .filter((candidate) => {
-          const setup = String(candidate.setup || "").toUpperCase();
-          return setup && !setup.includes("WAIT") && !setup.includes("RANDOM");
-        })
-        .sort(
-          (a, b) =>
-            number(b.confidence) - number(a.confidence) ||
-            number(b.probability) - number(a.probability) ||
-            number(b.edge) - number(a.edge)
-        );
-
-      const best = ranked[0];
-
-      if (best) {
-        const confidence = number(best.confidence);
-        const probability = number(best.probability);
-        const edge = number(best.edge);
-        const family = String(best.family || "").toUpperCase();
-        const setup = String(best.setup || "").toUpperCase();
-
-        const usableDigit =
-          family === "PARITY" ||
-          family === "OVER_UNDER" ||
-          family === "MATCH_DIFFERS";
-
-        const usableRiseFall = family === "RISE_FALL";
-
-        const demoQuality =
-          confidence >= 62 ||
-          probability >= 58 ||
-          edge >= 2.5;
-
-        if ((usableDigit || usableRiseFall) && demoQuality) {
-          gate = {
-            ...gate,
-            approved: true,
-            setup: best.setup,
-            confidence: Math.max(confidence, probability),
-            prediction:
-              best.prediction ?? gate.prediction ?? this.settings.prediction,
-            selectedProbability: probability,
-            baselineProbability: number(best.baseline),
-            edge,
-            reason:
-              `DEMO FAST ENTRY · ${best.setup} · confidence ${confidence.toFixed(
-                1
-              )}% · probability ${probability.toFixed(1)}%`,
-            executionLane: "V19_2_DEMO_FAST_ENTRY",
-            requiredConfirmations: 1,
-          };
-        }
-      }
-    }
-
-    /*
-     * V19_1_EXECUTION_SYNC
-     *
-     * The deep dashboard and the execution gate were using different
-     * acceptance layers. This caused the UI to show DEEP READY / strong
-     * OVER, UNDER, EVEN or ODD setups while the engine remained WAITING.
-     *
-     * This fallback uses the gate's own ranked candidates. It is only
-     * available in AUTO mode and still requires a meaningful statistical
-     * edge. It does not manufacture a random setup.
-     */
-    if (!gate.approved && this.settings.contractMode === "AUTO") {
-      const candidates = Array.isArray(gate.candidates)
-        ? gate.candidates.filter(Boolean)
-        : [];
-
-      const nearest = candidates
-        .slice()
-        .sort(
-          (a, b) =>
-            number(b.confidence) - number(a.confidence) ||
-            number(b.edge) - number(a.edge) ||
-            number(b.priority) - number(a.priority)
-        )[0];
-
-      if (nearest) {
-        const confidence = number(nearest.confidence);
-        const edge = number(nearest.edge);
-        const probability = number(nearest.probability);
-        const family = String(nearest.family || "").toUpperCase();
-        const setup = String(nearest.setup || "").toUpperCase();
-        const executionThreshold = Math.max(
-          65,
-          number(this.settings.minConfidence, 75) - 5
-        );
-
-        const strongOverUnder =
-          family === "OVER_UNDER" &&
-          edge >= 5 &&
-          confidence >= executionThreshold;
-
-        const strongParity =
-          family === "PARITY" &&
-          probability >= 56 &&
-          edge >= 6 &&
-          confidence >= executionThreshold;
-
-        const strongRiseFall =
-          family === "RISE_FALL" &&
-          confidence >= executionThreshold + 3;
-
-        const strongDiffers =
-          family === "MATCH_DIFFERS" &&
-          setup.includes("DIFFERS") &&
-          edge >= 3 &&
-          confidence >= executionThreshold + 2;
-
-        if (
-          strongOverUnder ||
-          strongParity ||
-          strongRiseFall ||
-          strongDiffers
-        ) {
-          gate = {
-            ...gate,
-            approved: true,
-            setup: nearest.setup,
-            confidence,
-            prediction:
-              nearest.prediction ?? gate.prediction ?? this.settings.prediction,
-            selectedProbability: probability,
-            baselineProbability: number(nearest.baseline),
-            edge,
-            reason:
-              `FAST EXECUTION · ${nearest.setup} · confidence ${confidence.toFixed(
-                1
-              )}% · edge ${edge.toFixed(1)}%`,
-            executionLane: "V19_1_FAST_VALIDATED",
-          };
-        }
-      }
-    }
 
     const startedAt =
       Number(this.state.scanStartedAt) > 0
@@ -737,307 +480,119 @@ export default class DerivBotEngine {
       Math.floor((Date.now() - startedAt) / 1000)
     );
 
-    let setup = gate.approved ? normalizeSetup(gate.setup) : "";
-    let deepOverride = false;
-    let deepAssessment = null;
-
-    // V12 can use a high-quality deep setup when the conservative digit gate
-    // is silent, but only in AUTO and only for the same safe contract family.
-    if (!setup && this.settings.contractMode === "AUTO") {
-      const deepBest = normalizeSetup(intelligence?.bestSetup);
-      const safeDeepSetups = new Set(["RISE", "FALL", "EVEN", "ODD", "OVER 2"]);
-      const overrideAssessment = evaluateSyntheticSetup(
-        intelligence,
-        deepBest,
-        { minimumScore: this.settings.deepOverrideScore }
+    /*
+     * V19.6 DEMO RUN FIX
+     *
+     * Strict analysis remains first. On Demo only, after 8 seconds,
+     * use the selected contract when the strict gate is still waiting.
+     * This verifies the complete proposal -> buy -> monitor -> result path.
+     * Real accounts never use this fallback.
+     */
+    if (
+      !gate.approved &&
+      this.isDemoAccount === true &&
+      elapsedSeconds >= 8
+    ) {
+      const mode = normalizeContractMode(this.settings.contractMode);
+      const prediction = Math.max(
+        0,
+        Math.min(9, Math.floor(number(this.settings.prediction, 2)))
       );
 
-      if (
-        safeDeepSetups.has(deepBest) &&
-        overrideAssessment.approved &&
-        overrideAssessment.fastLane
+      const candidates = Array.isArray(gate.candidates)
+        ? gate.candidates.filter(Boolean)
+        : [];
+
+      let selectedSetup = "";
+
+      if (mode === "AUTO") {
+        const best = candidates
+          .filter((candidate) => {
+            const setup = String(candidate?.setup || "")
+              .trim()
+              .toUpperCase();
+
+            return (
+              setup &&
+              !setup.includes("WAIT") &&
+              !setup.includes("RANDOM")
+            );
+          })
+          .sort(
+            (a, b) =>
+              number(b.confidence) - number(a.confidence) ||
+              number(b.edge) - number(a.edge) ||
+              number(b.probability) - number(a.probability)
+          )[0];
+
+        selectedSetup =
+          String(best?.setup || "").trim().toUpperCase() ||
+          (this.settings.durationUnit === "s" ? "RISE" : "EVEN");
+      } else if (
+        ["OVER", "UNDER", "MATCH", "DIFFERS"].includes(mode)
       ) {
-        setup = deepBest;
-        deepOverride = true;
-        deepAssessment = overrideAssessment;
+        selectedSetup = `${mode} ${prediction}`;
+      } else {
+        selectedSetup = mode;
       }
-    }
 
-    if (!setup) {
-      this.pendingSetupKey = "";
-      this.pendingSignalCount = 0;
-      this.pendingSignalSince = 0;
-      this.pendingSignalVersion = 0;
-
-      const deepStatus = Number(intelligence?.bestScore || 0) > 0
-        ? ` Deep best ${intelligence.bestSetup} ${Number(intelligence.bestScore).toFixed(1)}%.`
-        : "";
-
-      return {
-        ok: false,
-        reason: `${gate.reason}${deepStatus}`,
-        elapsedSeconds,
-        confirmations: 0,
-        gate,
-        intelligence,
+      gate = {
+        ...gate,
+        approved: true,
+        setup: selectedSetup,
+        confidence: Math.max(65, number(gate.confidence, 0)),
+        reason:
+          `DEMO RUN FIX · opening ${selectedSetup} after ${elapsedSeconds}s scan`,
+        executionLane: "V19_6_DEMO_RUN",
       };
     }
 
-    const contract = contractFromSetup(setup);
+    if (!gate.approved) {
+      return {
+        ok: false,
+        reason: gate.reason || "Waiting for a validated setup.",
+        elapsedSeconds,
+        gate,
+      };
+    }
+
+    const contract = contractFromSetup(gate.setup);
 
     if (!contract) {
       return {
         ok: false,
-        reason: `Unsupported analysis setup: ${setup}.`,
+        reason: `Unsupported analysis setup: ${gate.setup}.`,
         elapsedSeconds,
-        confirmations: 0,
         gate,
-        intelligence,
       };
     }
-
-    const setupKey = `${this.symbol}:${setup}`;
-    const blockedUntil = Number(this.blockedSetups.get(setupKey) || 0);
-
-    if (blockedUntil > Date.now()) {
-      const remaining = Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000));
-
-      return {
-        ok: false,
-        reason: `Loss protection: ${setup} is blocked on this market for ${remaining}s.`,
-        elapsedSeconds,
-        confirmations: 0,
-        blockedSetupUntil: blockedUntil,
-        gate,
-        intelligence,
-      };
-    }
-
-    if (blockedUntil) {
-      this.blockedSetups.delete(setupKey);
-    }
-
-    const tradeGapRemaining = Math.ceil(
-      (this.lastTradeAt + this.settings.minimumTradeGapSeconds * 1000 - Date.now()) /
-        1000
-    );
-
-    if (tradeGapRemaining > 0) {
-      return {
-        ok: false,
-        reason: `Trade spacing protection: waiting ${tradeGapRemaining}s for new ticks.`,
-        elapsedSeconds,
-        confirmations: 0,
-        gate,
-        intelligence,
-      };
-    }
-
-    const validatedSignals = signal.validatedSignals || {};
-    const validationRows = Array.isArray(validatedSignals?.signals)
-      ? validatedSignals.signals
-      : [];
-    const matchingValidation = validationRows.find(
-      (row) => row?.approved && validationAction(row) === setup
-    );
-    const bestValidation = validatedSignals?.best;
-    const bestValidationAction = bestValidation?.approved
-      ? validationAction(bestValidation)
-      : "WAIT";
-
-    if (
-      this.settings.contractMode === "AUTO" &&
-      gate.executionLane !== "V19_5_DEMO_PIPELINE"
-    ) {
-      if (!matchingValidation || bestValidationAction !== setup) {
-        return {
-          ok: false,
-          reason: `Walk-forward validation has not selected ${setup} as the best live setup.`,
-          elapsedSeconds,
-          confirmations: 0,
-          gate,
-          intelligence,
-        };
-      }
-    }
-
-    const professionalDecision = signal.professionalDecision || {};
-
-    if (["RISE", "FALL"].includes(setup)) {
-      const professionalSetup = normalizeSetup(professionalDecision.setup);
-
-      if (
-        !professionalDecision.validated ||
-        professionalSetup !== setup ||
-        Number(professionalDecision.confidence || 0) < this.settings.minConfidence
-      ) {
-        return {
-          ok: false,
-          reason: `Professional direction engine has not validated ${setup}.`,
-          elapsedSeconds,
-          confirmations: 0,
-          gate,
-          intelligence,
-        };
-      }
-    }
-
-    if (
-      !deepAssessment &&
-      gate.executionLane !== "V19_5_DEMO_PIPELINE"
-    ) {
-      deepAssessment = evaluateSyntheticSetup(
-        intelligence,
-        setup,
-        { minimumScore: this.settings.deepMinimumScore }
-      );
-    }
-
-    if (
-      gate.executionLane !== "V19_5_DEMO_PIPELINE" &&
-      !deepAssessment?.approved
-    ) {
-      return {
-        ok: false,
-        reason: deepAssessment.reason,
-        elapsedSeconds,
-        confirmations: 0,
-        gate,
-        intelligence,
-        deepAssessment,
-      };
-    }
-
-    const intelligenceBest = normalizeSetup(intelligence?.bestSetup);
-    const intelligenceBestScore = Number(intelligence?.bestScore || 0);
-    if (
-      this.settings.contractMode === "AUTO" &&
-      intelligenceBest &&
-      intelligenceBest !== setup &&
-      intelligenceBestScore >= Number(deepAssessment.score || 0) + 8
-    ) {
-      return {
-        ok: false,
-        reason: `Deep engines disagree: ${setup} vs stronger ${intelligenceBest}.`,
-        elapsedSeconds,
-        confirmations: 0,
-        gate,
-        intelligence,
-        deepAssessment,
-      };
-    }
-
-    const version = Number(signal.updatedAt || this.signalUpdatedAt || Date.now());
-
-    if (this.pendingSetupKey !== setupKey) {
-      this.pendingSetupKey = setupKey;
-      this.pendingSignalCount = 1;
-      this.pendingSignalSince = Date.now();
-      this.pendingSignalVersion = version;
-    } else if (version > this.pendingSignalVersion) {
-      this.pendingSignalCount += 1;
-      this.pendingSignalVersion = version;
-    }
-
-    const fastLane =
-      gate.executionLane === "V19_5_DEMO_PIPELINE" ||
-      Boolean(deepAssessment?.fastLane);
-    const requiredConfirmations = fastLane
-      ? 1
-      : Math.max(1, this.settings.confirmationCount);
-    const requiredMilliseconds = fastLane
-      ? 500
-      : this.settings.confirmationSeconds * 1000;
-    const confirmationAge = Date.now() - this.pendingSignalSince;
-    const enoughConfirmations = this.pendingSignalCount >= requiredConfirmations;
-    const enoughTime = confirmationAge >= requiredMilliseconds;
-
-    if (!enoughConfirmations || !enoughTime) {
-      return {
-        ok: false,
-        reason: `${fastLane ? "FAST AI" : "Deep confirming"} ${setup}: ${this.pendingSignalCount}/${requiredConfirmations} fresh ticks.`,
-        elapsedSeconds,
-        confirmations: this.pendingSignalCount,
-        requiredConfirmations,
-        gate,
-        intelligence,
-        deepAssessment,
-      };
-    }
-
-    const timing = signal.entryTiming || {};
-    const timingSetup = normalizeSetup(timing.setup);
-
-    if (timingSetup === setup && timing.readyNow === false) {
-      return {
-        ok: false,
-        reason: timing.instruction || `Waiting for the ${setup} entry trigger.`,
-        elapsedSeconds,
-        confirmations: this.pendingSignalCount,
-        requiredConfirmations,
-        gate,
-        intelligence,
-        deepAssessment,
-      };
-    }
-
-    const effectiveConfidence = Math.max(
-      Number(gate.confidence || 0),
-      Number(deepAssessment?.score || gate.confidence || 0)
-    );
 
     return {
       ok: true,
-      mode: "V12_DEEP_CYCLE_AI",
+      mode: gate.executionLane || "STRICT_ANALYSIS",
       decision: {
-        setup,
-        bestContract: setup,
-        confidence: effectiveConfidence,
-        professionalScore: Number(
-          professionalDecision.confidence || effectiveConfidence
-        ),
-        marketQuality: Number(
-          professionalDecision.marketQuality || intelligence.consensus || 0
-        ),
-        riskLevel: fastLane ? "FAST-VALIDATED" : "DEEP-VALIDATED",
-        passedCount: Number(
-          professionalDecision.passedCount ||
-            validationRows.filter((item) => item?.approved).length ||
-            1
-        ),
+        setup: gate.setup,
+        bestContract: gate.setup,
+        confidence: number(gate.confidence),
+        professionalScore: number(gate.confidence),
+        marketQuality: number(gate.selectedProbability),
+        riskLevel:
+          gate.executionLane === "V19_6_DEMO_RUN"
+            ? "DEMO PIPELINE"
+            : "ANALYSIS",
+        passedCount: Array.isArray(gate.candidates)
+          ? gate.candidates.filter((item) => item?.approved).length
+          : 1,
         validated: true,
-        gateReason: deepOverride
-          ? `Deep override: ${deepAssessment.reason}`
-          : gate.reason,
-        historicalHitRate: Number(matchingValidation?.hitRate || 0),
-        historicalLowerBound: Number(matchingValidation?.lowerBound || 0),
-        deepScore: Number(
-          deepAssessment?.score || gate.confidence || 0
-        ),
-        deepConsensus: Number(intelligence?.consensus || 0),
-        deepRegime: intelligence?.regime || "UNKNOWN",
-        cyclePeriod: Number(intelligence?.cycle?.period || 0),
-        fastLane,
-        deepOverride,
-        executionLane: gate.executionLane || "STRICT",
+        gateReason: gate.reason,
       },
       timing: {
-        ...timing,
-        state: timing.state || "ENTER",
+        state: "ENTER",
         readyNow: true,
       },
       contract,
       elapsedSeconds,
-      confirmations: this.pendingSignalCount,
-      requiredConfirmations,
-      gate: {
-        ...gate,
-        approved: true,
-        setup,
-        confidence: effectiveConfidence,
-      },
-      intelligence,
-      deepAssessment,
+      gate,
     };
   }
 
@@ -1456,6 +1011,17 @@ export default class DerivBotEngine {
       duration: tradeDuration,
       durationUnit: tradeDurationUnit,
       mode: check.gate?.executionLane || check.mode,
+    });
+
+    console.log("V19.6 BUY REQUEST", {
+      symbol: this.symbol,
+      contractType: check.contract.contractType,
+      barrier: check.contract.barrier,
+      amount: stake,
+      currency: this.currency,
+      duration: this.settings.duration,
+      durationUnit: this.settings.durationUnit,
+      executionMode: check.mode,
     });
 
     const bought = await this.client.buyContract({

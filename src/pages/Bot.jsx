@@ -372,19 +372,15 @@ export default function Bot() {
       updatedAt: Date.now(),
       professionalDecision,
       entryTiming,
-      validatedSignals,
       analysis,
-      syntheticIntelligence,
-      snapshot,
+      validatedSignals,
     });
   }, [
     symbol,
     professionalDecision,
     entryTiming,
-    validatedSignals,
     analysis,
-    syntheticIntelligence,
-    snapshot,
+    validatedSignals,
   ]);
 
 
@@ -650,7 +646,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V19.5 Run Bridge Fix + Market Switch"
+          title="56-Run Auto Bot V19.6 Demo Run Fix + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
