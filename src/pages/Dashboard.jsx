@@ -1,23 +1,54 @@
-import { useMemo } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import SignalCard from "../components/SignalCard";
 import MarketSelector from "../components/MarketSelector";
 import ProfessionalDecisionPanel from "../components/ProfessionalDecisionPanel";
+
 import useDerivTicks from "../hooks/useDerivTicks";
 
-import { analyzeMarket } from "../analysis/analysisEngine";
-import { buildValidatedSignals } from "../analysis/backtestEngine";
-import { buildEntryTiming } from "../analysis/entryTimingEngine";
-import { buildProfessionalDecision } from "../analysis/professionalDecisionEngine";
+import {
+  completeDerivLogin,
+} from "../auth/derivOAuth";
+
+import {
+  analyzeMarket,
+} from "../analysis/analysisEngine";
+
+import {
+  buildValidatedSignals,
+} from "../analysis/backtestEngine";
+
+import {
+  buildEntryTiming,
+} from "../analysis/entryTimingEngine";
+
+import {
+  buildProfessionalDecision,
+} from "../analysis/professionalDecisionEngine";
 
 import "../styles/AnalysisEngine.css";
 import "../styles/ProfessionalDecision.css";
 
-function buildPath(prices, width = 900, height = 320) {
-  if (!Array.isArray(prices) || prices.length < 2) return "";
+function buildPath(
+  prices,
+  width = 900,
+  height = 320
+) {
+  if (
+    !Array.isArray(prices) ||
+    prices.length < 2
+  ) {
+    return "";
+  }
 
   const visible = prices.slice(-120);
+
   const min = Math.min(...visible);
   const max = Math.max(...visible);
   const range = max - min || 1;
@@ -25,14 +56,24 @@ function buildPath(prices, width = 900, height = 320) {
   return visible
     .map((price, index) => {
       const x =
-        (index / Math.max(1, visible.length - 1)) * width;
+        (index /
+          Math.max(
+            1,
+            visible.length - 1
+          )) *
+        width;
 
       const y =
         height -
-        ((price - min) / range) * (height - 24) -
+        ((price - min) / range) *
+          (height - 24) -
         12;
 
-      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      return `${
+        index === 0 ? "M" : "L"
+      } ${x.toFixed(2)} ${y.toFixed(
+        2
+      )}`;
     })
     .join(" ");
 }
@@ -47,6 +88,16 @@ function Stat({ label, value }) {
 }
 
 export default function Dashboard() {
+  const [
+    oauthError,
+    setOauthError,
+  ] = useState("");
+
+  const [
+    completingOAuth,
+    setCompletingOAuth,
+  ] = useState(false);
+
   const {
     markets,
     market,
@@ -64,6 +115,74 @@ export default function Dashboard() {
     changeSymbol,
   } = useDerivTicks();
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function finishOAuthLogin() {
+      const currentUrl = new URL(
+        window.location.href
+      );
+
+      const hasCode =
+        currentUrl.searchParams.has(
+          "code"
+        );
+
+      const hasOAuthError =
+        currentUrl.searchParams.has(
+          "error"
+        );
+
+      if (
+        !hasCode &&
+        !hasOAuthError
+      ) {
+        return;
+      }
+
+      try {
+        setCompletingOAuth(true);
+        setOauthError("");
+
+        const session =
+          await completeDerivLogin();
+
+        if (cancelled) {
+          return;
+        }
+
+        if (session?.accessToken) {
+          /*
+           * completeDerivLogin removes
+           * code and state from the URL
+           * before this reload.
+           */
+          window.location.reload();
+        }
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setOauthError(
+          error instanceof Error
+            ? error.message
+            : "Unable to complete Deriv login."
+        );
+      } finally {
+        if (!cancelled) {
+          setCompletingOAuth(false);
+        }
+      }
+    }
+
+    finishOAuthLogin();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const snapshot = useMemo(
     () => ({
       prices,
@@ -71,7 +190,12 @@ export default function Dashboard() {
       lastDigit,
       digitHistory,
     }),
-    [prices, currentPrice, lastDigit, digitHistory]
+    [
+      prices,
+      currentPrice,
+      lastDigit,
+      digitHistory,
+    ]
   );
 
   const analysis = useMemo(
@@ -79,63 +203,108 @@ export default function Dashboard() {
     [snapshot]
   );
 
-  const validatedSignals = useMemo(
-    () => buildValidatedSignals(snapshot),
-    [snapshot]
-  );
+  const validatedSignals =
+    useMemo(
+      () =>
+        buildValidatedSignals(
+          snapshot
+        ),
+      [snapshot]
+    );
 
   const entryTiming = useMemo(
     () =>
-      buildEntryTiming(validatedSignals, snapshot, {
-        tradeTicks: 5,
-        validitySeconds: 15,
-      }),
-    [validatedSignals, snapshot]
-  );
-
-  const professionalDecision = useMemo(
-    () =>
-      buildProfessionalDecision(
+      buildEntryTiming(
+        validatedSignals,
         snapshot,
-        validatedSignals
+        {
+          tradeTicks: 5,
+          validitySeconds: 15,
+        }
       ),
-    [snapshot, validatedSignals]
+    [
+      validatedSignals,
+      snapshot,
+    ]
   );
 
-  const path = useMemo(() => buildPath(prices), [prices]);
+  const professionalDecision =
+    useMemo(
+      () =>
+        buildProfessionalDecision(
+          snapshot,
+          validatedSignals
+        ),
+      [
+        snapshot,
+        validatedSignals,
+      ]
+    );
+
+  const path = useMemo(
+    () => buildPath(prices),
+    [prices]
+  );
 
   const connecting =
-    status === "CONNECTING" || loadingMarket;
+    status === "CONNECTING" ||
+    loadingMarket;
 
   const displayPrice =
     Number.isFinite(currentPrice)
-      ? currentPrice.toFixed(market.decimals)
+      ? currentPrice.toFixed(
+          market.decimals
+        )
       : "—";
 
   const signals = [
     {
       title: "Even / Odd",
-      signal: analysis.signals.parity.signal,
-      confidence: analysis.signals.parity.confidence,
-      detail: analysis.signals.parity.detail,
+      signal:
+        analysis.signals.parity
+          .signal,
+      confidence:
+        analysis.signals.parity
+          .confidence,
+      detail:
+        analysis.signals.parity
+          .detail,
     },
     {
       title: "Over / Under 2",
-      signal: analysis.signals.threshold.signal,
-      confidence: analysis.signals.threshold.confidence,
-      detail: analysis.signals.threshold.detail,
+      signal:
+        analysis.signals.threshold
+          .signal,
+      confidence:
+        analysis.signals.threshold
+          .confidence,
+      detail:
+        analysis.signals.threshold
+          .detail,
     },
     {
       title: "Matches / Differs",
-      signal: analysis.signals.matchDiff.signal,
-      confidence: analysis.signals.matchDiff.confidence,
-      detail: analysis.signals.matchDiff.detail,
+      signal:
+        analysis.signals.matchDiff
+          .signal,
+      confidence:
+        analysis.signals.matchDiff
+          .confidence,
+      detail:
+        analysis.signals.matchDiff
+          .detail,
     },
     {
       title: "Rise / Fall",
-      signal: analysis.signals.riseFall.signal,
-      confidence: analysis.signals.riseFall.confidence,
-      detail: analysis.signals.riseFall.detail,
+      signal:
+        analysis.signals.riseFall
+          .signal,
+      confidence:
+        analysis.signals.riseFall
+          .confidence,
+      detail:
+        analysis.signals.riseFall
+          .detail,
     },
   ];
 
@@ -148,16 +317,36 @@ export default function Dashboard() {
           title="Trading Dashboard"
           subtitle="Trend, momentum, range, volatility and historical validation"
           connected={connected}
-          connecting={connecting}
+          connecting={
+            connecting ||
+            completingOAuth
+          }
           onConnect={connect}
           onDisconnect={disconnect}
         />
+
+        {completingOAuth ? (
+          <div className="connectionError">
+            Completing Deriv login.
+            Please wait...
+          </div>
+        ) : null}
+
+        {oauthError ? (
+          <div className="connectionError">
+            Deriv login failed:{" "}
+            {oauthError}
+          </div>
+        ) : null}
 
         <section className="toolbar">
           <MarketSelector
             markets={markets}
             value={symbol}
-            disabled={loadingMarket}
+            disabled={
+              loadingMarket ||
+              completingOAuth
+            }
             onChange={changeSymbol}
           />
 
@@ -168,7 +357,10 @@ export default function Dashboard() {
                 : "liveBadge"
             }
           >
-            ● {connected ? "DERIV LIVE" : status}
+            ●{" "}
+            {connected
+              ? "DERIV LIVE"
+              : status}
           </div>
         </section>
 
@@ -194,7 +386,10 @@ export default function Dashboard() {
                 <small>
                   {market.label.toUpperCase()}
                 </small>
-                <h2>{displayPrice}</h2>
+
+                <h2>
+                  {displayPrice}
+                </h2>
               </div>
 
               <span className="priceDigit">
@@ -218,8 +413,8 @@ export default function Dashboard() {
                 </svg>
               ) : (
                 <div className="chartEmpty">
-                  Connect Deriv and wait for live
-                  ticks.
+                  Connect Deriv and
+                  wait for live ticks.
                 </div>
               )}
             </div>
@@ -229,15 +424,22 @@ export default function Dashboard() {
                 (item) => (
                   <div
                     className={
-                      item.digit === lastDigit
+                      item.digit ===
+                      lastDigit
                         ? "digitItem active"
                         : "digitItem"
                     }
                     key={item.digit}
                   >
-                    <strong>{item.digit}</strong>
+                    <strong>
+                      {item.digit}
+                    </strong>
+
                     <small>
-                      {item.percent.toFixed(1)}%
+                      {item.percent.toFixed(
+                        1
+                      )}
+                      %
                     </small>
                   </div>
                 )
@@ -246,7 +448,9 @@ export default function Dashboard() {
           </article>
 
           <article className="panel">
-            <h3>Professional Summary</h3>
+            <h3>
+              Professional Summary
+            </h3>
 
             <div className="statsGrid">
               <Stat
@@ -255,36 +459,45 @@ export default function Dashboard() {
                   professionalDecision.status
                 }
               />
+
               <Stat
                 label="Best setup"
                 value={
                   professionalDecision.setup
                 }
               />
+
               <Stat
                 label="Confidence"
                 value={`${professionalDecision.confidence.toFixed(
                   1
                 )}%`}
               />
+
               <Stat
                 label="Votes"
                 value={`${professionalDecision.passedCount}/${professionalDecision.totalChecks}`}
               />
+
               <Stat
                 label="Historical"
                 value={`${validatedSignals.approvedCount} passed`}
               />
+
               <Stat
                 label="Entry timing"
-                value={entryTiming.state}
+                value={
+                  entryTiming.state
+                }
               />
             </div>
           </article>
         </section>
 
         <ProfessionalDecisionPanel
-          decision={professionalDecision}
+          decision={
+            professionalDecision
+          }
         />
 
         <section
@@ -295,12 +508,16 @@ export default function Dashboard() {
           }
         >
           <div>
-            <small>FINAL SIGNAL</small>
+            <small>
+              FINAL SIGNAL
+            </small>
+
             <h2>
               {professionalDecision.validated
                 ? professionalDecision.setup
                 : "NO TRADE"}
             </h2>
+
             <p>
               {professionalDecision.validated
                 ? professionalDecision.reason
@@ -315,17 +532,26 @@ export default function Dashboard() {
                 1
               )}%`}
             />
+
             <Stat
               label="Current digit"
-              value={lastDigit ?? "—"}
+              value={
+                lastDigit ?? "—"
+              }
             />
+
             <Stat
               label="Entry status"
-              value={entryTiming.state}
+              value={
+                entryTiming.state
+              }
             />
+
             <Stat
               label="Duration"
-              value={entryTiming.tradeDuration}
+              value={
+                entryTiming.tradeDuration
+              }
             />
           </div>
         </section>
