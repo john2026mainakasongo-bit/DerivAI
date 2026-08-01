@@ -25,7 +25,7 @@ const INITIAL_SETTINGS = {
   stake: 1,
   duration: 5,
   minConfidence: 75,
-  minVotes: 3,
+  minVotes: 4,
   takeProfit: 20,
   stopLoss: 10,
   maxConsecutiveLosses: 3,
@@ -47,6 +47,9 @@ const INITIAL_BOT_STATE = {
   completedAt: 0,
   stopReason: "",
   consecutiveLosses: 0,
+  currentWinStreak: 0,
+  largestWinStreak: 0,
+  largestLossStreak: 0,
   martingaleStep: 0,
   currentStake: 1,
   activeSetup: "—",
@@ -575,6 +578,15 @@ export default function Bot() {
               </div>
             </div>
 
+            <div className="botStrictGate">
+              <strong>STRICT AUTO-ENTRY GATE</strong>
+              <span>
+                Validated professional decision · Confidence ≥{" "}
+                {settings.minConfidence}% · Votes ≥ {settings.minVotes} ·
+                Entry must be ENTER NOW
+              </span>
+            </div>
+
             <div className="botMessage">
               {botState.message}
             </div>
@@ -719,6 +731,14 @@ export default function Bot() {
                     }`}
                   />
                   <Metric label="ROI" value={`${roi}%`} />
+                  <Metric
+                    label="Largest win streak"
+                    value={botState.largestWinStreak}
+                  />
+                  <Metric
+                    label="Largest loss streak"
+                    value={botState.largestLossStreak}
+                  />
                 </div>
               </div>
             ) : null}

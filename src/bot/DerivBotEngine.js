@@ -1,7 +1,7 @@
 const DEFAULTS = {
   maxRuns: 56,
   minConfidence: 75,
-  minVotes: 3,
+  minVotes: 4,
   stake: 1,
   duration: 5,
   delaySeconds: 3,
@@ -174,6 +174,9 @@ export default class DerivBotEngine {
       completedAt: 0,
       stopReason: "",
       consecutiveLosses: 0,
+      currentWinStreak: 0,
+      largestWinStreak: 0,
+      largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: DEFAULTS.stake,
       activeSetup: "—",
@@ -203,7 +206,7 @@ export default class DerivBotEngine {
       ...input,
       maxRuns: Math.max(1, Math.min(1000, number(input.maxRuns, 56))),
       minConfidence: Math.max(50, Math.min(99, number(input.minConfidence, 75))),
-      minVotes: Math.max(1, Math.min(10, number(input.minVotes, 3))),
+      minVotes: Math.max(1, Math.min(10, number(input.minVotes, 4))),
       stake: Math.max(0.35, number(input.stake, 1)),
       duration: Math.max(1, Math.min(10, number(input.duration, 5))),
       delaySeconds: Math.max(0, Math.min(60, number(input.delaySeconds, 3))),
@@ -393,6 +396,9 @@ export default class DerivBotEngine {
       completedAt: 0,
       stopReason: "",
       consecutiveLosses: 0,
+      currentWinStreak: 0,
+      largestWinStreak: 0,
+      largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
       activeSetup: "—",
@@ -606,6 +612,15 @@ export default class DerivBotEngine {
     const totalPayout =
       this.state.totalPayout + Math.max(0, details.payout);
     const consecutiveLosses = won ? 0 : this.state.consecutiveLosses + 1;
+    const currentWinStreak = won ? this.state.currentWinStreak + 1 : 0;
+    const largestWinStreak = Math.max(
+      this.state.largestWinStreak,
+      currentWinStreak
+    );
+    const largestLossStreak = Math.max(
+      this.state.largestLossStreak,
+      consecutiveLosses
+    );
 
     let martingaleStep = 0;
     let nextStake = this.settings.stake;
@@ -655,6 +670,9 @@ export default class DerivBotEngine {
       totalStake,
       totalPayout,
       consecutiveLosses,
+      currentWinStreak,
+      largestWinStreak,
+      largestLossStreak,
       martingaleStep,
       currentStake: Math.max(0.35, Number(nextStake.toFixed(2))),
       activeContractId: "",
