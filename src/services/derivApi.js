@@ -729,13 +729,25 @@ class DerivTradingClient {
     const proposal = {
       proposal: 1,
       amount: Number(amount),
-      basis,
+      basis: String(basis || "stake"),
       contract_type: String(contractType || "").toUpperCase(),
-      currency,
+      currency: String(currency || "USD"),
       duration: Number(duration),
-      duration_unit: durationUnit,
-      symbol,
+      duration_unit: String(durationUnit || "t"),
+      underlying_symbol: String(symbol || ""),
     };
+
+    if (!proposal.underlying_symbol) {
+      throw new Error("Underlying symbol is missing.");
+    }
+
+    if (!Number.isFinite(proposal.amount) || proposal.amount <= 0) {
+      throw new Error("Proposal amount must be greater than zero.");
+    }
+
+    if (!Number.isFinite(proposal.duration) || proposal.duration <= 0) {
+      throw new Error("Proposal duration must be greater than zero.");
+    }
 
     if (barrier !== undefined && barrier !== null && barrier !== "") {
       proposal.barrier = String(barrier);
