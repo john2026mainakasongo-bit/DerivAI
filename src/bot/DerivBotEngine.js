@@ -1,7 +1,7 @@
 const DEFAULTS = {
   maxRuns: 56,
-  minConfidence: 80,
-  minVotes: 4,
+  minConfidence: 72,
+  minVotes: 3,
   stake: 1,
   duration: 5,
   delaySeconds: 3,
@@ -224,8 +224,8 @@ export default class DerivBotEngine {
       ...DEFAULTS,
       ...input,
       maxRuns: Math.max(1, Math.min(1000, number(input.maxRuns, 56))),
-      minConfidence: Math.max(50, Math.min(99, number(input.minConfidence, 80))),
-      minVotes: Math.max(1, Math.min(10, number(input.minVotes, 4))),
+      minConfidence: Math.max(50, Math.min(99, number(input.minConfidence, 72))),
+      minVotes: Math.max(1, Math.min(10, number(input.minVotes, 3))),
       stake: Math.max(0.35, number(input.stake, 1)),
       duration: Math.max(1, Math.min(10, number(input.duration, 5))),
       delaySeconds: Math.max(0, Math.min(60, number(input.delaySeconds, 3))),
@@ -319,12 +319,12 @@ export default class DerivBotEngine {
       };
     }
 
-    if (number(decision.marketQuality) < 75) {
+    if (number(decision.marketQuality) < 65) {
       return {
         ok: false,
         reason: `Market quality ${number(decision.marketQuality).toFixed(
           1
-        )}% is below 75%.`,
+        )}% is below the balanced 65% threshold.`,
       };
     }
 
@@ -338,12 +338,18 @@ export default class DerivBotEngine {
     }
 
     const timingState = String(timing.state || "").toUpperCase();
-    const readyNow = timing.readyNow === true || timingState === "ENTER NOW";
+    const readinessScore = number(timing.readinessScore);
+    const readyNow =
+      timing.readyNow === true ||
+      timingState === "ENTER NOW" ||
+      (timingState === "READY" && readinessScore >= 78);
 
     if (!readyNow) {
       return {
         ok: false,
-        reason: timing.instruction || `Entry timing is ${timingState || "WAIT"}.`,
+        reason:
+          timing.instruction ||
+          `Balanced entry timing is ${timingState || "WAIT"}.`,
       };
     }
 

@@ -573,3 +573,13 @@
     grid-row: 2;
   }
 }
+
+
+.botStrictGate {
+  border-color: rgba(255, 194, 62, 0.42);
+  background: rgba(120, 85, 10, 0.15);
+}
+
+.botStrictGate strong {
+  color: #ffd86a;
+}

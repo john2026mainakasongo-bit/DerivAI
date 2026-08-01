@@ -24,8 +24,8 @@ const INITIAL_SETTINGS = {
   maxRuns: 56,
   stake: 1,
   duration: 5,
-  minConfidence: 80,
-  minVotes: 4,
+  minConfidence: 72,
+  minVotes: 3,
   takeProfit: 20,
   stopLoss: 10,
   cooldownAfterLosses: 3,
@@ -341,8 +341,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V8"
-          subtitle="Weighted market quality, staged entry timing and Demo-only risk controls"
+          title="56-Run Auto Bot V8 Balanced"
+          subtitle="Balanced signal frequency with weighted analysis and Demo-only risk controls"
           connected={connected}
           connecting={connecting}
           onConnect={connect}

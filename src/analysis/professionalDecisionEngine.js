@@ -826,9 +826,9 @@ export function buildProfessionalDecision(
 
   const validated =
     setup !== "WAIT" &&
-    professionalScore >= 80 &&
-    marketQuality >= 75 &&
-    passedCount >= 4 &&
+    professionalScore >= 72 &&
+    marketQuality >= 65 &&
+    passedCount >= 3 &&
     volatility.passed &&
     riskLevel !== "HIGH";
 
