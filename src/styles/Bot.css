@@ -296,3 +296,18 @@
     padding: 14px;
   }
 }
+
+
+.testTradeButton {
+  border: 1px solid #9b7b20;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-weight: 900;
+  cursor: pointer;
+  color: #ffe48a;
+  background: rgba(176, 130, 24, 0.18);
+}
+
+.testTradeButton:hover {
+  background: rgba(176, 130, 24, 0.28);
+}

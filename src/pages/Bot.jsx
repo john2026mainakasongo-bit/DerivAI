@@ -61,6 +61,38 @@ function accountId(account) {
 }
 
 function Field({ label, children }) {
+  async function testOneTrade() {
+    if (!auth.authenticated) {
+      auth.login();
+      return;
+    }
+
+    if (!isDemo) {
+      window.alert(
+        "The test trade is locked to a Demo Account."
+      );
+      return;
+    }
+
+    try {
+      if (!connected) {
+        await connect();
+      }
+
+      await engineRef.current?.testOneDemoTrade(
+        professionalDecision.setup === "FALL"
+          ? "FALL"
+          : "RISE"
+      );
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to complete the Demo test trade."
+      );
+    }
+  }
+
   return (
     <label className="botField">
       <span>{label}</span>
@@ -579,15 +611,25 @@ export default function Bot() {
               ) : null}
 
               {!running && !paused ? (
-                <button
-                  type="button"
-                  className="secondaryButton"
-                  onClick={() =>
-                    engineRef.current?.reset()
-                  }
-                >
-                  Reset Stats
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="testTradeButton"
+                    onClick={testOneTrade}
+                  >
+                    Test 1 Demo Trade
+                  </button>
+
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={() =>
+                      engineRef.current?.reset()
+                    }
+                  >
+                    Reset Stats
+                  </button>
+                </>
               ) : null}
             </div>
           </article>

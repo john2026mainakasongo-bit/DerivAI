@@ -443,6 +443,54 @@ export default class DerivBotEngine {
     }
   }
 
+  async testOneDemoTrade(setup = "RISE") {
+    if (this.running || this.activeContractId) {
+      throw new Error(
+        "Stop or pause the automatic bot before running a test trade."
+      );
+    }
+
+    if (!this.symbol) {
+      throw new Error(
+        "Connect the Deriv feed and select a market first."
+      );
+    }
+
+    const contract = contractFromSetup(setup);
+
+    if (!contract) {
+      throw new Error(`Unsupported test setup: ${setup}.`);
+    }
+
+    const check = {
+      contract,
+      decision: {
+        setup: contract.label,
+        confidence: 100,
+        passedCount: 7,
+        validated: true,
+      },
+      timing: {
+        state: "TEST",
+        readyNow: true,
+      },
+    };
+
+    this.patch({
+      status: "TESTING",
+      message: `Opening one Demo test trade: ${contract.label}.`,
+      activeSetup: contract.label,
+    });
+
+    await this.executeTrade(check);
+
+    this.patch({
+      status: "IDLE",
+      message:
+        "Demo test trade completed. The automatic bot remains stopped.",
+    });
+  }
+
   async executeTrade(check) {
     const stake = Number(this.state.currentStake.toFixed(2));
 
