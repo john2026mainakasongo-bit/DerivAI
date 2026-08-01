@@ -1,16 +1,18 @@
 const DEFAULTS = {
   maxRuns: 56,
-  minConfidence: 75,
+  minConfidence: 80,
   minVotes: 4,
   stake: 1,
   duration: 5,
   delaySeconds: 3,
   takeProfit: 20,
   stopLoss: 10,
-  maxConsecutiveLosses: 3,
+  cooldownAfterLosses: 3,
+  cooldownSeconds: 60,
+  hardStopLossStreak: 6,
   martingaleEnabled: false,
-  martingaleMultiplier: 2,
   maxMartingaleSteps: 3,
+  recoveryMultipliers: [1.7, 2.2, 2.8],
 };
 
 function sleep(ms) {
@@ -147,6 +149,20 @@ function contractDetails(contract = {}, bought = {}) {
   };
 }
 
+
+function smartRecoveryMultiplier(step, schedule = DEFAULTS.recoveryMultipliers) {
+  const safeStep = Math.max(1, Math.floor(number(step, 1)));
+  const values = (Array.isArray(schedule) ? schedule : DEFAULTS.recoveryMultipliers)
+    .map((value) => Math.max(1, number(value, 1)))
+    .filter(Number.isFinite);
+
+  if (!values.length) {
+    return 1;
+  }
+
+  return values[Math.min(safeStep - 1, values.length - 1)];
+}
+
 export default class DerivBotEngine {
   constructor({ client, onState }) {
     this.client = client;
@@ -174,6 +190,9 @@ export default class DerivBotEngine {
       completedAt: 0,
       stopReason: "",
       consecutiveLosses: 0,
+      lossesSinceWin: 0,
+      cooldownUntil: 0,
+      cooldownCount: 0,
       currentWinStreak: 0,
       largestWinStreak: 0,
       largestLossStreak: 0,
@@ -205,25 +224,30 @@ export default class DerivBotEngine {
       ...DEFAULTS,
       ...input,
       maxRuns: Math.max(1, Math.min(1000, number(input.maxRuns, 56))),
-      minConfidence: Math.max(50, Math.min(99, number(input.minConfidence, 75))),
+      minConfidence: Math.max(50, Math.min(99, number(input.minConfidence, 80))),
       minVotes: Math.max(1, Math.min(10, number(input.minVotes, 4))),
       stake: Math.max(0.35, number(input.stake, 1)),
       duration: Math.max(1, Math.min(10, number(input.duration, 5))),
       delaySeconds: Math.max(0, Math.min(60, number(input.delaySeconds, 3))),
       takeProfit: Math.max(0, number(input.takeProfit, 20)),
       stopLoss: Math.max(0, number(input.stopLoss, 10)),
-      maxConsecutiveLosses: Math.max(
+      cooldownAfterLosses: Math.max(
         1,
-        Math.min(20, number(input.maxConsecutiveLosses, 3))
+        Math.min(10, number(input.cooldownAfterLosses, 3))
       ),
-      martingaleMultiplier: Math.max(
-        1,
-        Math.min(5, number(input.martingaleMultiplier, 2))
+      cooldownSeconds: Math.max(
+        10,
+        Math.min(900, number(input.cooldownSeconds, 60))
+      ),
+      hardStopLossStreak: Math.max(
+        2,
+        Math.min(20, number(input.hardStopLossStreak, 6))
       ),
       maxMartingaleSteps: Math.max(
         0,
-        Math.min(10, number(input.maxMartingaleSteps, 3))
+        Math.min(3, number(input.maxMartingaleSteps, 3))
       ),
+      recoveryMultipliers: DEFAULTS.recoveryMultipliers,
     };
 
     if (!this.running) {
@@ -275,12 +299,32 @@ export default class DerivBotEngine {
       return { ok: false, reason: "Professional decision is not validated." };
     }
 
-    if (number(decision.confidence) < this.settings.minConfidence) {
+    const professionalScore = number(
+      decision.professionalScore ?? decision.confidence
+    );
+
+    if (professionalScore < this.settings.minConfidence) {
       return {
         ok: false,
-        reason: `Confidence ${number(decision.confidence).toFixed(
+        reason: `Professional score ${professionalScore.toFixed(
           1
         )}% is below ${this.settings.minConfidence}%.`,
+      };
+    }
+
+    if (String(decision.riskLevel || "").toUpperCase() === "HIGH") {
+      return {
+        ok: false,
+        reason: "Risk filter is HIGH. Waiting for safer market conditions.",
+      };
+    }
+
+    if (number(decision.marketQuality) < 75) {
+      return {
+        ok: false,
+        reason: `Market quality ${number(decision.marketQuality).toFixed(
+          1
+        )}% is below 75%.`,
       };
     }
 
@@ -377,6 +421,7 @@ export default class DerivBotEngine {
       stopReason: message,
       completedAt:
         status === "COMPLETED" ? Date.now() : this.state.completedAt,
+      cooldownUntil: 0,
       activeContractId: "",
     });
   }
@@ -396,6 +441,9 @@ export default class DerivBotEngine {
       completedAt: 0,
       stopReason: "",
       consecutiveLosses: 0,
+      lossesSinceWin: 0,
+      cooldownUntil: 0,
+      cooldownCount: 0,
       currentWinStreak: 0,
       largestWinStreak: 0,
       largestLossStreak: 0,
@@ -442,11 +490,11 @@ export default class DerivBotEngine {
     }
 
     if (
-      this.state.consecutiveLosses >=
-      this.settings.maxConsecutiveLosses
+      this.state.lossesSinceWin >=
+      this.settings.hardStopLossStreak
     ) {
       return {
-        message: `Stopped after ${this.state.consecutiveLosses} consecutive losses.`,
+        message: `Hard stop reached after ${this.state.lossesSinceWin} losses without a recovery win.`,
         status: "STOPPED",
       };
     }
@@ -454,8 +502,59 @@ export default class DerivBotEngine {
     return null;
   }
 
+  async runRiskCooldown() {
+    const until = Number(this.state.cooldownUntil || 0);
+
+    if (!until || until <= Date.now()) {
+      return;
+    }
+
+    while (
+      this.running &&
+      !this.stopping &&
+      Date.now() < until
+    ) {
+      if (this.paused) {
+        await sleep(500);
+        continue;
+      }
+
+      const remaining = Math.max(
+        1,
+        Math.ceil((until - Date.now()) / 1000)
+      );
+
+      this.patch({
+        status: "RISK_COOLDOWN",
+        message: `Risk cooldown active. Waiting ${remaining}s for better conditions.`,
+      });
+
+      await sleep(1000);
+    }
+
+    if (!this.running || this.stopping) {
+      return;
+    }
+
+    this.patch({
+      status: "RUNNING",
+      message: "Risk cooldown completed. Waiting for a new validated setup.",
+      cooldownUntil: 0,
+      cooldownCount: this.state.cooldownCount + 1,
+      consecutiveLosses: 0,
+      martingaleStep: 0,
+      currentStake: this.settings.stake,
+      activeSetup: "—",
+    });
+  }
+
   async loop() {
     while (this.running && !this.stopping) {
+      if (Number(this.state.cooldownUntil || 0) > Date.now()) {
+        await this.runRiskCooldown();
+        continue;
+      }
+
       const stopReason = this.riskStopReason();
 
       if (stopReason) {
@@ -506,7 +605,11 @@ export default class DerivBotEngine {
         await sleep(3000);
       }
 
-      if (this.running && this.settings.delaySeconds > 0) {
+      if (
+        this.running &&
+        Number(this.state.cooldownUntil || 0) <= Date.now() &&
+        this.settings.delaySeconds > 0
+      ) {
         this.patch({
           status: "COOLDOWN",
           message: `Waiting ${this.settings.delaySeconds}s before the next scan.`,
@@ -562,6 +665,7 @@ export default class DerivBotEngine {
       status: "IDLE",
       message:
         "Demo test trade completed. The automatic bot remains stopped.",
+      cooldownUntil: 0,
     });
   }
 
@@ -612,6 +716,7 @@ export default class DerivBotEngine {
     const totalPayout =
       this.state.totalPayout + Math.max(0, details.payout);
     const consecutiveLosses = won ? 0 : this.state.consecutiveLosses + 1;
+    const lossesSinceWin = won ? 0 : this.state.lossesSinceWin + 1;
     const currentWinStreak = won ? this.state.currentWinStreak + 1 : 0;
     const largestWinStreak = Math.max(
       this.state.largestWinStreak,
@@ -633,7 +738,10 @@ export default class DerivBotEngine {
       martingaleStep = this.state.martingaleStep + 1;
       nextStake =
         this.settings.stake *
-        Math.pow(this.settings.martingaleMultiplier, martingaleStep);
+        smartRecoveryMultiplier(
+          martingaleStep,
+          this.settings.recoveryMultipliers
+        );
     }
 
     this.addHistory({
@@ -651,7 +759,12 @@ export default class DerivBotEngine {
       duration: this.settings.duration,
       symbol: this.symbol,
       contractId: this.activeContractId,
-      confidence: number(check.decision.confidence),
+      confidence: number(
+        check.decision.professionalScore ?? check.decision.confidence
+      ),
+      marketQuality: number(check.decision.marketQuality),
+      riskLevel: String(check.decision.riskLevel || "—"),
+      entryStage: String(check.timing.state || "—"),
       votes: number(check.decision.passedCount),
       martingaleStep: this.state.martingaleStep,
     });
@@ -670,6 +783,7 @@ export default class DerivBotEngine {
       totalStake,
       totalPayout,
       consecutiveLosses,
+      lossesSinceWin,
       currentWinStreak,
       largestWinStreak,
       largestLossStreak,
@@ -682,6 +796,22 @@ export default class DerivBotEngine {
 
     if (finalStop) {
       this.stop(finalStop.message, finalStop.status);
+      return;
+    }
+
+    if (
+      !won &&
+      consecutiveLosses >= this.settings.cooldownAfterLosses
+    ) {
+      const cooldownUntil =
+        Date.now() + this.settings.cooldownSeconds * 1000;
+
+      this.patch({
+        status: "RISK_COOLDOWN",
+        message:
+          `Risk cooldown triggered after ${consecutiveLosses} consecutive losses.`,
+        cooldownUntil,
+      });
     }
   }
 

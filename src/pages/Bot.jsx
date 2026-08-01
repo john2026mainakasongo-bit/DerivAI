@@ -24,14 +24,15 @@ const INITIAL_SETTINGS = {
   maxRuns: 56,
   stake: 1,
   duration: 5,
-  minConfidence: 75,
+  minConfidence: 80,
   minVotes: 4,
   takeProfit: 20,
   stopLoss: 10,
-  maxConsecutiveLosses: 3,
+  cooldownAfterLosses: 3,
+  cooldownSeconds: 60,
+  hardStopLossStreak: 6,
   delaySeconds: 3,
   martingaleEnabled: false,
-  martingaleMultiplier: 2,
   maxMartingaleSteps: 3,
 };
 
@@ -47,6 +48,9 @@ const INITIAL_BOT_STATE = {
   completedAt: 0,
   stopReason: "",
   consecutiveLosses: 0,
+  lossesSinceWin: 0,
+  cooldownUntil: 0,
+  cooldownCount: 0,
   currentWinStreak: 0,
   largestWinStreak: 0,
   largestLossStreak: 0,
@@ -241,6 +245,8 @@ export default function Bot() {
     "BUYING",
     "MONITORING",
     "COOLDOWN",
+    "RISK_COOLDOWN",
+    "TESTING",
     "WON",
     "LOST",
   ].includes(botState.status);
@@ -315,8 +321,9 @@ export default function Bot() {
       }
 
       await engineRef.current?.testOneDemoTrade(
-        professionalDecision.setup === "FALL"
-          ? "FALL"
+        professionalDecision.setup &&
+          professionalDecision.setup !== "WAIT"
+          ? professionalDecision.setup
           : "RISE"
       );
     } catch (error) {
@@ -334,8 +341,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot"
-          subtitle="Demo-only automated execution with strict risk controls"
+          title="56-Run Auto Bot V8"
+          subtitle="Weighted market quality, staged entry timing and Demo-only risk controls"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -478,14 +485,36 @@ export default function Bot() {
                 />
               </Field>
 
-              <Field label="Maximum consecutive losses">
+              <Field label="Losses before cooldown">
                 <input
                   type="number"
                   min="1"
-                  max="20"
-                  value={settings.maxConsecutiveLosses}
+                  max="10"
+                  value={settings.cooldownAfterLosses}
                   disabled={running || paused}
-                  onChange={updateNumber("maxConsecutiveLosses")}
+                  onChange={updateNumber("cooldownAfterLosses")}
+                />
+              </Field>
+
+              <Field label="Risk cooldown (seconds)">
+                <input
+                  type="number"
+                  min="10"
+                  max="900"
+                  value={settings.cooldownSeconds}
+                  disabled={running || paused}
+                  onChange={updateNumber("cooldownSeconds")}
+                />
+              </Field>
+
+              <Field label="Hard-stop loss streak">
+                <input
+                  type="number"
+                  min="2"
+                  max="20"
+                  value={settings.hardStopLossStreak}
+                  disabled={running || paused}
+                  onChange={updateNumber("hardStopLossStreak")}
                 />
               </Field>
 
@@ -507,27 +536,19 @@ export default function Bot() {
                 </span>
               </label>
 
-              <Field label="Martingale multiplier">
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  step="0.1"
-                  value={settings.martingaleMultiplier}
-                  disabled={
-                    running ||
-                    paused ||
-                    !settings.martingaleEnabled
-                  }
-                  onChange={updateNumber("martingaleMultiplier")}
-                />
-              </Field>
+              <div className="botRecoverySchedule">
+                <span>Smart recovery schedule</span>
+                <strong>Step 1 ×1.7 · Step 2 ×2.2 · Step 3 ×2.8</strong>
+                <small>
+                  Optional and capped. A win resets the stake to base.
+                </small>
+              </div>
 
               <Field label="Maximum martingale steps">
                 <input
                   type="number"
                   min="0"
-                  max="10"
+                  max="3"
                   value={settings.maxMartingaleSteps}
                   disabled={
                     running ||
@@ -581,10 +602,102 @@ export default function Bot() {
             <div className="botStrictGate">
               <strong>STRICT AUTO-ENTRY GATE</strong>
               <span>
-                Validated professional decision · Confidence ≥{" "}
-                {settings.minConfidence}% · Votes ≥ {settings.minVotes} ·
+                Weighted score ≥ {settings.minConfidence}% · Market quality ≥ 75% ·
+                Votes ≥ {settings.minVotes} · Risk must not be HIGH ·
                 Entry must be ENTER NOW
               </span>
+            </div>
+
+            <div className="botIntelligence">
+              <div className="botIntelligenceHeader">
+                <div>
+                  <small>PROFESSIONAL INTELLIGENCE</small>
+                  <h3>Weighted market assessment</h3>
+                </div>
+
+                <span
+                  className={`botRiskBadge ${String(
+                    professionalDecision.riskLevel || "high"
+                  ).toLowerCase()}`}
+                >
+                  {professionalDecision.riskLevel || "HIGH"} RISK
+                </span>
+              </div>
+
+              <div className="botIntelligenceGrid">
+                <Metric
+                  label="Market quality"
+                  value={`${Number(
+                    professionalDecision.marketQuality || 0
+                  ).toFixed(1)}%`}
+                />
+                <Metric
+                  label="Professional score"
+                  value={`${Number(
+                    professionalDecision.professionalScore ||
+                      professionalDecision.confidence ||
+                      0
+                  ).toFixed(1)}%`}
+                />
+                <Metric
+                  label="Best contract"
+                  value={professionalDecision.bestContract || "WAIT"}
+                />
+                <Metric
+                  label="Market state"
+                  value={professionalDecision.marketState || "WAIT"}
+                />
+                <Metric
+                  label="Expected R:R"
+                  value={
+                    professionalDecision.expectedRRLabel ||
+                    "Proposal required"
+                  }
+                />
+                <Metric
+                  label="Data sufficiency"
+                  value={`${Number(
+                    professionalDecision.dataSufficiency || 0
+                  ).toFixed(1)}%`}
+                />
+              </div>
+
+              <div className="botScoreBreakdown">
+                {(professionalDecision.components || []).map(
+                  (component) => (
+                    <div
+                      className="botScoreRow"
+                      key={component.key}
+                    >
+                      <div>
+                        <strong>{component.label}</strong>
+                        <small>
+                          Weight {component.weight}% ·{" "}
+                          {component.detail}
+                        </small>
+                      </div>
+
+                      <div className="botScoreTrack">
+                        <span
+                          style={{
+                            width: `${Math.max(
+                              0,
+                              Math.min(
+                                100,
+                                Number(component.rawScore || 0)
+                              )
+                            )}%`,
+                          }}
+                        />
+                      </div>
+
+                      <b>
+                        {Number(component.rawScore || 0).toFixed(0)}
+                      </b>
+                    </div>
+                  )
+                )}
+              </div>
             </div>
 
             <div className="botMessage">
@@ -660,6 +773,11 @@ export default function Bot() {
                 </>
               ) : null}
             </div>
+
+            <div className="botSafetyNote">
+              Demo research tool only. Weighted scores and recovery staking do not
+              guarantee profitable trades.
+            </div>
           </article>
 
           <aside className="botCard">
@@ -703,6 +821,14 @@ export default function Bot() {
               <Metric
                 label="Loss streak"
                 value={botState.consecutiveLosses}
+              />
+              <Metric
+                label="Losses since win"
+                value={botState.lossesSinceWin}
+              />
+              <Metric
+                label="Risk cooldowns"
+                value={botState.cooldownCount}
               />
               <Metric
                 label="Martingale step"
@@ -774,6 +900,11 @@ export default function Bot() {
                         {Number(item.exitSpot || 0).toFixed(3)} · Stake{" "}
                         {Number(item.stake || 0).toFixed(2)} · MG{" "}
                         {Number(item.martingaleStep || 0)}
+                      </small>
+                      <small>
+                        Score {Number(item.confidence || 0).toFixed(1)}% ·
+                        Quality {Number(item.marketQuality || 0).toFixed(1)}% ·{" "}
+                        {item.riskLevel || "—"} risk · {item.entryStage || "—"}
                       </small>
                     </div>
 

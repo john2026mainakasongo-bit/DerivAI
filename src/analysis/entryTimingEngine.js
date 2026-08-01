@@ -389,8 +389,55 @@ export function buildEntryTiming(
     )
   );
 
+  let state = "WAIT";
+  let readinessScore = 0;
+
+  if (base.readyNow) {
+    state = "ENTER NOW";
+    readinessScore = 100;
+  } else if (
+    base.setup &&
+    base.setup !== "—" &&
+    base.state !== "SKIP"
+  ) {
+    const currentDigit =
+      Number(base.currentDigit);
+
+    const distances =
+      Array.isArray(base.triggerDigits)
+        ? base.triggerDigits
+            .map(Number)
+            .filter(Number.isInteger)
+            .map((digit) =>
+              Math.abs(
+                digit - currentDigit
+              )
+            )
+        : [];
+
+    const nearest =
+      distances.length
+        ? Math.min(...distances)
+        : null;
+
+    if (
+      Number.isInteger(currentDigit) &&
+      nearest !== null &&
+      nearest <= 1
+    ) {
+      state = "READY";
+      readinessScore = 78;
+    } else {
+      state = "PREPARE";
+      readinessScore = 55;
+    }
+  }
+
   return {
     ...base,
+    rawState: base.state,
+    state,
+    readinessScore,
     tradeTicks,
     tradeDuration:
       `${tradeTicks} tick${tradeTicks === 1 ? "" : "s"}`,

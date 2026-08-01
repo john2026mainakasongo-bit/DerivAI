@@ -380,3 +380,196 @@
   font-size: 13px;
   line-height: 1.4;
 }
+
+
+.botRecoverySchedule {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #163f59;
+  border-radius: 10px;
+  background: #071d2d;
+}
+
+.botRecoverySchedule span,
+.botRecoverySchedule small {
+  color: #82b7d9;
+}
+
+.botRecoverySchedule strong {
+  color: #ffe08a;
+  overflow-wrap: anywhere;
+}
+
+.botIntelligence {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(40, 166, 255, 0.32);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(8, 42, 66, 0.84),
+      rgba(4, 25, 40, 0.92)
+    );
+}
+
+.botIntelligenceHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.botIntelligenceHeader small {
+  color: #35e6b1;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+}
+
+.botIntelligenceHeader h3 {
+  margin: 4px 0 0;
+  color: #ffffff;
+  font-size: 17px;
+}
+
+.botRiskBadge {
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.botRiskBadge.low {
+  color: #34e7ad;
+  background: rgba(28, 145, 105, 0.13);
+}
+
+.botRiskBadge.medium {
+  color: #ffd36a;
+  background: rgba(164, 116, 12, 0.16);
+}
+
+.botRiskBadge.high {
+  color: #ff718b;
+  background: rgba(164, 30, 55, 0.16);
+}
+
+.botIntelligenceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.botIntelligenceGrid .botMetric {
+  min-height: 68px;
+}
+
+.botScoreBreakdown {
+  display: grid;
+  gap: 8px;
+}
+
+.botScoreRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(110px, 1fr) 36px;
+  align-items: center;
+  gap: 10px;
+}
+
+.botScoreRow > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.botScoreRow strong {
+  color: #e9f7ff;
+  font-size: 12px;
+}
+
+.botScoreRow small {
+  color: #7faac6;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.botScoreRow b {
+  color: #ffffff;
+  text-align: right;
+  font-size: 12px;
+}
+
+.botScoreTrack {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #031522;
+  box-shadow: inset 0 0 0 1px rgba(98, 162, 203, 0.16);
+}
+
+.botScoreTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      90deg,
+      #1275ed,
+      #35e6b1
+    );
+  transition: width 180ms ease;
+}
+
+.botSafetyNote {
+  margin-top: 10px;
+  color: #7397ad;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.botStatus.risk_cooldown {
+  color: #ffd36a;
+  border-color: rgba(255, 211, 106, 0.5);
+  background: rgba(151, 105, 7, 0.13);
+}
+
+@media (max-width: 1050px) {
+  .botIntelligenceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .botScoreRow {
+    grid-template-columns: minmax(120px, 1fr) minmax(90px, 0.9fr) 32px;
+  }
+}
+
+@media (max-width: 700px) {
+  .botIntelligenceHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .botRiskBadge {
+    align-self: flex-start;
+  }
+
+  .botIntelligenceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .botScoreRow {
+    grid-template-columns: 1fr 32px;
+  }
+
+  .botScoreTrack {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
