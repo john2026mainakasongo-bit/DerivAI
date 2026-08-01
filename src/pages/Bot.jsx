@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V24 · Multi-Engine Consensus AI"
+          title="EdgePilot V25 · Demo Entry Test + Real Strict AI"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>MULTI-ENGINE CONSENSUS</small>
+                <small>DEMO OPERATIONAL · REAL STRICT</small>
                 <strong>
-                  ENGINE VOTING · ADAPTIVE ENTROPY · FRESH CONFIRMATION
+                  DEMO: 4-VOTE ENTRY · REAL: STRICT MULTI-ENGINE GATE
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              The AI compares OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL using independent engine votes. Entropy is adapted to each volatility market instead of blocking every high-randomness setup. Strong setups still require fresh-tick confirmation. Real mode caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              Demo uses a practical execution gate so you can confirm that proposal, buy, settlement and history work. Real stays much stricter, requires additional votes and confirmations, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1407,7 +1407,7 @@ export default function Bot() {
               />
               <Metric
                 label="Data readiness"
-                value={(botState.scanTicks || 0) >= settings.maxScanTicks ? `READY · ${botState.scanTicks || 0} ticks` : `${botState.scanTicks || 0}/${settings.maxScanTicks}`}
+                value={(botState.scanTicks || 0) >= 20 ? `READY · ${botState.scanTicks || 0} ticks` : `${botState.scanTicks || 0}/20`}
               />
               <Metric
                 label="Analysis cycle"

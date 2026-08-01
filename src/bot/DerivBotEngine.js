@@ -331,8 +331,8 @@ function marketProfile(symbol = "") {
       name: "1HZ10V",
       entropyTolerance: 99.2,
       scoreAdjustment: -1,
-      requiredVotes: 5,
-      minimumSamples: 30,
+      requiredVotes: 4,
+      minimumSamples: 24,
     };
   }
 
@@ -341,8 +341,8 @@ function marketProfile(symbol = "") {
       name: "1HZ25V",
       entropyTolerance: 99.0,
       scoreAdjustment: 0,
-      requiredVotes: 5,
-      minimumSamples: 34,
+      requiredVotes: 4,
+      minimumSamples: 24,
     };
   }
 
@@ -351,8 +351,8 @@ function marketProfile(symbol = "") {
       name: "1HZ50V",
       entropyTolerance: 98.9,
       scoreAdjustment: 1,
-      requiredVotes: 5,
-      minimumSamples: 36,
+      requiredVotes: 4,
+      minimumSamples: 26,
     };
   }
 
@@ -361,8 +361,8 @@ function marketProfile(symbol = "") {
       name: "1HZ75V",
       entropyTolerance: 98.8,
       scoreAdjustment: 2,
-      requiredVotes: 5,
-      minimumSamples: 38,
+      requiredVotes: 4,
+      minimumSamples: 28,
     };
   }
 
@@ -371,8 +371,8 @@ function marketProfile(symbol = "") {
       name: "1HZ100V",
       entropyTolerance: 98.7,
       scoreAdjustment: 2,
-      requiredVotes: 6,
-      minimumSamples: 42,
+      requiredVotes: 5,
+      minimumSamples: 30,
     };
   }
 
@@ -380,8 +380,8 @@ function marketProfile(symbol = "") {
     name: value || "DEFAULT",
     entropyTolerance: 98.5,
     scoreAdjustment: 0,
-    requiredVotes: 5,
-    minimumSamples: 36,
+    requiredVotes: 4,
+    minimumSamples: 26,
   };
 }
 
@@ -606,7 +606,7 @@ function buildConsensusVotes(candidate = {}, signal = {}, symbol = "", isReal = 
   }
 
   if (isReal) {
-    requiredVotes += 1;
+    requiredVotes += 2;
   }
 
   return {
@@ -695,36 +695,44 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     score -= 14;
   }
 
-  if (!candidate.approved) {
+  if (!candidate.approved && isReal) {
     score -= 4;
   }
 
   const threshold =
     setup.startsWith("MATCH")
-      ? (isReal ? 95 : 92)
+      ? (isReal ? 95 : 76)
       : setup.startsWith("DIFFERS")
-        ? (isReal ? 92 : 89)
+        ? (isReal ? 92 : 72)
         : setup === "RISE" || setup === "FALL"
-          ? (isReal ? 91 : 87)
-          : (isReal ? 90 : 86);
+          ? (isReal ? 91 : 70)
+          : (isReal ? 90 : 68);
 
   const finalScore = clampScore(score);
 
   let confirmations = 4;
 
-  if (finalScore >= 96 && strongVotes >= 5) {
-    confirmations = isReal ? 3 : 2;
-  } else if (finalScore >= 92) {
-    confirmations = isReal ? 4 : 3;
+  if (isReal) {
+    if (finalScore >= 96 && strongVotes >= 5) {
+      confirmations = 3;
+    } else if (finalScore >= 92) {
+      confirmations = 4;
+    } else {
+      confirmations = 5;
+    }
+  } else if (finalScore >= 85 && strongVotes >= 3) {
+    confirmations = 1;
   } else {
-    confirmations = isReal ? 5 : 4;
+    confirmations = 2;
   }
 
   return {
     ok:
       finalScore >= threshold &&
       passedVotes >= requiredVotes &&
-      samples >= Math.min(profile.minimumSamples, 24),
+      samples >= (isReal
+        ? profile.minimumSamples
+        : Math.min(profile.minimumSamples, 20)),
     setup,
     family: candidateFamily(candidate),
     score: finalScore,
@@ -1178,6 +1186,20 @@ export default class DerivBotEngine {
       };
     }
 
+    const signalAgeMs = Date.now() - Number(signal.updatedAt || 0);
+
+    if (!Number(signal.updatedAt) || signalAgeMs > 12000) {
+      this.strictSetupKey = "";
+      this.strictConfirmations = 0;
+
+      return {
+        ok: false,
+        reason: "Live ticks are stale or disconnected. Reconnect the Deriv feed.",
+        elapsedSeconds: 0,
+        confirmations: 0,
+      };
+    }
+
     const analysis = signal.analysis || {};
     const gate = evaluateAnalysisAssistedSignal(analysis, {
       minimumConfidence: this.settings.minConfidence,
@@ -1378,7 +1400,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V24 Multi-Engine Consensus AI lets confidence, probability, edge, entropy, transitions, momentum, cycles, regime, autocorrelation and sample quality vote independently. A trade is considered only when enough engines agree and fresh ticks confirm the same setup.",
+        "V25 uses an operational Demo gate so completed trades can verify proposal, buy and monitoring. Real remains strict, requires more votes and confirmations, caps stake, and stops after one loss.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
