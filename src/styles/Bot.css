@@ -1,4 +1,4 @@
-.botToolbar {
+﻿.botToolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -673,3 +673,321 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* === EDGEPILOT V12 COMPACT LAYOUT BEGIN === */
+
+.botLayout {
+  align-items: start !important;
+  gap: 10px !important;
+  grid-template-columns:
+    minmax(0, 1.58fr)
+    minmax(300px, 0.68fr) !important;
+}
+
+.botLayout > .botCard,
+.botLayout > article.botCard,
+.botLayout > aside.botCard {
+  align-self: start !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.botCard {
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+}
+
+.botToolbar {
+  gap: 8px !important;
+  margin-bottom: 8px !important;
+}
+
+.botDemoLock {
+  padding: 7px 10px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
+}
+
+.botCardHeader {
+  gap: 8px !important;
+  margin-bottom: 8px !important;
+}
+
+.botCardHeader small {
+  font-size: 9px !important;
+  line-height: 1.1 !important;
+}
+
+.botCardHeader h2 {
+  margin-top: 2px !important;
+  font-size: 17px !important;
+  line-height: 1.1 !important;
+}
+
+.botStatus {
+  padding: 5px 8px !important;
+  font-size: 9px !important;
+}
+
+.botFormGrid {
+  gap: 6px 8px !important;
+}
+
+.botField,
+.botToggle {
+  gap: 3px !important;
+  font-size: 9px !important;
+  line-height: 1.15 !important;
+}
+
+.botField input,
+.botField select {
+  min-height: 29px !important;
+  padding: 5px 8px !important;
+  border-radius: 7px !important;
+  font-size: 10px !important;
+}
+
+.botToggle {
+  min-height: 29px !important;
+  padding: 6px 8px !important;
+  border-radius: 7px !important;
+}
+
+.botToggle input {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.botRecoverySchedule {
+  gap: 2px !important;
+  padding: 6px 8px !important;
+  border-radius: 7px !important;
+  font-size: 9px !important;
+  line-height: 1.15 !important;
+}
+
+.botDecisionBox {
+  gap: 6px !important;
+  margin-top: 8px !important;
+}
+
+.botDecisionBox > div {
+  min-height: 0 !important;
+  padding: 7px 8px !important;
+  border-radius: 7px !important;
+}
+
+.botDecisionBox small,
+.botMetric span {
+  margin-bottom: 2px !important;
+  font-size: 8px !important;
+  line-height: 1.1 !important;
+}
+
+.botDecisionBox strong,
+.botMetric strong {
+  font-size: 10px !important;
+  line-height: 1.15 !important;
+  overflow-wrap: anywhere;
+}
+
+.botStrictGate,
+.botTimedFallbackInfo {
+  gap: 2px !important;
+  margin-top: 7px !important;
+  padding: 7px 8px !important;
+  border-radius: 7px !important;
+}
+
+.botStrictGate strong,
+.botTimedFallbackInfo strong {
+  font-size: 9px !important;
+}
+
+.botStrictGate span,
+.botTimedFallbackInfo span,
+.botTimedFallbackInfo small {
+  font-size: 9px !important;
+  line-height: 1.2 !important;
+}
+
+.botIntelligence {
+  gap: 7px !important;
+  margin-top: 8px !important;
+  padding: 8px !important;
+  border-radius: 9px !important;
+}
+
+.botIntelligenceHeader {
+  gap: 8px !important;
+}
+
+.botIntelligenceHeader small {
+  font-size: 8px !important;
+}
+
+.botIntelligenceHeader h3 {
+  margin-top: 2px !important;
+  font-size: 13px !important;
+  line-height: 1.1 !important;
+}
+
+.botRiskBadge {
+  padding: 4px 7px !important;
+  font-size: 8px !important;
+}
+
+.botIntelligenceGrid {
+  gap: 5px !important;
+}
+
+.botIntelligenceGrid .botMetric {
+  min-height: 0 !important;
+}
+
+.botScoreBreakdown {
+  gap: 4px !important;
+}
+
+.botScoreRow {
+  grid-template-columns:
+    minmax(125px, 1.1fr)
+    minmax(90px, 1fr)
+    24px !important;
+  gap: 6px !important;
+}
+
+.botScoreRow > div:first-child {
+  gap: 0 !important;
+}
+
+.botScoreRow strong {
+  font-size: 9px !important;
+  line-height: 1.1 !important;
+}
+
+.botScoreRow small {
+  font-size: 7px !important;
+  line-height: 1.1 !important;
+}
+
+.botScoreRow b {
+  font-size: 9px !important;
+}
+
+.botScoreTrack {
+  height: 5px !important;
+}
+
+.botMetrics {
+  gap: 5px !important;
+}
+
+.botMetric {
+  min-height: 0 !important;
+  padding: 7px 8px !important;
+  border-radius: 7px !important;
+}
+
+.botHistory {
+  margin-top: 8px !important;
+  border-radius: 8px !important;
+}
+
+.botHistoryHeader {
+  padding: 7px 8px !important;
+  font-size: 10px !important;
+}
+
+.botHistoryEmpty {
+  padding: 10px 8px !important;
+  font-size: 9px !important;
+}
+
+.botHistoryRow {
+  gap: 6px !important;
+  padding: 7px 8px !important;
+  font-size: 9px !important;
+}
+
+.botHistoryRow small {
+  margin-top: 1px !important;
+  font-size: 8px !important;
+}
+
+.botMessage {
+  min-height: 0 !important;
+  margin-top: 7px !important;
+  padding: 7px 8px !important;
+  border-radius: 7px !important;
+  font-size: 9px !important;
+  line-height: 1.2 !important;
+}
+
+.botActions {
+  gap: 6px !important;
+  margin-top: 7px !important;
+}
+
+.botActions button,
+.secondaryButton,
+.dangerButton,
+.testTradeButton {
+  padding: 7px 11px !important;
+  border-radius: 7px !important;
+  font-size: 9px !important;
+}
+
+.botSafetyNote {
+  margin-top: 6px !important;
+  font-size: 8px !important;
+  line-height: 1.2 !important;
+}
+
+@media (min-width: 1350px) {
+  .botFormGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .botIntelligenceGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .botLayout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .botFormGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .botIntelligenceGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .botFormGrid,
+  .botDecisionBox,
+  .botIntelligenceGrid,
+  .botMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .botCard {
+    padding: 9px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .botFormGrid,
+  .botDecisionBox,
+  .botIntelligenceGrid,
+  .botMetrics {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* === EDGEPILOT V12 COMPACT LAYOUT END === */
