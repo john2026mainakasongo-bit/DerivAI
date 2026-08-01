@@ -1,4 +1,4 @@
-﻿import {
+import {
   cloneElement,
   useEffect,
   useId,
@@ -26,6 +26,7 @@ import "../styles/Bot.css";
 
 const INITIAL_SETTINGS = {
   maxRuns: 56,
+  maxScanTicks: 56,
   stake: 1,
   duration: 5,
   minConfidence: 75,
@@ -77,6 +78,9 @@ const INITIAL_BOT_STATE = {
   activeContractId: "",
   scanStartedAt: 0,
   scanElapsedSeconds: 0,
+  scanTicks: 0,
+  maxScanTicks: 56,
+  scanWindow: 1,
   lastBlockReason: "",
   fallbackTrades: 0,
   signalConfirmations: 0,
@@ -369,6 +373,7 @@ export default function Bot() {
   useEffect(() => {
     engineRef.current?.updateSignal({
       symbol,
+      tickKey: `${symbol}:${prices.length}:${currentPrice}:${lastDigit}`,
       updatedAt: Date.now(),
       professionalDecision,
       entryTiming,
@@ -381,6 +386,9 @@ export default function Bot() {
     entryTiming,
     analysis,
     validatedSignals,
+    prices.length,
+    currentPrice,
+    lastDigit,
   ]);
 
 
@@ -586,15 +594,27 @@ export default function Bot() {
       return;
     }
 
-    if (!isDemo) {
-      window.alert(
-        "For safety, the 56-run bot is locked to a Demo Account."
-      );
-      return;
-    }
-
     if (!connected) {
       await connect();
+    }
+
+    if (!isDemo) {
+      const confirmed = window.confirm(
+        `REAL TRADING WARNING\n\n` +
+          `Account: ${selectedId || "selected real account"}\n` +
+          `Stake: ${Number(settings.stake || 0).toFixed(2)} ${
+            auth.selectedAccount?.currency || "USD"
+          }\n` +
+          `Maximum scan: ${settings.maxScanTicks} ticks\n` +
+          `Contract duration: ${settings.duration} ${
+            settings.durationUnit === "s" ? "seconds" : "ticks"
+          }\n\n` +
+          `Trades placed here will be sent to the connected Deriv real account. Continue?`
+      );
+
+      if (!confirmed) {
+        return;
+      }
     }
 
     await engineRef.current?.start();
@@ -606,11 +626,23 @@ export default function Bot() {
       return;
     }
 
+    const accountLabel = isDemo ? "Demo" : "REAL";
+    const setup = setupForTest(settings, analysisGate);
+
     if (!isDemo) {
-      window.alert(
-        "The test trade is locked to a Demo Account."
+      const confirmed = window.confirm(
+        `PLACE ONE REAL TEST TRADE?\n\n` +
+          `Account: ${selectedId || "selected real account"}\n` +
+          `Setup: ${setup}\n` +
+          `Stake: ${Number(settings.stake || 0).toFixed(2)} ${
+            auth.selectedAccount?.currency || "USD"
+          }\n\n` +
+          `This sends a real proposal and buy request to Deriv.`
       );
-      return;
+
+      if (!confirmed) {
+        return;
+      }
     }
 
     try {
@@ -618,14 +650,12 @@ export default function Bot() {
         await connect();
       }
 
-      await engineRef.current?.testOneDemoTrade(
-        setupForTest(settings, analysisGate)
-      );
+      await engineRef.current?.testOneTrade(setup);
     } catch (error) {
       window.alert(
         error instanceof Error
           ? error.message
-          : "Unable to complete the Demo test trade."
+          : `Unable to complete the ${accountLabel} test trade.`
       );
     }
   }
@@ -646,7 +676,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V19.7 Proposal Validation Fix + Market Switch"
+          title="EdgePilot V20 · 56-Tick Entry Scanner + Demo/Real Execution"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -665,15 +695,11 @@ export default function Bot() {
           />
 
           <div
-            className={
-              isDemo
-                ? "botDemoLock safe"
-                : "botDemoLock"
-            }
+            className={isDemo ? "botDemoLock safe" : "botDemoLock real"}
           >
             {isDemo
               ? "✓ DEMO ACCOUNT"
-              : "DEMO ACCOUNT REQUIRED"}
+              : `⚠ REAL ACCOUNT · ${selectedId || "SELECTED"}`}
           </div>
         </section>
 
@@ -713,6 +739,16 @@ export default function Bot() {
                 </select>
               </Field>
 
+              <Field label="Maximum scan ticks">
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={settings.maxScanTicks}
+                  disabled={running || paused}
+                  onChange={updateNumber("maxScanTicks")}
+                />
+              </Field>
 
               <Field label="Contract">
                 <select
@@ -979,6 +1015,12 @@ export default function Bot() {
                 <small>RECOVERY</small>
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
+              <div>
+                <small>ENTRY SCANNER</small>
+                <strong>
+                  {botState.scanTicks || 0}/{settings.maxScanTicks} TICKS · WINDOW {botState.scanWindow || 1}
+                </strong>
+              </div>
             </div>
 
             
@@ -994,7 +1036,7 @@ export default function Bot() {
                   className="primaryButton"
                   onClick={startBot}
                 >
-                  Start Demo Bot
+                  {isDemo ? "Start Demo Bot" : "Start Real Bot"}
                 </button>
               ) : null}
 
@@ -1041,7 +1083,7 @@ export default function Bot() {
                     className="testTradeButton"
                     onClick={testOneTrade}
                   >
-                    Test 1 Demo Trade
+                    {isDemo ? "Test 1 Demo Trade" : "Test 1 Real Trade"}
                   </button>
 
                   <button
@@ -1056,8 +1098,10 @@ export default function Bot() {
             </div>
 
             <div className="botSafetyNote">
-              Demo research tool only. V12 adds deep statistical intelligence and faster validated entries, but no
-              bot can guarantee wins or remove Deriv contract risk.
+              {isDemo
+                ? "Demo mode: orders go to the connected Deriv demo account."
+                : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
+              The 56-tick setting is a maximum scan window, not the contract duration. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1132,7 +1176,7 @@ export default function Bot() {
                   : "DEEP SCAN FOR A REAL EDGE"}
               </strong>
               <span>
-                {market?.label || symbol} · {settings.duration}{" "}
+                {market?.label || symbol} · Scan {botState.scanTicks || 0}/{settings.maxScanTicks} ticks · Contract {settings.duration}{" "}
                 {settings.durationUnit === "s" ? "seconds" : "ticks"} ·{" "}
                 {botState.lastBlockReason ||
                   analysisGate.reason ||
@@ -1327,6 +1371,14 @@ export default function Bot() {
                 value={botState.cooldownCount}
               />
               <Metric
+                label="Scan ticks"
+                value={`${botState.scanTicks || 0}/${settings.maxScanTicks}`}
+              />
+              <Metric
+                label="Scan window"
+                value={botState.scanWindow || 1}
+              />
+              <Metric
                 label="Scan time"
                 value={`${botState.scanElapsedSeconds || 0}s`}
               />
@@ -1473,7 +1525,8 @@ export default function Bot() {
                         {Number(item.exitSpot || 0).toFixed(3)} · Stake{" "}
                         {Number(item.stake || 0).toFixed(2)} ·{" "}
                         {Number(item.duration || 0)}{" "}
-                        {item.durationUnit === "s" ? "sec" : "ticks"} · MG{" "}
+                        {item.durationUnit === "s" ? "sec" : "ticks"} · Entry scan{" "}
+                        {Number(item.entryScanTick || 0)}/{settings.maxScanTicks} · MG{" "}
                         {Number(item.martingaleStep || 0)}
                       </small>
                       <small>

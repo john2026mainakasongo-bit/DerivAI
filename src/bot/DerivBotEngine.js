@@ -3,6 +3,7 @@ import { evaluateSyntheticSetup } from "../analysis/syntheticIntelligenceEngine"
 
 const DEFAULTS = {
   maxRuns: 56,
+  maxScanTicks: 56,
   minConfidence: 75,
   minVotes: 1,
   stake: 1,
@@ -231,6 +232,9 @@ export default class DerivBotEngine {
     this.activeContractId = "";
 
     this.signalUpdatedAt = 0;
+    this.lastSignalTickKey = "";
+    this.scanTickCount = 0;
+    this.scanWindow = 1;
     this.pendingSetupKey = "";
     this.pendingSignalCount = 0;
     this.pendingSignalSince = 0;
@@ -263,6 +267,9 @@ export default class DerivBotEngine {
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
+      scanTicks: 0,
+      maxScanTicks: DEFAULTS.maxScanTicks,
+      scanWindow: 1,
       lastBlockReason: "",
       fallbackTrades: 0,
       signalConfirmations: 0,
@@ -303,6 +310,10 @@ export default class DerivBotEngine {
       ...DEFAULTS,
       ...input,
       maxRuns: Math.max(1, Math.min(1000, number(input.maxRuns, 56))),
+      maxScanTicks: Math.max(
+        1,
+        Math.min(1000, Math.floor(number(input.maxScanTicks, DEFAULTS.maxScanTicks)))
+      ),
       minConfidence: Math.max(
         60,
         Math.min(95, number(input.minConfidence, DEFAULTS.minConfidence))
@@ -346,7 +357,7 @@ export default class DerivBotEngine {
       ),
       recoveryMultipliers: DEFAULTS.recoveryMultipliers,
       confirmationCount: Math.max(
-        2,
+        1,
         Math.min(6, number(input.confirmationCount, DEFAULTS.confirmationCount))
       ),
       confirmationSeconds: Math.max(
@@ -380,7 +391,10 @@ export default class DerivBotEngine {
     };
 
     if (!this.running) {
-      this.patch({ currentStake: this.settings.stake });
+      this.patch({
+        currentStake: this.settings.stake,
+        maxScanTicks: this.settings.maxScanTicks,
+      });
     }
   }
 
@@ -403,12 +417,64 @@ export default class DerivBotEngine {
       this.pendingSignalCount = 0;
       this.pendingSignalSince = 0;
       this.pendingSignalVersion = 0;
+      this.lastSignalTickKey = "";
+      this.scanTickCount = 0;
+      this.scanWindow = 1;
+      this.patch({
+        scanTicks: 0,
+        scanWindow: 1,
+        scanStartedAt: Date.now(),
+        scanElapsedSeconds: 0,
+      });
     }
   }
 
   updateSignal(signal) {
     this.signal = signal;
     this.signalUpdatedAt = Number(signal?.updatedAt || Date.now());
+
+    const tickKey = String(signal?.tickKey || "");
+
+    if (
+      this.running &&
+      !this.stopping &&
+      !this.activeContractId &&
+      tickKey &&
+      tickKey !== this.lastSignalTickKey
+    ) {
+      this.lastSignalTickKey = tickKey;
+      this.scanTickCount += 1;
+
+      this.patch({
+        scanTicks: this.scanTickCount,
+        maxScanTicks: this.settings.maxScanTicks,
+        scanWindow: this.scanWindow,
+      });
+    }
+  }
+
+  resetScanWindow(reason = "Starting a new scan window.") {
+    this.scanTickCount = 0;
+    this.scanWindow += 1;
+    this.lastSignalTickKey = "";
+    this.pendingSetupKey = "";
+    this.pendingSignalCount = 0;
+    this.pendingSignalSince = 0;
+    this.pendingSignalVersion = 0;
+    this.lastSignalTickKey = "";
+    this.scanTickCount = 0;
+    this.scanWindow = 1;
+
+    this.patch({
+      scanTicks: 0,
+      maxScanTicks: this.settings.maxScanTicks,
+      scanWindow: this.scanWindow,
+      scanStartedAt: Date.now(),
+      scanElapsedSeconds: 0,
+      message: reason,
+      activeSetup: "—",
+      signalConfirmations: 0,
+    });
   }
 
   snapshot() {
@@ -480,77 +546,21 @@ export default class DerivBotEngine {
       Math.floor((Date.now() - startedAt) / 1000)
     );
 
-    /*
-     * V19.6 DEMO RUN FIX
-     *
-     * Strict analysis remains first. On Demo only, after 8 seconds,
-     * use the selected contract when the strict gate is still waiting.
-     * This verifies the complete proposal -> buy -> monitor -> result path.
-     * Real accounts never use this fallback.
-     */
-    if (
-      !gate.approved &&
-      this.isDemoAccount === true &&
-      elapsedSeconds >= 8
-    ) {
-      const mode = normalizeContractMode(this.settings.contractMode);
-      const prediction = Math.max(
-        0,
-        Math.min(9, Math.floor(number(this.settings.prediction, 2)))
-      );
 
-      const candidates = Array.isArray(gate.candidates)
-        ? gate.candidates.filter(Boolean)
-        : [];
-
-      let selectedSetup = "";
-
-      if (mode === "AUTO") {
-        const best = candidates
-          .filter((candidate) => {
-            const setup = String(candidate?.setup || "")
-              .trim()
-              .toUpperCase();
-
-            return (
-              setup &&
-              !setup.includes("WAIT") &&
-              !setup.includes("RANDOM")
-            );
-          })
-          .sort(
-            (a, b) =>
-              number(b.confidence) - number(a.confidence) ||
-              number(b.edge) - number(a.edge) ||
-              number(b.probability) - number(a.probability)
-          )[0];
-
-        selectedSetup =
-          String(best?.setup || "").trim().toUpperCase() ||
-          (this.settings.durationUnit === "s" ? "RISE" : "EVEN");
-      } else if (
-        ["OVER", "UNDER", "MATCH", "DIFFERS"].includes(mode)
-      ) {
-        selectedSetup = `${mode} ${prediction}`;
-      } else {
-        selectedSetup = mode;
-      }
-
-      gate = {
-        ...gate,
-        approved: true,
-        setup: selectedSetup,
-        confidence: Math.max(65, number(gate.confidence, 0)),
-        reason:
-          `DEMO RUN FIX · opening ${selectedSetup} after ${elapsedSeconds}s scan`,
-        executionLane: "V19_6_DEMO_RUN",
+    if (!gate.approved && this.scanTickCount >= this.settings.maxScanTicks) {
+      return {
+        ok: false,
+        windowComplete: true,
+        reason: `No validated entry in ${this.settings.maxScanTicks} ticks. Resetting scan window.`,
+        elapsedSeconds,
+        gate,
       };
     }
 
     if (!gate.approved) {
       return {
         ok: false,
-        reason: gate.reason || "Waiting for a validated setup.",
+        reason: `${gate.reason || "Waiting for a validated setup."} Scan ${this.scanTickCount}/${this.settings.maxScanTicks} ticks.`,
         elapsedSeconds,
         gate,
       };
@@ -617,6 +627,9 @@ export default class DerivBotEngine {
         "V12 Deep Cycle AI is scanning momentum, volatility regimes, entropy, transitions, autocorrelation, observed cycles, walk-forward validation and entry timing.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
+      scanTicks: 0,
+      maxScanTicks: this.settings.maxScanTicks,
+      scanWindow: 1,
       lastBlockReason: "",
     });
 
@@ -693,6 +706,9 @@ export default class DerivBotEngine {
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
+      scanTicks: 0,
+      maxScanTicks: this.settings.maxScanTicks,
+      scanWindow: 1,
       lastBlockReason: "",
       fallbackTrades: 0,
       signalConfirmations: 0,
@@ -712,6 +728,9 @@ export default class DerivBotEngine {
     this.pendingSignalCount = 0;
     this.pendingSignalSince = 0;
     this.pendingSignalVersion = 0;
+    this.lastSignalTickKey = "";
+    this.scanTickCount = 0;
+    this.scanWindow = 1;
     this.blockedSetups.clear();
     this.lastTradeAt = 0;
     this.lastLossSetup = "";
@@ -834,11 +853,20 @@ export default class DerivBotEngine {
       const check = this.validSignal();
 
       if (!check.ok) {
+        if (check.windowComplete) {
+          this.resetScanWindow(check.reason);
+          await sleep(250);
+          continue;
+        }
+
         this.patch({
           status: "WAITING",
           message: check.reason,
           activeSetup: "—",
           scanElapsedSeconds: number(check.elapsedSeconds),
+          scanTicks: this.scanTickCount,
+          maxScanTicks: this.settings.maxScanTicks,
+          scanWindow: this.scanWindow,
           lastBlockReason: check.reason,
           signalConfirmations: number(check.confirmations),
           requiredConfirmations: number(
@@ -903,7 +931,7 @@ export default class DerivBotEngine {
     }
   }
 
-  async testOneDemoTrade(setup = "RISE") {
+  async testOneTrade(setup = "RISE") {
     if (this.running || this.activeContractId) {
       throw new Error(
         "Stop or pause the automatic bot before running a test trade."
@@ -939,7 +967,7 @@ export default class DerivBotEngine {
 
     this.patch({
       status: "TESTING",
-      message: `Opening one Demo test trade: ${contract.label}.`,
+      message: `Opening one ${this.isDemoAccount ? "Demo" : "Real"} test trade: ${contract.label}.`,
       activeSetup: contract.label,
     });
 
@@ -948,22 +976,22 @@ export default class DerivBotEngine {
     this.patch({
       status: "IDLE",
       message:
-        "Demo test trade completed. The automatic bot remains stopped.",
+        `${this.isDemoAccount ? "Demo" : "Real"} test trade completed. The automatic bot remains stopped.`,
       cooldownUntil: 0,
     });
+  }
+
+  async testOneDemoTrade(setup = "RISE") {
+    return this.testOneTrade(setup);
   }
 
   async executeTrade(check) {
     const stake = Number(this.state.currentStake.toFixed(2));
     const digitContract = isDigitContract(check.contract);
 
-    // AUTO digit analysis/backtesting validates the next digit, so V12 uses
-    // one tick for AUTO digit contracts. Rise/Fall keeps the configured time.
-    
-    const tradeDuration =
-      this.settings.contractMode === "AUTO" && digitContract
-        ? 1
-        : this.settings.duration;
+    // Scan ticks and contract duration are separate.
+    // maxScanTicks controls how long AI searches; duration controls the bought contract.
+    const tradeDuration = this.settings.duration;
     const tradeDurationUnit = digitContract
       ? "t"
       : this.settings.durationUnit;
@@ -971,7 +999,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `V12 Deep AI confirmed ${check.contract.label} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V12 Deep AI confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
@@ -1001,6 +1029,8 @@ export default class DerivBotEngine {
       currency: this.currency,
       duration: tradeDuration,
       durationUnit: tradeDurationUnit,
+      entryScanTick: this.scanTickCount,
+      scanWindow: this.scanWindow,
     });
 
     console.log("V19.5 BUY REQUEST", {
@@ -1150,6 +1180,9 @@ export default class DerivBotEngine {
     this.pendingSignalCount = 0;
     this.pendingSignalSince = 0;
     this.pendingSignalVersion = 0;
+    this.lastSignalTickKey = "";
+    this.scanTickCount = 0;
+    this.scanWindow += 1;
 
     this.patch({
       status: won ? "WON" : "LOST",
@@ -1176,6 +1209,9 @@ export default class DerivBotEngine {
       activeContractId: "",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
+      scanTicks: 0,
+      maxScanTicks: this.settings.maxScanTicks,
+      scanWindow: this.scanWindow,
       fallbackTrades: this.state.fallbackTrades,
       signalConfirmations: 0,
       requiredConfirmations: number(
