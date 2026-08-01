@@ -1692,3 +1692,401 @@ main .botLayout > *,
 }
 
 /* === EDGEPILOT V14 PROFESSIONAL TERMINAL END === */
+/* === EDGEPILOT V14.2 ULTRA DENSE TERMINAL BEGIN === */
+
+:root {
+  --terminal-radius-xl: 20px;
+  --terminal-radius-lg: 16px;
+  --terminal-radius-md: 12px;
+  --terminal-radius-sm: 9px;
+  --terminal-gap: 7px;
+}
+
+/* Page must scroll normally at 100% zoom */
+html,
+body,
+#root {
+  width: 100% !important;
+  min-height: 100% !important;
+  height: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+.appShell,
+.mainContent,
+.botLayout {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.mainContent {
+  padding-bottom: 28px !important;
+}
+
+/* Main sections */
+.botLayout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 10px !important;
+}
+
+.botCard,
+.botExecutionCard,
+.botAnalysisCard,
+.botPerformanceCard {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+  border-radius: var(--terminal-radius-xl) !important;
+  padding: 10px !important;
+  overflow: visible !important;
+}
+
+.botCardHeader {
+  align-items: center !important;
+  margin-bottom: 7px !important;
+}
+
+.botCardHeader h2 {
+  margin: 2px 0 0 !important;
+  font-size: 18px !important;
+  line-height: 1.05 !important;
+}
+
+.botCardHeader small {
+  font-size: 8px !important;
+  letter-spacing: 0.08em !important;
+}
+
+.botStatus,
+.botRiskBadge,
+.botDemoLock {
+  border-radius: 999px !important;
+  padding: 5px 8px !important;
+  font-size: 8px !important;
+}
+
+/* EXECUTION RULES: 5 columns on laptop, 6 on wide desktop */
+.botExecutionCard .botFormGrid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  align-items: stretch !important;
+  gap: var(--terminal-gap) !important;
+}
+
+.botField,
+.botToggle {
+  gap: 3px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  font-size: 8px !important;
+  line-height: 1.05 !important;
+}
+
+.botField input,
+.botField select,
+.botExecutionCard .botField input,
+.botExecutionCard .botField select {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 5px 8px !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
+  border-radius: var(--terminal-radius-sm) !important;
+}
+
+.botExecutionCard .botToggle {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 6px !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 5px 8px !important;
+  border-radius: var(--terminal-radius-sm) !important;
+  box-sizing: border-box !important;
+}
+
+.botExecutionCard .botToggle input {
+  flex: 0 0 auto !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin: 0 !important;
+}
+
+.botExecutionCard .botToggle span {
+  min-width: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+.botExecutionCard .botRecoverySchedule {
+  min-width: 0 !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 4px 8px !important;
+  gap: 0 !important;
+  align-content: center !important;
+  border-radius: var(--terminal-radius-sm) !important;
+}
+
+.botExecutionCard .botRecoverySchedule span,
+.botExecutionCard .botRecoverySchedule strong {
+  font-size: 8px !important;
+  line-height: 1 !important;
+}
+
+.botExecutionCard .botRecoverySchedule small {
+  display: none !important;
+}
+
+/* Compact terminal strip */
+.botTerminalStrip {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: var(--terminal-gap) !important;
+  margin-top: 7px !important;
+}
+
+.botTerminalStrip > div {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 7px 8px !important;
+  border-radius: var(--terminal-radius-md) !important;
+}
+
+.botTerminalStrip small {
+  margin-bottom: 2px !important;
+  font-size: 7px !important;
+}
+
+.botTerminalStrip strong {
+  font-size: 9px !important;
+  line-height: 1.05 !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* LIVE ANALYSIS: up to 10 columns */
+.botAnalysisCard .botDecisionBox,
+.botAnalysisCard .botIntelligenceGrid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: var(--terminal-gap) !important;
+}
+
+.botAnalysisCard .botDecisionBox {
+  margin-top: 0 !important;
+}
+
+.botAnalysisCard .botDecisionBox > div,
+.botAnalysisCard .botMetric {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 7px 8px !important;
+  border-radius: var(--terminal-radius-md) !important;
+}
+
+.botAnalysisCard .botDecisionBox small,
+.botAnalysisCard .botMetric span {
+  margin-bottom: 2px !important;
+  font-size: 7px !important;
+  line-height: 1 !important;
+}
+
+.botAnalysisCard .botDecisionBox strong,
+.botAnalysisCard .botMetric strong {
+  font-size: 9px !important;
+  line-height: 1.05 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.botAnalysisCard .botIntelligence {
+  gap: 7px !important;
+  margin-top: 7px !important;
+  padding: 8px !important;
+  border-radius: var(--terminal-radius-lg) !important;
+}
+
+.botAnalysisCard .botIntelligenceHeader h3 {
+  font-size: 13px !important;
+}
+
+.botAnalysisCard .botScoreBreakdown {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 5px 10px !important;
+}
+
+.botAnalysisCard .botScoreRow {
+  grid-template-columns:
+    minmax(90px, 0.9fr)
+    minmax(100px, 1.5fr)
+    28px !important;
+  gap: 5px !important;
+}
+
+.botAnalysisCard .botScoreRow strong {
+  font-size: 8px !important;
+}
+
+.botAnalysisCard .botScoreRow small {
+  font-size: 6px !important;
+}
+
+.botAnalysisCard .botScoreRow b {
+  font-size: 8px !important;
+}
+
+.botScoreTrack {
+  height: 4px !important;
+  border-radius: 999px !important;
+}
+
+/* LIVE PERFORMANCE: up to 10 columns */
+.botPerformanceCard .botMetrics {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: var(--terminal-gap) !important;
+}
+
+.botPerformanceCard .botMetric {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 7px 8px !important;
+  border-radius: var(--terminal-radius-md) !important;
+}
+
+.botPerformanceCard .botMetric span {
+  margin-bottom: 2px !important;
+  font-size: 7px !important;
+}
+
+.botPerformanceCard .botMetric strong {
+  font-size: 9px !important;
+  line-height: 1.05 !important;
+}
+
+.botPerformanceCard .botHistory {
+  margin-top: 8px !important;
+  max-height: 380px !important;
+  overflow-y: auto !important;
+  border-radius: var(--terminal-radius-lg) !important;
+}
+
+.botHistoryHeader,
+.botHistoryRow,
+.botHistoryEmpty {
+  padding: 7px 8px !important;
+  font-size: 8px !important;
+}
+
+.botMessage {
+  min-height: 0 !important;
+  margin-top: 7px !important;
+  padding: 7px 8px !important;
+  border-radius: var(--terminal-radius-md) !important;
+  font-size: 8px !important;
+}
+
+.botActions {
+  gap: 6px !important;
+  margin-top: 7px !important;
+}
+
+.botActions button,
+.secondaryButton,
+.dangerButton,
+.testTradeButton {
+  padding: 7px 10px !important;
+  border-radius: 999px !important;
+  font-size: 8px !important;
+}
+
+/* Ultra-wide screens: 10 analysis/performance columns */
+@media (min-width: 1850px) {
+  .botExecutionCard .botFormGrid {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  }
+
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics {
+    grid-template-columns: repeat(10, minmax(0, 1fr)) !important;
+  }
+
+  .botTerminalStrip {
+    grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Standard 1366â€“1600 laptop widths */
+@media (max-width: 1600px) {
+  .botExecutionCard .botFormGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics,
+  .botTerminalStrip {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Smaller laptops */
+@media (max-width: 1200px) {
+  .botExecutionCard .botFormGrid,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics,
+  .botTerminalStrip {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Tablets */
+@media (max-width: 850px) {
+  .botExecutionCard .botFormGrid,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics,
+  .botTerminalStrip,
+  .botAnalysisCard .botScoreBreakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Phones */
+@media (max-width: 520px) {
+  .botExecutionCard .botFormGrid,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics,
+  .botTerminalStrip,
+  .botAnalysisCard .botScoreBreakdown {
+    grid-template-columns: 1fr !important;
+  }
+
+  .botCard {
+    padding: 9px !important;
+    border-radius: var(--terminal-radius-lg) !important;
+  }
+}
+
+/* === EDGEPILOT V14.2 ULTRA DENSE TERMINAL END === */
