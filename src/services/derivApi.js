@@ -1,107 +1,98 @@
-﻿const SOCKET_URL =
-  "wss://api.derivws.com/trading/v1/options/ws/public";
-
-const FALLBACK_MARKETS = [
-  { id: "R_10", label: "Volatility 10 Index", decimals: 3 },
-  { id: "1HZ10V", label: "Volatility 10 (1s) Index", decimals: 2 },
-  { id: "R_25", label: "Volatility 25 Index", decimals: 3 },
-  { id: "1HZ25V", label: "Volatility 25 (1s) Index", decimals: 2 },
-  { id: "R_50", label: "Volatility 50 Index", decimals: 4 },
-  { id: "1HZ50V", label: "Volatility 50 (1s) Index", decimals: 2 },
-  { id: "R_75", label: "Volatility 75 Index", decimals: 4 },
-  { id: "1HZ75V", label: "Volatility 75 (1s) Index", decimals: 2 },
-  { id: "R_100", label: "Volatility 100 Index", decimals: 2 },
-  { id: "1HZ100V", label: "Volatility 100 (1s) Index", decimals: 2 },
+﻿const SOCKET_URLS = [
+  "wss://api.derivws.com/trading/v1/options/ws/public",
+  "wss://ws.binaryws.com/websockets/v3",
 ];
 
-function decimalsFromPip(pip, fallback = 3) {
-  const value = Number(pip);
-  if (!Number.isFinite(value) || value <= 0) return fallback;
-
-  const text = String(value);
-  if (text.includes("e-")) return Number(text.split("e-")[1]) || fallback;
-
-  const decimal = text.split(".")[1];
-  return decimal ? decimal.length : 0;
-}
-
-function normalizeMarket(item = {}) {
-  const id = String(
-    item.symbol ||
-      item.underlying_symbol ||
-      item.symbol_code ||
-      item.id ||
+function normalizeSymbolRow(row = {}) {
+  const symbol = String(
+    row.symbol ||
+      row.underlying_symbol ||
+      row.id ||
+      row.code ||
       ""
   ).trim();
 
   const label = String(
-    item.display_name ||
-      item.underlying_symbol_name ||
-      item.name ||
-      item.label ||
-      id
+    row.display_name ||
+      row.name ||
+      row.label ||
+      row.market_display_name ||
+      symbol
   ).trim();
 
-  const decimals = Number.isFinite(Number(item.decimals))
-    ? Number(item.decimals)
-    : decimalsFromPip(item.pip ?? item.pip_size, 3);
+  if (!symbol) return null;
+
+  const decimals = Number(
+    row.pip_size ??
+      row.decimal_places ??
+      row.decimals ??
+      3
+  );
 
   return {
-    id,
-    symbol: id,
+    id: symbol,
+    symbol,
     label,
     short: label
-      .replace(/^Volatility\s*/i, "V")
-      .replace(/\s*Index$/i, "")
-      .replace(/\s+/g, " "),
-    decimals,
-    raw: item,
+      .replace(/Volatility/gi, "V")
+      .replace(/Index/gi, "")
+      .replace(/\s+/g, "")
+      .slice(0, 12),
+    decimals: Number.isFinite(decimals)
+      ? Math.max(0, Math.min(8, decimals))
+      : 3,
+    raw: row,
   };
 }
 
-function isVolatilityMarket(item = {}) {
-  const market = normalizeMarket(item);
-  const text = [
-    market.id,
-    market.label,
-    item.market,
-    item.market_display_name,
-    item.submarket,
-    item.submarket_display_name,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+function extractRows(message = {}) {
+  const candidates = [
+    message.active_symbols,
+    message.data,
+    message.data?.active_symbols,
+    message.result,
+    message.symbols,
+  ];
+
+  return candidates.find(Array.isArray) || [];
+}
+
+function isVolatilityMarket(item) {
+  const value = `${item.label} ${item.symbol}`.toLowerCase();
 
   return (
-    (text.includes("volatility") ||
-      /^R_\d+$/i.test(market.id) ||
-      /^1HZ\d+V$/i.test(market.id)) &&
-    !/(crash|boom|step|jump)/i.test(text)
+    value.includes("volatility") ||
+    /^r_\d+$/i.test(item.symbol) ||
+    /^\d+hz\d+v$/i.test(item.symbol) ||
+    /vix/i.test(value)
   );
 }
 
-function marketOrder(market) {
-  const text = `${market.label} ${market.id}`;
-  const match =
-    text.match(/volatility\s*(\d+)/i) ||
-    market.id.match(/(?:1HZ)?(\d+)V$/i) ||
-    market.id.match(/^R_(\d+)$/i);
-
-  return match ? Number(match[1]) : 9999;
+function tickSymbol(tick = {}, fallback = "") {
+  return String(
+    tick.symbol ||
+      tick.underlying_symbol ||
+      tick.instrument ||
+      fallback
+  );
 }
 
 class DerivPublicClient {
   constructor() {
     this.socket = null;
+    this.socketUrl = "";
+    this.urlIndex = 0;
     this.requestId = 0;
     this.pending = new Map();
     this.statusListeners = new Set();
     this.tickListeners = new Set();
-    this.activeSymbol = "";
+    this.debugListeners = new Set();
+    this.debugLog = [];
     this.subscriptionId = "";
+    this.activeSymbol = "";
     this.pingTimer = null;
     this.manualClose = false;
+    this.connectPromise = null;
   }
 
   onStatus(listener) {
@@ -114,237 +105,363 @@ class DerivPublicClient {
     return () => this.tickListeners.delete(listener);
   }
 
+  onDebug(listener) {
+    this.debugListeners.add(listener);
+    listener(null, [...this.debugLog]);
+    return () => this.debugListeners.delete(listener);
+  }
+
   emitStatus(status, detail = "") {
-    this.statusListeners.forEach((listener) => listener({ status, detail }));
+    this.statusListeners.forEach((listener) =>
+      listener({ status, detail })
+    );
+  }
+
+  pushDebug(direction, payload) {
+    const entry = {
+      time: new Date().toISOString(),
+      direction,
+      payload,
+      socketUrl: this.socketUrl,
+    };
+
+    this.debugLog = [...this.debugLog, entry].slice(-100);
+
+    this.debugListeners.forEach((listener) =>
+      listener(entry, [...this.debugLog])
+    );
+  }
+
+  nextRequestId() {
+    this.requestId += 1;
+    return this.requestId;
+  }
+
+  send(payload) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      throw new Error("Deriv WebSocket is not connected.");
+    }
+
+    this.pushDebug("out", payload);
+    this.socket.send(JSON.stringify(payload));
   }
 
   request(payload, timeoutMs = 15000) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error("Deriv WebSocket is not connected."));
+      return Promise.reject(
+        new Error("Deriv WebSocket is not connected.")
+      );
     }
 
-    const reqId = ++this.requestId;
+    const reqId = this.nextRequestId();
 
     return new Promise((resolve, reject) => {
       const timeout = window.setTimeout(() => {
         this.pending.delete(reqId);
-        reject(new Error(`${Object.keys(payload)[0]} request timed out.`));
+        reject(new Error("Deriv request timed out."));
       }, timeoutMs);
 
-      this.pending.set(reqId, { resolve, reject, timeout });
-      this.socket.send(JSON.stringify({ ...payload, req_id: reqId }));
+      this.pending.set(reqId, {
+        resolve,
+        reject,
+        timeout,
+      });
+
+      this.send({ ...payload, req_id: reqId });
     });
   }
 
   handleMessage(event) {
     let message;
+
     try {
       message = JSON.parse(event.data);
     } catch {
       return;
     }
 
-    const pending = this.pending.get(message.req_id);
+    this.pushDebug("in", message);
+
+    const reqId = Number(message.req_id);
+    const pending = this.pending.get(reqId);
 
     if (message.error) {
+      const errorMessage =
+        message.error.message ||
+        message.error.code ||
+        "Deriv returned an error.";
+
       if (pending) {
         window.clearTimeout(pending.timeout);
-        this.pending.delete(message.req_id);
-        pending.reject(
-          new Error(message.error.message || message.error.code || "Deriv API error.")
-        );
+        this.pending.delete(reqId);
+        pending.reject(new Error(errorMessage));
       }
+
+      this.emitStatus("ERROR", errorMessage);
       return;
     }
 
     if (pending) {
       window.clearTimeout(pending.timeout);
-      this.pending.delete(message.req_id);
+      this.pending.delete(reqId);
       pending.resolve(message);
     }
 
-    const tick = message.tick || message.data?.tick;
-    if (!tick) return;
+    const tick =
+      message.tick ||
+      message.data?.tick ||
+      (message.msg_type === "tick" ? message.data : null);
 
-    const quote = Number(tick.quote ?? tick.price);
-    if (!Number.isFinite(quote)) return;
+    if (tick) {
+      const quote = Number(
+        tick.quote ??
+          tick.price ??
+          tick.value
+      );
 
-    this.subscriptionId = String(
-      message.subscription?.id ||
-        message.subscription_id ||
-        this.subscriptionId
-    );
+      if (!Number.isFinite(quote)) return;
 
-    this.tickListeners.forEach((listener) =>
-      listener({
-        symbol: String(tick.symbol || tick.underlying_symbol || this.activeSymbol),
+      this.subscriptionId = String(
+        message.subscription?.id ||
+          message.data?.subscription?.id ||
+          this.subscriptionId
+      );
+
+      const normalized = {
+        symbol: tickSymbol(tick, this.activeSymbol),
         quote,
-        epoch: Number(tick.epoch || tick.timestamp || Date.now() / 1000),
-      })
-    );
+        epoch: Number(
+          tick.epoch ||
+            tick.timestamp ||
+            Date.now() / 1000
+        ),
+      };
+
+      this.tickListeners.forEach((listener) =>
+        listener(normalized)
+      );
+    }
   }
 
-  async connect() {
-    if (this.socket?.readyState === WebSocket.OPEN) return;
+  clearConnectionState() {
+    if (this.pingTimer) {
+      window.clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
 
-    this.manualClose = false;
-    this.emitStatus("CONNECTING");
+    this.pending.forEach((pending) => {
+      window.clearTimeout(pending.timeout);
+      pending.reject(
+        new Error("Deriv WebSocket disconnected.")
+      );
+    });
 
+    this.pending.clear();
+    this.socket = null;
+    this.subscriptionId = "";
+  }
+
+  async openUrl(url) {
     await new Promise((resolve, reject) => {
-      const socket = new WebSocket(SOCKET_URL);
+      const socket = new WebSocket(url);
       this.socket = socket;
+      this.socketUrl = url;
+
+      let settled = false;
 
       const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+
         try {
           socket.close();
-        } catch {}
+        } catch {
+          // Ignore.
+        }
+
         reject(new Error("Deriv connection timed out."));
-      }, 15000);
+      }, 12000);
 
       socket.onopen = () => {
+        if (settled) return;
+        settled = true;
         window.clearTimeout(timeout);
-        this.emitStatus("CONNECTED");
+
+        socket.onmessage = (event) =>
+          this.handleMessage(event);
+
         this.pingTimer = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ ping: 1 }));
+            try {
+              this.send({ ping: 1 });
+            } catch {
+              // Ignore.
+            }
           }
-        }, 30000);
+        }, 25000);
+
         resolve();
       };
 
-      socket.onmessage = (event) => this.handleMessage(event);
-
       socket.onerror = () => {
+        if (settled) return;
+        settled = true;
         window.clearTimeout(timeout);
-        reject(new Error("Unable to connect to Deriv public feed."));
+        reject(
+          new Error(`Unable to connect: ${url}`)
+        );
       };
 
       socket.onclose = () => {
         window.clearTimeout(timeout);
-        if (this.pingTimer) window.clearInterval(this.pingTimer);
-        this.pingTimer = null;
+        this.clearConnectionState();
 
-        this.pending.forEach((item) => {
-          window.clearTimeout(item.timeout);
-          item.reject(new Error("Deriv WebSocket disconnected."));
-        });
-
-        this.pending.clear();
-        this.socket = null;
-        this.subscriptionId = "";
-        this.activeSymbol = "";
-
-        this.emitStatus(
-          this.manualClose ? "DISCONNECTED" : "OFFLINE",
-          this.manualClose ? "" : "Deriv connection closed."
-        );
+        if (this.manualClose) {
+          this.emitStatus("DISCONNECTED");
+        } else if (settled) {
+          this.emitStatus(
+            "OFFLINE",
+            "Deriv live feed closed."
+          );
+        }
       };
     });
   }
 
+  async connect() {
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
+
+    this.manualClose = false;
+    this.emitStatus("CONNECTING");
+
+    this.connectPromise = (async () => {
+      let lastError = null;
+
+      for (let index = 0; index < SOCKET_URLS.length; index += 1) {
+        const url = SOCKET_URLS[index];
+
+        try {
+          await this.openUrl(url);
+          this.urlIndex = index;
+          this.emitStatus("CONNECTED");
+          return;
+        } catch (error) {
+          lastError = error;
+          this.clearConnectionState();
+        }
+      }
+
+      const message =
+        lastError instanceof Error
+          ? lastError.message
+          : "Unable to connect to Deriv public feed.";
+
+      this.emitStatus("ERROR", message);
+      throw new Error(message);
+    })();
+
+    try {
+      await this.connectPromise;
+    } finally {
+      this.connectPromise = null;
+    }
+  }
+
+  async inspectActiveSymbols() {
+    const message = await this.request({
+      active_symbols: "brief",
+      product_type: "basic",
+    });
+
+    const rawSymbols = extractRows(message);
+
+    const allMarkets = rawSymbols
+      .map(normalizeSymbolRow)
+      .filter(Boolean);
+
+    const volatilityMarkets = allMarkets.filter(
+      isVolatilityMarket
+    );
+
+    return {
+      rawSymbols,
+      allMarkets,
+      volatilityMarkets,
+      response: message,
+      socketUrl: this.socketUrl,
+      detectedFields:
+        rawSymbols[0]
+          ? Object.keys(rawSymbols[0])
+          : [],
+    };
+  }
+
+  async forgetCurrentSubscription() {
+    if (!this.subscriptionId) return;
+
+    try {
+      await this.request({
+        forget: this.subscriptionId,
+      });
+    } catch {
+      // Ignore stale subscription errors.
+    }
+
+    this.subscriptionId = "";
+  }
+
   async getHistory(symbol, count = 100) {
-    const response = await this.request({
+    const message = await this.request({
       ticks_history: symbol,
       count,
       end: "latest",
       style: "ticks",
-      adjust_start_time: 1,
     });
 
-    const history = response.history || response.data?.history || {};
-    const prices = Array.isArray(history.prices)
-      ? history.prices.map(Number).filter(Number.isFinite)
-      : [];
-    const times = Array.isArray(history.times) ? history.times.map(Number) : [];
+    const history =
+      message.history ||
+      message.data?.history ||
+      message.result ||
+      {};
 
-    return prices.map((quote, index) => ({
-      quote,
-      epoch: times[index] || 0,
-    }));
-  }
+    const prices =
+      history.prices ||
+      history.quotes ||
+      history.values ||
+      [];
 
-  async probeFallbackMarkets() {
-    const valid = [];
+    const times =
+      history.times ||
+      history.epochs ||
+      history.timestamps ||
+      [];
 
-    for (const candidate of FALLBACK_MARKETS) {
-      try {
-        const history = await this.getHistory(candidate.id, 2);
-        if (history.length) valid.push(normalizeMarket(candidate));
-      } catch {
-        // This symbol is unavailable on the current endpoint.
-      }
+    if (!Array.isArray(prices)) {
+      return [];
     }
 
-    return valid;
-  }
-
-  async getVolatilityMarkets() {
-    let symbols = [];
-
-    try {
-      const response = await this.request({
-        active_symbols: "brief",
-        product_type: "basic",
-      });
-
-      const raw =
-        response.active_symbols ||
-        response.data?.active_symbols ||
-        response.data ||
-        [];
-
-      symbols = Array.isArray(raw) ? raw : [];
-    } catch {
-      // Fall through to symbol probing.
-    }
-
-    let markets = symbols
-      .filter(isVolatilityMarket)
-      .map(normalizeMarket)
-      .filter((item) => item.id);
-
-    if (!markets.length) {
-      markets = await this.probeFallbackMarkets();
-    }
-
-    markets.sort((a, b) => {
-      const diff = marketOrder(a) - marketOrder(b);
-      if (diff !== 0) return diff;
-
-      const a1s = /1s|1 sec|one second/i.test(a.label) ? 1 : 0;
-      const b1s = /1s|1 sec|one second/i.test(b.label) ? 1 : 0;
-      return a1s - b1s || a.label.localeCompare(b.label);
-    });
-
-    if (!markets.length) {
-      throw new Error(
-        "Connected to Deriv, but no supported Volatility symbol responded."
+    return prices
+      .map((price, index) => ({
+        quote: Number(price),
+        epoch: Number(
+          times[index] ||
+            Date.now() / 1000 - prices.length + index
+        ),
+      }))
+      .filter((item) =>
+        Number.isFinite(item.quote)
       );
-    }
-
-    return markets;
-  }
-
-  async forgetCurrentSubscription() {
-    if (
-      !this.subscriptionId ||
-      !this.socket ||
-      this.socket.readyState !== WebSocket.OPEN
-    ) {
-      this.subscriptionId = "";
-      return;
-    }
-
-    const id = this.subscriptionId;
-    this.subscriptionId = "";
-
-    try {
-      await this.request({ forget: id });
-    } catch {}
   }
 
   async subscribeTicks(symbol) {
     await this.forgetCurrentSubscription();
+
     this.activeSymbol = symbol;
 
     const response = await this.request({
@@ -354,27 +471,65 @@ class DerivPublicClient {
 
     this.subscriptionId = String(
       response.subscription?.id ||
-        response.subscription_id ||
-        this.subscriptionId
+        response.data?.subscription?.id ||
+        ""
     );
+
+    const firstTick =
+      response.tick ||
+      response.data?.tick;
+
+    if (firstTick) {
+      const quote = Number(
+        firstTick.quote ??
+          firstTick.price ??
+          firstTick.value
+      );
+
+      if (Number.isFinite(quote)) {
+        this.tickListeners.forEach((listener) =>
+          listener({
+            symbol: tickSymbol(
+              firstTick,
+              symbol
+            ),
+            quote,
+            epoch: Number(
+              firstTick.epoch ||
+                firstTick.timestamp ||
+                Date.now() / 1000
+            ),
+          })
+        );
+      }
+    }
 
     return response;
   }
 
   disconnect() {
     this.manualClose = true;
-    if (this.pingTimer) window.clearInterval(this.pingTimer);
-    this.pingTimer = null;
 
-    try {
-      this.socket?.close();
-    } catch {}
+    if (this.pingTimer) {
+      window.clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
 
-    this.socket = null;
-    this.subscriptionId = "";
+    if (this.socket) {
+      try {
+        this.socket.close();
+      } catch {
+        // Ignore.
+      }
+    }
+
+    this.clearConnectionState();
     this.activeSymbol = "";
+    this.emitStatus("DISCONNECTED");
   }
 }
 
-export const derivPublicClient = new DerivPublicClient();
+export const derivPublicClient =
+  new DerivPublicClient();
+
 export default derivPublicClient;

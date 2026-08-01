@@ -215,3 +215,13 @@ export async function completeDerivLogin() {
 
   return session;
 }
+
+export async function fetchDerivAccounts(sessionInput) {
+  const session = sessionInput || loadOAuthSession();
+
+  if (!session?.accessToken) {
+    throw new Error("Deriv session is not available.");
+  }
+
+  return session;
+}
