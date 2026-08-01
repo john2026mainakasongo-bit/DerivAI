@@ -644,7 +644,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V12.2 Fast Deep AI + Market Switch"
+          title="56-Run Auto Bot V13 Pro Three-Layer AI + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -682,7 +682,7 @@ export default function Bot() {
         ) : null}
 
         <section className="botLayout">
-          <article className="botCard">
+          <article className="botCard botExecutionCard">
             <div className="botCardHeader">
               <div>
                 <small>BOT CONFIGURATION</small>
@@ -972,7 +972,100 @@ export default function Bot() {
               </div>
             </div>
 
-            <div className="botDecisionBox">
+            
+
+            <div className="botMessage">
+              {botState.message}
+            </div>
+
+            <div className="botActions">
+              {!running && !paused ? (
+                <button
+                  type="button"
+                  className="primaryButton"
+                  onClick={startBot}
+                >
+                  Start Demo Bot
+                </button>
+              ) : null}
+
+              {running ? (
+                <button
+                  type="button"
+                  className="secondaryButton"
+                  onClick={() =>
+                    engineRef.current?.pause()
+                  }
+                >
+                  Pause
+                </button>
+              ) : null}
+
+              {paused ? (
+                <button
+                  type="button"
+                  className="primaryButton"
+                  onClick={() =>
+                    engineRef.current?.resume()
+                  }
+                >
+                  Resume
+                </button>
+              ) : null}
+
+              {(running || paused) ? (
+                <button
+                  type="button"
+                  className="dangerButton"
+                  onClick={() =>
+                    engineRef.current?.stop()
+                  }
+                >
+                  Stop
+                </button>
+              ) : null}
+
+              {!running && !paused ? (
+                <>
+                  <button
+                    type="button"
+                    className="testTradeButton"
+                    onClick={testOneTrade}
+                  >
+                    Test 1 Demo Trade
+                  </button>
+
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={resetBot}
+                  >
+                    Reset Stats
+                  </button>
+                </>
+              ) : null}
+            </div>
+
+            <div className="botSafetyNote">
+              Demo research tool only. V12 adds deep statistical intelligence and faster validated entries, but no
+              bot can guarantee wins or remove Deriv contract risk.
+            </div>
+          </article>
+
+          
+          <article className="botCard botAnalysisCard">
+            <div className="botCardHeader botSectionHeader">
+              <div>
+                <small>LIVE ANALYSIS</small>
+                <h2>Deep market intelligence</h2>
+              </div>
+
+              <span className={`botStatus ${analysisGate.approved ? "running" : "waiting"}`}>
+                {analysisGate.approved ? "SIGNAL READY" : "SCANNING"}
+              </span>
+            </div>
+
+<div className="botDecisionBox">
               <div>
                 <small>CONTRACT CONTROL</small>
                 <strong>
@@ -1172,86 +1265,9 @@ export default function Bot() {
                 )}
               </div>
             </div>
-
-            <div className="botMessage">
-              {botState.message}
-            </div>
-
-            <div className="botActions">
-              {!running && !paused ? (
-                <button
-                  type="button"
-                  className="primaryButton"
-                  onClick={startBot}
-                >
-                  Start Demo Bot
-                </button>
-              ) : null}
-
-              {running ? (
-                <button
-                  type="button"
-                  className="secondaryButton"
-                  onClick={() =>
-                    engineRef.current?.pause()
-                  }
-                >
-                  Pause
-                </button>
-              ) : null}
-
-              {paused ? (
-                <button
-                  type="button"
-                  className="primaryButton"
-                  onClick={() =>
-                    engineRef.current?.resume()
-                  }
-                >
-                  Resume
-                </button>
-              ) : null}
-
-              {(running || paused) ? (
-                <button
-                  type="button"
-                  className="dangerButton"
-                  onClick={() =>
-                    engineRef.current?.stop()
-                  }
-                >
-                  Stop
-                </button>
-              ) : null}
-
-              {!running && !paused ? (
-                <>
-                  <button
-                    type="button"
-                    className="testTradeButton"
-                    onClick={testOneTrade}
-                  >
-                    Test 1 Demo Trade
-                  </button>
-
-                  <button
-                    type="button"
-                    className="secondaryButton"
-                    onClick={resetBot}
-                  >
-                    Reset Stats
-                  </button>
-                </>
-              ) : null}
-            </div>
-
-            <div className="botSafetyNote">
-              Demo research tool only. V12 adds deep statistical intelligence and faster validated entries, but no
-              bot can guarantee wins or remove Deriv contract risk.
-            </div>
           </article>
 
-          <aside className="botCard">
+<aside className="botCard botPerformanceCard">
             <div className="botCardHeader">
               <div>
                 <small>LIVE PERFORMANCE</small>

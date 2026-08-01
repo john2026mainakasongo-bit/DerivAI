@@ -1284,3 +1284,186 @@ main .botLayout > *,
 }
 
 /* === EDGEPILOT V12.3 DENSE FILL END === */
+
+
+
+
+
+/* === EDGEPILOT V13 THREE SECTION BEGIN === */
+
+.botLayout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: start !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+
+.botExecutionCard,
+.botAnalysisCard,
+.botPerformanceCard {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  align-self: start !important;
+  box-sizing: border-box !important;
+}
+
+.botSectionHeader {
+  margin-bottom: 10px !important;
+}
+
+/* EXECUTION RULES: four useful columns, no tall empty cells */
+.botExecutionCard .botFormGrid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: 8px !important;
+}
+
+.botExecutionCard .botField,
+.botExecutionCard .botToggle,
+.botExecutionCard .botRecoverySchedule {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+}
+
+.botExecutionCard .botField input,
+.botExecutionCard .botField select {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 7px 9px !important;
+}
+
+.botExecutionCard .botToggle {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  gap: 8px !important;
+  padding: 7px 10px !important;
+  box-sizing: border-box !important;
+}
+
+.botExecutionCard .botRecoverySchedule {
+  min-height: 36px !important;
+  padding: 6px 9px !important;
+  gap: 1px !important;
+  align-content: center !important;
+}
+
+.botExecutionCard .botRecoverySchedule small {
+  display: none !important;
+}
+
+/* LIVE ANALYSIS: exactly four cards per row on desktop */
+.botAnalysisCard .botDecisionBox,
+.botAnalysisCard .botIntelligenceGrid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: 8px !important;
+}
+
+.botAnalysisCard .botDecisionBox {
+  margin-top: 0 !important;
+}
+
+.botAnalysisCard .botStrictGate {
+  margin-top: 8px !important;
+}
+
+.botAnalysisCard .botIntelligence {
+  margin-top: 8px !important;
+  padding: 10px !important;
+  min-height: 0 !important;
+}
+
+.botAnalysisCard .botMetric,
+.botAnalysisCard .botDecisionBox > div {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 9px 10px !important;
+}
+
+.botAnalysisCard .botScoreBreakdown {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 7px 12px !important;
+}
+
+.botAnalysisCard .botScoreRow {
+  grid-template-columns: minmax(120px, 0.9fr) minmax(120px, 1.2fr) 32px !important;
+  gap: 7px !important;
+}
+
+/* LIVE PERFORMANCE: eight compact dashboard cards per row */
+.botPerformanceCard .botMetrics {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: 8px !important;
+}
+
+.botPerformanceCard .botMetric {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 9px 10px !important;
+}
+
+.botPerformanceCard .botHistory {
+  margin-top: 10px !important;
+  max-height: 360px !important;
+  overflow-y: auto !important;
+}
+
+.botPerformanceCard .botHistoryEmpty {
+  min-height: 0 !important;
+  padding: 12px 8px !important;
+}
+
+/* Keep messages/actions attached to execution without creating blank height */
+.botExecutionCard .botMessage {
+  margin-top: 10px !important;
+  min-height: 0 !important;
+}
+
+.botExecutionCard .botActions {
+  margin-top: 9px !important;
+}
+
+@media (max-width: 1200px) {
+  .botExecutionCard .botFormGrid,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 850px) {
+  .botExecutionCard .botFormGrid,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics,
+  .botAnalysisCard .botScoreBreakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .botExecutionCard .botFormGrid,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics,
+  .botAnalysisCard .botScoreBreakdown {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* === EDGEPILOT V13 THREE SECTION END === */
