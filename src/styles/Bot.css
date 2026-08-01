@@ -583,3 +583,44 @@
 .botStrictGate strong {
   color: #ffd86a;
 }
+
+
+.botFrequencyToggle {
+  border-color: rgba(255, 196, 69, 0.45);
+  background: rgba(110, 78, 10, 0.14);
+}
+
+.botTimedFallbackInfo {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid rgba(255, 196, 69, 0.38);
+  border-radius: 10px;
+  background: rgba(110, 78, 10, 0.13);
+}
+
+.botTimedFallbackInfo strong {
+  color: #ffd86a;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.botTimedFallbackInfo span {
+  color: #d7e6f3;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.botTimedFallbackInfo small {
+  color: #9fb5c7;
+  line-height: 1.4;
+}
+
+.botStrictGate {
+  border-color: rgba(255, 196, 69, 0.42);
+  background: rgba(110, 78, 10, 0.14);
+}
+
+.botStrictGate strong {
+  color: #ffd86a;
+}

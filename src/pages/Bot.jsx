@@ -1,5 +1,7 @@
 import {
+  cloneElement,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -34,6 +36,11 @@ const INITIAL_SETTINGS = {
   delaySeconds: 3,
   martingaleEnabled: false,
   maxMartingaleSteps: 3,
+  timedDemoFallback: true,
+  maxWaitSeconds: 120,
+  fallbackMinScore: 40,
+  fallbackMinQuality: 40,
+  fallbackMinVotes: 2,
 };
 
 const INITIAL_BOT_STATE = {
@@ -58,6 +65,10 @@ const INITIAL_BOT_STATE = {
   currentStake: 1,
   activeSetup: "—",
   activeContractId: "",
+  scanStartedAt: 0,
+  scanElapsedSeconds: 0,
+  lastBlockReason: "",
+  fallbackTrades: 0,
   history: [],
 };
 
@@ -72,10 +83,20 @@ function accountId(account) {
 }
 
 function Field({ label, children }) {
+  const generatedId = useId();
+  const fieldId =
+    children?.props?.id ||
+    `bot-field-${String(generatedId).replace(/:/g, "")}`;
+
+  const field = cloneElement(children, {
+    id: fieldId,
+    name: children?.props?.name || fieldId,
+  });
+
   return (
-    <label className="botField">
+    <label className="botField" htmlFor={fieldId}>
       <span>{label}</span>
-      {children}
+      {field}
     </label>
   );
 }
@@ -341,8 +362,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V8 Balanced"
-          subtitle="Balanced signal frequency with weighted analysis and Demo-only risk controls"
+          title="56-Run Auto Bot V8 Active Demo"
+          subtitle="Balanced analysis with a transparent Demo-only timed fallback"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -558,6 +579,51 @@ export default function Bot() {
                   onChange={updateNumber("maxMartingaleSteps")}
                 />
               </Field>
+
+              <label className="botToggle botFrequencyToggle">
+                <input
+                  type="checkbox"
+                  checked={settings.timedDemoFallback}
+                  disabled={running || paused}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      timedDemoFallback: event.target.checked,
+                    }))
+                  }
+                />
+                <span>
+                  Enable timed Demo fallback
+                </span>
+              </label>
+
+              <Field label="Maximum scan wait (seconds)">
+                <input
+                  type="number"
+                  min="30"
+                  max="600"
+                  value={settings.maxWaitSeconds}
+                  disabled={
+                    running ||
+                    paused ||
+                    !settings.timedDemoFallback
+                  }
+                  onChange={updateNumber("maxWaitSeconds")}
+                />
+              </Field>
+
+              <div className="botTimedFallbackInfo">
+                <strong>ACTIVE DEMO FREQUENCY</strong>
+                <span>
+                  Balanced analysis is used first. After{" "}
+                  {settings.maxWaitSeconds}s, a clearly marked Demo-only
+                  fallback may enter when basic data checks pass.
+                </span>
+                <small>
+                  This is for testing execution frequency. It is not a
+                  professional signal and does not guarantee a win.
+                </small>
+              </div>
             </div>
 
             <div className="botDecisionBox">
@@ -600,11 +666,10 @@ export default function Bot() {
             </div>
 
             <div className="botStrictGate">
-              <strong>STRICT AUTO-ENTRY GATE</strong>
+              <strong>ACTIVE DEMO AUTO-ENTRY</strong>
               <span>
-                Weighted score ≥ {settings.minConfidence}% · Market quality ≥ 75% ·
-                Votes ≥ {settings.minVotes} · Risk must not be HIGH ·
-                Entry must be ENTER NOW
+                Balanced setup first · Timed Demo fallback after{" "}
+                {settings.maxWaitSeconds}s · Demo Account only
               </span>
             </div>
 
@@ -829,6 +894,14 @@ export default function Bot() {
               <Metric
                 label="Risk cooldowns"
                 value={botState.cooldownCount}
+              />
+              <Metric
+                label="Current scan"
+                value={`${botState.scanElapsedSeconds || 0}s`}
+              />
+              <Metric
+                label="Demo fallbacks"
+                value={botState.fallbackTrades || 0}
               />
               <Metric
                 label="Martingale step"

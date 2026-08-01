@@ -13,6 +13,11 @@ const DEFAULTS = {
   martingaleEnabled: false,
   maxMartingaleSteps: 3,
   recoveryMultipliers: [1.7, 2.2, 2.8],
+  timedDemoFallback: true,
+  maxWaitSeconds: 120,
+  fallbackMinScore: 40,
+  fallbackMinQuality: 40,
+  fallbackMinVotes: 2,
 };
 
 function sleep(ms) {
@@ -200,6 +205,10 @@ export default class DerivBotEngine {
       currentStake: DEFAULTS.stake,
       activeSetup: "—",
       activeContractId: "",
+      scanStartedAt: 0,
+      scanElapsedSeconds: 0,
+      lastBlockReason: "",
+      fallbackTrades: 0,
       history: [],
     };
 
@@ -248,6 +257,26 @@ export default class DerivBotEngine {
         Math.min(3, number(input.maxMartingaleSteps, 3))
       ),
       recoveryMultipliers: DEFAULTS.recoveryMultipliers,
+      timedDemoFallback:
+        input.timedDemoFallback === undefined
+          ? DEFAULTS.timedDemoFallback
+          : Boolean(input.timedDemoFallback),
+      maxWaitSeconds: Math.max(
+        30,
+        Math.min(600, number(input.maxWaitSeconds, 120))
+      ),
+      fallbackMinScore: Math.max(
+        25,
+        Math.min(80, number(input.fallbackMinScore, 40))
+      ),
+      fallbackMinQuality: Math.max(
+        25,
+        Math.min(80, number(input.fallbackMinQuality, 40))
+      ),
+      fallbackMinVotes: Math.max(
+        1,
+        Math.min(7, number(input.fallbackMinVotes, 2))
+      ),
     };
 
     if (!this.running) {
@@ -289,84 +318,172 @@ export default class DerivBotEngine {
     const signal = this.signal;
 
     if (!signal) {
-      return { ok: false, reason: "Waiting for market analysis." };
+      return {
+        ok: false,
+        reason: "Waiting for market analysis.",
+        elapsedSeconds: 0,
+        remainingSeconds: this.settings.maxWaitSeconds,
+      };
     }
 
     const decision = signal.professionalDecision || {};
     const timing = signal.entryTiming || {};
-
-    if (!decision.validated) {
-      return { ok: false, reason: "Professional decision is not validated." };
-    }
+    const analysis = signal.analysis || {};
 
     const professionalScore = number(
       decision.professionalScore ?? decision.confidence
     );
-
-    if (professionalScore < this.settings.minConfidence) {
-      return {
-        ok: false,
-        reason: `Professional score ${professionalScore.toFixed(
-          1
-        )}% is below ${this.settings.minConfidence}%.`,
-      };
-    }
-
-    if (String(decision.riskLevel || "").toUpperCase() === "HIGH") {
-      return {
-        ok: false,
-        reason: "Risk filter is HIGH. Waiting for safer market conditions.",
-      };
-    }
-
-    if (number(decision.marketQuality) < 65) {
-      return {
-        ok: false,
-        reason: `Market quality ${number(decision.marketQuality).toFixed(
-          1
-        )}% is below the balanced 65% threshold.`,
-      };
-    }
-
-    if (number(decision.passedCount) < this.settings.minVotes) {
-      return {
-        ok: false,
-        reason: `Votes ${number(decision.passedCount)} are below ${
-          this.settings.minVotes
-        }.`,
-      };
-    }
-
+    const marketQuality = number(decision.marketQuality);
+    const passedCount = number(decision.passedCount);
+    const riskLevel = String(decision.riskLevel || "HIGH").toUpperCase();
     const timingState = String(timing.state || "").toUpperCase();
     const readinessScore = number(timing.readinessScore);
-    const readyNow =
+
+    const normalSetup = String(
+      decision.setup || decision.bestContract || ""
+    ).toUpperCase();
+
+    const normalContract = contractFromSetup(normalSetup);
+
+    const normalTimingReady =
       timing.readyNow === true ||
       timingState === "ENTER NOW" ||
       (timingState === "READY" && readinessScore >= 78);
 
-    if (!readyNow) {
+    const normalValid =
+      Boolean(decision.validated) &&
+      professionalScore >= this.settings.minConfidence &&
+      riskLevel !== "HIGH" &&
+      marketQuality >= 65 &&
+      passedCount >= this.settings.minVotes &&
+      normalTimingReady &&
+      Boolean(normalContract);
+
+    if (normalValid) {
       return {
-        ok: false,
-        reason:
-          timing.instruction ||
-          `Balanced entry timing is ${timingState || "WAIT"}.`,
+        ok: true,
+        mode: "BALANCED",
+        decision,
+        timing,
+        contract: normalContract,
+        elapsedSeconds: 0,
+        remainingSeconds: this.settings.maxWaitSeconds,
       };
     }
 
-    const contract = contractFromSetup(decision.setup);
+    const startedAt =
+      Number(this.state.scanStartedAt) > 0
+        ? Number(this.state.scanStartedAt)
+        : Date.now();
 
-    if (!contract) {
+    const elapsedSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - startedAt) / 1000)
+    );
+
+    const remainingSeconds = Math.max(
+      0,
+      this.settings.maxWaitSeconds - elapsedSeconds
+    );
+
+    const strongestSignal = String(
+      analysis?.strongestSignal?.signal || ""
+    ).toUpperCase();
+
+    const direction = String(
+      analysis?.direction?.direction || ""
+    ).toUpperCase();
+
+    const fallbackSetup =
+      normalSetup && normalSetup !== "WAIT"
+        ? normalSetup
+        : strongestSignal && strongestSignal !== "WAIT"
+        ? strongestSignal
+        : direction === "RISE" || direction === "FALL"
+        ? direction
+        : "";
+
+    const fallbackContract = contractFromSetup(fallbackSetup);
+
+    const volatilityComponent = Array.isArray(decision.components)
+      ? decision.components.find(
+          (component) => component?.key === "volatility"
+        )
+      : null;
+
+    const volatilityUsable =
+      volatilityComponent == null ||
+      Boolean(volatilityComponent.passed) ||
+      number(volatilityComponent.rawScore) >= 30;
+
+    const conflictPenalty = number(decision.conflictPenalty);
+
+    const fallbackReady =
+      this.settings.timedDemoFallback &&
+      elapsedSeconds >= this.settings.maxWaitSeconds &&
+      Boolean(fallbackContract) &&
+      professionalScore >= this.settings.fallbackMinScore &&
+      marketQuality >= this.settings.fallbackMinQuality &&
+      passedCount >= this.settings.fallbackMinVotes &&
+      volatilityUsable &&
+      conflictPenalty < 25;
+
+    if (fallbackReady) {
       return {
-        ok: false,
-        reason: `Unsupported setup: ${decision.setup || "WAIT"}.`,
+        ok: true,
+        mode: "TIMED_DEMO",
+        decision: {
+          ...decision,
+          setup: fallbackSetup,
+          bestContract: fallbackSetup,
+        },
+        timing: {
+          ...timing,
+          state: "TIMED DEMO",
+          readyNow: true,
+        },
+        contract: fallbackContract,
+        elapsedSeconds,
+        remainingSeconds: 0,
       };
+    }
+
+    let reason = "Professional decision is not validated.";
+
+    if (!fallbackContract) {
+      reason = "Waiting for a usable market direction.";
+    } else if (professionalScore < this.settings.fallbackMinScore) {
+      reason =
+        `Score ${professionalScore.toFixed(1)}% is below the Demo fallback ` +
+        `${this.settings.fallbackMinScore}% minimum.`;
+    } else if (marketQuality < this.settings.fallbackMinQuality) {
+      reason =
+        `Market quality ${marketQuality.toFixed(1)}% is below the Demo fallback ` +
+        `${this.settings.fallbackMinQuality}% minimum.`;
+    } else if (passedCount < this.settings.fallbackMinVotes) {
+      reason =
+        `Votes ${passedCount} are below the Demo fallback ` +
+        `${this.settings.fallbackMinVotes}.`;
+    } else if (!volatilityUsable) {
+      reason = "Volatility is not usable yet.";
+    } else if (conflictPenalty >= 25) {
+      reason = "Signals are conflicting too strongly.";
+    } else if (this.settings.timedDemoFallback && remainingSeconds > 0) {
+      reason =
+        `Scanning normally. Timed Demo fallback in ${remainingSeconds}s.`;
+    } else if (!normalTimingReady) {
+      reason =
+        timing.instruction ||
+        `Entry timing is ${timingState || "WAIT"}.`;
+    } else if (riskLevel === "HIGH") {
+      reason = "Risk filter is HIGH. Waiting for a safer setup.";
     }
 
     return {
-      ok: true,
-      decision,
-      timing,
-      contract,
+      ok: false,
+      reason,
+      elapsedSeconds,
+      remainingSeconds,
     };
   }
 
@@ -383,7 +500,12 @@ export default class DerivBotEngine {
 
     this.patch({
       status: "RUNNING",
-      message: "Bot started. Waiting for a validated setup.",
+      message: this.settings.timedDemoFallback
+        ? `Bot started. Balanced analysis first; Demo fallback after ${this.settings.maxWaitSeconds}s.`
+        : "Bot started. Waiting for a validated setup.",
+      scanStartedAt: Date.now(),
+      scanElapsedSeconds: 0,
+      lastBlockReason: "",
     });
 
     void this.loop();
@@ -580,6 +702,8 @@ export default class DerivBotEngine {
           status: "WAITING",
           message: check.reason,
           activeSetup: "—",
+          scanElapsedSeconds: number(check.elapsedSeconds),
+          lastBlockReason: check.reason,
         });
 
         await sleep(1000);
@@ -680,10 +804,18 @@ export default class DerivBotEngine {
 
     this.patch({
       status: "BUYING",
-      message: `Requesting ${check.contract.label} proposal for ${stake.toFixed(
-        2
-      )} ${this.currency}.`,
-      activeSetup: check.contract.label,
+      message:
+        check.mode === "TIMED_DEMO"
+          ? `Timed Demo fallback: requesting ${check.contract.label} for ${stake.toFixed(
+              2
+            )} ${this.currency}.`
+          : `Requesting ${check.contract.label} proposal for ${stake.toFixed(
+              2
+            )} ${this.currency}.`,
+      activeSetup:
+        check.mode === "TIMED_DEMO"
+          ? `${check.contract.label} · DEMO FALLBACK`
+          : check.contract.label,
     });
 
     const bought = await this.client.buyContract({
@@ -773,6 +905,7 @@ export default class DerivBotEngine {
       entryStage: String(check.timing.state || "—"),
       votes: number(check.decision.passedCount),
       martingaleStep: this.state.martingaleStep,
+      executionMode: check.mode || "BALANCED",
     });
 
     this.activeContractId = "";
@@ -796,6 +929,11 @@ export default class DerivBotEngine {
       martingaleStep,
       currentStake: Math.max(0.35, Number(nextStake.toFixed(2))),
       activeContractId: "",
+      scanStartedAt: Date.now(),
+      scanElapsedSeconds: 0,
+      fallbackTrades:
+        this.state.fallbackTrades +
+        (check.mode === "TIMED_DEMO" ? 1 : 0),
     });
 
     const finalStop = this.riskStopReason();
