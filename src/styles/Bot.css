@@ -3117,3 +3117,197 @@ body,
 }
 
 /* === EDGEPILOT V17 PROFESSIONAL ROW TERMINAL END === */
+
+
+/* === EDGEPILOT V18 ONE SCREEN 100 BEGIN === */
+
+/*
+  Goal:
+  At browser zoom 100%, show approximately the same amount of dashboard
+  that was visible at browser zoom 33%.
+
+  Chrome/Edge support CSS zoom. We scale the complete application to 34%
+  and compensate its layout width so no content is cut horizontally.
+*/
+
+html,
+body,
+#root {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+body {
+  background: #020d17 !important;
+}
+
+#root {
+  position: relative !important;
+}
+
+.appShell {
+  width: 294.117647% !important;
+  min-width: 294.117647% !important;
+  min-height: 294.117647vh !important;
+  height: auto !important;
+  zoom: 0.34 !important;
+  overflow: visible !important;
+  transform-origin: top left !important;
+}
+
+.mainContent {
+  width: auto !important;
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding-bottom: 18px !important;
+}
+
+.botLayout,
+.botCard,
+.botExecutionCard,
+.botAnalysisCard,
+.botPerformanceCard {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* Use the available compensated width efficiently */
+.botLayout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 12px !important;
+}
+
+.botExecutionCard .botFormGrid {
+  grid-template-columns: repeat(10, minmax(0, 1fr)) !important;
+}
+
+.botTerminalStrip {
+  grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+}
+
+.botAnalysisCard .botDecisionBox {
+  grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.botPerformanceCard .botMetrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+/* Slightly larger internal text than the previous ultra-dense CSS,
+   because the entire application is now scaled as one unit. */
+.botCardHeader h2 {
+  font-size: 30px !important;
+}
+
+.botCardHeader small,
+.botField,
+.botToggle {
+  font-size: 14px !important;
+}
+
+.botField input,
+.botField select {
+  min-height: 48px !important;
+  height: 48px !important;
+  padding: 9px 12px !important;
+  font-size: 16px !important;
+}
+
+.botExecutionCard .botToggle,
+.botExecutionCard .botRecoverySchedule {
+  min-height: 48px !important;
+  height: 48px !important;
+  padding: 8px 12px !important;
+}
+
+.botTerminalStrip > div {
+  padding: 12px 14px !important;
+}
+
+.botTerminalStrip small {
+  font-size: 12px !important;
+}
+
+.botTerminalStrip strong {
+  font-size: 16px !important;
+}
+
+.botAnalysisCard .botDecisionBox > div {
+  min-height: 70px !important;
+  padding: 12px 14px !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid > .botMetric {
+  min-height: 52px !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid > .botMetric > span,
+.botAnalysisCard .botIntelligenceGrid > .botMetric > strong,
+.botPerformanceCard .botMetrics > .botMetric > span,
+.botPerformanceCard .botMetrics > .botMetric > strong {
+  padding: 12px 14px !important;
+  font-size: 15px !important;
+}
+
+.botScoreRow {
+  min-height: 38px !important;
+}
+
+.botScoreRow strong,
+.botScoreRow b {
+  font-size: 14px !important;
+}
+
+.botScoreRow small {
+  font-size: 11px !important;
+}
+
+.botHistoryHeader,
+.botHistoryRow,
+.botHistoryEmpty {
+  font-size: 14px !important;
+  padding: 10px 12px !important;
+}
+
+/* Preserve a normal responsive layout on genuinely small mobile screens.
+   Mobile should scroll instead of being shrunk to 34%. */
+@media (max-width: 700px) {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .appShell {
+    width: 100% !important;
+    min-width: 100% !important;
+    min-height: 100vh !important;
+    zoom: 1 !important;
+  }
+
+  .botExecutionCard .botFormGrid,
+  .botTerminalStrip,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* === EDGEPILOT V18 ONE SCREEN 100 END === */
