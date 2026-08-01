@@ -2525,3 +2525,227 @@ body,
 }
 
 /* === EDGEPILOT V15 COMPACT QUANT TERMINAL END === */
+
+
+/* === EDGEPILOT V16 METRIC TABLE BEGIN === */
+
+/* V16: compact professional metric/value table */
+.botAnalysisCard {
+  padding: 12px !important;
+}
+
+.botAnalysisCard .botIntelligence {
+  display: block !important;
+  margin-top: 8px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-radius: 14px !important;
+}
+
+.botAnalysisCard .botIntelligenceHeader {
+  padding: 10px 12px !important;
+  margin: 0 !important;
+  border-bottom: 1px solid #174159 !important;
+}
+
+.botAnalysisCard .botIntelligenceHeader h3 {
+  margin: 2px 0 0 !important;
+  font-size: 14px !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid {
+  display: grid !important;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.3fr) !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  background: #031522 !important;
+}
+
+/* Add table header */
+.botAnalysisCard .botIntelligenceGrid::before,
+.botAnalysisCard .botIntelligenceGrid::after {
+  display: block !important;
+  padding: 8px 12px !important;
+  color: #7ba9c3 !important;
+  background: #062237 !important;
+  border-bottom: 1px solid #174159 !important;
+  font-size: 9px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.08em !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid::before {
+  content: "METRIC" !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid::after {
+  content: "VALUE" !important;
+}
+
+/* Turn every metric tile into one table row */
+.botAnalysisCard .botIntelligenceGrid > .botMetric {
+  display: contents !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid > .botMetric > span,
+.botAnalysisCard .botIntelligenceGrid > .botMetric > strong {
+  display: block !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  background: #031522 !important;
+  border: 0 !important;
+  border-bottom: 1px solid #12384e !important;
+  border-radius: 0 !important;
+  line-height: 1.15 !important;
+  box-sizing: border-box !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid > .botMetric > span {
+  color: #8db8d0 !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+}
+
+.botAnalysisCard .botIntelligenceGrid > .botMetric > strong {
+  color: #ffffff !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Keep decision summary as four compact tiles above the table */
+.botAnalysisCard .botDecisionBox {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 7px !important;
+}
+
+.botAnalysisCard .botDecisionBox > div {
+  min-height: 48px !important;
+  padding: 8px 10px !important;
+  border-radius: 10px !important;
+}
+
+/* Progress evidence becomes a compact two-column list */
+.botAnalysisCard .botScoreBreakdown {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0 14px !important;
+  padding: 8px 12px 10px !important;
+  background: #041827 !important;
+}
+
+.botAnalysisCard .botScoreRow {
+  grid-template-columns: minmax(130px, 0.9fr) minmax(120px, 1.4fr) 30px !important;
+  gap: 7px !important;
+  min-height: 28px !important;
+  padding: 4px 0 !important;
+  border-bottom: 1px solid rgba(23, 65, 89, 0.55) !important;
+}
+
+.botAnalysisCard .botScoreRow strong {
+  font-size: 9px !important;
+}
+
+.botAnalysisCard .botScoreRow small {
+  font-size: 7px !important;
+}
+
+.botAnalysisCard .botScoreRow b {
+  font-size: 9px !important;
+}
+
+.botAnalysisCard .botScoreTrack {
+  height: 4px !important;
+}
+
+/* Performance also becomes a clean metric/value table on normal laptops */
+.botPerformanceCard .botMetrics {
+  display: grid !important;
+  grid-template-columns: minmax(170px, 0.6fr) minmax(0, 1.4fr) !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid #174159 !important;
+  border-radius: 12px !important;
+  background: #031522 !important;
+}
+
+.botPerformanceCard .botMetrics > .botMetric {
+  display: contents !important;
+}
+
+.botPerformanceCard .botMetrics > .botMetric > span,
+.botPerformanceCard .botMetrics > .botMetric > strong {
+  display: block !important;
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  border-bottom: 1px solid #12384e !important;
+  background: #031522 !important;
+  line-height: 1.15 !important;
+}
+
+.botPerformanceCard .botMetrics > .botMetric > span {
+  color: #8db8d0 !important;
+  font-size: 10px !important;
+}
+
+.botPerformanceCard .botMetrics > .botMetric > strong {
+  color: #ffffff !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+}
+
+/* Ensure hidden V15 metrics remain hidden only when explicitly hidden */
+.botPerformanceCard .botMetrics > .botMetric[style*="display: none"] {
+  display: none !important;
+}
+
+/* Normal page scroll */
+html,
+body,
+#root,
+.appShell,
+.mainContent,
+.botLayout {
+  height: auto !important;
+  max-height: none !important;
+}
+
+html,
+body,
+#root {
+  overflow-y: auto !important;
+}
+
+.mainContent,
+.botLayout {
+  overflow: visible !important;
+}
+
+@media (max-width: 900px) {
+  .botAnalysisCard .botDecisionBox {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .botAnalysisCard .botScoreBreakdown {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics {
+    grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.2fr) !important;
+  }
+
+  .botAnalysisCard .botIntelligenceGrid > .botMetric > span,
+  .botAnalysisCard .botIntelligenceGrid > .botMetric > strong,
+  .botPerformanceCard .botMetrics > .botMetric > span,
+  .botPerformanceCard .botMetrics > .botMetric > strong {
+    padding: 7px 8px !important;
+    font-size: 9px !important;
+  }
+}
+
+/* === EDGEPILOT V16 METRIC TABLE END === */
