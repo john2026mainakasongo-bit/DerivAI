@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V22 · Adaptive Consensus Multi-Contract AI"
+          title="EdgePilot V23 · Scored Consensus Execution AI"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>ADAPTIVE CONSENSUS</small>
+                <small>SCORED CONSENSUS</small>
                 <strong>
-                  NO FORCED ENTRY · MULTI-ENGINE ALIGNMENT
+                  DYNAMIC SCORE · FRESH-TICK CONFIRMATION
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              The AI continuously compares OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL. The data target is not a waiting limit: a strict setup enters immediately when aligned, while weak setups keep collecting data. Real mode caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              The AI ranks OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL using a dynamic evidence score instead of one rigid WAIT gate. Strong setups still require fresh-tick confirmation. Real mode caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1386,8 +1386,16 @@ export default function Bot() {
                 value={botState.cooldownCount}
               />
               <Metric
+                label="Execution score"
+                value={`${Number(botState.gate?.executionScore || 0).toFixed(1)}/${Number(botState.gate?.executionThreshold || 0).toFixed(1)}`}
+              />
+              <Metric
+                label="Fresh confirms"
+                value={botState.signalConfirmations || 0}
+              />
+              <Metric
                 label="Data readiness"
-                value={`${botState.scanTicks || 0}/${settings.maxScanTicks}`}
+                value={(botState.scanTicks || 0) >= settings.maxScanTicks ? `READY · ${botState.scanTicks || 0} ticks` : `${botState.scanTicks || 0}/${settings.maxScanTicks}`}
               />
               <Metric
                 label="Analysis cycle"

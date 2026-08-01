@@ -298,6 +298,218 @@ function minimumRequirements(candidate = {}, isReal = false) {
   return { confidence, probability, samples, confirmations };
 }
 
+
+function clampScore(value, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function analysisMetric(analysis = {}, paths = [], fallback = 0) {
+  for (const path of paths) {
+    const parts = String(path).split(".");
+    let value = analysis;
+
+    for (const part of parts) {
+      value = value?.[part];
+    }
+
+    const numeric = Number(value);
+
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+
+  return fallback;
+}
+
+function scoreCandidate(candidate = {}, signal = {}, isReal = false) {
+  const analysis = signal.analysis || {};
+  const setup = candidateAction(candidate);
+  const family = candidateFamily(candidate);
+  const confidence = clampScore(candidate.confidence);
+  const probability = clampScore(candidate.probability);
+  const edge = Math.max(0, Number(candidate.edge || 0));
+  const samples = analysisSampleSize(signal, analysis);
+
+  const entropy = analysisMetric(
+    analysis,
+    [
+      "digitEntropy.percentage",
+      "entropy.percentage",
+      "entropy",
+    ],
+    100
+  );
+
+  const transitionCount = analysisMetric(
+    analysis,
+    [
+      "transitionEvidence.count",
+      "transitions.count",
+      "transitionCount",
+      "matchingTransitions",
+    ],
+    0
+  );
+
+  const cycleStrength = analysisMetric(
+    analysis,
+    [
+      "cycle.strength",
+      "observedCycle.strength",
+      "cycleStrength",
+      "cycle.percentage",
+    ],
+    0
+  );
+
+  const momentumStrength = analysisMetric(
+    analysis,
+    [
+      "momentum.strength",
+      "momentum.percentage",
+      "direction.strength",
+      "signals.riseFall.confidence",
+    ],
+    0
+  );
+
+  const autocorrelation = analysisMetric(
+    analysis,
+    [
+      "autocorrelation.strength",
+      "autocorrelation.percentage",
+      "autocorrelation",
+    ],
+    0
+  );
+
+  const regimeStrength = analysisMetric(
+    analysis,
+    [
+      "regime.stability",
+      "regime.strength",
+      "regime.percentage",
+      "regimeStability",
+    ],
+    0
+  );
+
+  const regime = safeUpper(
+    analysis.regime?.label ||
+      analysis.regime ||
+      analysis.marketRegime ||
+      ""
+  );
+
+  const momentum = safeUpper(
+    analysis.momentum?.direction ||
+      analysis.direction?.signal?.signal ||
+      analysis.signals?.riseFall?.signal ||
+      ""
+  );
+
+  let score = 0;
+  const reasons = [];
+
+  score += Math.min(25, confidence * 0.25);
+  reasons.push(`confidence ${confidence.toFixed(1)}%`);
+
+  if (setup.startsWith("MATCH")) {
+    score += Math.min(25, probability * 1.4);
+  } else if (setup.startsWith("DIFFERS")) {
+    score += Math.min(25, Math.max(0, 10 - probability) * 2.5);
+  } else {
+    score += Math.min(25, probability * 0.25);
+  }
+
+  score += Math.min(15, edge * 1.5);
+  score += Math.min(10, transitionCount * 0.75);
+  score += Math.min(8, cycleStrength * 0.08);
+  score += Math.min(8, momentumStrength * 0.08);
+  score += Math.min(5, autocorrelation * 0.05);
+  score += Math.min(4, regimeStrength * 0.04);
+
+  const sampleTarget = setup.startsWith("MATCH")
+    ? 48
+    : setup.startsWith("DIFFERS")
+      ? 38
+      : setup === "RISE" || setup === "FALL"
+        ? 28
+        : 34;
+
+  score += Math.min(10, (samples / sampleTarget) * 10);
+
+  if (entropy >= 99) {
+    score -= setup.startsWith("MATCH") ? 20 : 8;
+    reasons.push("extreme entropy");
+  } else if (entropy >= 97) {
+    score -= setup.startsWith("MATCH") ? 12 : 4;
+  } else if (entropy <= 94) {
+    score += 4;
+  }
+
+  if (regime.includes("RANDOM") || regime.includes("NO EDGE")) {
+    score -= setup === "RISE" || setup === "FALL" ? 18 : 7;
+    reasons.push("random regime");
+  }
+
+  if (setup === "RISE" && !["UP", "RISE"].includes(momentum)) {
+    score -= 18;
+  }
+
+  if (setup === "FALL" && !["DOWN", "FALL"].includes(momentum)) {
+    score -= 18;
+  }
+
+  if (!candidate.approved) {
+    // Do not discard a strong setup only because one legacy binary gate failed.
+    // The score still requires independent evidence and fresh confirmations.
+    score -= 6;
+    reasons.push("legacy gate not approved");
+  }
+
+  const threshold = setup.startsWith("MATCH")
+    ? (isReal ? 96 : 93)
+    : setup.startsWith("DIFFERS")
+      ? (isReal ? 93 : 90)
+      : setup === "RISE" || setup === "FALL"
+        ? (isReal ? 92 : 88)
+        : (isReal ? 91 : 87);
+
+  const finalScore = clampScore(score);
+
+  let confirmations = 4;
+
+  if (finalScore >= 96) {
+    confirmations = isReal ? 3 : 2;
+  } else if (finalScore >= 92) {
+    confirmations = isReal ? 4 : 3;
+  } else {
+    confirmations = isReal ? 5 : 4;
+  }
+
+  return {
+    ok: finalScore >= threshold && samples >= Math.min(sampleTarget, 24),
+    setup,
+    family,
+    score: finalScore,
+    threshold,
+    confirmations,
+    confidence,
+    probability,
+    edge,
+    samples,
+    entropy,
+    transitionCount,
+    cycleStrength,
+    momentumStrength,
+    regime,
+    momentum,
+    reasons,
+  };
+}
+
 function candidatePassesStrictChecks(candidate = {}, signal = {}, isReal = false) {
   const analysis = signal.analysis || {};
   const requirements = minimumRequirements(candidate, isReal);
@@ -750,68 +962,71 @@ export default class DerivBotEngine {
       ? gate.candidates.filter(Boolean)
       : [];
 
-    const ranked = candidates
-      .map((candidate) => ({
+    if (gate.setup) {
+      candidates.push({
+        setup: gate.setup,
+        action: gate.setup,
+        confidence: gate.confidence,
+        probability: gate.selectedProbability,
+        edge: gate.selectedEdge,
+        approved: gate.approved,
+      });
+    }
+
+    const unique = new Map();
+
+    for (const candidate of candidates) {
+      const key = candidateAction(candidate);
+
+      if (!key) continue;
+
+      const scored = scoreCandidate(
         candidate,
-        check: candidatePassesStrictChecks(
-          candidate,
-          signal,
-          !this.isDemoAccount
-        ),
-      }))
-      .filter((item) => item.check.ok)
-      .sort(
-        (a, b) =>
-          Number(b.check.confidence) - Number(a.check.confidence) ||
-          Number(b.check.edge) - Number(a.check.edge) ||
-          Number(b.check.probability) - Number(a.check.probability)
+        signal,
+        !this.isDemoAccount
       );
 
-    const selected =
-      ranked[0] ||
-      (gate.approved
-        ? {
-            candidate: {
-              setup: gate.setup,
-              confidence: gate.confidence,
-              probability: gate.selectedProbability,
-              edge: gate.selectedEdge,
-              approved: true,
-            },
-            check: candidatePassesStrictChecks(
-              {
-                setup: gate.setup,
-                confidence: gate.confidence,
-                probability: gate.selectedProbability,
-                edge: gate.selectedEdge,
-                approved: true,
-              },
-              signal,
-              !this.isDemoAccount
-            ),
-          }
-        : null);
+      const previous = unique.get(key);
 
-    if (!selected || !selected.check.ok) {
+      if (!previous || scored.score > previous.score) {
+        unique.set(key, scored);
+      }
+    }
+
+    const ranked = [...unique.values()].sort(
+      (a, b) =>
+        Number(b.score) - Number(a.score) ||
+        Number(b.confidence) - Number(a.confidence) ||
+        Number(b.edge) - Number(a.edge)
+    );
+
+    const selected = ranked[0];
+
+    if (!selected || !selected.ok) {
       this.strictSetupKey = "";
       this.strictConfirmations = 0;
 
-      const bestReason =
-        selected?.check?.reason ||
-        ranked[0]?.check?.reason ||
-        gate.reason ||
-        "No high-conviction setup yet.";
+      const bestText = selected
+        ? `${selected.setup || "Candidate"} score ${selected.score.toFixed(1)}/${selected.threshold}. ` +
+          `Samples ${selected.samples}, entropy ${selected.entropy.toFixed(1)}%.`
+        : gate.reason || "No candidate is ready.";
 
       return {
         ok: false,
-        reason: `${bestReason} Data is still being collected.`,
+        reason:
+          `${bestText} Collecting data and comparing all contract families; no forced entry.`,
         elapsedSeconds,
         confirmations: 0,
-        gate,
+        gate: {
+          ...gate,
+          scoredCandidates: ranked,
+          executionScore: selected?.score || 0,
+          executionThreshold: selected?.threshold || 0,
+        },
       };
     }
 
-    const setup = selected.check.setup;
+    const setup = selected.setup;
     const tickKey = String(signal.tickKey || signal.updatedAt || "");
     const setupKey = `${this.symbol}:${setup}`;
 
@@ -826,20 +1041,21 @@ export default class DerivBotEngine {
       this.strictConfirmations += 1;
     }
 
-    const requiredConfirmations =
-      selected.check.requirements.confirmations;
-
-    if (this.strictConfirmations < requiredConfirmations) {
+    if (this.strictConfirmations < selected.confirmations) {
       return {
         ok: false,
         reason:
-          `${setup} high-conviction candidate. Confirming ` +
-          `${this.strictConfirmations}/${requiredConfirmations} fresh ticks. ` +
-          `Confidence ${selected.check.confidence.toFixed(1)}%, ` +
-          `samples ${selected.check.samples}.`,
+          `${setup} scored ${selected.score.toFixed(1)}/${selected.threshold}. ` +
+          `Confirming ${this.strictConfirmations}/${selected.confirmations} fresh ticks. ` +
+          `Samples ${selected.samples}; probability ${selected.probability.toFixed(1)}%.`,
         elapsedSeconds,
         confirmations: this.strictConfirmations,
-        gate,
+        gate: {
+          ...gate,
+          scoredCandidates: ranked,
+          executionScore: selected.score,
+          executionThreshold: selected.threshold,
+        },
       };
     }
 
@@ -848,7 +1064,7 @@ export default class DerivBotEngine {
     if (!contract) {
       return {
         ok: false,
-        reason: `Unsupported strict setup: ${setup}.`,
+        reason: `Unsupported scored setup: ${setup}.`,
         elapsedSeconds,
         confirmations: this.strictConfirmations,
         gate,
@@ -858,20 +1074,22 @@ export default class DerivBotEngine {
     return {
       ok: true,
       mode: !this.isDemoAccount
-        ? "REAL_HIGH_CONVICTION"
-        : "DEMO_HIGH_CONVICTION",
+        ? "REAL_SCORED_CONSENSUS"
+        : "DEMO_SCORED_CONSENSUS",
       decision: {
         setup,
         bestContract: setup,
-        confidence: selected.check.confidence,
-        professionalScore: selected.check.confidence,
-        marketQuality: selected.check.probability,
-        riskLevel: !this.isDemoAccount ? "REAL STRICT" : "DEMO STRICT",
-        passedCount: ranked.length,
+        confidence: selected.score,
+        professionalScore: selected.score,
+        marketQuality: selected.probability,
+        riskLevel: !this.isDemoAccount
+          ? "REAL CONSERVATIVE"
+          : "DEMO CONSERVATIVE",
+        passedCount: ranked.filter((item) => item.ok).length,
         validated: true,
         gateReason:
-          `Strict consensus passed with ${this.strictConfirmations} fresh confirmations, ` +
-          `${selected.check.samples} samples and ${selected.check.confidence.toFixed(1)}% confidence.`,
+          `Scored consensus ${selected.score.toFixed(1)}/${selected.threshold} passed ` +
+          `with ${this.strictConfirmations} fresh confirmations and ${selected.samples} samples.`,
       },
       timing: {
         state: "ENTER",
@@ -880,7 +1098,12 @@ export default class DerivBotEngine {
       contract,
       elapsedSeconds,
       confirmations: this.strictConfirmations,
-      gate,
+      gate: {
+        ...gate,
+        scoredCandidates: ranked,
+        executionScore: selected.score,
+        executionThreshold: selected.threshold,
+      },
     };
   }
 
@@ -902,7 +1125,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V22 Adaptive Consensus AI is collecting live data and matching probability, digit distribution, entropy, regime, momentum, cycles, transitions and fresh confirmations. It enters immediately when strict consensus appears and never trades only because a tick target was reached.",
+        "V23 Scored Consensus AI ranks every supported contract using confidence, probability, edge, samples, entropy, transitions, cycles, momentum and regime. Strong candidates enter after fresh confirmations; weak candidates continue waiting.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1288,7 +1511,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V12 Deep AI confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V23 scored consensus confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
