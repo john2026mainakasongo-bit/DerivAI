@@ -59,6 +59,24 @@ function contractFromSetup(setup = "") {
     return { contractType: "DIGITODD", barrier: undefined, label: "ODD" };
   }
 
+  if (value.includes("MATCH")) {
+    const match = value.match(/MATCH\s*(\d)/);
+    return {
+      contractType: "DIGITMATCH",
+      barrier: match?.[1] || "0",
+      label: `MATCH ${match?.[1] || "0"}`,
+    };
+  }
+
+  if (value.includes("DIFFERS")) {
+    const match = value.match(/DIFFERS\s*(\d)/);
+    return {
+      contractType: "DIGITDIFF",
+      barrier: match?.[1] || "0",
+      label: `DIFFERS ${match?.[1] || "0"}`,
+    };
+  }
+
   return null;
 }
 
@@ -224,11 +242,12 @@ export default class DerivBotEngine {
     }
 
     const timingState = String(timing.state || "").toUpperCase();
+    const readyNow = timing.readyNow === true || timingState === "ENTER NOW";
 
-    if (["SKIP", "WAIT", "NO TRADE"].includes(timingState)) {
+    if (!readyNow) {
       return {
         ok: false,
-        reason: `Entry timing is ${timingState || "WAIT"}.`,
+        reason: timing.instruction || `Entry timing is ${timingState || "WAIT"}.`,
       };
     }
 
