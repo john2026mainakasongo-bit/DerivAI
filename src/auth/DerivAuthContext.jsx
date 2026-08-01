@@ -374,24 +374,54 @@ export function DerivAuthProvider({ children }) {
     );
   }, [session]);
 
+  const selectedBalanceAccountId = useMemo(
+    () => getAccountId(selectedAccount),
+    [selectedAccount?.id]
+  );
+
+  const balanceAccessToken =
+    session?.accessToken || "";
+
+  const balanceClientId =
+    config?.clientId || "";
+
   useEffect(() => {
     let disposed = false;
+    let socket = null;
 
     window.clearTimeout(
       reconnectTimerRef.current
     );
 
-    if (balanceSocketRef.current) {
-      balanceSocketRef.current.close();
-      balanceSocketRef.current = null;
+    const previousSocket =
+      balanceSocketRef.current;
+
+    balanceSocketRef.current = null;
+
+    if (
+      previousSocket &&
+      previousSocket.readyState ===
+        WebSocket.OPEN
+    ) {
+      try {
+        previousSocket.close();
+      } catch {
+        // Ignore old socket cleanup errors.
+      }
     }
 
     const accountId =
-      getAccountId(selectedAccount);
+      selectedBalanceAccountId;
+
+    const accessToken =
+      balanceAccessToken;
+
+    const clientId =
+      balanceClientId;
 
     if (
-      !session?.accessToken ||
-      !config.clientId ||
+      !accessToken ||
+      !clientId ||
       !accountId
     ) {
       setBalanceStatus("idle");
@@ -399,6 +429,8 @@ export function DerivAuthProvider({ children }) {
     }
 
     async function connectBalance() {
+      if (disposed) return;
+
       setBalanceStatus("connecting");
 
       try {
@@ -410,9 +442,9 @@ export function DerivAuthProvider({ children }) {
             method: "POST",
             headers: {
               Authorization:
-                `Bearer ${session.accessToken}`,
+                `Bearer ${accessToken}`,
               "Deriv-App-ID":
-                config.clientId,
+                clientId,
               Accept: "application/json",
             },
           }
@@ -431,9 +463,11 @@ export function DerivAuthProvider({ children }) {
           );
         }
 
-        const websocketUrl =
+        const websocketUrl = String(
           payload?.data?.url ||
-          payload?.url;
+            payload?.url ||
+            ""
+        ).trim();
 
         if (!websocketUrl) {
           throw new Error(
@@ -443,15 +477,23 @@ export function DerivAuthProvider({ children }) {
 
         if (disposed) return;
 
-        const socket =
+        socket =
           new WebSocket(websocketUrl);
 
-        balanceSocketRef.current = socket;
+        balanceSocketRef.current =
+          socket;
 
         socket.onopen = () => {
-          if (disposed) return;
+          if (
+            disposed ||
+            balanceSocketRef.current !==
+              socket
+          ) {
+            return;
+          }
 
           setBalanceStatus("live");
+          setAuthError("");
 
           socket.send(
             JSON.stringify({
@@ -462,7 +504,13 @@ export function DerivAuthProvider({ children }) {
         };
 
         socket.onmessage = (event) => {
-          if (disposed) return;
+          if (
+            disposed ||
+            balanceSocketRef.current !==
+              socket
+          ) {
+            return;
+          }
 
           let message;
 
@@ -475,10 +523,13 @@ export function DerivAuthProvider({ children }) {
           }
 
           if (message?.error) {
+            setBalanceStatus("error");
+
             setAuthError(
               message.error.message ||
                 "Unable to read the selected account balance."
             );
+
             return;
           }
 
@@ -492,6 +543,8 @@ export function DerivAuthProvider({ children }) {
           setSession((current) => {
             if (!current) return current;
 
+            let changed = false;
+
             const updatedAccounts =
               (current.accounts || []).map(
                 (account) => {
@@ -502,6 +555,27 @@ export function DerivAuthProvider({ children }) {
                     return account;
                   }
 
+                  const sameBalance =
+                    Number(account.balance) ===
+                    Number(balance.balance);
+
+                  const sameCurrency =
+                    String(
+                      account.currency || ""
+                    ) ===
+                    String(
+                      balance.currency || ""
+                    );
+
+                  if (
+                    sameBalance &&
+                    sameCurrency
+                  ) {
+                    return account;
+                  }
+
+                  changed = true;
+
                   return {
                     ...account,
                     balance:
@@ -511,6 +585,10 @@ export function DerivAuthProvider({ children }) {
                   };
                 }
               );
+
+            if (!changed) {
+              return current;
+            }
 
             const next = {
               ...current,
@@ -524,21 +602,38 @@ export function DerivAuthProvider({ children }) {
         };
 
         socket.onerror = () => {
-          if (!disposed) {
-            setBalanceStatus("error");
+          if (
+            disposed ||
+            balanceSocketRef.current !==
+              socket
+          ) {
+            return;
           }
+
+          setBalanceStatus("error");
         };
 
         socket.onclose = () => {
+          if (
+            balanceSocketRef.current ===
+            socket
+          ) {
+            balanceSocketRef.current =
+              null;
+          }
+
           if (disposed) return;
 
-          setBalanceStatus("disconnected");
+          setBalanceStatus(
+            "disconnected"
+          );
 
           reconnectTimerRef.current =
-            window.setTimeout(
-              connectBalance,
-              5000
-            );
+            window.setTimeout(() => {
+              if (!disposed) {
+                void connectBalance();
+              }
+            }, 5000);
         };
       } catch (error) {
         if (disposed) return;
@@ -550,6 +645,13 @@ export function DerivAuthProvider({ children }) {
             ? error.message
             : "Unable to connect the account balance."
         );
+
+        reconnectTimerRef.current =
+          window.setTimeout(() => {
+            if (!disposed) {
+              void connectBalance();
+            }
+          }, 5000);
       }
     }
 
@@ -562,15 +664,29 @@ export function DerivAuthProvider({ children }) {
         reconnectTimerRef.current
       );
 
-      if (balanceSocketRef.current) {
-        balanceSocketRef.current.close();
+      if (
+        socket &&
+        balanceSocketRef.current ===
+          socket
+      ) {
         balanceSocketRef.current = null;
+      }
+
+      if (
+        socket?.readyState ===
+        WebSocket.OPEN
+      ) {
+        try {
+          socket.close();
+        } catch {
+          // Ignore cleanup errors.
+        }
       }
     };
   }, [
-    config.clientId,
-    selectedAccount,
-    session?.accessToken,
+    balanceAccessToken,
+    balanceClientId,
+    selectedBalanceAccountId,
   ]);
 
   const accounts = useMemo(
