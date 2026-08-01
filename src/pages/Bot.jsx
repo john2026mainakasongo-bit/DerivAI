@@ -19,6 +19,7 @@ import { buildValidatedSignals } from "../analysis/backtestEngine";
 import { buildEntryTiming } from "../analysis/entryTimingEngine";
 import { buildProfessionalDecision } from "../analysis/professionalDecisionEngine";
 import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
+import { analyzeSyntheticIntelligence } from "../analysis/syntheticIntelligenceEngine";
 
 import DerivBotEngine from "../bot/DerivBotEngine";
 import "../styles/Bot.css";
@@ -27,14 +28,14 @@ const INITIAL_SETTINGS = {
   maxRuns: 56,
   stake: 1,
   duration: 5,
-  minConfidence: 84,
+  minConfidence: 80,
   minVotes: 1,
   takeProfit: 20,
   stopLoss: 6,
   cooldownAfterLosses: 1,
   cooldownSeconds: 45,
   hardStopLossStreak: 3,
-  delaySeconds: 8,
+  delaySeconds: 5,
   martingaleEnabled: false,
   maxMartingaleSteps: 1,
   analysisAssisted: true,
@@ -42,12 +43,14 @@ const INITIAL_SETTINGS = {
   prediction: 2,
   durationUnit: "t",
   autoSwitchVolatility: true,
-  marketScanSeconds: 20,
-  confirmationCount: 3,
-  confirmationSeconds: 2,
-  signalMaxAgeSeconds: 7,
-  lossSetupBlockSeconds: 120,
-  minimumTradeGapSeconds: 8,
+  marketScanSeconds: 18,
+  confirmationCount: 2,
+  confirmationSeconds: 1,
+  signalMaxAgeSeconds: 6,
+  lossSetupBlockSeconds: 90,
+  minimumTradeGapSeconds: 5,
+  deepMinimumScore: 70,
+  deepOverrideScore: 90,
 };
 
 const INITIAL_BOT_STATE = {
@@ -77,10 +80,15 @@ const INITIAL_BOT_STATE = {
   lastBlockReason: "",
   fallbackTrades: 0,
   signalConfirmations: 0,
-  requiredConfirmations: 3,
+  requiredConfirmations: 2,
   blockedSetupUntil: 0,
   lastLossSetup: "—",
   lossProtectionCount: 0,
+  deepScore: 0,
+  deepConsensus: 0,
+  deepRegime: "UNKNOWN",
+  cyclePeriod: 0,
+  fastLane: false,
   history: [],
 };
 
@@ -330,6 +338,11 @@ export default function Bot() {
     [snapshot]
   );
 
+  const syntheticIntelligence = useMemo(
+    () => analyzeSyntheticIntelligence(snapshot),
+    [snapshot]
+  );
+
   const analysisGate = useMemo(
     () =>
       evaluateAnalysisAssistedSignal(analysis, {
@@ -355,6 +368,7 @@ export default function Bot() {
       entryTiming,
       validatedSignals,
       analysis,
+      syntheticIntelligence,
       snapshot,
     });
   }, [
@@ -363,6 +377,7 @@ export default function Bot() {
     entryTiming,
     validatedSignals,
     analysis,
+    syntheticIntelligence,
     snapshot,
   ]);
 
@@ -426,15 +441,23 @@ export default function Bot() {
         remaining,
       }));
 
+      const collectingHistory =
+        Number(syntheticIntelligence?.dataQuality || 0) < 48;
+      const deepReady =
+        Number(syntheticIntelligence?.bestScore || 0) >=
+          Number(settings.deepMinimumScore || 70) &&
+        Number(syntheticIntelligence?.dataQuality || 0) >= 48;
+
       const engineNeedsAnotherMarket =
         botState.status === "WAITING" &&
-        /loss protection|historical validation|professional confirmation|market changed|stale/i.test(
+        /loss protection|walk-forward|professional direction|market changed|stale|deep engines disagree|regime shift|too random/i.test(
           String(botState.lastBlockReason || "")
         );
 
       if (
+        collectingHistory ||
         remaining > 0 ||
-        (analysisGate.approved && !engineNeedsAnotherMarket)
+        ((analysisGate.approved || deepReady) && !engineNeedsAnotherMarket)
       ) {
         return;
       }
@@ -480,6 +503,8 @@ export default function Bot() {
     markets,
     symbol,
     analysisGate.approved,
+    syntheticIntelligence,
+    settings.deepMinimumScore,
     botState.lastBlockReason,
     changeSymbol,
   ]);
@@ -619,8 +644,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V11 Safer + Market Switch"
-          subtitle="Conservative confirmations, loss protection, and automatic Volatility market scanning"
+          title="56-Run Auto Bot V12 Deep Cycle AI + Market Switch"
+          subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -933,15 +958,16 @@ export default function Bot() {
               </Field>
 
               <div className="botTimedFallbackInfo">
-                <strong>V11 CONSERVATIVE CONTRACT ENGINE</strong>
+                <strong>V12 DEEP CYCLE INTELLIGENCE ENGINE</strong>
                 <span>
-                  AUTO SAFE uses only the best walk-forward validated setup:
-                  Rise/Fall, Even/Odd or Over 2. Other barriers and digits remain manual.
+                  AUTO combines walk-forward validation with multi-window momentum,
+                  volatility regime detection, digit entropy, Bayesian transitions,
+                  autocorrelation, sequence behaviour and observed-cycle analysis.
                 </span>
                 <small>
-                  It requires 3 fresh confirmations, uses 1 tick for AUTO digit trades,
-                  blocks a losing setup for 120 seconds, and can switch markets instead
-                  of repeating the same loss.
+                  Strong setups use FAST AI entry after one fresh confirmation; normal
+                  setups use two. Losing setups are blocked for 90 seconds, AUTO digit
+                  trades remain one tick, and weak or unstable regimes are skipped.
                 </small>
               </div>
             </div>
@@ -962,6 +988,9 @@ export default function Bot() {
                 <strong>
                   {analysisGate.approved
                     ? analysisGate.setup
+                    : Number(syntheticIntelligence.bestScore || 0) >=
+                      Number(settings.deepMinimumScore || 70)
+                    ? syntheticIntelligence.bestSetup
                     : "WAIT"}
                 </strong>
               </div>
@@ -969,16 +998,23 @@ export default function Bot() {
               <div>
                 <small>GATE CONFIDENCE</small>
                 <strong>
-                  {Number(analysisGate.confidence || 0).toFixed(1)}%
+                  {Math.max(
+                    Number(analysisGate.confidence || 0),
+                    Number(syntheticIntelligence.bestScore || 0)
+                  ).toFixed(1)}%
                 </strong>
               </div>
 
               <div>
                 <small>ENTRY</small>
                 <strong>
-                  {analysisGate.approved
+                  {analysisGate.approved ||
+                  Number(syntheticIntelligence.bestScore || 0) >=
+                    Number(settings.deepMinimumScore || 70)
                     ? botState.status === "WAITING" && botState.lastBlockReason
                       ? "CONFIRM"
+                      : syntheticIntelligence.fastLane
+                      ? "FAST AI"
                       : "READY"
                     : "WAIT"}
                 </strong>
@@ -987,75 +1023,123 @@ export default function Bot() {
 
             <div className="botStrictGate">
               <strong>
-                {analysisGate.approved
+                {analysisGate.approved || Number(syntheticIntelligence.bestScore || 0) >= Number(settings.deepMinimumScore || 70)
                   ? botState.status === "WAITING" && botState.lastBlockReason
-                    ? `PROTECTING / CONFIRMING: ${analysisGate.setup}`
-                    : `VALIDATED ENTRY: ${analysisGate.setup}`
-                  : "SCANNING FOR STABLE ENTRY"}
+                    ? `DEEP CHECK / CONFIRMING: ${analysisGate.approved ? analysisGate.setup : syntheticIntelligence.bestSetup}`
+                    : `${syntheticIntelligence.fastLane ? "FAST AI" : "DEEP VALIDATED"}: ${analysisGate.approved ? analysisGate.setup : syntheticIntelligence.bestSetup}`
+                  : "DEEP SCAN FOR A REAL EDGE"}
               </strong>
               <span>
                 {market?.label || symbol} · {settings.duration}{" "}
                 {settings.durationUnit === "s" ? "seconds" : "ticks"} ·{" "}
-                {botState.lastBlockReason || analysisGate.reason}
+                {botState.lastBlockReason ||
+                  analysisGate.reason ||
+                  syntheticIntelligence.bestDetail}
               </span>
             </div>
 
             <div className="botIntelligence">
               <div className="botIntelligenceHeader">
                 <div>
-                  <small>SECONDARY MARKET DISPLAY</small>
-                  <h3>Weighted dashboard — display only</h3>
+                  <small>ACTIVE V12 DECISION LAYER</small>
+                  <h3>Deep Cycle Intelligence</h3>
                 </div>
 
                 <span
-                  className={`botRiskBadge ${String(
-                    professionalDecision.riskLevel || "high"
-                  ).toLowerCase()}`}
+                  className={`botRiskBadge ${
+                    syntheticIntelligence.regime === "REGIME SHIFT" ||
+                    syntheticIntelligence.volatility?.state === "BURST"
+                      ? "high"
+                      : syntheticIntelligence.fastLane
+                      ? "low"
+                      : "medium"
+                  }`}
                 >
-                  {professionalDecision.riskLevel || "HIGH"} RISK
+                  {syntheticIntelligence.fastLane
+                    ? "FAST AI READY"
+                    : syntheticIntelligence.regime || "SCANNING"}
                 </span>
               </div>
 
               <div className="botIntelligenceGrid">
                 <Metric
-                  label="Market quality"
+                  label="Deep consensus"
                   value={`${Number(
-                    professionalDecision.marketQuality || 0
+                    syntheticIntelligence.consensus || 0
                   ).toFixed(1)}%`}
                 />
                 <Metric
-                  label="Professional score"
-                  value={`${Number(
-                    professionalDecision.professionalScore ||
-                      professionalDecision.confidence ||
-                      0
+                  label="Best deep setup"
+                  value={`${syntheticIntelligence.bestSetup || "WAIT"} · ${Number(
+                    syntheticIntelligence.bestScore || 0
                   ).toFixed(1)}%`}
                 />
                 <Metric
-                  label="Best contract"
-                  value={professionalDecision.bestContract || "WAIT"}
+                  label="Observed regime"
+                  value={syntheticIntelligence.regime || "UNKNOWN"}
                 />
                 <Metric
-                  label="Market state"
-                  value={professionalDecision.marketState || "WAIT"}
-                />
-                <Metric
-                  label="Expected R:R"
+                  label="Observed cycle"
                   value={
-                    professionalDecision.expectedRRLabel ||
-                    "Proposal required"
+                    syntheticIntelligence.cycle?.period
+                      ? `${syntheticIntelligence.cycle.period} ticks · ${Number(
+                          syntheticIntelligence.cycle.strength || 0
+                        ).toFixed(0)}%`
+                      : "NO STABLE CYCLE"
                   }
                 />
                 <Metric
-                  label="Data sufficiency"
+                  label="Momentum consensus"
+                  value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} · ${Number(
+                    syntheticIntelligence.momentum?.agreement || 0
+                  ).toFixed(0)}%`}
+                />
+                <Metric
+                  label="Digit entropy"
                   value={`${Number(
-                    professionalDecision.dataSufficiency || 0
+                    syntheticIntelligence.entropy?.normalized || 0
+                  ).toFixed(1)}% · ${
+                    syntheticIntelligence.entropy?.label || "UNKNOWN"
+                  }`}
+                />
+                <Metric
+                  label="Autocorrelation"
+                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "—"} · ${Number(
+                    syntheticIntelligence.autocorrelation?.strength || 0
+                  ).toFixed(0)}%`}
+                />
+                <Metric
+                  label="Transition evidence"
+                  value={`${syntheticIntelligence.transition?.observed || 0} matching transitions`}
+                />
+                <Metric
+                  label="Volatility phase"
+                  value={`${syntheticIntelligence.volatility?.state || "UNKNOWN"} · ${Number(
+                    syntheticIntelligence.volatility?.stability || 0
+                  ).toFixed(0)}% stable`}
+                />
+                <Metric
+                  label="Data quality"
+                  value={`${Number(
+                    syntheticIntelligence.dataQuality || 0
                   ).toFixed(1)}%`}
+                />
+                <Metric
+                  label="Professional layer"
+                  value={`${professionalDecision.bestContract || "WAIT"} · ${Number(
+                    professionalDecision.professionalScore ||
+                      professionalDecision.confidence ||
+                      0
+                  ).toFixed(0)}%`}
+                />
+                <Metric
+                  label="Entry speed"
+                  value={syntheticIntelligence.fastLane ? "FAST AI · 1 confirm" : "DEEP · 2 confirms"}
                 />
               </div>
 
               <div className="botScoreBreakdown">
-                {(professionalDecision.components || []).map(
+                {(syntheticIntelligence.components || []).map(
                   (component) => (
                     <div
                       className="botScoreRow"
@@ -1063,10 +1147,7 @@ export default function Bot() {
                     >
                       <div>
                         <strong>{component.label}</strong>
-                        <small>
-                          Weight {component.weight}% ·{" "}
-                          {component.detail}
-                        </small>
+                        <small>{component.detail}</small>
                       </div>
 
                       <div className="botScoreTrack">
@@ -1076,7 +1157,7 @@ export default function Bot() {
                               0,
                               Math.min(
                                 100,
-                                Number(component.rawScore || 0)
+                                Number(component.score || 0)
                               )
                             )}%`,
                           }}
@@ -1084,7 +1165,7 @@ export default function Bot() {
                       </div>
 
                       <b>
-                        {Number(component.rawScore || 0).toFixed(0)}
+                        {Number(component.score || 0).toFixed(0)}
                       </b>
                     </div>
                   )
@@ -1165,7 +1246,7 @@ export default function Bot() {
             </div>
 
             <div className="botSafetyNote">
-              Demo research tool only. V11 reduces repeated and weak entries, but no
+              Demo research tool only. V12 adds deep statistical intelligence and faster validated entries, but no
               bot can guarantee wins or remove Deriv contract risk.
             </div>
           </article>
@@ -1226,13 +1307,43 @@ export default function Bot() {
               />
               <Metric
                 label="Gate"
-                value={analysisGate.approved ? "READY" : "WAIT"}
+                value={
+                  analysisGate.approved ||
+                  Number(syntheticIntelligence.bestScore || 0) >=
+                    Number(settings.deepMinimumScore || 70)
+                    ? syntheticIntelligence.fastLane
+                      ? "FAST AI"
+                      : "DEEP READY"
+                    : "WAIT"
+                }
               />
               <Metric
                 label="Fresh confirmations"
                 value={`${botState.signalConfirmations || 0}/${
-                  botState.requiredConfirmations || settings.confirmationCount || 3
+                  botState.requiredConfirmations || settings.confirmationCount || 2
                 }`}
+              />
+              <Metric
+                label="Deep score"
+                value={`${Number(
+                  botState.deepScore || syntheticIntelligence.bestScore || 0
+                ).toFixed(1)}%`}
+              />
+              <Metric
+                label="Deep regime"
+                value={botState.deepRegime || syntheticIntelligence.regime || "UNKNOWN"}
+              />
+              <Metric
+                label="Cycle read"
+                value={
+                  (botState.cyclePeriod || syntheticIntelligence.cycle?.period)
+                    ? `${botState.cyclePeriod || syntheticIntelligence.cycle?.period} ticks`
+                    : "NONE"
+                }
+              />
+              <Metric
+                label="AI lane"
+                value={botState.fastLane || syntheticIntelligence.fastLane ? "FAST" : "NORMAL"}
               />
               <Metric
                 label="Loss protection"
@@ -1341,7 +1452,7 @@ export default function Bot() {
                         {Number(item.martingaleStep || 0)}
                       </small>
                       <small>
-                        Mode {item.executionMode || "V11_CONSERVATIVE"} ·
+                        Mode {item.executionMode || "V12_DEEP_CYCLE_AI"} ·
                         Confidence {Number(item.confidence || 0).toFixed(1)}% ·{" "}
                         Entry {item.entryStage || "ENTER"}
                       </small>

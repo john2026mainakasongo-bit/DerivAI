@@ -1,12 +1,13 @@
 import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
+import { evaluateSyntheticSetup } from "../analysis/syntheticIntelligenceEngine";
 
 const DEFAULTS = {
   maxRuns: 56,
-  minConfidence: 84,
+  minConfidence: 80,
   minVotes: 1,
   stake: 1,
   duration: 5,
-  delaySeconds: 8,
+  delaySeconds: 5,
   takeProfit: 20,
   stopLoss: 6,
   cooldownAfterLosses: 1,
@@ -19,11 +20,13 @@ const DEFAULTS = {
   contractMode: "AUTO",
   prediction: 2,
   durationUnit: "t",
-  confirmationCount: 3,
-  confirmationSeconds: 2,
-  signalMaxAgeSeconds: 7,
-  lossSetupBlockSeconds: 120,
-  minimumTradeGapSeconds: 8,
+  confirmationCount: 2,
+  confirmationSeconds: 1,
+  signalMaxAgeSeconds: 6,
+  lossSetupBlockSeconds: 90,
+  minimumTradeGapSeconds: 5,
+  deepMinimumScore: 70,
+  deepOverrideScore: 90,
 };
 
 function sleep(ms) {
@@ -266,6 +269,11 @@ export default class DerivBotEngine {
       blockedSetupUntil: 0,
       lastLossSetup: "—",
       lossProtectionCount: 0,
+      deepScore: 0,
+      deepConsensus: 0,
+      deepRegime: "UNKNOWN",
+      cyclePeriod: 0,
+      fastLane: false,
       history: [],
     };
 
@@ -355,6 +363,14 @@ export default class DerivBotEngine {
       minimumTradeGapSeconds: Math.max(
         3,
         Math.min(60, number(input.minimumTradeGapSeconds, DEFAULTS.minimumTradeGapSeconds))
+      ),
+      deepMinimumScore: Math.max(
+        55,
+        Math.min(95, number(input.deepMinimumScore, DEFAULTS.deepMinimumScore))
+      ),
+      deepOverrideScore: Math.max(
+        70,
+        Math.min(99, number(input.deepOverrideScore, DEFAULTS.deepOverrideScore))
       ),
       analysisAssisted:
         input.analysisAssisted === undefined
@@ -446,8 +462,6 @@ export default class DerivBotEngine {
       };
     }
 
-    const analysis = signal.analysis || {};
-
     if (this.settings.analysisAssisted === false) {
       return {
         ok: false,
@@ -457,6 +471,8 @@ export default class DerivBotEngine {
       };
     }
 
+    const analysis = signal.analysis || {};
+    const intelligence = signal.syntheticIntelligence || {};
     const gate = evaluateAnalysisAssistedSignal(analysis, {
       minimumConfidence: this.settings.minConfidence,
       contractMode: this.settings.contractMode,
@@ -474,34 +490,65 @@ export default class DerivBotEngine {
       Math.floor((Date.now() - startedAt) / 1000)
     );
 
-    if (!gate.approved) {
+    let setup = gate.approved ? normalizeSetup(gate.setup) : "";
+    let deepOverride = false;
+    let deepAssessment = null;
+
+    // V12 can use a high-quality deep setup when the conservative digit gate
+    // is silent, but only in AUTO and only for the same safe contract family.
+    if (!setup && this.settings.contractMode === "AUTO") {
+      const deepBest = normalizeSetup(intelligence?.bestSetup);
+      const safeDeepSetups = new Set(["RISE", "FALL", "EVEN", "ODD", "OVER 2"]);
+      const overrideAssessment = evaluateSyntheticSetup(
+        intelligence,
+        deepBest,
+        { minimumScore: this.settings.deepOverrideScore }
+      );
+
+      if (
+        safeDeepSetups.has(deepBest) &&
+        overrideAssessment.approved &&
+        overrideAssessment.fastLane
+      ) {
+        setup = deepBest;
+        deepOverride = true;
+        deepAssessment = overrideAssessment;
+      }
+    }
+
+    if (!setup) {
       this.pendingSetupKey = "";
       this.pendingSignalCount = 0;
       this.pendingSignalSince = 0;
       this.pendingSignalVersion = 0;
 
+      const deepStatus = Number(intelligence?.bestScore || 0) > 0
+        ? ` Deep best ${intelligence.bestSetup} ${Number(intelligence.bestScore).toFixed(1)}%.`
+        : "";
+
       return {
         ok: false,
-        reason: gate.reason,
+        reason: `${gate.reason}${deepStatus}`,
         elapsedSeconds,
         confirmations: 0,
         gate,
+        intelligence,
       };
     }
 
-    const contract = contractFromSetup(gate.setup);
+    const contract = contractFromSetup(setup);
 
     if (!contract) {
       return {
         ok: false,
-        reason: `Unsupported analysis setup: ${gate.setup}.`,
+        reason: `Unsupported analysis setup: ${setup}.`,
         elapsedSeconds,
         confirmations: 0,
         gate,
+        intelligence,
       };
     }
 
-    const setup = normalizeSetup(gate.setup);
     const setupKey = `${this.symbol}:${setup}`;
     const blockedUntil = Number(this.blockedSetups.get(setupKey) || 0);
 
@@ -515,6 +562,7 @@ export default class DerivBotEngine {
         confirmations: 0,
         blockedSetupUntil: blockedUntil,
         gate,
+        intelligence,
       };
     }
 
@@ -534,6 +582,7 @@ export default class DerivBotEngine {
         elapsedSeconds,
         confirmations: 0,
         gate,
+        intelligence,
       };
     }
 
@@ -553,10 +602,11 @@ export default class DerivBotEngine {
       if (!matchingValidation || bestValidationAction !== setup) {
         return {
           ok: false,
-          reason: `Historical validation has not selected ${setup} as the best current setup.`,
+          reason: `Walk-forward validation has not selected ${setup} as the best live setup.`,
           elapsedSeconds,
           confirmations: 0,
           gate,
+          intelligence,
         };
       }
     }
@@ -573,16 +623,54 @@ export default class DerivBotEngine {
       ) {
         return {
           ok: false,
-          reason: `Professional confirmation has not validated ${setup}.`,
+          reason: `Professional direction engine has not validated ${setup}.`,
           elapsedSeconds,
           confirmations: 0,
           gate,
+          intelligence,
         };
       }
     }
 
-    // First confirm that the same setup survives several fresh analysis ticks.
-    // Only after it is stable do we wait for the contract-specific entry trigger.
+    if (!deepAssessment) {
+      deepAssessment = evaluateSyntheticSetup(
+        intelligence,
+        setup,
+        { minimumScore: this.settings.deepMinimumScore }
+      );
+    }
+
+    if (!deepAssessment.approved) {
+      return {
+        ok: false,
+        reason: deepAssessment.reason,
+        elapsedSeconds,
+        confirmations: 0,
+        gate,
+        intelligence,
+        deepAssessment,
+      };
+    }
+
+    const intelligenceBest = normalizeSetup(intelligence?.bestSetup);
+    const intelligenceBestScore = Number(intelligence?.bestScore || 0);
+    if (
+      this.settings.contractMode === "AUTO" &&
+      intelligenceBest &&
+      intelligenceBest !== setup &&
+      intelligenceBestScore >= Number(deepAssessment.score || 0) + 8
+    ) {
+      return {
+        ok: false,
+        reason: `Deep engines disagree: ${setup} vs stronger ${intelligenceBest}.`,
+        elapsedSeconds,
+        confirmations: 0,
+        gate,
+        intelligence,
+        deepAssessment,
+      };
+    }
+
     const version = Number(signal.updatedAt || this.signalUpdatedAt || Date.now());
 
     if (this.pendingSetupKey !== setupKey) {
@@ -595,19 +683,27 @@ export default class DerivBotEngine {
       this.pendingSignalVersion = version;
     }
 
+    const fastLane = Boolean(deepAssessment.fastLane);
+    const requiredConfirmations = fastLane
+      ? 1
+      : Math.max(2, this.settings.confirmationCount);
+    const requiredMilliseconds = fastLane
+      ? 500
+      : this.settings.confirmationSeconds * 1000;
     const confirmationAge = Date.now() - this.pendingSignalSince;
-    const enoughConfirmations =
-      this.pendingSignalCount >= this.settings.confirmationCount;
-    const enoughTime =
-      confirmationAge >= this.settings.confirmationSeconds * 1000;
+    const enoughConfirmations = this.pendingSignalCount >= requiredConfirmations;
+    const enoughTime = confirmationAge >= requiredMilliseconds;
 
     if (!enoughConfirmations || !enoughTime) {
       return {
         ok: false,
-        reason: `Confirming ${setup}: ${this.pendingSignalCount}/${this.settings.confirmationCount} fresh ticks.`,
+        reason: `${fastLane ? "FAST AI" : "Deep confirming"} ${setup}: ${this.pendingSignalCount}/${requiredConfirmations} fresh ticks.`,
         elapsedSeconds,
         confirmations: this.pendingSignalCount,
+        requiredConfirmations,
         gate,
+        intelligence,
+        deepAssessment,
       };
     }
 
@@ -620,33 +716,49 @@ export default class DerivBotEngine {
         reason: timing.instruction || `Waiting for the ${setup} entry trigger.`,
         elapsedSeconds,
         confirmations: this.pendingSignalCount,
+        requiredConfirmations,
         gate,
+        intelligence,
+        deepAssessment,
       };
     }
 
+    const effectiveConfidence = Math.max(
+      Number(gate.confidence || 0),
+      Number(deepAssessment.score || 0)
+    );
+
     return {
       ok: true,
-      mode: "V11_CONSERVATIVE",
+      mode: "V12_DEEP_CYCLE_AI",
       decision: {
-        setup: gate.setup,
-        bestContract: gate.setup,
-        confidence: gate.confidence,
+        setup,
+        bestContract: setup,
+        confidence: effectiveConfidence,
         professionalScore: Number(
-          professionalDecision.confidence || gate.confidence
+          professionalDecision.confidence || effectiveConfidence
         ),
         marketQuality: Number(
-          professionalDecision.marketQuality || gate.stability || 0
+          professionalDecision.marketQuality || intelligence.consensus || 0
         ),
-        riskLevel: "LOWER",
+        riskLevel: fastLane ? "FAST-VALIDATED" : "DEEP-VALIDATED",
         passedCount: Number(
           professionalDecision.passedCount ||
             validationRows.filter((item) => item?.approved).length ||
             1
         ),
         validated: true,
-        gateReason: gate.reason,
+        gateReason: deepOverride
+          ? `Deep override: ${deepAssessment.reason}`
+          : gate.reason,
         historicalHitRate: Number(matchingValidation?.hitRate || 0),
         historicalLowerBound: Number(matchingValidation?.lowerBound || 0),
+        deepScore: Number(deepAssessment.score || 0),
+        deepConsensus: Number(intelligence?.consensus || 0),
+        deepRegime: intelligence?.regime || "UNKNOWN",
+        cyclePeriod: Number(intelligence?.cycle?.period || 0),
+        fastLane,
+        deepOverride,
       },
       timing: {
         ...timing,
@@ -656,7 +768,15 @@ export default class DerivBotEngine {
       contract,
       elapsedSeconds,
       confirmations: this.pendingSignalCount,
-      gate,
+      requiredConfirmations,
+      gate: {
+        ...gate,
+        approved: true,
+        setup,
+        confidence: effectiveConfidence,
+      },
+      intelligence,
+      deepAssessment,
     };
   }
 
@@ -678,7 +798,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V11 is scanning. It waits for historical agreement, entry timing, and fresh confirmations before buying.",
+        "V12 Deep Cycle AI is scanning momentum, volatility regimes, entropy, transitions, autocorrelation, observed cycles, walk-forward validation and entry timing.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       lastBlockReason: "",
@@ -755,6 +875,20 @@ export default class DerivBotEngine {
       currentStake: this.settings.stake,
       activeSetup: "—",
       activeContractId: "",
+      scanStartedAt: 0,
+      scanElapsedSeconds: 0,
+      lastBlockReason: "",
+      fallbackTrades: 0,
+      signalConfirmations: 0,
+      requiredConfirmations: this.settings.confirmationCount,
+      blockedSetupUntil: 0,
+      lastLossSetup: "—",
+      lossProtectionCount: 0,
+      deepScore: 0,
+      deepConsensus: 0,
+      deepRegime: "UNKNOWN",
+      cyclePeriod: 0,
+      fastLane: false,
       history: [],
     };
 
@@ -891,8 +1025,18 @@ export default class DerivBotEngine {
           scanElapsedSeconds: number(check.elapsedSeconds),
           lastBlockReason: check.reason,
           signalConfirmations: number(check.confirmations),
-          requiredConfirmations: this.settings.confirmationCount,
+          requiredConfirmations: number(
+            check.requiredConfirmations,
+            this.settings.confirmationCount
+          ),
           blockedSetupUntil: number(check.blockedSetupUntil),
+          deepScore: number(
+            check.deepAssessment?.score ?? check.intelligence?.bestScore
+          ),
+          deepConsensus: number(check.intelligence?.consensus),
+          deepRegime: check.intelligence?.regime || "UNKNOWN",
+          cyclePeriod: number(check.intelligence?.cycle?.period),
+          fastLane: Boolean(check.deepAssessment?.fastLane),
         });
 
         await sleep(1000);
@@ -993,7 +1137,7 @@ export default class DerivBotEngine {
     const stake = Number(this.state.currentStake.toFixed(2));
     const digitContract = isDigitContract(check.contract);
 
-    // AUTO digit analysis/backtesting validates the next digit, so V11 uses
+    // AUTO digit analysis/backtesting validates the next digit, so V12 uses
     // one tick for AUTO digit contracts. Rise/Fall keeps the configured time.
     const tradeDuration =
       this.settings.contractMode === "AUTO" && digitContract
@@ -1006,13 +1150,25 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `V11 confirmed ${check.contract.label} for ${durationText(
+        `V12 Deep AI confirmed ${check.contract.label} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V11 CONFIRMED`,
-      signalConfirmations: this.settings.confirmationCount,
+      activeSetup: `${check.contract.label} · V12 DEEP CONFIRMED`,
+      signalConfirmations: number(
+        check.requiredConfirmations,
+        this.settings.confirmationCount
+      ),
       lastBlockReason: "",
+      requiredConfirmations: number(
+        check.requiredConfirmations,
+        this.settings.confirmationCount
+      ),
+      deepScore: number(check.decision?.deepScore),
+      deepConsensus: number(check.decision?.deepConsensus),
+      deepRegime: check.decision?.deepRegime || "UNKNOWN",
+      cyclePeriod: number(check.decision?.cyclePeriod),
+      fastLane: Boolean(check.decision?.fastLane),
     });
 
     const bought = await this.client.buyContract({
@@ -1122,9 +1278,15 @@ export default class DerivBotEngine {
       entryStage: String(check.timing.state || "—"),
       votes: number(check.decision.passedCount),
       martingaleStep: this.state.martingaleStep,
-      executionMode: check.mode || "V11_CONSERVATIVE",
+      executionMode: check.mode || "V12_DEEP_CYCLE_AI",
       historicalHitRate: number(check.decision.historicalHitRate),
       historicalLowerBound: number(check.decision.historicalLowerBound),
+      deepScore: number(check.decision.deepScore),
+      deepConsensus: number(check.decision.deepConsensus),
+      deepRegime: String(check.decision.deepRegime || "UNKNOWN"),
+      cyclePeriod: number(check.decision.cyclePeriod),
+      fastLane: Boolean(check.decision.fastLane),
+      deepOverride: Boolean(check.decision.deepOverride),
     });
 
     this.activeContractId = "";
@@ -1161,7 +1323,10 @@ export default class DerivBotEngine {
       scanElapsedSeconds: 0,
       fallbackTrades: this.state.fallbackTrades,
       signalConfirmations: 0,
-      requiredConfirmations: this.settings.confirmationCount,
+      requiredConfirmations: number(
+        check.requiredConfirmations,
+        this.settings.confirmationCount
+      ),
       blockedSetupUntil,
       lastLossSetup: this.lastLossSetup || "—",
       lossProtectionCount,

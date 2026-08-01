@@ -30,7 +30,7 @@ const AUTO_SAFE_SETUPS = new Set([
   "OVER 2",
 ]);
 
-const MIN_DIGIT_SAMPLES = 120;
+const MIN_DIGIT_SAMPLES = 60;
 
 function clamp(value, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Number(value) || 0));
@@ -52,7 +52,7 @@ function normalizeOptions(input) {
   }
 
   return {
-    minimumConfidence: clamp(input?.minimumConfidence ?? 84, 70, 95),
+    minimumConfidence: clamp(input?.minimumConfidence ?? 80, 70, 95),
     contractMode: normalizeMode(input?.contractMode),
     prediction: Math.max(
       0,
@@ -163,11 +163,11 @@ function buildParityCandidates(analysis, minConfidence, sampleReady) {
     const confidence = candidateConfidence(edge, profile.spread, 65);
     const approved =
       sampleReady &&
-      profile.full >= 56 &&
-      profile.recent >= 55 &&
-      profile.baseline >= 53 &&
-      profile.conservative >= 56.5 &&
-      profile.spread <= 9 &&
+      profile.full >= 54.5 &&
+      profile.recent >= 54 &&
+      profile.baseline >= 52 &&
+      profile.conservative >= 54.5 &&
+      profile.spread <= 11 &&
       confidence >= minConfidence;
 
     return candidate({
@@ -203,11 +203,11 @@ function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
     const confidence = candidateConfidence(edge, profile.spread, 66);
     const approved =
       sampleReady &&
-      profile.full >= naturalBaseline + 5.5 &&
-      profile.recent >= naturalBaseline + 5 &&
-      profile.baseline >= naturalBaseline + 3.5 &&
-      profile.conservative >= naturalBaseline + 6 &&
-      profile.spread <= 10 &&
+      profile.full >= naturalBaseline + 4 &&
+      profile.recent >= naturalBaseline + 3.5 &&
+      profile.baseline >= naturalBaseline + 2 &&
+      profile.conservative >= naturalBaseline + 4 &&
+      profile.spread <= 12 &&
       confidence >= minConfidence;
 
     rows.push(
@@ -239,11 +239,11 @@ function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
     const confidence = candidateConfidence(edge, profile.spread, 66);
     const approved =
       sampleReady &&
-      profile.full >= naturalBaseline + 5.5 &&
-      profile.recent >= naturalBaseline + 5 &&
-      profile.baseline >= naturalBaseline + 3.5 &&
-      profile.conservative >= naturalBaseline + 6 &&
-      profile.spread <= 10 &&
+      profile.full >= naturalBaseline + 4 &&
+      profile.recent >= naturalBaseline + 3.5 &&
+      profile.baseline >= naturalBaseline + 2 &&
+      profile.conservative >= naturalBaseline + 4 &&
+      profile.spread <= 12 &&
       confidence >= minConfidence;
 
     rows.push(
@@ -380,9 +380,9 @@ function buildRiseFallCandidates(analysis, minConfidence) {
     const approved =
       preferred === setup &&
       momentumSetup === setup &&
-      estimate >= 70 &&
-      strength >= 40 &&
-      consistency >= 62 &&
+      estimate >= 66 &&
+      strength >= 35 &&
+      consistency >= 56 &&
       confidence >= minConfidence;
 
     return candidate({
@@ -479,7 +479,7 @@ function selectCandidates(candidates, options) {
 }
 
 /**
- * Conservative Analysis Assisted gate.
+ * V12 balanced Analysis Assisted gate.
  * It only returns ENTER when full-window, recent-window and baseline-window
  * evidence agree. AUTO is intentionally narrower than manual mode.
  */
@@ -562,7 +562,7 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
       baselineProbability: best.baseline,
       edge: best.edge,
       stability: best.stability,
-      riskMode: "CONSERVATIVE",
+      riskMode: "DEEP_BALANCED",
     };
   }
 
@@ -585,7 +585,7 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
 
   const sampleReason =
     contractMode === "AUTO" && !sampleReady
-      ? ` Digit contracts need ${MIN_DIGIT_SAMPLES} samples; Rise/Fall is still being checked.`
+      ? ` Digit samples ${sampleSize}/${MIN_DIGIT_SAMPLES}; Rise/Fall is still being checked.`
       : "";
 
   return {
@@ -604,7 +604,7 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
     baselineProbability: Number(nearest?.baseline || 0),
     edge: Number(nearest?.edge || 0),
     stability: Number(nearest?.stability || 0),
-    riskMode: "CONSERVATIVE",
+    riskMode: "DEEP_BALANCED",
   };
 }
 
