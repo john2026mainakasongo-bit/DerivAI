@@ -644,7 +644,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V19.3B Raw-Tick Demo Bridge + Market Switch"
+          title="56-Run Auto Bot V19.4 Proposal/Buy Fix + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}

@@ -280,11 +280,18 @@ class DerivTradingClient {
     const reqId = Number(message.req_id);
     const pending = this.pending.get(reqId);
 
-    if (message.error) {
+    /* V19_4_ERROR_ARRAY_SUPPORT */
+    const responseError =
+      message.error ||
+      (Array.isArray(message.errors) ? message.errors[0] : null) ||
+      message.data?.error ||
+      (Array.isArray(message.data?.errors) ? message.data.errors[0] : null);
+
+    if (responseError) {
       const messageText =
-        message.error.message ||
-        message.error.code ||
-        "Deriv returned an error.";
+        responseError.message ||
+        responseError.code ||
+        errorMessage(message, "Deriv returned an error.");
 
       if (pending) {
         window.clearTimeout(pending.timeout);
@@ -735,6 +742,8 @@ class DerivTradingClient {
       duration: Number(duration),
       duration_unit: String(durationUnit || "t"),
       underlying_symbol: String(symbol || ""),
+      /* V19_4_PROPOSAL_REQUEST */
+      subscribe: 0,
     };
 
     if (!proposal.underlying_symbol) {
@@ -770,58 +779,106 @@ class DerivTradingClient {
   }
 
   async buyContract(options) {
-    const proposalResponse = await this.getProposal(options);
+    /* V19_4_ROBUST_BUY */
+    const normalized = {
+      ...options,
+      symbol: String(options?.symbol || "").trim(),
+      contractType: String(options?.contractType || "").trim().toUpperCase(),
+      amount: Number(options?.amount),
+      duration: Number(options?.duration),
+      durationUnit: String(options?.durationUnit || "t").trim().toLowerCase(),
+    };
+
+    const digitContract = normalized.contractType.startsWith("DIGIT");
+
+    if (digitContract) {
+      normalized.duration = 1;
+      normalized.durationUnit = "t";
+    }
+
+    if (
+      ["DIGITEVEN", "DIGITODD", "CALL", "PUT"].includes(
+        normalized.contractType
+      )
+    ) {
+      delete normalized.barrier;
+    }
+
+    const proposalResponse = await this.getProposal(normalized);
 
     const proposal =
-      proposalResponse.proposal ||
-      proposalResponse.data?.proposal ||
-      proposalResponse.data ||
+      proposalResponse?.proposal ||
+      proposalResponse?.data?.proposal ||
+      proposalResponse?.result?.proposal ||
+      (proposalResponse?.data?.id ? proposalResponse.data : null) ||
       null;
 
     const proposalId = String(
       proposal?.id ||
         proposal?.proposal_id ||
+        proposalResponse?.proposal_id ||
         ""
     );
 
     const askPrice = Number(
       proposal?.ask_price ??
         proposal?.price ??
-        options.amount
+        proposalResponse?.ask_price ??
+        normalized.amount
     );
 
-    if (!proposalId || !Number.isFinite(askPrice)) {
+    if (!proposalId) {
+      const detail = errorMessage(
+        proposalResponse,
+        "Deriv did not return a proposal ID."
+      );
+
       throw new Error(
-        "Deriv did not return a valid proposal."
+        `Proposal failed for ${normalized.contractType} on ${normalized.symbol}: ${detail}`
       );
     }
 
-    const buyResponse = await this.buyProposal(
-      proposalId,
-      askPrice
-    );
+    if (!Number.isFinite(askPrice) || askPrice <= 0) {
+      throw new Error(
+        `Proposal returned an invalid ask price for ${normalized.contractType}.`
+      );
+    }
+
+    const buyResponse = await this.buyProposal(proposalId, askPrice);
 
     const buy =
-      buyResponse.buy ||
-      buyResponse.data?.buy ||
-      buyResponse.data ||
+      buyResponse?.buy ||
+      buyResponse?.data?.buy ||
+      buyResponse?.result?.buy ||
+      (buyResponse?.data?.contract_id ? buyResponse.data : null) ||
       null;
 
     const contractId = String(
       buy?.contract_id ||
         buy?.id ||
+        buyResponse?.contract_id ||
         ""
     );
 
-    if (contractId) {
-      await this.subscribeOpenContract(contractId);
+    if (!contractId) {
+      const detail = errorMessage(
+        buyResponse,
+        "Deriv did not return a contract ID."
+      );
+
+      throw new Error(
+        `Buy failed for ${normalized.contractType}: ${detail}`
+      );
     }
+
+    await this.subscribeOpenContract(contractId);
 
     return {
       proposal,
       buy,
       contractId,
       raw: buyResponse,
+      request: normalized,
     };
   }
 

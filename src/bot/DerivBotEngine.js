@@ -1219,7 +1219,7 @@ export default class DerivBotEngine {
         this.addHistory({
           id: `error-${Date.now()}`,
           time: Date.now(),
-          setup: check.contract.label,
+          setup: `${check.contract.label} · ${message}`,
           result: "ERROR",
           profit: 0,
           stake: this.state.currentStake,
