@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V35 · Adaptive Digit Entry + Hard Lock"
+          title="EdgePilot V36 · Runtime Candidate Fix + Hard Lock"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>ADAPTIVE DIGIT ENTRY · HARD LOCK</small>
+                <small>RUNTIME CANDIDATE FIX · HARD LOCK</small>
                 <strong>
-                  SCORE DIGIT → ADAPT THRESHOLD → LOCK → CONFIRM → BUY
+                  RANK CANDIDATES → LOCK TOP CONTRACT → CONFIRM → BUY
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V35 uses practical Real digit rules: 70%+ confidence, 74%+ probability, 80+ samples, six transitions and two votes. Standard digit thresholds relax gradually as more data arrives, but never below 60 and never from time alone. MATCH and RISE/FALL remain strict. Stake remains capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
+              V36 fixes the runtime error that caused Engine votes 0/0 and Top contract — even when Live AI had a strong signal. Candidate scoring now runs correctly, one malformed candidate cannot stop the ranking cycle, and the top valid contract can proceed through hard lock, confirmation, proposal and buy. Real stake remains capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 

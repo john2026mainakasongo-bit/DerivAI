@@ -721,6 +721,11 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
 
   const score = clampScore(weightedScore);
 
+  const isStandardDigit =
+    setup !== "RISE" &&
+    setup !== "FALL" &&
+    !setup.startsWith("MATCH");
+
   const baseThreshold = isReal
     ? setup.startsWith("MATCH")
       ? 96
@@ -769,11 +774,6 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     : passedVotes >= (
         setup === "RISE" || setup === "FALL" ? 3 : 3
       );
-
-  const isStandardDigit =
-    setup !== "RISE" &&
-    setup !== "FALL" &&
-    !setup.startsWith("MATCH");
 
   const demoDigitQualityPass =
     !isReal &&
@@ -1380,13 +1380,23 @@ export default class DerivBotEngine {
       : [];
 
     if (gate.setup) {
+      const fallbackProbability = Number(
+        gate.selectedProbability ??
+        gate.probability ??
+        analysis.probability ??
+        signal.probability ??
+        gate.confidence ??
+        0
+      );
+
       candidates.push({
         setup: gate.setup,
         action: gate.setup,
-        confidence: gate.confidence,
-        probability: gate.selectedProbability,
-        edge: gate.selectedEdge,
-        approved: gate.approved,
+        confidence: Number(gate.confidence || fallbackProbability || 0),
+        probability: fallbackProbability,
+        edge: Number(gate.selectedEdge || gate.edge || 0),
+        approved: Boolean(gate.approved),
+        family: gate.family || "",
       });
     }
 
@@ -1397,17 +1407,26 @@ export default class DerivBotEngine {
 
       if (!key) continue;
 
-      const scored = scoreCandidate(
-        candidate,
-        signal,
-        this.symbol,
-        !this.isDemoAccount
-      );
+      try {
+        const scored = scoreCandidate(
+          candidate,
+          signal,
+          this.symbol,
+          !this.isDemoAccount
+        );
 
-      const previous = unique.get(key);
+        const previous = unique.get(key);
 
-      if (!previous || scored.score > previous.score) {
-        unique.set(key, scored);
+        if (!previous || scored.score > previous.score) {
+          unique.set(key, scored);
+        }
+      } catch (error) {
+        console.error("[V36] CANDIDATE SCORE ERROR", {
+          key,
+          candidate,
+          message: error?.message || String(error),
+          stack: error?.stack || "",
+        });
       }
     }
 
@@ -1417,6 +1436,16 @@ export default class DerivBotEngine {
         Number(b.confidence) - Number(a.confidence) ||
         Number(b.edge) - Number(a.edge)
     );
+
+    if (!ranked.length) {
+      console.warn("[V36] NO RANKED CANDIDATES", {
+        gateSetup: gate.setup || "",
+        gateCandidates: Array.isArray(gate.candidates)
+          ? gate.candidates.length
+          : 0,
+        signalSetup: signal.setup || signal.action || "",
+      });
+    }
 
     // V33 HARD LOCK:
     // 1. Choose a qualifying candidate once.
@@ -1704,7 +1733,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V35 uses practical standard-digit entry rules and a bounded adaptive threshold. OVER/UNDER, EVEN/ODD and DIFFERS can qualify with 70% confidence, 74% probability, 80 samples, six transitions and two votes. MATCH and RISE/FALL remain strict.",
+        "V36 fixes the V35 runtime candidate-scoring crash caused by using isStandardDigit before initialization. Candidate ranking, votes, top contract, hard lock, confirmation, proposal and buy can now run. Malformed candidates are isolated and logged instead of breaking the full ranking cycle.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2121,11 +2150,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V35 adaptive digit confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V36 runtime candidate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V35 ADAPTIVE DIGIT CONFIRMED`,
+      activeSetup: `${check.contract.label} · V36 CANDIDATE RUNTIME CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
