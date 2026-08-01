@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V33 · Hard-Lock Execution + Real Strict"
+          title="EdgePilot V34 · Calibrated Real Digit Gate + Hard Lock"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>HARD-LOCK EXECUTION · REAL STRICT</small>
+                <small>CALIBRATED REAL DIGIT GATE · HARD LOCK</small>
                 <strong>
-                  LOCK ONE CONTRACT → SIGNAL CONFIRM → PROPOSAL → BUY
+                  QUALIFY DIGIT → HARD LOCK → 2 CONFIRMS → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V33 freezes one qualifying contract and ignores all competing candidates until it executes or materially collapses. Confirmation uses fresh signal versions, so missing or repeated tickKey values cannot keep it at 0/1. Demo uses one confirmation; Real uses two. Real still caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              V34 keeps the hard lock and calibrates Real digit entries using the selected contract's own evidence: 75%+ confidence, 86%+ probability, 120+ samples, 10+ transitions, four votes and entropy at or below 99.2%. Real digit trades use two fresh confirmations. Stake remains capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1455,6 +1455,16 @@ export default function Bot() {
                       ? "FAST AI"
                       : "DEEP READY"
                     : "WAIT"
+                }
+              />
+              <Metric
+                label="Real gate"
+                value={
+                  botState.gate?.realDigitQualityPass
+                    ? "QUALIFIED"
+                    : botState.gate?.blockedChecks?.score
+                      ? `BLOCKED ${botState.gate.blockedChecks.score}`
+                      : "WAIT"
                 }
               />
               <Metric

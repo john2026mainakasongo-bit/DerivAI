@@ -731,7 +731,7 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
       ? 96
       : setup === "RISE" || setup === "FALL"
         ? 94
-        : 93
+        : 82
     : setup.startsWith("MATCH")
       ? 93
       : setup === "RISE" || setup === "FALL"
@@ -760,15 +760,32 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
         setup === "RISE" || setup === "FALL" ? 3 : 3
       );
 
-  const demoDigitQualityPass =
-    !isReal &&
+  const isStandardDigit =
     setup !== "RISE" &&
     setup !== "FALL" &&
-    !setup.startsWith("MATCH") &&
+    !setup.startsWith("MATCH");
+
+  const demoDigitQualityPass =
+    !isReal &&
+    isStandardDigit &&
     samples >= 60 &&
     confidence >= 78 &&
     probability >= 84 &&
     passedVotes >= 3;
+
+  // V34 balanced Real path:
+  // Candidate-specific evidence can qualify a strong digit setup even when
+  // the generic weighted score is depressed by high synthetic-market entropy.
+  const realDigitQualityPass =
+    isReal &&
+    isStandardDigit &&
+    samples >= 120 &&
+    confidence >= 75 &&
+    probability >= 86 &&
+    transitionCount >= 10 &&
+    passedVotes >= 4 &&
+    strongVotes >= 1 &&
+    entropy <= 99.2;
 
   const ok =
     (
@@ -777,12 +794,19 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
       familySafetyPass &&
       voteAdvisoryPass
     ) ||
-    demoDigitQualityPass;
+    demoDigitQualityPass ||
+    realDigitQualityPass;
 
   let confirmations;
 
   if (isReal) {
-    confirmations = score >= 97 ? 3 : score >= 95 ? 4 : 5;
+    confirmations = isStandardDigit
+      ? 2
+      : score >= 97
+        ? 3
+        : score >= 95
+          ? 4
+          : 5;
   } else {
     confirmations = score >= 92 ? 1 : score >= 88 ? 2 : 3;
   }
@@ -811,6 +835,17 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     marketProfile: profile.name,
     independentContractScore: true,
     demoDigitQualityPass,
+    realDigitQualityPass,
+    blockedChecks: {
+      score: `${score.toFixed(1)}/${threshold}`,
+      samples: `${samples}/${minimumSamples}`,
+      confidence: `${confidence.toFixed(1)}%`,
+      probability: `${probability.toFixed(1)}%`,
+      transitions: transitionCount,
+      votes: `${passedVotes}/${requiredVotes}`,
+      strongVotes,
+      entropy: `${entropy.toFixed(1)}%`,
+    },
     scoreBreakdown: {
       confidence: confidenceScore,
       probability: probabilityScore,
@@ -1435,7 +1470,7 @@ export default class DerivBotEngine {
       return {
         ok: false,
         reason:
-          `${bestText} Waiting for one contract to pass its independent gate. No forced entry.`,
+          `${bestText} Real digit balanced gate needs candidate confidence 75%+, probability 86%+, 120 samples, 10 transitions, 4 votes and entropy <=99.2%. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
         requiredConfirmations: this.isDemoAccount ? 1 : 2,
@@ -1450,6 +1485,8 @@ export default class DerivBotEngine {
           marketProfile: selected?.marketProfile || marketProfile(this.symbol).name,
           independentContractScore: Boolean(selected?.independentContractScore),
           scoreBreakdown: selected?.scoreBreakdown || null,
+          blockedChecks: selected?.blockedChecks || null,
+          realDigitQualityPass: Boolean(selected?.realDigitQualityPass),
           executionPhase: "SCAN",
           lockedCandidate: "—",
           signalVersion: this.signalVersion,
@@ -1556,6 +1593,8 @@ export default class DerivBotEngine {
           marketProfile: selected.marketProfile,
           independentContractScore: true,
           scoreBreakdown: selected.scoreBreakdown || null,
+          blockedChecks: selected.blockedChecks || null,
+          realDigitQualityPass: Boolean(selected.realDigitQualityPass),
           executionPhase: "CONFIRMING",
           lockedCandidate: setup,
           signalVersion: this.signalVersion,
@@ -1625,6 +1664,8 @@ export default class DerivBotEngine {
         marketProfile: selected.marketProfile,
         independentContractScore: true,
         demoDigitQualityPass: Boolean(selected.demoDigitQualityPass),
+        realDigitQualityPass: Boolean(selected.realDigitQualityPass),
+        blockedChecks: selected.blockedChecks || null,
         executionPhase: "READY",
         lockedCandidate: setup,
         signalVersion: this.signalVersion,
@@ -1651,7 +1692,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V33 hard-locks one qualifying contract, ignores all competing candidates, confirms it using fresh signal versions, then moves directly to proposal and buy. Demo uses one confirmation; Real uses two.",
+        "V34 keeps the V33 hard lock and adds a calibrated Real digit gate based on candidate-specific probability, confidence, transitions, samples and votes. High entropy alone no longer destroys an otherwise strong digit score.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2068,11 +2109,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V33 hard-lock confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V34 calibrated real digit confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V33 HARD LOCK CONFIRMED`,
+      activeSetup: `${check.contract.label} · V34 REAL DIGIT GATE CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
