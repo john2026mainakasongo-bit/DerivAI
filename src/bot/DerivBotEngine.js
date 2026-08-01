@@ -720,19 +720,27 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     } else {
       confirmations = 5;
     }
-  } else if (finalScore >= 85 && strongVotes >= 3) {
-    confirmations = 1;
   } else {
     confirmations = 2;
   }
 
   return {
     ok:
-      finalScore >= threshold &&
-      passedVotes >= requiredVotes &&
-      samples >= (isReal
-        ? profile.minimumSamples
-        : Math.min(profile.minimumSamples, 20)),
+      (
+        finalScore >= threshold &&
+        passedVotes >= requiredVotes &&
+        samples >= (isReal
+          ? profile.minimumSamples
+          : Math.min(profile.minimumSamples, 20))
+      ) ||
+      (
+        !isReal &&
+        !setup.startsWith("MATCH") &&
+        samples >= 30 &&
+        confidence >= 65 &&
+        probability >= 78 &&
+        passedVotes >= 3
+      ),
     setup,
     family: candidateFamily(candidate),
     score: finalScore,
@@ -753,6 +761,7 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     requiredVotes,
     votes,
     marketProfile: profile.name,
+    demoOperationalPass,
   };
 }
 
@@ -935,6 +944,7 @@ export default class DerivBotEngine {
       deepRegime: "UNKNOWN",
       cyclePeriod: 0,
       fastLane: false,
+      gate: null,
       history: [],
     };
 
@@ -1288,6 +1298,7 @@ export default class DerivBotEngine {
           requiredEngineVotes: selected?.requiredVotes || 0,
           strongEngineVotes: selected?.strongVotes || 0,
           marketProfile: selected?.marketProfile || marketProfile(this.symbol).name,
+          demoOperationalPass: Boolean(selected?.demoOperationalPass),
         },
       };
     }
@@ -1326,6 +1337,8 @@ export default class DerivBotEngine {
           requiredEngineVotes: selected.requiredVotes,
           strongEngineVotes: selected.strongVotes,
           marketProfile: selected.marketProfile,
+        demoOperationalPass: Boolean(selected.demoOperationalPass),
+          demoOperationalPass: Boolean(selected.demoOperationalPass),
         },
       };
     }
@@ -1400,7 +1413,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V25 uses an operational Demo gate so completed trades can verify proposal, buy and monitoring. Real remains strict, requires more votes and confirmations, caps stake, and stops after one loss.",
+        "V26 fixes gate-state propagation and adds a practical Demo execution path for high-probability non-MATCH candidates. Real execution remains strict and unchanged.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1497,6 +1510,7 @@ export default class DerivBotEngine {
       deepRegime: "UNKNOWN",
       cyclePeriod: 0,
       fastLane: false,
+      gate: null,
       history: [],
     };
 
@@ -1665,6 +1679,7 @@ export default class DerivBotEngine {
           deepRegime: check.intelligence?.regime || "UNKNOWN",
           cyclePeriod: number(check.intelligence?.cycle?.period),
           fastLane: Boolean(check.deepAssessment?.fastLane),
+          gate: check.gate || null,
         });
 
         await sleep(1000);
@@ -1786,11 +1801,11 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V24 multi-engine consensus confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V26 execution gate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V12 DEEP CONFIRMED`,
+      activeSetup: `${check.contract.label} · V26 CONSENSUS CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
@@ -1805,6 +1820,7 @@ export default class DerivBotEngine {
       deepRegime: check.decision?.deepRegime || "UNKNOWN",
       cyclePeriod: number(check.decision?.cyclePeriod),
       fastLane: Boolean(check.decision?.fastLane),
+      gate: check.gate || null,
     });
 
     console.log("===== DERIV BUY REQUEST =====", {

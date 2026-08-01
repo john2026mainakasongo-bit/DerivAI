@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V25 · Demo Entry Test + Real Strict AI"
+          title="EdgePilot V26 · Demo Execution Gate Fix + Real Strict"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>DEMO OPERATIONAL · REAL STRICT</small>
+                <small>DEMO EXECUTION FIXED · REAL STRICT</small>
                 <strong>
-                  DEMO: 4-VOTE ENTRY · REAL: STRICT MULTI-ENGINE GATE
+                  DEMO: HIGH-PROBABILITY 3-VOTE PATH · REAL: STRICT GATE
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              Demo uses a practical execution gate so you can confirm that proposal, buy, settlement and history work. Real stays much stricter, requires additional votes and confirmations, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              Demo can now execute high-probability non-MATCH candidates after three engine votes and two fresh confirmations. The engine-vote state is also displayed correctly. Real remains strict, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1384,6 +1384,16 @@ export default function Bot() {
               <Metric
                 label="Risk cooldowns"
                 value={botState.cooldownCount}
+              />
+              <Metric
+                label="Gate mode"
+                value={
+                  botState.gate?.demoOperationalPass
+                    ? "DEMO OPERATIONAL"
+                    : isDemo
+                      ? "DEMO SCORED"
+                      : "REAL STRICT"
+                }
               />
               <Metric
                 label="Engine votes"
