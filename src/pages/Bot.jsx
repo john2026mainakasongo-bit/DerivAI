@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V36 · Runtime Candidate Fix + Hard Lock"
+          title="EdgePilot V37 · Practical Demo Entry Gate + Hard Lock"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>RUNTIME CANDIDATE FIX · HARD LOCK</small>
+                <small>PRACTICAL DEMO ENTRY GATE · HARD LOCK</small>
                 <strong>
-                  RANK CANDIDATES → LOCK TOP CONTRACT → CONFIRM → BUY
+                  DIRECT EVIDENCE → LOCK TOP CONTRACT → CONFIRM → BUY
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V36 fixes the runtime error that caused Engine votes 0/0 and Top contract — even when Live AI had a strong signal. Candidate scoring now runs correctly, one malformed candidate cannot stop the ranking cycle, and the top valid contract can proceed through hard lock, confirmation, proposal and buy. Real stake remains capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
+              V37 keeps candidate ranking working and fixes the Demo gate that still blocked a valid digit setup only because its weighted score was below the display threshold. Demo standard-digit entries now qualify from direct evidence: probability 78%+, confidence 65%+, 80 samples, six transitions and two votes. Weighted score still ranks candidates. Real remains more conservative, stake stays capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1458,12 +1458,13 @@ export default function Bot() {
                 }
               />
               <Metric
-                label="Real gate"
+                label="Entry gate"
                 value={
-                  botState.gate?.realDigitQualityPass
-                    ? "QUALIFIED"
+                  botState.gate?.directEvidencePass ||
+                  botState.gate?.qualificationMode === "WEIGHTED_SCORE"
+                    ? `QUALIFIED · ${botState.gate?.qualificationMode || "DIRECT"}`
                     : botState.gate?.blockedChecks?.score
-                      ? `BLOCKED ${botState.gate.blockedChecks.score} · relax ${botState.gate.blockedChecks.adaptiveRelaxation || 0}`
+                      ? `BLOCKED ${botState.gate.blockedChecks.score} · ${botState.gate.blockedChecks.demoNeeds || ""}`
                       : "WAIT"
                 }
               />

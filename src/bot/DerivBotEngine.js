@@ -751,7 +751,15 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
             : 0
       : 0;
 
-  const threshold = Math.max(60, baseThreshold - adaptiveRelaxation);
+  const thresholdFloor =
+    !isReal && isStandardDigit
+      ? 45
+      : 60;
+
+  const threshold = Math.max(
+    thresholdFloor,
+    baseThreshold - adaptiveRelaxation
+  );
 
   const minimumSamples = isReal
     ? Math.max(profile.minimumSamples, setup.startsWith("MATCH") ? 70 : 55)
@@ -778,10 +786,12 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
   const demoDigitQualityPass =
     !isReal &&
     isStandardDigit &&
-    samples >= 60 &&
-    confidence >= 78 &&
-    probability >= 84 &&
-    passedVotes >= 3;
+    samples >= 80 &&
+    confidence >= 65 &&
+    probability >= 78 &&
+    transitionCount >= 6 &&
+    passedVotes >= 2 &&
+    entropy <= 99.6;
 
   // V35 balanced Real digit path:
   // Standard digit contracts may qualify with practical evidence levels.
@@ -844,6 +854,16 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     independentContractScore: true,
     demoDigitQualityPass,
     realDigitQualityPass,
+    directEvidencePass:
+      demoDigitQualityPass || realDigitQualityPass,
+    qualificationMode:
+      demoDigitQualityPass
+        ? "DEMO_DIRECT_EVIDENCE"
+        : realDigitQualityPass
+          ? "REAL_DIRECT_EVIDENCE"
+          : score >= threshold
+            ? "WEIGHTED_SCORE"
+            : "BLOCKED",
     baseThreshold,
     adaptiveRelaxation,
     blockedChecks: {
@@ -857,6 +877,8 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
       votes: `${passedVotes}/${requiredVotes}`,
       strongVotes,
       entropy: `${entropy.toFixed(1)}%`,
+      demoNeeds: "P78 C65 S80 T6 V2 E<=99.6",
+      realNeeds: "P74 C70 S80 T6 V2 E<=99.5",
     },
     scoreBreakdown: {
       confidence: confidenceScore,
@@ -1511,7 +1533,11 @@ export default class DerivBotEngine {
       return {
         ok: false,
         reason:
-          `${bestText} Standard digit gate needs confidence 70%+, probability 74%+, 80 samples, 6 transitions and 2 votes. Threshold adapts with data but never below 60. No forced entry.`,
+          `${bestText} ${
+            this.isDemoAccount
+              ? "Demo digit gate needs probability 78%+, confidence 65%+, 80 samples, 6 transitions and 2 votes."
+              : "Real digit gate needs probability 74%+, confidence 70%+, 80 samples, 6 transitions and 2 votes."
+          } Weighted score ranks candidates but does not override a passed direct-evidence gate. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
         requiredConfirmations: this.isDemoAccount ? 1 : 2,
@@ -1528,6 +1554,8 @@ export default class DerivBotEngine {
           scoreBreakdown: selected?.scoreBreakdown || null,
           blockedChecks: selected?.blockedChecks || null,
           realDigitQualityPass: Boolean(selected?.realDigitQualityPass),
+          directEvidencePass: Boolean(selected?.directEvidencePass),
+          qualificationMode: selected?.qualificationMode || "BLOCKED",
           executionPhase: "SCAN",
           lockedCandidate: "—",
           signalVersion: this.signalVersion,
@@ -1636,6 +1664,8 @@ export default class DerivBotEngine {
           scoreBreakdown: selected.scoreBreakdown || null,
           blockedChecks: selected.blockedChecks || null,
           realDigitQualityPass: Boolean(selected.realDigitQualityPass),
+          directEvidencePass: Boolean(selected.directEvidencePass),
+          qualificationMode: selected.qualificationMode || "BLOCKED",
           executionPhase: "CONFIRMING",
           lockedCandidate: setup,
           signalVersion: this.signalVersion,
@@ -1706,6 +1736,8 @@ export default class DerivBotEngine {
         independentContractScore: true,
         demoDigitQualityPass: Boolean(selected.demoDigitQualityPass),
         realDigitQualityPass: Boolean(selected.realDigitQualityPass),
+        directEvidencePass: Boolean(selected.directEvidencePass),
+        qualificationMode: selected.qualificationMode || "BLOCKED",
         blockedChecks: selected.blockedChecks || null,
         executionPhase: "READY",
         lockedCandidate: setup,
@@ -1733,7 +1765,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V36 fixes the V35 runtime candidate-scoring crash caused by using isStandardDigit before initialization. Candidate ranking, votes, top contract, hard lock, confirmation, proposal and buy can now run. Malformed candidates are isolated and logged instead of breaking the full ranking cycle.",
+        "V37 keeps the V36 runtime fix and removes the contradictory Demo score blocker. Standard Demo digit contracts qualify from direct contract evidence, while weighted score remains the ranking tool. Real mode remains more conservative.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2150,11 +2182,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V36 runtime candidate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V37 practical demo gate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V36 CANDIDATE RUNTIME CONFIRMED`,
+      activeSetup: `${check.contract.label} · V37 DIRECT EVIDENCE CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
