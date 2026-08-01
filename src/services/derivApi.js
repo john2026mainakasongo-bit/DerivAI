@@ -742,9 +742,7 @@ class DerivTradingClient {
       duration: Number(duration),
       duration_unit: String(durationUnit || "t"),
       underlying_symbol: String(symbol || ""),
-      /* V19_4_PROPOSAL_REQUEST */
-      subscribe: 0,
-    };
+};
 
     if (!proposal.underlying_symbol) {
       throw new Error("Underlying symbol is missing.");
