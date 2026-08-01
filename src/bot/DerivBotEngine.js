@@ -735,8 +735,8 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     : setup.startsWith("MATCH")
       ? 93
       : setup === "RISE" || setup === "FALL"
-        ? 90
-        : 86;
+        ? 88
+        : 78;
 
   const minimumSamples = isReal
     ? Math.max(profile.minimumSamples, setup.startsWith("MATCH") ? 70 : 55)
@@ -756,13 +756,28 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
 
   const voteAdvisoryPass = isReal
     ? passedVotes >= Math.max(4, requiredVotes - 1)
-    : passedVotes >= 2;
+    : passedVotes >= (
+        setup === "RISE" || setup === "FALL" ? 3 : 3
+      );
+
+  const demoDigitQualityPass =
+    !isReal &&
+    setup !== "RISE" &&
+    setup !== "FALL" &&
+    !setup.startsWith("MATCH") &&
+    samples >= 60 &&
+    confidence >= 78 &&
+    probability >= 84 &&
+    passedVotes >= 3;
 
   const ok =
-    score >= threshold &&
-    samples >= minimumSamples &&
-    familySafetyPass &&
-    voteAdvisoryPass;
+    (
+      score >= threshold &&
+      samples >= minimumSamples &&
+      familySafetyPass &&
+      voteAdvisoryPass
+    ) ||
+    demoDigitQualityPass;
 
   let confirmations;
 
@@ -795,6 +810,7 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     votes,
     marketProfile: profile.name,
     independentContractScore: true,
+    demoDigitQualityPass,
     scoreBreakdown: {
       confidence: confidenceScore,
       probability: probabilityScore,
@@ -946,6 +962,12 @@ export default class DerivBotEngine {
     this.strictSetupKey = "";
     this.strictConfirmations = 0;
     this.strictLastTickKey = "";
+    this.lockedCandidate = null;
+    this.lockedCandidateTick = 0;
+    this.executionPhase = "SCAN";
+    this.lockedCandidate = null;
+    this.lockedCandidateTick = 0;
+    this.executionPhase = "SCAN";
 
     this.state = {
       status: "IDLE",
@@ -987,6 +1009,8 @@ export default class DerivBotEngine {
       cyclePeriod: 0,
       fastLane: false,
       gate: null,
+      executionPhase: "SCAN",
+      lockedCandidate: "—",
       history: [],
     };
 
@@ -1161,6 +1185,9 @@ export default class DerivBotEngine {
   resetScanWindow(reason = "Starting a new scan window.") {
     this.scanTickCount = 0;
     this.scanWindow += 1;
+    this.lockedCandidate = null;
+    this.lockedCandidateTick = 0;
+    this.executionPhase = "SCAN";
     this.lastSignalTickKey = "";
     this.pendingSetupKey = "";
     this.pendingSignalCount = 0;
@@ -1349,30 +1376,53 @@ export default class DerivBotEngine {
     }
 
     const setup = selected.setup;
-    const tickKey = String(signal.tickKey || signal.updatedAt || "");
     const setupKey = `${this.symbol}:${setup}`;
 
-    if (setupKey !== this.strictSetupKey) {
+    if (
+      !this.lockedCandidate ||
+      this.lockedCandidate.setupKey !== setupKey
+    ) {
+      this.lockedCandidate = {
+        setupKey,
+        setup,
+        contract: contractFromSetup(setup),
+        score: selected.score,
+        probability: selected.probability,
+        confidence: selected.confidence,
+        lockedAtTick: this.scanTickCount,
+      };
+      this.lockedCandidateTick = this.scanTickCount;
       this.strictSetupKey = setupKey;
       this.strictConfirmations = 0;
-      this.strictLastTickKey = "";
+      this.executionPhase = "LOCKED";
+
+      this.patch({
+        executionPhase: "LOCKED",
+        lockedCandidate: setup,
+      });
     }
 
-    if (tickKey && tickKey !== this.strictLastTickKey) {
-      this.strictLastTickKey = tickKey;
-      this.strictConfirmations += 1;
-    }
+    const confirmationTicks = Math.max(
+      0,
+      this.scanTickCount - this.lockedCandidateTick
+    );
 
-    if (this.strictConfirmations < selected.confirmations) {
+    this.strictConfirmations = confirmationTicks;
+    this.executionPhase =
+      confirmationTicks >= selected.confirmations
+        ? "READY"
+        : "CONFIRMING";
+
+    if (confirmationTicks < selected.confirmations) {
       return {
         ok: false,
         reason:
-          `${setup} scored ${selected.score.toFixed(1)}/${selected.threshold}. ` +
-          `Independent rank ${selected.score.toFixed(1)}/${selected.threshold}; advisory votes ${selected.passedVotes}. ` +
-          `Confirming ${this.strictConfirmations}/${selected.confirmations} fresh ticks. ` +
-          `Samples ${selected.samples}; probability ${selected.probability.toFixed(1)}%.`,
+          `${setup} LOCKED at ${selected.score.toFixed(1)}/${selected.threshold}. ` +
+          `Confirming ${confirmationTicks}/${selected.confirmations} new market ticks. ` +
+          `Votes ${selected.passedVotes}; samples ${selected.samples}; probability ${selected.probability.toFixed(1)}%.`,
         elapsedSeconds,
-        confirmations: this.strictConfirmations,
+        confirmations: confirmationTicks,
+        requiredConfirmations: selected.confirmations,
         gate: {
           ...gate,
           scoredCandidates: ranked,
@@ -1437,6 +1487,10 @@ export default class DerivBotEngine {
         requiredEngineVotes: selected.requiredVotes,
         strongEngineVotes: selected.strongVotes,
         marketProfile: selected.marketProfile,
+        independentContractScore: true,
+        demoDigitQualityPass: Boolean(selected.demoDigitQualityPass),
+        executionPhase: "READY",
+        lockedCandidate: setup,
       },
     };
   }
@@ -1459,7 +1513,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V30 ranks OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL independently using weighted evidence. Unrelated contract engines no longer block the strongest valid setup. Real remains stricter than Demo.",
+        "V31 separates scanning, candidate locking, tick confirmation, proposal, buy and monitoring into explicit execution phases. Demo digit candidates can qualify through strong probability, confidence, samples and three advisory votes. Real remains strict.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1726,6 +1780,8 @@ export default class DerivBotEngine {
           cyclePeriod: number(check.intelligence?.cycle?.period),
           fastLane: Boolean(check.deepAssessment?.fastLane),
           gate: check.gate || null,
+          executionPhase: check.gate?.executionPhase || this.executionPhase || "SCAN",
+          lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "—",
         });
 
         await sleep(1000);
@@ -1844,14 +1900,18 @@ export default class DerivBotEngine {
       ? "t"
       : this.settings.durationUnit;
 
+    this.executionPhase = "PROPOSAL";
+
     this.patch({
-      status: "BUYING",
+      status: "PROPOSAL",
+      executionPhase: "PROPOSAL",
+      lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V30 independent contract rank confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V31 execution state machine confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V30 TOP CONTRACT CONFIRMED`,
+      activeSetup: `${check.contract.label} · V31 LOCKED CANDIDATE CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
@@ -1903,6 +1963,12 @@ export default class DerivBotEngine {
       executionMode: check.mode,
     });
 
+    this.patch({
+      status: "BUYING",
+      executionPhase: "BUYING",
+      message: `Proposal accepted for ${check.contract.label}. Sending buy request.`,
+    });
+
     const bought = await this.client.buyContract({
       symbol: this.symbol,
       contractType: check.contract.contractType,
@@ -1922,8 +1988,11 @@ export default class DerivBotEngine {
 
     this.activeContractId = String(bought.contractId);
 
+    this.executionPhase = "MONITORING";
+
     this.patch({
       status: "MONITORING",
+      executionPhase: "MONITORING",
       message: `Monitoring contract ${this.activeContractId}.`,
       activeContractId: this.activeContractId,
     });

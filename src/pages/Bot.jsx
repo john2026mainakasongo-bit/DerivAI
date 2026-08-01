@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V30 · Independent Contract Ranker + Real Strict"
+          title="EdgePilot V31 · Execution State Machine + Real Strict"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>INDEPENDENT CONTRACT RANKER · REAL STRICT</small>
+                <small>EXECUTION STATE MACHINE · REAL STRICT</small>
                 <strong>
-                  TOP CONTRACT SCORE · FAMILY-SPECIFIC SAFETY · FRESH CONFIRMATION
+                  SCAN → LOCK → CONFIRM → PROPOSAL → BUY → MONITOR
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL are now scored independently. The strongest contract can enter after crossing its own weighted threshold and fresh confirmation; an unrelated RISE/FALL or digit engine can no longer block it. Real remains stricter, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              The bot now uses explicit execution phases: SCAN, LOCKED, CONFIRMING, PROPOSAL, BUYING and MONITORING. A locked candidate is confirmed using new market ticks instead of repeatedly recalculating the same snapshot. Real remains stricter, caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1408,6 +1408,14 @@ export default function Bot() {
               <Metric
                 label="Market profile"
                 value={botState.gate?.marketProfile || symbol}
+              />
+              <Metric
+                label="Execution phase"
+                value={botState.executionPhase || botState.gate?.executionPhase || "SCAN"}
+              />
+              <Metric
+                label="Locked candidate"
+                value={botState.lockedCandidate || botState.gate?.lockedCandidate || "—"}
               />
               <Metric
                 label="Top contract"
