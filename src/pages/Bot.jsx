@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V23 · Scored Consensus Execution AI"
+          title="EdgePilot V24 · Multi-Engine Consensus AI"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>SCORED CONSENSUS</small>
+                <small>MULTI-ENGINE CONSENSUS</small>
                 <strong>
-                  DYNAMIC SCORE · FRESH-TICK CONFIRMATION
+                  ENGINE VOTING · ADAPTIVE ENTROPY · FRESH CONFIRMATION
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              The AI ranks OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL using a dynamic evidence score instead of one rigid WAIT gate. Strong setups still require fresh-tick confirmation. Real mode caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
+              The AI compares OVER/UNDER, EVEN/ODD, MATCH/DIFFERS and RISE/FALL using independent engine votes. Entropy is adapted to each volatility market instead of blocking every high-randomness setup. Strong setups still require fresh-tick confirmation. Real mode caps stake at 0.35 USD, disables martingale and stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1384,6 +1384,18 @@ export default function Bot() {
               <Metric
                 label="Risk cooldowns"
                 value={botState.cooldownCount}
+              />
+              <Metric
+                label="Engine votes"
+                value={`${Number(botState.gate?.engineVotes || 0)}/${Number(botState.gate?.requiredEngineVotes || 0)}`}
+              />
+              <Metric
+                label="Strong votes"
+                value={Number(botState.gate?.strongEngineVotes || 0)}
+              />
+              <Metric
+                label="Market profile"
+                value={botState.gate?.marketProfile || symbol}
               />
               <Metric
                 label="Execution score"

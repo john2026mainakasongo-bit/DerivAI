@@ -322,10 +322,89 @@ function analysisMetric(analysis = {}, paths = [], fallback = 0) {
   return fallback;
 }
 
-function scoreCandidate(candidate = {}, signal = {}, isReal = false) {
+
+function marketProfile(symbol = "") {
+  const value = safeUpper(symbol);
+
+  if (value.includes("1HZ10V")) {
+    return {
+      name: "1HZ10V",
+      entropyTolerance: 99.2,
+      scoreAdjustment: -1,
+      requiredVotes: 5,
+      minimumSamples: 30,
+    };
+  }
+
+  if (value.includes("1HZ25V")) {
+    return {
+      name: "1HZ25V",
+      entropyTolerance: 99.0,
+      scoreAdjustment: 0,
+      requiredVotes: 5,
+      minimumSamples: 34,
+    };
+  }
+
+  if (value.includes("1HZ50V")) {
+    return {
+      name: "1HZ50V",
+      entropyTolerance: 98.9,
+      scoreAdjustment: 1,
+      requiredVotes: 5,
+      minimumSamples: 36,
+    };
+  }
+
+  if (value.includes("1HZ75V")) {
+    return {
+      name: "1HZ75V",
+      entropyTolerance: 98.8,
+      scoreAdjustment: 2,
+      requiredVotes: 5,
+      minimumSamples: 38,
+    };
+  }
+
+  if (value.includes("1HZ100V")) {
+    return {
+      name: "1HZ100V",
+      entropyTolerance: 98.7,
+      scoreAdjustment: 2,
+      requiredVotes: 6,
+      minimumSamples: 42,
+    };
+  }
+
+  return {
+    name: value || "DEFAULT",
+    entropyTolerance: 98.5,
+    scoreAdjustment: 0,
+    requiredVotes: 5,
+    minimumSamples: 36,
+  };
+}
+
+function scoreVote(value, passAt, strongAt) {
+  const numeric = Number(value || 0);
+
+  if (numeric >= strongAt) {
+    return { pass: true, strong: true, value: numeric };
+  }
+
+  return {
+    pass: numeric >= passAt,
+    strong: false,
+    value: numeric,
+  };
+}
+
+function buildConsensusVotes(candidate = {}, signal = {}, symbol = "", isReal = false) {
   const analysis = signal.analysis || {};
+  const profile = marketProfile(symbol);
   const setup = candidateAction(candidate);
   const family = candidateFamily(candidate);
+
   const confidence = clampScore(candidate.confidence);
   const probability = clampScore(candidate.probability);
   const edge = Math.max(0, Number(candidate.edge || 0));
@@ -333,11 +412,7 @@ function scoreCandidate(candidate = {}, signal = {}, isReal = false) {
 
   const entropy = analysisMetric(
     analysis,
-    [
-      "digitEntropy.percentage",
-      "entropy.percentage",
-      "entropy",
-    ],
+    ["digitEntropy.percentage", "entropy.percentage", "entropy"],
     100
   );
 
@@ -409,79 +484,235 @@ function scoreCandidate(candidate = {}, signal = {}, isReal = false) {
       ""
   );
 
-  let score = 0;
-  const reasons = [];
+  const directionalAgreement =
+    setup === "RISE"
+      ? ["UP", "RISE"].includes(momentum)
+      : setup === "FALL"
+        ? ["DOWN", "FALL"].includes(momentum)
+        : true;
 
-  score += Math.min(25, confidence * 0.25);
-  reasons.push(`confidence ${confidence.toFixed(1)}%`);
+  const randomRegime =
+    regime.includes("RANDOM") || regime.includes("NO EDGE");
+
+  const probabilityVote =
+    setup.startsWith("MATCH")
+      ? scoreVote(probability, isReal ? 15.5 : 14.5, isReal ? 18 : 17)
+      : setup.startsWith("DIFFERS")
+        ? {
+            pass: probability <= (isReal ? 6.5 : 7.5),
+            strong: probability <= (isReal ? 4.5 : 5.5),
+            value: probability,
+          }
+        : scoreVote(
+            probability,
+            isReal ? 67 : 64,
+            isReal ? 74 : 70
+          );
+
+  const votes = [
+    {
+      name: "Confidence",
+      ...scoreVote(
+        confidence,
+        isReal ? 88 : 84,
+        isReal ? 94 : 91
+      ),
+    },
+    {
+      name: "Probability",
+      ...probabilityVote,
+    },
+    {
+      name: "Edge",
+      ...scoreVote(
+        edge,
+        isReal ? 3.5 : 2.5,
+        isReal ? 6 : 5
+      ),
+    },
+    {
+      name: "Transitions",
+      ...scoreVote(
+        transitionCount,
+        isReal ? 8 : 6,
+        isReal ? 13 : 10
+      ),
+    },
+    {
+      name: "Momentum",
+      pass:
+        setup === "RISE" || setup === "FALL"
+          ? directionalAgreement && momentumStrength >= (isReal ? 55 : 45)
+          : momentumStrength >= 20 || setup.startsWith("OVER") || setup.startsWith("UNDER"),
+      strong:
+        setup === "RISE" || setup === "FALL"
+          ? directionalAgreement && momentumStrength >= (isReal ? 72 : 65)
+          : momentumStrength >= 55,
+      value: momentumStrength,
+    },
+    {
+      name: "Cycle",
+      ...scoreVote(
+        cycleStrength,
+        isReal ? 20 : 15,
+        isReal ? 45 : 35
+      ),
+    },
+    {
+      name: "Regime",
+      pass:
+        setup === "RISE" || setup === "FALL"
+          ? !randomRegime && regimeStrength >= (isReal ? 45 : 35)
+          : regimeStrength >= 20 || !randomRegime,
+      strong:
+        !randomRegime && regimeStrength >= (isReal ? 70 : 60),
+      value: regimeStrength,
+    },
+    {
+      name: "Entropy",
+      pass:
+        entropy <= profile.entropyTolerance ||
+        (
+          entropy <= profile.entropyTolerance + 0.7 &&
+          confidence >= 91 &&
+          transitionCount >= 10
+        ),
+      strong: entropy <= profile.entropyTolerance - 1,
+      value: entropy,
+    },
+    {
+      name: "Autocorrelation",
+      ...scoreVote(
+        autocorrelation,
+        isReal ? 20 : 15,
+        isReal ? 45 : 35
+      ),
+    },
+    {
+      name: "Samples",
+      pass: samples >= profile.minimumSamples,
+      strong: samples >= profile.minimumSamples * 1.5,
+      value: samples,
+    },
+  ];
+
+  const passedVotes = votes.filter((vote) => vote.pass).length;
+  const strongVotes = votes.filter((vote) => vote.strong).length;
+
+  let requiredVotes = profile.requiredVotes;
 
   if (setup.startsWith("MATCH")) {
-    score += Math.min(25, probability * 1.4);
+    requiredVotes += 1;
+  }
+
+  if (isReal) {
+    requiredVotes += 1;
+  }
+
+  return {
+    profile,
+    setup,
+    family,
+    votes,
+    passedVotes,
+    strongVotes,
+    requiredVotes,
+    directionalAgreement,
+    randomRegime,
+    confidence,
+    probability,
+    edge,
+    samples,
+    entropy,
+    transitionCount,
+    cycleStrength,
+    momentumStrength,
+    autocorrelation,
+    regimeStrength,
+    regime,
+    momentum,
+  };
+}
+
+function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false) {
+  const consensus = buildConsensusVotes(
+    candidate,
+    signal,
+    symbol,
+    isReal
+  );
+
+  const {
+    profile,
+    setup,
+    confidence,
+    probability,
+    edge,
+    samples,
+    entropy,
+    transitionCount,
+    cycleStrength,
+    momentumStrength,
+    autocorrelation,
+    regimeStrength,
+    passedVotes,
+    strongVotes,
+    requiredVotes,
+    votes,
+    randomRegime,
+  } = consensus;
+
+  let score = 0;
+
+  score += Math.min(24, confidence * 0.24);
+
+  if (setup.startsWith("MATCH")) {
+    score += Math.min(24, probability * 1.3);
   } else if (setup.startsWith("DIFFERS")) {
-    score += Math.min(25, Math.max(0, 10 - probability) * 2.5);
+    score += Math.min(24, Math.max(0, 10 - probability) * 2.4);
   } else {
-    score += Math.min(25, probability * 0.25);
+    score += Math.min(24, probability * 0.24);
   }
 
-  score += Math.min(15, edge * 1.5);
-  score += Math.min(10, transitionCount * 0.75);
-  score += Math.min(8, cycleStrength * 0.08);
-  score += Math.min(8, momentumStrength * 0.08);
+  score += Math.min(14, edge * 1.4);
+  score += Math.min(10, transitionCount * 0.7);
+  score += Math.min(7, cycleStrength * 0.07);
+  score += Math.min(7, momentumStrength * 0.07);
   score += Math.min(5, autocorrelation * 0.05);
-  score += Math.min(4, regimeStrength * 0.04);
+  score += Math.min(5, regimeStrength * 0.05);
+  score += Math.min(8, passedVotes * 0.8);
+  score += Math.min(6, strongVotes * 0.75);
+  score += profile.scoreAdjustment;
 
-  const sampleTarget = setup.startsWith("MATCH")
-    ? 48
-    : setup.startsWith("DIFFERS")
-      ? 38
-      : setup === "RISE" || setup === "FALL"
-        ? 28
-        : 34;
-
-  score += Math.min(10, (samples / sampleTarget) * 10);
-
-  if (entropy >= 99) {
-    score -= setup.startsWith("MATCH") ? 20 : 8;
-    reasons.push("extreme entropy");
-  } else if (entropy >= 97) {
-    score -= setup.startsWith("MATCH") ? 12 : 4;
-  } else if (entropy <= 94) {
-    score += 4;
+  if (entropy > profile.entropyTolerance) {
+    const excess = entropy - profile.entropyTolerance;
+    score -= Math.min(8, excess * 3);
+  } else {
+    score += 2;
   }
 
-  if (regime.includes("RANDOM") || regime.includes("NO EDGE")) {
-    score -= setup === "RISE" || setup === "FALL" ? 18 : 7;
-    reasons.push("random regime");
-  }
-
-  if (setup === "RISE" && !["UP", "RISE"].includes(momentum)) {
-    score -= 18;
-  }
-
-  if (setup === "FALL" && !["DOWN", "FALL"].includes(momentum)) {
-    score -= 18;
+  if (randomRegime && (setup === "RISE" || setup === "FALL")) {
+    score -= 14;
   }
 
   if (!candidate.approved) {
-    // Do not discard a strong setup only because one legacy binary gate failed.
-    // The score still requires independent evidence and fresh confirmations.
-    score -= 6;
-    reasons.push("legacy gate not approved");
+    score -= 4;
   }
 
-  const threshold = setup.startsWith("MATCH")
-    ? (isReal ? 96 : 93)
-    : setup.startsWith("DIFFERS")
-      ? (isReal ? 93 : 90)
-      : setup === "RISE" || setup === "FALL"
-        ? (isReal ? 92 : 88)
-        : (isReal ? 91 : 87);
+  const threshold =
+    setup.startsWith("MATCH")
+      ? (isReal ? 95 : 92)
+      : setup.startsWith("DIFFERS")
+        ? (isReal ? 92 : 89)
+        : setup === "RISE" || setup === "FALL"
+          ? (isReal ? 91 : 87)
+          : (isReal ? 90 : 86);
 
   const finalScore = clampScore(score);
 
   let confirmations = 4;
 
-  if (finalScore >= 96) {
+  if (finalScore >= 96 && strongVotes >= 5) {
     confirmations = isReal ? 3 : 2;
   } else if (finalScore >= 92) {
     confirmations = isReal ? 4 : 3;
@@ -490,9 +721,12 @@ function scoreCandidate(candidate = {}, signal = {}, isReal = false) {
   }
 
   return {
-    ok: finalScore >= threshold && samples >= Math.min(sampleTarget, 24),
+    ok:
+      finalScore >= threshold &&
+      passedVotes >= requiredVotes &&
+      samples >= Math.min(profile.minimumSamples, 24),
     setup,
-    family,
+    family: candidateFamily(candidate),
     score: finalScore,
     threshold,
     confirmations,
@@ -504,9 +738,13 @@ function scoreCandidate(candidate = {}, signal = {}, isReal = false) {
     transitionCount,
     cycleStrength,
     momentumStrength,
-    regime,
-    momentum,
-    reasons,
+    autocorrelation,
+    regimeStrength,
+    passedVotes,
+    strongVotes,
+    requiredVotes,
+    votes,
+    marketProfile: profile.name,
   };
 }
 
@@ -983,6 +1221,7 @@ export default class DerivBotEngine {
       const scored = scoreCandidate(
         candidate,
         signal,
+        this.symbol,
         !this.isDemoAccount
       );
 
@@ -1008,7 +1247,8 @@ export default class DerivBotEngine {
 
       const bestText = selected
         ? `${selected.setup || "Candidate"} score ${selected.score.toFixed(1)}/${selected.threshold}. ` +
-          `Samples ${selected.samples}, entropy ${selected.entropy.toFixed(1)}%.`
+          `Votes ${selected.passedVotes}/${selected.requiredVotes}; strong ${selected.strongVotes}. ` +
+          `Samples ${selected.samples}, entropy ${selected.entropy.toFixed(1)}%, market ${selected.marketProfile}.`
         : gate.reason || "No candidate is ready.";
 
       return {
@@ -1022,6 +1262,10 @@ export default class DerivBotEngine {
           scoredCandidates: ranked,
           executionScore: selected?.score || 0,
           executionThreshold: selected?.threshold || 0,
+          engineVotes: selected?.passedVotes || 0,
+          requiredEngineVotes: selected?.requiredVotes || 0,
+          strongEngineVotes: selected?.strongVotes || 0,
+          marketProfile: selected?.marketProfile || marketProfile(this.symbol).name,
         },
       };
     }
@@ -1046,6 +1290,7 @@ export default class DerivBotEngine {
         ok: false,
         reason:
           `${setup} scored ${selected.score.toFixed(1)}/${selected.threshold}. ` +
+          `Votes ${selected.passedVotes}/${selected.requiredVotes}; strong ${selected.strongVotes}. ` +
           `Confirming ${this.strictConfirmations}/${selected.confirmations} fresh ticks. ` +
           `Samples ${selected.samples}; probability ${selected.probability.toFixed(1)}%.`,
         elapsedSeconds,
@@ -1055,6 +1300,10 @@ export default class DerivBotEngine {
           scoredCandidates: ranked,
           executionScore: selected.score,
           executionThreshold: selected.threshold,
+          engineVotes: selected.passedVotes,
+          requiredEngineVotes: selected.requiredVotes,
+          strongEngineVotes: selected.strongVotes,
+          marketProfile: selected.marketProfile,
         },
       };
     }
@@ -1074,8 +1323,8 @@ export default class DerivBotEngine {
     return {
       ok: true,
       mode: !this.isDemoAccount
-        ? "REAL_SCORED_CONSENSUS"
-        : "DEMO_SCORED_CONSENSUS",
+        ? "REAL_MULTI_ENGINE_CONSENSUS"
+        : "DEMO_MULTI_ENGINE_CONSENSUS",
       decision: {
         setup,
         bestContract: setup,
@@ -1103,6 +1352,10 @@ export default class DerivBotEngine {
         scoredCandidates: ranked,
         executionScore: selected.score,
         executionThreshold: selected.threshold,
+        engineVotes: selected.passedVotes,
+        requiredEngineVotes: selected.requiredVotes,
+        strongEngineVotes: selected.strongVotes,
+        marketProfile: selected.marketProfile,
       },
     };
   }
@@ -1125,7 +1378,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V23 Scored Consensus AI ranks every supported contract using confidence, probability, edge, samples, entropy, transitions, cycles, momentum and regime. Strong candidates enter after fresh confirmations; weak candidates continue waiting.",
+        "V24 Multi-Engine Consensus AI lets confidence, probability, edge, entropy, transitions, momentum, cycles, regime, autocorrelation and sample quality vote independently. A trade is considered only when enough engines agree and fresh ticks confirm the same setup.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -1511,7 +1764,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V23 scored consensus confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V24 multi-engine consensus confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
