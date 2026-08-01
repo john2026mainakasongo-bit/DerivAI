@@ -644,7 +644,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V16 Metric Table AI + Market Switch"
+          title="56-Run Auto Bot V17 Professional Row Terminal + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1064,7 +1064,7 @@ export default function Bot() {
             <div className="botCardHeader botSectionHeader">
               <div>
                 <small>LIVE ANALYSIS</small>
-                <h2>AI metric table</h2>
+                <h2>Live AI terminal</h2>
               </div>
 
               <span className={`botStatus ${analysisGate.approved ? "running" : "waiting"}`}>
@@ -1142,7 +1142,7 @@ export default function Bot() {
               <div className="botIntelligenceHeader">
                 <div>
                   <small>ACTIVE V12 DECISION LAYER</small>
-                  <h3>Live statistical metrics</h3>
+                  <h3>Metric / value stream</h3>
                 </div>
 
                 <span
