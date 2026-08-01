@@ -644,7 +644,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V14 Professional Terminal AI + Market Switch"
+          title="56-Run Auto Bot V15 Compact Quant AI + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1130,8 +1130,8 @@ export default function Bot() {
                   : "DEEP SCAN FOR A REAL EDGE"}
               </strong>
               <span>
-                {market?.label || symbol} Â· {settings.duration}{" "}
-                {settings.durationUnit === "s" ? "seconds" : "ticks"} Â·{" "}
+                {market?.label || symbol} · {settings.duration}{" "}
+                {settings.durationUnit === "s" ? "seconds" : "ticks"} ·{" "}
                 {botState.lastBlockReason ||
                   analysisGate.reason ||
                   syntheticIntelligence.bestDetail}
@@ -1170,7 +1170,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Best deep setup"
-                  value={`${syntheticIntelligence.bestSetup || "WAIT"} Â· ${Number(
+                  value={`${syntheticIntelligence.bestSetup || "WAIT"} · ${Number(
                     syntheticIntelligence.bestScore || 0
                   ).toFixed(1)}%`}
                 />
@@ -1182,7 +1182,7 @@ export default function Bot() {
                   label="Observed cycle"
                   value={
                     syntheticIntelligence.cycle?.period
-                      ? `${syntheticIntelligence.cycle.period} ticks Â· ${Number(
+                      ? `${syntheticIntelligence.cycle.period} ticks · ${Number(
                           syntheticIntelligence.cycle.strength || 0
                         ).toFixed(0)}%`
                       : "NO STABLE CYCLE"
@@ -1190,7 +1190,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Momentum consensus"
-                  value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} Â· ${Number(
+                  value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} · ${Number(
                     syntheticIntelligence.momentum?.agreement || 0
                   ).toFixed(0)}%`}
                 />
@@ -1198,13 +1198,13 @@ export default function Bot() {
                   label="Digit entropy"
                   value={`${Number(
                     syntheticIntelligence.entropy?.normalized || 0
-                  ).toFixed(1)}% Â· ${
+                  ).toFixed(1)}% · ${
                     syntheticIntelligence.entropy?.label || "UNKNOWN"
                   }`}
                 />
                 <Metric
                   label="Autocorrelation"
-                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "—"} Â· ${Number(
+                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "—"} · ${Number(
                     syntheticIntelligence.autocorrelation?.strength || 0
                   ).toFixed(0)}%`}
                 />
@@ -1214,7 +1214,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Volatility phase"
-                  value={`${syntheticIntelligence.volatility?.state || "UNKNOWN"} Â· ${Number(
+                  value={`${syntheticIntelligence.volatility?.state || "UNKNOWN"} · ${Number(
                     syntheticIntelligence.volatility?.stability || 0
                   ).toFixed(0)}% stable`}
                 />
@@ -1226,7 +1226,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Professional layer"
-                  value={`${professionalDecision.bestContract || "WAIT"} Â· ${Number(
+                  value={`${professionalDecision.bestContract || "WAIT"} · ${Number(
                     professionalDecision.professionalScore ||
                       professionalDecision.confidence ||
                       0
@@ -1234,7 +1234,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Entry speed"
-                  value={"VALIDATED Â· 1 fresh confirm"}
+                  value={"VALIDATED · 1 fresh confirm"}
                 />
               </div>
 
@@ -1460,23 +1460,23 @@ export default function Bot() {
                   >
                     <div className="botHistoryMain">
                       <strong>
-                        {item.setup} Â· {item.symbol || market?.id || symbol}
+                        {item.setup} · {item.symbol || market?.id || symbol}
                       </strong>
                       <small>
-                        {new Date(item.time).toLocaleTimeString()} Â· Contract{" "}
+                        {new Date(item.time).toLocaleTimeString()} · Contract{" "}
                         {item.contractId || "—"}
                       </small>
                       <small>
-                        Entry {Number(item.entrySpot || 0).toFixed(3)} Â· Exit{" "}
-                        {Number(item.exitSpot || 0).toFixed(3)} Â· Stake{" "}
-                        {Number(item.stake || 0).toFixed(2)} Â·{" "}
+                        Entry {Number(item.entrySpot || 0).toFixed(3)} · Exit{" "}
+                        {Number(item.exitSpot || 0).toFixed(3)} · Stake{" "}
+                        {Number(item.stake || 0).toFixed(2)} ·{" "}
                         {Number(item.duration || 0)}{" "}
-                        {item.durationUnit === "s" ? "sec" : "ticks"} Â· MG{" "}
+                        {item.durationUnit === "s" ? "sec" : "ticks"} · MG{" "}
                         {Number(item.martingaleStep || 0)}
                       </small>
                       <small>
-                        Mode {item.executionMode || "V12_DEEP_CYCLE_AI"} Â·
-                        Confidence {Number(item.confidence || 0).toFixed(1)}% Â·{" "}
+                        Mode {item.executionMode || "V12_DEEP_CYCLE_AI"} ·
+                        Confidence {Number(item.confidence || 0).toFixed(1)}% ·{" "}
                         Entry {item.entryStage || "ENTER"}
                       </small>
                     </div>
