@@ -18,6 +18,7 @@ import { analyzeMarket } from "../analysis/analysisEngine";
 import { buildValidatedSignals } from "../analysis/backtestEngine";
 import { buildEntryTiming } from "../analysis/entryTimingEngine";
 import { buildProfessionalDecision } from "../analysis/professionalDecisionEngine";
+import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
 
 import DerivBotEngine from "../bot/DerivBotEngine";
 import "../styles/Bot.css";
@@ -26,8 +27,8 @@ const INITIAL_SETTINGS = {
   maxRuns: 56,
   stake: 1,
   duration: 5,
-  minConfidence: 72,
-  minVotes: 3,
+  minConfidence: 75,
+  minVotes: 1,
   takeProfit: 20,
   stopLoss: 10,
   cooldownAfterLosses: 3,
@@ -36,11 +37,12 @@ const INITIAL_SETTINGS = {
   delaySeconds: 3,
   martingaleEnabled: false,
   maxMartingaleSteps: 3,
-  timedDemoFallback: true,
-  maxWaitSeconds: 120,
-  fallbackMinScore: 40,
-  fallbackMinQuality: 40,
-  fallbackMinVotes: 2,
+  analysisAssisted: true,
+  contractMode: "AUTO",
+  prediction: 2,
+  durationUnit: "t",
+  autoSwitchVolatility: true,
+  marketScanSeconds: 20,
 };
 
 const INITIAL_BOT_STATE = {
@@ -82,6 +84,68 @@ function accountId(account) {
   );
 }
 
+const DIGIT_CONTRACT_MODES = new Set([
+  "EVEN",
+  "ODD",
+  "OVER",
+  "UNDER",
+  "MATCH",
+  "DIFFERS",
+]);
+
+function isDigitContractMode(mode) {
+  return DIGIT_CONTRACT_MODES.has(
+    String(mode || "").toUpperCase()
+  );
+}
+
+function needsPrediction(mode) {
+  return ["OVER", "UNDER", "MATCH", "DIFFERS"].includes(
+    String(mode || "").toUpperCase()
+  );
+}
+
+function predictionOptions(mode) {
+  const value = String(mode || "").toUpperCase();
+
+  if (value === "OVER") {
+    return Array.from({ length: 9 }, (_, index) => index);
+  }
+
+  if (value === "UNDER") {
+    return Array.from({ length: 9 }, (_, index) => index + 1);
+  }
+
+  return Array.from({ length: 10 }, (_, index) => index);
+}
+
+function contractModeLabel(mode, prediction) {
+  const value = String(mode || "AUTO").toUpperCase();
+
+  if (value === "AUTO") {
+    return "AUTO BEST";
+  }
+
+  return needsPrediction(value)
+    ? `${value} ${prediction}`
+    : value;
+}
+
+function setupForTest(settings, analysisGate) {
+  if (analysisGate?.approved && analysisGate?.setup) {
+    return analysisGate.setup;
+  }
+
+  const mode = String(settings.contractMode || "AUTO").toUpperCase();
+  const prediction = Number(settings.prediction || 0);
+
+  if (mode === "AUTO") {
+    return settings.durationUnit === "s" ? "RISE" : "OVER 2";
+  }
+
+  return needsPrediction(mode) ? `${mode} ${prediction}` : mode;
+}
+
 function Field({ label, children }) {
   const generatedId = useId();
   const fieldId =
@@ -113,6 +177,14 @@ function Metric({ label, value }) {
 export default function Bot() {
   const auth = useDerivAuth();
   const engineRef = useRef(null);
+  const marketSwitchingRef = useRef(false);
+  const marketScanStartedRef = useRef(Date.now());
+
+  const [marketSwitchState, setMarketSwitchState] = useState({
+    remaining: 0,
+    switches: 0,
+    lastMarket: "",
+  });
 
   const [settings, setSettings] =
     useState(INITIAL_SETTINGS);
@@ -219,7 +291,10 @@ export default function Bot() {
         validatedSignals,
         snapshot,
         {
-          tradeTicks: settings.duration,
+          tradeTicks:
+            settings.durationUnit === "t"
+              ? settings.duration
+              : 5,
           validitySeconds: 15,
         }
       ),
@@ -227,6 +302,7 @@ export default function Bot() {
       validatedSignals,
       snapshot,
       settings.duration,
+      settings.durationUnit,
     ]
   );
 
@@ -244,6 +320,23 @@ export default function Bot() {
     [snapshot]
   );
 
+  const analysisGate = useMemo(
+    () =>
+      evaluateAnalysisAssistedSignal(analysis, {
+        minimumConfidence: settings.minConfidence,
+        contractMode: settings.contractMode,
+        prediction: settings.prediction,
+        durationUnit: settings.durationUnit,
+      }),
+    [
+      analysis,
+      settings.minConfidence,
+      settings.contractMode,
+      settings.prediction,
+      settings.durationUnit,
+    ]
+  );
+
   useEffect(() => {
     engineRef.current?.updateSignal({
       professionalDecision,
@@ -255,6 +348,7 @@ export default function Bot() {
     entryTiming,
     analysis,
   ]);
+
 
   const connecting =
     status === "CONNECTING" ||
@@ -275,6 +369,93 @@ export default function Bot() {
   const paused =
     botState.status === "PAUSED";
 
+
+  useEffect(() => {
+    marketScanStartedRef.current = Date.now();
+    setMarketSwitchState((current) => ({
+      ...current,
+      remaining: settings.marketScanSeconds,
+      lastMarket: market?.label || symbol || "",
+    }));
+  }, [symbol, market?.label, settings.marketScanSeconds]);
+
+  useEffect(() => {
+    const switchableStatus = ["RUNNING", "WAITING"].includes(
+      botState.status
+    );
+
+    if (
+      !settings.autoSwitchVolatility ||
+      !connected ||
+      loadingMarket ||
+      paused ||
+      !switchableStatus ||
+      markets.length < 2
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(async () => {
+      const elapsed = Math.floor(
+        (Date.now() - marketScanStartedRef.current) / 1000
+      );
+      const remaining = Math.max(
+        0,
+        settings.marketScanSeconds - elapsed
+      );
+
+      setMarketSwitchState((current) => ({
+        ...current,
+        remaining,
+      }));
+
+      if (analysisGate.approved || remaining > 0) {
+        return;
+      }
+
+      if (marketSwitchingRef.current) {
+        return;
+      }
+
+      const currentIndex = Math.max(
+        0,
+        markets.findIndex((item) => item.id === symbol)
+      );
+      const nextMarket = markets[(currentIndex + 1) % markets.length];
+
+      if (!nextMarket || nextMarket.id === symbol) {
+        marketScanStartedRef.current = Date.now();
+        return;
+      }
+
+      marketSwitchingRef.current = true;
+
+      try {
+        await changeSymbol(nextMarket.id);
+        setMarketSwitchState((current) => ({
+          remaining: settings.marketScanSeconds,
+          switches: current.switches + 1,
+          lastMarket: nextMarket.label || nextMarket.id,
+        }));
+      } finally {
+        marketScanStartedRef.current = Date.now();
+        marketSwitchingRef.current = false;
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    settings.autoSwitchVolatility,
+    settings.marketScanSeconds,
+    connected,
+    loadingMarket,
+    paused,
+    botState.status,
+    markets,
+    symbol,
+    analysisGate.approved,
+    changeSymbol,
+  ]);
   const winRate =
     botState.runs > 0
       ? (
@@ -300,6 +481,48 @@ export default function Bot() {
     setSettings((current) => ({
       ...current,
       [key]: Number(event.target.value),
+    }));
+  };
+
+
+  const updateContractMode = (event) => {
+    const contractMode = event.target.value;
+
+    setSettings((current) => {
+      let prediction = current.prediction;
+
+      if (contractMode === "OVER") {
+        prediction = Math.min(8, Math.max(0, prediction));
+      } else if (contractMode === "UNDER") {
+        prediction = Math.min(9, Math.max(1, prediction));
+      } else {
+        prediction = Math.min(9, Math.max(0, prediction));
+      }
+
+      const digitMode = isDigitContractMode(contractMode);
+
+      return {
+        ...current,
+        contractMode,
+        prediction,
+        durationUnit: digitMode ? "t" : current.durationUnit,
+        duration: digitMode
+          ? Math.min(10, Math.max(1, current.duration))
+          : current.duration,
+      };
+    });
+  };
+
+  const updateDurationUnit = (event) => {
+    const durationUnit = event.target.value === "s" ? "s" : "t";
+
+    setSettings((current) => ({
+      ...current,
+      durationUnit,
+      duration:
+        durationUnit === "s"
+          ? Math.min(3600, Math.max(15, current.duration))
+          : Math.min(10, Math.max(1, current.duration)),
     }));
   };
 
@@ -342,10 +565,7 @@ export default function Bot() {
       }
 
       await engineRef.current?.testOneDemoTrade(
-        professionalDecision.setup &&
-          professionalDecision.setup !== "WAIT"
-          ? professionalDecision.setup
-          : "RISE"
+        setupForTest(settings, analysisGate)
       );
     } catch (error) {
       window.alert(
@@ -356,14 +576,24 @@ export default function Bot() {
     }
   }
 
+  function resetBot() {
+    engineRef.current?.reset();
+    marketScanStartedRef.current = Date.now();
+    setMarketSwitchState({
+      remaining: settings.marketScanSeconds,
+      switches: 0,
+      lastMarket: market?.label || symbol || "",
+    });
+  }
+
   return (
     <div className="appShell">
       <Sidebar />
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V8 Active Demo"
-          subtitle="Balanced analysis with a transparent Demo-only timed fallback"
+          title="56-Run Auto Bot V10 Flex + Market Switch"
+          subtitle="Ticks or seconds, any digit barrier, and automatic Volatility market scanning"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -429,6 +659,43 @@ export default function Bot() {
                 </select>
               </Field>
 
+
+              <Field label="Contract">
+                <select
+                  value={settings.contractMode}
+                  disabled={running || paused}
+                  onChange={updateContractMode}
+                >
+                  <option value="AUTO">Auto best contract / digit</option>
+                  <option value="RISE">Rise</option>
+                  <option value="FALL">Fall</option>
+                  <option value="EVEN">Even</option>
+                  <option value="ODD">Odd</option>
+                  <option value="OVER">Over selected digit</option>
+                  <option value="UNDER">Under selected digit</option>
+                  <option value="MATCH">Matches selected digit</option>
+                  <option value="DIFFERS">Differs selected digit</option>
+                </select>
+              </Field>
+
+              {needsPrediction(settings.contractMode) ? (
+                <Field label="Prediction digit">
+                  <select
+                    value={settings.prediction}
+                    disabled={running || paused}
+                    onChange={updateNumber("prediction")}
+                  >
+                    {predictionOptions(settings.contractMode).map(
+                      (digit) => (
+                        <option key={digit} value={digit}>
+                          {digit}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </Field>
+              ) : null}
+
               <Field label="Base stake">
                 <input
                   type="number"
@@ -440,11 +707,31 @@ export default function Bot() {
                 />
               </Field>
 
-              <Field label="Duration (ticks)">
+              <Field label="Duration unit">
+                <select
+                  value={settings.durationUnit}
+                  disabled={running || paused}
+                  onChange={updateDurationUnit}
+                >
+                  <option value="t">Ticks</option>
+                  <option
+                    value="s"
+                    disabled={isDigitContractMode(settings.contractMode)}
+                  >
+                    Seconds — Rise/Fall or Auto
+                  </option>
+                </select>
+              </Field>
+
+              <Field
+                label={`Duration (${
+                  settings.durationUnit === "s" ? "seconds" : "ticks"
+                })`}
+              >
                 <input
                   type="number"
-                  min="1"
-                  max="10"
+                  min={settings.durationUnit === "s" ? 15 : 1}
+                  max={settings.durationUnit === "s" ? 3600 : 10}
                   value={settings.duration}
                   disabled={running || paused}
                   onChange={updateNumber("duration")}
@@ -454,24 +741,14 @@ export default function Bot() {
               <Field label="Minimum confidence">
                 <input
                   type="number"
-                  min="50"
-                  max="99"
+                  min="60"
+                  max="95"
                   value={settings.minConfidence}
                   disabled={running || paused}
                   onChange={updateNumber("minConfidence")}
                 />
               </Field>
 
-              <Field label="Minimum votes">
-                <input
-                  type="number"
-                  min="1"
-                  max="7"
-                  value={settings.minVotes}
-                  disabled={running || paused}
-                  onChange={updateNumber("minVotes")}
-                />
-              </Field>
 
               <Field label="Delay after trade (seconds)">
                 <input
@@ -583,101 +860,118 @@ export default function Bot() {
               <label className="botToggle botFrequencyToggle">
                 <input
                   type="checkbox"
-                  checked={settings.timedDemoFallback}
+                  checked={settings.analysisAssisted !== false}
                   disabled={running || paused}
                   onChange={(event) =>
                     setSettings((current) => ({
                       ...current,
-                      timedDemoFallback: event.target.checked,
+                      analysisAssisted: event.target.checked,
                     }))
                   }
                 />
                 <span>
-                  Enable timed Demo fallback
+                  Enable Analysis Assisted entry
                 </span>
               </label>
 
-              <Field label="Maximum scan wait (seconds)">
+
+              <label className="botToggle botMarketSwitchToggle">
+                <input
+                  type="checkbox"
+                  checked={settings.autoSwitchVolatility}
+                  disabled={running || paused}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      autoSwitchVolatility: event.target.checked,
+                    }))
+                  }
+                />
+                <span>Auto-switch Volatility markets</span>
+              </label>
+
+              <Field label="Seconds per market scan">
                 <input
                   type="number"
-                  min="30"
-                  max="600"
-                  value={settings.maxWaitSeconds}
+                  min="10"
+                  max="120"
+                  value={settings.marketScanSeconds}
                   disabled={
                     running ||
                     paused ||
-                    !settings.timedDemoFallback
+                    !settings.autoSwitchVolatility
                   }
-                  onChange={updateNumber("maxWaitSeconds")}
+                  onChange={updateNumber("marketScanSeconds")}
                 />
               </Field>
 
               <div className="botTimedFallbackInfo">
-                <strong>ACTIVE DEMO FREQUENCY</strong>
+                <strong>V10 FLEXIBLE CONTRACT ENGINE</strong>
                 <span>
-                  Balanced analysis is used first. After{" "}
-                  {settings.maxWaitSeconds}s, a clearly marked Demo-only
-                  fallback may enter when basic data checks pass.
+                  AUTO scans Rise/Fall, Even/Odd, all valid Over/Under
+                  barriers, and every Match/Differs digit.
                 </span>
                 <small>
-                  This is for testing execution frequency. It is not a
-                  professional signal and does not guarantee a win.
+                  If no good entry appears, market switching moves to the
+                  next Volatility index. Digit contracts use ticks; seconds
+                  mode scans Rise/Fall.
                 </small>
               </div>
             </div>
 
             <div className="botDecisionBox">
               <div>
-                <small>CURRENT DECISION</small>
+                <small>CONTRACT CONTROL</small>
                 <strong>
-                  {professionalDecision.setup ||
-                    "WAIT"}
+                  {contractModeLabel(
+                    settings.contractMode,
+                    settings.prediction
+                  )}
                 </strong>
               </div>
 
               <div>
-                <small>CONFIDENCE</small>
+                <small>ANALYSIS DECISION</small>
                 <strong>
-                  {Number(
-                    professionalDecision.confidence ||
-                      0
-                  ).toFixed(1)}
-                  %
+                  {analysisGate.approved
+                    ? analysisGate.setup
+                    : "WAIT"}
                 </strong>
               </div>
 
               <div>
-                <small>VOTES</small>
+                <small>GATE CONFIDENCE</small>
                 <strong>
-                  {professionalDecision.passedCount ||
-                    0}
-                  /
-                  {professionalDecision.totalChecks ||
-                    0}
+                  {Number(analysisGate.confidence || 0).toFixed(1)}%
                 </strong>
               </div>
 
               <div>
                 <small>ENTRY</small>
                 <strong>
-                  {entryTiming.state || "WAIT"}
+                  {analysisGate.approved ? "ENTER" : "WAIT"}
                 </strong>
               </div>
             </div>
 
             <div className="botStrictGate">
-              <strong>ACTIVE DEMO AUTO-ENTRY</strong>
+              <strong>
+                {analysisGate.approved
+                  ? `GOOD ENTRY: ${analysisGate.setup}`
+                  : "SCANNING FOR GOOD ENTRY"}
+              </strong>
               <span>
-                Balanced setup first · Timed Demo fallback after{" "}
-                {settings.maxWaitSeconds}s · Demo Account only
+                {market?.label || symbol} · {settings.duration}{" "}
+                {settings.durationUnit === "s" ? "seconds" : "ticks"} ·{" "}
+                {analysisGate.reason}
               </span>
             </div>
 
             <div className="botIntelligence">
               <div className="botIntelligenceHeader">
                 <div>
-                  <small>PROFESSIONAL INTELLIGENCE</small>
-                  <h3>Weighted market assessment</h3>
+                  <small>SECONDARY MARKET DISPLAY</small>
+                  <h3>Weighted dashboard — display only</h3>
                 </div>
 
                 <span
@@ -829,9 +1123,7 @@ export default function Bot() {
                   <button
                     type="button"
                     className="secondaryButton"
-                    onClick={() =>
-                      engineRef.current?.reset()
-                    }
+                    onClick={resetBot}
                   >
                     Reset Stats
                   </button>
@@ -840,8 +1132,8 @@ export default function Bot() {
             </div>
 
             <div className="botSafetyNote">
-              Demo research tool only. Weighted scores and recovery staking do not
-              guarantee profitable trades.
+              Demo research tool only. Auto market switching searches more markets,
+              but it cannot guarantee a winning entry or remove trading risk.
             </div>
           </article>
 
@@ -896,12 +1188,37 @@ export default function Bot() {
                 value={botState.cooldownCount}
               />
               <Metric
-                label="Current scan"
+                label="Scan time"
                 value={`${botState.scanElapsedSeconds || 0}s`}
               />
               <Metric
-                label="Demo fallbacks"
-                value={botState.fallbackTrades || 0}
+                label="Gate"
+                value={analysisGate.approved ? "ENTER" : "WAIT"}
+              />
+              <Metric
+                label="Contract control"
+                value={contractModeLabel(
+                  settings.contractMode,
+                  settings.prediction
+                )}
+              />
+              <Metric
+                label="Duration"
+                value={`${settings.duration} ${
+                  settings.durationUnit === "s" ? "sec" : "ticks"
+                }`}
+              />
+              <Metric
+                label="Market switch"
+                value={
+                  settings.autoSwitchVolatility
+                    ? `${marketSwitchState.remaining}s`
+                    : "FIXED"
+                }
+              />
+              <Metric
+                label="Markets checked"
+                value={marketSwitchState.switches + 1}
               />
               <Metric
                 label="Martingale step"
@@ -971,13 +1288,15 @@ export default function Bot() {
                       <small>
                         Entry {Number(item.entrySpot || 0).toFixed(3)} · Exit{" "}
                         {Number(item.exitSpot || 0).toFixed(3)} · Stake{" "}
-                        {Number(item.stake || 0).toFixed(2)} · MG{" "}
+                        {Number(item.stake || 0).toFixed(2)} ·{" "}
+                        {Number(item.duration || 0)}{" "}
+                        {item.durationUnit === "s" ? "sec" : "ticks"} · MG{" "}
                         {Number(item.martingaleStep || 0)}
                       </small>
                       <small>
-                        Score {Number(item.confidence || 0).toFixed(1)}% ·
-                        Quality {Number(item.marketQuality || 0).toFixed(1)}% ·{" "}
-                        {item.riskLevel || "—"} risk · {item.entryStage || "—"}
+                        Mode {item.executionMode || "V10_FLEX"} ·
+                        Confidence {Number(item.confidence || 0).toFixed(1)}% ·{" "}
+                        Entry {item.entryStage || "ENTER"}
                       </small>
                     </div>
 

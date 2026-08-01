@@ -1,7 +1,9 @@
+import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
+
 const DEFAULTS = {
   maxRuns: 56,
-  minConfidence: 72,
-  minVotes: 3,
+  minConfidence: 80,
+  minVotes: 1,
   stake: 1,
   duration: 5,
   delaySeconds: 3,
@@ -13,11 +15,10 @@ const DEFAULTS = {
   martingaleEnabled: false,
   maxMartingaleSteps: 3,
   recoveryMultipliers: [1.7, 2.2, 2.8],
-  timedDemoFallback: true,
-  maxWaitSeconds: 120,
-  fallbackMinScore: 40,
-  fallbackMinQuality: 40,
-  fallbackMinVotes: 2,
+  analysisAssisted: true,
+  contractMode: "AUTO",
+  prediction: 2,
+  durationUnit: "t",
 };
 
 function sleep(ms) {
@@ -27,6 +28,28 @@ function sleep(ms) {
 function number(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function durationText(duration, durationUnit) {
+  const value = Math.max(1, number(duration, 1));
+  return `${value} ${durationUnit === "s" ? "seconds" : "ticks"}`;
+}
+
+function normalizeContractMode(value = "AUTO") {
+  const mode = String(value || "AUTO").trim().toUpperCase();
+  const allowed = new Set([
+    "AUTO",
+    "RISE",
+    "FALL",
+    "EVEN",
+    "ODD",
+    "OVER",
+    "UNDER",
+    "MATCH",
+    "DIFFERS",
+  ]);
+
+  return allowed.has(mode) ? mode : "AUTO";
 }
 
 function contractFromSetup(setup = "") {
@@ -229,15 +252,37 @@ export default class DerivBotEngine {
   }
 
   configure(input = {}) {
+    const durationUnit = input.durationUnit === "s" ? "s" : "t";
+    const durationMin = durationUnit === "s" ? 15 : 1;
+    const durationMax = durationUnit === "s" ? 3600 : 10;
+
     this.settings = {
       ...DEFAULTS,
       ...input,
       maxRuns: Math.max(1, Math.min(1000, number(input.maxRuns, 56))),
-      minConfidence: Math.max(50, Math.min(99, number(input.minConfidence, 72))),
-      minVotes: Math.max(1, Math.min(10, number(input.minVotes, 3))),
+      minConfidence: Math.max(
+        60,
+        Math.min(95, number(input.minConfidence, 75))
+      ),
+      minVotes: 1,
       stake: Math.max(0.35, number(input.stake, 1)),
-      duration: Math.max(1, Math.min(10, number(input.duration, 5))),
-      delaySeconds: Math.max(0, Math.min(60, number(input.delaySeconds, 3))),
+      contractMode: normalizeContractMode(input.contractMode),
+      prediction: Math.max(
+        0,
+        Math.min(9, Math.floor(number(input.prediction, 2)))
+      ),
+      durationUnit,
+      duration: Math.max(
+        durationMin,
+        Math.min(
+          durationMax,
+          number(input.duration, durationUnit === "s" ? 30 : 5)
+        )
+      ),
+      delaySeconds: Math.max(
+        0,
+        Math.min(60, number(input.delaySeconds, 3))
+      ),
       takeProfit: Math.max(0, number(input.takeProfit, 20)),
       stopLoss: Math.max(0, number(input.stopLoss, 10)),
       cooldownAfterLosses: Math.max(
@@ -257,32 +302,14 @@ export default class DerivBotEngine {
         Math.min(3, number(input.maxMartingaleSteps, 3))
       ),
       recoveryMultipliers: DEFAULTS.recoveryMultipliers,
-      timedDemoFallback:
-        input.timedDemoFallback === undefined
-          ? DEFAULTS.timedDemoFallback
-          : Boolean(input.timedDemoFallback),
-      maxWaitSeconds: Math.max(
-        30,
-        Math.min(600, number(input.maxWaitSeconds, 120))
-      ),
-      fallbackMinScore: Math.max(
-        25,
-        Math.min(80, number(input.fallbackMinScore, 40))
-      ),
-      fallbackMinQuality: Math.max(
-        25,
-        Math.min(80, number(input.fallbackMinQuality, 40))
-      ),
-      fallbackMinVotes: Math.max(
-        1,
-        Math.min(7, number(input.fallbackMinVotes, 2))
-      ),
+      analysisAssisted:
+        input.analysisAssisted === undefined
+          ? true
+          : Boolean(input.analysisAssisted),
     };
 
     if (!this.running) {
-      this.patch({
-        currentStake: this.settings.stake,
-      });
+      this.patch({ currentStake: this.settings.stake });
     }
   }
 
@@ -322,54 +349,25 @@ export default class DerivBotEngine {
         ok: false,
         reason: "Waiting for market analysis.",
         elapsedSeconds: 0,
-        remainingSeconds: this.settings.maxWaitSeconds,
       };
     }
 
-    const decision = signal.professionalDecision || {};
-    const timing = signal.entryTiming || {};
     const analysis = signal.analysis || {};
 
-    const professionalScore = number(
-      decision.professionalScore ?? decision.confidence
-    );
-    const marketQuality = number(decision.marketQuality);
-    const passedCount = number(decision.passedCount);
-    const riskLevel = String(decision.riskLevel || "HIGH").toUpperCase();
-    const timingState = String(timing.state || "").toUpperCase();
-    const readinessScore = number(timing.readinessScore);
-
-    const normalSetup = String(
-      decision.setup || decision.bestContract || ""
-    ).toUpperCase();
-
-    const normalContract = contractFromSetup(normalSetup);
-
-    const normalTimingReady =
-      timing.readyNow === true ||
-      timingState === "ENTER NOW" ||
-      (timingState === "READY" && readinessScore >= 78);
-
-    const normalValid =
-      Boolean(decision.validated) &&
-      professionalScore >= this.settings.minConfidence &&
-      riskLevel !== "HIGH" &&
-      marketQuality >= 65 &&
-      passedCount >= this.settings.minVotes &&
-      normalTimingReady &&
-      Boolean(normalContract);
-
-    if (normalValid) {
+    if (this.settings.analysisAssisted === false) {
       return {
-        ok: true,
-        mode: "BALANCED",
-        decision,
-        timing,
-        contract: normalContract,
+        ok: false,
+        reason: "Analysis Assisted is disabled.",
         elapsedSeconds: 0,
-        remainingSeconds: this.settings.maxWaitSeconds,
       };
     }
+
+    const gate = evaluateAnalysisAssistedSignal(analysis, {
+      minimumConfidence: this.settings.minConfidence,
+      contractMode: this.settings.contractMode,
+      prediction: this.settings.prediction,
+      durationUnit: this.settings.durationUnit,
+    });
 
     const startedAt =
       Number(this.state.scanStartedAt) > 0
@@ -381,109 +379,49 @@ export default class DerivBotEngine {
       Math.floor((Date.now() - startedAt) / 1000)
     );
 
-    const remainingSeconds = Math.max(
-      0,
-      this.settings.maxWaitSeconds - elapsedSeconds
-    );
-
-    const strongestSignal = String(
-      analysis?.strongestSignal?.signal || ""
-    ).toUpperCase();
-
-    const direction = String(
-      analysis?.direction?.direction || ""
-    ).toUpperCase();
-
-    const fallbackSetup =
-      normalSetup && normalSetup !== "WAIT"
-        ? normalSetup
-        : strongestSignal && strongestSignal !== "WAIT"
-        ? strongestSignal
-        : direction === "RISE" || direction === "FALL"
-        ? direction
-        : "";
-
-    const fallbackContract = contractFromSetup(fallbackSetup);
-
-    const volatilityComponent = Array.isArray(decision.components)
-      ? decision.components.find(
-          (component) => component?.key === "volatility"
-        )
-      : null;
-
-    const volatilityUsable =
-      volatilityComponent == null ||
-      Boolean(volatilityComponent.passed) ||
-      number(volatilityComponent.rawScore) >= 30;
-
-    const conflictPenalty = number(decision.conflictPenalty);
-
-    const fallbackReady =
-      this.settings.timedDemoFallback &&
-      elapsedSeconds >= this.settings.maxWaitSeconds &&
-      Boolean(fallbackContract) &&
-      professionalScore >= this.settings.fallbackMinScore &&
-      marketQuality >= this.settings.fallbackMinQuality &&
-      passedCount >= this.settings.fallbackMinVotes &&
-      volatilityUsable &&
-      conflictPenalty < 25;
-
-    if (fallbackReady) {
+    if (!gate.approved) {
       return {
-        ok: true,
-        mode: "TIMED_DEMO",
-        decision: {
-          ...decision,
-          setup: fallbackSetup,
-          bestContract: fallbackSetup,
-        },
-        timing: {
-          ...timing,
-          state: "TIMED DEMO",
-          readyNow: true,
-        },
-        contract: fallbackContract,
+        ok: false,
+        reason: gate.reason,
         elapsedSeconds,
-        remainingSeconds: 0,
+        gate,
       };
     }
 
-    let reason = "Professional decision is not validated.";
+    const contract = contractFromSetup(gate.setup);
 
-    if (!fallbackContract) {
-      reason = "Waiting for a usable market direction.";
-    } else if (professionalScore < this.settings.fallbackMinScore) {
-      reason =
-        `Score ${professionalScore.toFixed(1)}% is below the Demo fallback ` +
-        `${this.settings.fallbackMinScore}% minimum.`;
-    } else if (marketQuality < this.settings.fallbackMinQuality) {
-      reason =
-        `Market quality ${marketQuality.toFixed(1)}% is below the Demo fallback ` +
-        `${this.settings.fallbackMinQuality}% minimum.`;
-    } else if (passedCount < this.settings.fallbackMinVotes) {
-      reason =
-        `Votes ${passedCount} are below the Demo fallback ` +
-        `${this.settings.fallbackMinVotes}.`;
-    } else if (!volatilityUsable) {
-      reason = "Volatility is not usable yet.";
-    } else if (conflictPenalty >= 25) {
-      reason = "Signals are conflicting too strongly.";
-    } else if (this.settings.timedDemoFallback && remainingSeconds > 0) {
-      reason =
-        `Scanning normally. Timed Demo fallback in ${remainingSeconds}s.`;
-    } else if (!normalTimingReady) {
-      reason =
-        timing.instruction ||
-        `Entry timing is ${timingState || "WAIT"}.`;
-    } else if (riskLevel === "HIGH") {
-      reason = "Risk filter is HIGH. Waiting for a safer setup.";
+    if (!contract) {
+      return {
+        ok: false,
+        reason: `Unsupported analysis setup: ${gate.setup}.`,
+        elapsedSeconds,
+        gate,
+      };
     }
 
     return {
-      ok: false,
-      reason,
+      ok: true,
+      mode: "V10_FLEX",
+      decision: {
+        setup: gate.setup,
+        bestContract: gate.setup,
+        confidence: gate.confidence,
+        professionalScore: gate.confidence,
+        marketQuality: 0,
+        riskLevel: "ANALYSIS",
+        passedCount: gate.candidates.filter(
+          (item) => item.approved
+        ).length,
+        validated: true,
+        gateReason: gate.reason,
+      },
+      timing: {
+        state: "ENTER",
+        readyNow: true,
+      },
+      contract,
       elapsedSeconds,
-      remainingSeconds,
+      gate,
     };
   }
 
@@ -500,9 +438,8 @@ export default class DerivBotEngine {
 
     this.patch({
       status: "RUNNING",
-      message: this.settings.timedDemoFallback
-        ? `Bot started. Balanced analysis first; Demo fallback after ${this.settings.maxWaitSeconds}s.`
-        : "Bot started. Waiting for a validated setup.",
+      message:
+        "Analysis Assisted scanning. It will enter immediately when a contract-aware setup is approved.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       lastBlockReason: "",
@@ -770,6 +707,7 @@ export default class DerivBotEngine {
     }
 
     const check = {
+      mode: "MANUAL_TEST",
       contract,
       decision: {
         setup: contract.label,
@@ -805,17 +743,11 @@ export default class DerivBotEngine {
     this.patch({
       status: "BUYING",
       message:
-        check.mode === "TIMED_DEMO"
-          ? `Timed Demo fallback: requesting ${check.contract.label} for ${stake.toFixed(
-              2
-            )} ${this.currency}.`
-          : `Requesting ${check.contract.label} proposal for ${stake.toFixed(
-              2
-            )} ${this.currency}.`,
-      activeSetup:
-        check.mode === "TIMED_DEMO"
-          ? `${check.contract.label} · DEMO FALLBACK`
-          : check.contract.label,
+        `Analysis Assisted approved ${check.contract.label} for ${durationText(
+          this.settings.duration,
+          this.settings.durationUnit
+        )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
+      activeSetup: `${check.contract.label} · ANALYSIS ASSISTED`,
     });
 
     const bought = await this.client.buyContract({
@@ -826,7 +758,7 @@ export default class DerivBotEngine {
       basis: "stake",
       currency: this.currency,
       duration: this.settings.duration,
-      durationUnit: "t",
+      durationUnit: this.settings.durationUnit,
     });
 
     if (!bought.contractId) {
@@ -841,7 +773,11 @@ export default class DerivBotEngine {
       activeContractId: this.activeContractId,
     });
 
-    const settled = await this.waitForContract(this.activeContractId);
+    const settled = await this.waitForContract(
+      this.activeContractId,
+      this.settings.duration,
+      this.settings.durationUnit
+    );
     const profit = contractProfit(settled);
     const details = contractDetails(settled, bought);
     const won = profit > 0;
@@ -895,6 +831,8 @@ export default class DerivBotEngine {
       entrySpot: details.entrySpot,
       exitSpot: details.exitSpot,
       duration: this.settings.duration,
+      durationUnit: this.settings.durationUnit,
+      prediction: check.contract.barrier ?? null,
       symbol: this.symbol,
       contractId: this.activeContractId,
       confidence: number(
@@ -931,9 +869,7 @@ export default class DerivBotEngine {
       activeContractId: "",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
-      fallbackTrades:
-        this.state.fallbackTrades +
-        (check.mode === "TIMED_DEMO" ? 1 : 0),
+      fallbackTrades: this.state.fallbackTrades,
     });
 
     const finalStop = this.riskStopReason();
@@ -959,12 +895,29 @@ export default class DerivBotEngine {
     }
   }
 
-  waitForContract(contractId) {
+  waitForContract(contractId, duration = 5, durationUnit = "t") {
+    const estimatedMilliseconds =
+      durationUnit === "s"
+        ? Math.max(120000, (number(duration, 30) + 120) * 1000)
+        : 120000;
+
+    const timeoutMilliseconds = Math.min(
+      estimatedMilliseconds,
+      2 * 60 * 60 * 1000
+    );
+
     return new Promise((resolve, reject) => {
       const timeout = window.setTimeout(() => {
         this.contractWaiters.delete(String(contractId));
-        reject(new Error("Timed out while waiting for contract settlement."));
-      }, 120000);
+        reject(
+          new Error(
+            `Timed out while waiting for ${durationText(
+              duration,
+              durationUnit
+            )} contract settlement.`
+          )
+        );
+      }, timeoutMilliseconds);
 
       this.contractWaiters.set(String(contractId), {
         resolve,

@@ -624,3 +624,52 @@
 .botStrictGate strong {
   color: #ffd86a;
 }
+
+
+.botStrictGate {
+  border-color: rgba(45, 224, 167, 0.42);
+  background: rgba(12, 111, 79, 0.14);
+}
+
+.botStrictGate strong {
+  color: #40efb4;
+}
+
+.botFrequencyToggle {
+  border-color: rgba(45, 224, 167, 0.38);
+  background: rgba(12, 111, 79, 0.12);
+}
+
+.botTimedFallbackInfo {
+  border-color: rgba(45, 224, 167, 0.34);
+  background: rgba(12, 111, 79, 0.1);
+}
+
+.botTimedFallbackInfo strong {
+  color: #40efb4;
+}
+
+
+.botMarketSwitchToggle {
+  border-color: rgba(53, 171, 255, 0.42);
+  background: rgba(15, 91, 146, 0.13);
+}
+
+.botMarketSwitchToggle span {
+  color: #9fd6ff;
+}
+
+.botStrictGate {
+  border-color: rgba(46, 226, 167, 0.44);
+  background: rgba(12, 110, 79, 0.14);
+}
+
+.botStrictGate strong {
+  color: #43efb7;
+}
+
+@media (max-width: 760px) {
+  .botDecisionBox {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
