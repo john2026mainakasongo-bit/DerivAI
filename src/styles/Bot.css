@@ -1,0 +1,298 @@
+.botToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.botDemoLock {
+  border: 1px solid #ff5c7a;
+  color: #ff7992;
+  background: rgba(255, 60, 100, 0.08);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.botDemoLock.safe {
+  border-color: #1fd9a0;
+  color: #43edba;
+  background: rgba(31, 217, 160, 0.08);
+}
+
+.botLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  gap: 16px;
+}
+
+.botCard {
+  background: linear-gradient(180deg, #061d2e 0%, #041827 100%);
+  border: 1px solid #123e57;
+  border-radius: 16px;
+  padding: 18px;
+  min-width: 0;
+}
+
+.botCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.botCardHeader small {
+  color: #49eeb8;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.botCardHeader h2 {
+  margin: 5px 0 0;
+  color: #fff;
+}
+
+.botStatus {
+  border: 1px solid #29536a;
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: #a7c7d8;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.botStatus.running,
+.botStatus.waiting,
+.botStatus.monitoring,
+.botStatus.buying,
+.botStatus.cooldown,
+.botStatus.won {
+  color: #43edba;
+  border-color: #1b9c79;
+}
+
+.botStatus.error,
+.botStatus.lost,
+.botStatus.stopped {
+  color: #ff7992;
+  border-color: #a63f58;
+}
+
+.botStatus.paused {
+  color: #ffd36b;
+  border-color: #a37d21;
+}
+
+.botFormGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.botField,
+.botToggle {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #8db8d0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.botField input,
+.botField select {
+  width: 100%;
+  box-sizing: border-box;
+  background: #031522;
+  border: 1px solid #174159;
+  border-radius: 10px;
+  color: #fff;
+  padding: 12px;
+  outline: none;
+}
+
+.botField input:focus,
+.botField select:focus {
+  border-color: #1592ff;
+}
+
+.botField input:disabled,
+.botField select:disabled {
+  opacity: 0.55;
+}
+
+.botToggle {
+  justify-content: flex-end;
+  flex-direction: row;
+  align-items: center;
+  background: #031522;
+  border: 1px solid #174159;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.botToggle input {
+  width: 18px;
+  height: 18px;
+}
+
+.botDecisionBox {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.botDecisionBox > div {
+  background: #031522;
+  border: 1px solid #174159;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.botDecisionBox small,
+.botMetric span {
+  display: block;
+  color: #7ba9c3;
+  font-size: 10px;
+  margin-bottom: 5px;
+}
+
+.botDecisionBox strong,
+.botMetric strong {
+  color: #fff;
+}
+
+.botMessage {
+  margin-top: 14px;
+  background: rgba(21, 146, 255, 0.08);
+  border: 1px solid #174d70;
+  color: #9ed4f2;
+  border-radius: 10px;
+  padding: 12px;
+  min-height: 20px;
+}
+
+.botActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.secondaryButton,
+.dangerButton {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.secondaryButton {
+  color: #d8effc;
+  background: #12384e;
+}
+
+.dangerButton {
+  color: #fff;
+  background: #b43150;
+}
+
+.botMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.botMetric {
+  background: #031522;
+  border: 1px solid #174159;
+  border-radius: 10px;
+  padding: 13px;
+}
+
+.botHistory {
+  margin-top: 16px;
+  border: 1px solid #174159;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.botHistoryHeader {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px;
+  background: #062237;
+  color: #fff;
+}
+
+.botHistoryEmpty {
+  color: #7ba9c3;
+  padding: 20px 12px;
+  text-align: center;
+}
+
+.botHistoryRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-top: 1px solid #12384e;
+  color: #fff;
+}
+
+.botHistoryRow small {
+  display: block;
+  color: #6f9bb4;
+  margin-top: 3px;
+}
+
+.botResult {
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.botResult.win {
+  color: #43edba;
+}
+
+.botResult.loss,
+.botResult.error {
+  color: #ff7992;
+}
+
+@media (max-width: 1050px) {
+  .botLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .botToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .botFormGrid,
+  .botDecisionBox {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .botFormGrid,
+  .botDecisionBox,
+  .botMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .botCard {
+    padding: 14px;
+  }
+}
