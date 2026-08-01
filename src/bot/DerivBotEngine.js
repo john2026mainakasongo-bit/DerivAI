@@ -689,15 +689,10 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
   );
 
   let weightedScore =
-    confidenceScore * 0.28 +
-    probabilityScore * 0.28 +
-    transitionScore * 0.13 +
-    edgeScore * 0.08 +
-    sampleScore * 0.07 +
-    entropyScore * 0.06 +
-    autocorrelationScore * 0.04 +
-    cycleScore * 0.03 +
-    regimeScore * 0.03;
+    probabilityScore * 0.40 +
+    confidenceScore * 0.25 +
+    transitionScore * 0.20 +
+    clampScore((passedVotes / Math.max(1, requiredVotes)) * 100) * 0.15;
 
   if (setup === "RISE" || setup === "FALL") {
     // Direction contracts rely more on momentum/regime and less on digit
@@ -726,17 +721,32 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
 
   const score = clampScore(weightedScore);
 
-  const threshold = isReal
+  const baseThreshold = isReal
     ? setup.startsWith("MATCH")
       ? 96
       : setup === "RISE" || setup === "FALL"
         ? 94
-        : 82
+        : 78
     : setup.startsWith("MATCH")
       ? 93
       : setup === "RISE" || setup === "FALL"
         ? 88
-        : 78;
+        : 72;
+
+  // Threshold may relax only for standard digit contracts, and never below 60.
+  // This avoids waiting forever without enabling time-only forced entries.
+  const adaptiveRelaxation =
+    isStandardDigit
+      ? samples >= 250
+        ? 18
+        : samples >= 180
+          ? 14
+          : samples >= 120
+            ? 8
+            : 0
+      : 0;
+
+  const threshold = Math.max(60, baseThreshold - adaptiveRelaxation);
 
   const minimumSamples = isReal
     ? Math.max(profile.minimumSamples, setup.startsWith("MATCH") ? 70 : 55)
@@ -773,19 +783,17 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     probability >= 84 &&
     passedVotes >= 3;
 
-  // V34 balanced Real path:
-  // Candidate-specific evidence can qualify a strong digit setup even when
-  // the generic weighted score is depressed by high synthetic-market entropy.
+  // V35 balanced Real digit path:
+  // Standard digit contracts may qualify with practical evidence levels.
   const realDigitQualityPass =
     isReal &&
     isStandardDigit &&
-    samples >= 120 &&
-    confidence >= 75 &&
-    probability >= 86 &&
-    transitionCount >= 10 &&
-    passedVotes >= 4 &&
-    strongVotes >= 1 &&
-    entropy <= 99.2;
+    samples >= 80 &&
+    confidence >= 70 &&
+    probability >= 74 &&
+    transitionCount >= 6 &&
+    passedVotes >= 2 &&
+    entropy <= 99.5;
 
   const ok =
     (
@@ -801,7 +809,7 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
 
   if (isReal) {
     confirmations = isStandardDigit
-      ? 2
+      ? 1
       : score >= 97
         ? 3
         : score >= 95
@@ -836,8 +844,12 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     independentContractScore: true,
     demoDigitQualityPass,
     realDigitQualityPass,
+    baseThreshold,
+    adaptiveRelaxation,
     blockedChecks: {
       score: `${score.toFixed(1)}/${threshold}`,
+      baseThreshold,
+      adaptiveRelaxation,
       samples: `${samples}/${minimumSamples}`,
       confidence: `${confidence.toFixed(1)}%`,
       probability: `${probability.toFixed(1)}%`,
@@ -1470,7 +1482,7 @@ export default class DerivBotEngine {
       return {
         ok: false,
         reason:
-          `${bestText} Real digit balanced gate needs candidate confidence 75%+, probability 86%+, 120 samples, 10 transitions, 4 votes and entropy <=99.2%. No forced entry.`,
+          `${bestText} Standard digit gate needs confidence 70%+, probability 74%+, 80 samples, 6 transitions and 2 votes. Threshold adapts with data but never below 60. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
         requiredConfirmations: this.isDemoAccount ? 1 : 2,
@@ -1692,7 +1704,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V34 keeps the V33 hard lock and adds a calibrated Real digit gate based on candidate-specific probability, confidence, transitions, samples and votes. High entropy alone no longer destroys an otherwise strong digit score.",
+        "V35 uses practical standard-digit entry rules and a bounded adaptive threshold. OVER/UNDER, EVEN/ODD and DIFFERS can qualify with 70% confidence, 74% probability, 80 samples, six transitions and two votes. MATCH and RISE/FALL remain strict.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2109,11 +2121,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V34 calibrated real digit confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V35 adaptive digit confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V34 REAL DIGIT GATE CONFIRMED`,
+      activeSetup: `${check.contract.label} · V35 ADAPTIVE DIGIT CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

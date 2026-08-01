@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V34 · Calibrated Real Digit Gate + Hard Lock"
+          title="EdgePilot V35 · Adaptive Digit Entry + Hard Lock"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>CALIBRATED REAL DIGIT GATE · HARD LOCK</small>
+                <small>ADAPTIVE DIGIT ENTRY · HARD LOCK</small>
                 <strong>
-                  QUALIFY DIGIT → HARD LOCK → 2 CONFIRMS → PROPOSAL → BUY
+                  SCORE DIGIT → ADAPT THRESHOLD → LOCK → CONFIRM → BUY
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V34 keeps the hard lock and calibrates Real digit entries using the selected contract's own evidence: 75%+ confidence, 86%+ probability, 120+ samples, 10+ transitions, four votes and entropy at or below 99.2%. Real digit trades use two fresh confirmations. Stake remains capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
+              V35 uses practical Real digit rules: 70%+ confidence, 74%+ probability, 80+ samples, six transitions and two votes. Standard digit thresholds relax gradually as more data arrives, but never below 60 and never from time alone. MATCH and RISE/FALL remain strict. Stake remains capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1463,7 +1463,7 @@ export default function Bot() {
                   botState.gate?.realDigitQualityPass
                     ? "QUALIFIED"
                     : botState.gate?.blockedChecks?.score
-                      ? `BLOCKED ${botState.gate.blockedChecks.score}`
+                      ? `BLOCKED ${botState.gate.blockedChecks.score} · relax ${botState.gate.blockedChecks.adaptiveRelaxation || 0}`
                       : "WAIT"
                 }
               />
