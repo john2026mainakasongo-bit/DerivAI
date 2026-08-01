@@ -272,6 +272,12 @@ export default function Bot() {
   }, [settings]);
 
   useEffect(() => {
+    engineRef.current?.setAccountMode({
+      isDemo,
+    });
+  }, [isDemo]);
+
+  useEffect(() => {
     engineRef.current?.setMarket({
       symbol,
       currency:
@@ -644,7 +650,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V19.4 Proposal/Buy Fix + Market Switch"
+          title="56-Run Auto Bot V19.5 Run Bridge Fix + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}

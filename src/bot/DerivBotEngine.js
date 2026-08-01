@@ -223,6 +223,7 @@ export default class DerivBotEngine {
     this.signal = null;
     this.symbol = "";
     this.currency = "USD";
+    this.isDemoAccount = false;
 
     this.running = false;
     this.paused = false;
@@ -383,6 +384,10 @@ export default class DerivBotEngine {
     }
   }
 
+  setAccountMode({ isDemo = false } = {}) {
+    this.isDemoAccount = Boolean(isDemo);
+  }
+
   setMarket({ symbol, currency = "USD" }) {
     const nextSymbol = String(symbol || "");
     const changed = Boolean(this.symbol && nextSymbol && this.symbol !== nextSymbol);
@@ -481,6 +486,83 @@ export default class DerivBotEngine {
     });
 
     /*
+     * V19_5_SELECTED_DEMO_BRIDGE
+     *
+     * Bot.jsx previously did not tell the engine that the account is Demo.
+     * The fallback therefore never activated. This bridge uses the actual
+     * selected candidate from the existing analysis gate after a short scan.
+     * It is Demo-only and exists to verify the complete execution pipeline.
+     */
+    const scanStartedAt =
+      number(this.state.scanStartedAt, Date.now());
+    const bridgeAgeMs = Math.max(0, Date.now() - scanStartedAt);
+
+    if (
+      !gate.approved &&
+      this.isDemoAccount === true &&
+      bridgeAgeMs >= 20000
+    ) {
+      const candidates = Array.isArray(gate.candidates)
+        ? gate.candidates.filter(Boolean)
+        : [];
+
+      const mode = this.settings.contractMode;
+      const prediction = number(this.settings.prediction, 2);
+
+      const selectedCandidates = candidates.filter((candidate) => {
+        const setup = normalizeSetup(candidate.setup);
+        const action = normalizeSetup(candidate.action);
+        const candidatePrediction = number(candidate.prediction, -1);
+
+        if (mode === "AUTO") return setup && setup !== "WAIT";
+        if (["RISE", "FALL", "EVEN", "ODD"].includes(mode)) {
+          return setup === mode;
+        }
+        return action === mode && candidatePrediction === prediction;
+      });
+
+      const best = selectedCandidates
+        .slice()
+        .sort(
+          (a, b) =>
+            number(b.confidence) - number(a.confidence) ||
+            number(b.edge) - number(a.edge) ||
+            number(b.probability) - number(a.probability)
+        )[0];
+
+      if (best) {
+        const confidence = number(best.confidence);
+        const probability = number(best.probability);
+        const baseline = number(best.baseline);
+        const edge = number(best.edge);
+        const normalReady =
+          bridgeAgeMs >= 20000 &&
+          (confidence >= 65 || edge >= 2 || probability >= baseline + 2);
+        const pipelineReady = bridgeAgeMs >= 45000;
+
+        if (normalReady || pipelineReady) {
+          gate = {
+            ...gate,
+            approved: true,
+            setup: best.setup,
+            confidence: Math.max(65, confidence),
+            prediction:
+              best.prediction ?? gate.prediction ?? prediction,
+            selectedProbability: probability,
+            baselineProbability: baseline,
+            edge,
+            reason:
+              `DEMO EXECUTION BRIDGE · ${best.setup} · confidence ${confidence.toFixed(
+                1
+              )}% · edge ${edge.toFixed(1)}%`,
+            executionLane: "V19_5_DEMO_PIPELINE",
+            requiredConfirmations: 1,
+          };
+        }
+      }
+    }
+
+    /*
      * V19_2_DEMO_EXECUTION_BRIDGE
      *
      * Demo-only fallback. The dashboard was finding strong candidates while
@@ -490,13 +572,11 @@ export default class DerivBotEngine {
      *
      * Real accounts are never allowed through this fallback.
      */
-    const isDemoExecution =
-      this.demoOnly === true ||
-      this.isDemo === true ||
-      this.accountType === "demo" ||
-      String(this.accountType || "").toLowerCase().includes("demo");
+    const isDemoExecution = this.isDemoAccount === true;
 
-    const scanAgeMs = Date.now() - number(this.startedAt, Date.now());
+    const scanAgeMs =
+      Date.now() -
+      number(this.state.scanStartedAt, Date.now());
     const demoFallbackReady = scanAgeMs >= 20000;
 
     if (
@@ -765,7 +845,10 @@ export default class DerivBotEngine {
       ? validationAction(bestValidation)
       : "WAIT";
 
-    if (this.settings.contractMode === "AUTO") {
+    if (
+      this.settings.contractMode === "AUTO" &&
+      gate.executionLane !== "V19_5_DEMO_PIPELINE"
+    ) {
       if (!matchingValidation || bestValidationAction !== setup) {
         return {
           ok: false,
@@ -799,7 +882,10 @@ export default class DerivBotEngine {
       }
     }
 
-    if (!deepAssessment) {
+    if (
+      !deepAssessment &&
+      gate.executionLane !== "V19_5_DEMO_PIPELINE"
+    ) {
       deepAssessment = evaluateSyntheticSetup(
         intelligence,
         setup,
@@ -807,7 +893,10 @@ export default class DerivBotEngine {
       );
     }
 
-    if (!deepAssessment.approved) {
+    if (
+      gate.executionLane !== "V19_5_DEMO_PIPELINE" &&
+      !deepAssessment?.approved
+    ) {
       return {
         ok: false,
         reason: deepAssessment.reason,
@@ -850,7 +939,9 @@ export default class DerivBotEngine {
       this.pendingSignalVersion = version;
     }
 
-    const fastLane = Boolean(deepAssessment.fastLane);
+    const fastLane =
+      gate.executionLane === "V19_5_DEMO_PIPELINE" ||
+      Boolean(deepAssessment?.fastLane);
     const requiredConfirmations = fastLane
       ? 1
       : Math.max(1, this.settings.confirmationCount);
@@ -892,7 +983,7 @@ export default class DerivBotEngine {
 
     const effectiveConfidence = Math.max(
       Number(gate.confidence || 0),
-      Number(deepAssessment.score || 0)
+      Number(deepAssessment?.score || gate.confidence || 0)
     );
 
     return {
@@ -920,12 +1011,15 @@ export default class DerivBotEngine {
           : gate.reason,
         historicalHitRate: Number(matchingValidation?.hitRate || 0),
         historicalLowerBound: Number(matchingValidation?.lowerBound || 0),
-        deepScore: Number(deepAssessment.score || 0),
+        deepScore: Number(
+          deepAssessment?.score || gate.confidence || 0
+        ),
         deepConsensus: Number(intelligence?.consensus || 0),
         deepRegime: intelligence?.regime || "UNKNOWN",
         cyclePeriod: Number(intelligence?.cycle?.period || 0),
         fastLane,
         deepOverride,
+        executionLane: gate.executionLane || "STRICT",
       },
       timing: {
         ...timing,
@@ -1352,6 +1446,16 @@ export default class DerivBotEngine {
       currency: this.currency,
       duration: tradeDuration,
       durationUnit: tradeDurationUnit,
+    });
+
+    console.log("V19.5 BUY REQUEST", {
+      symbol: this.symbol,
+      contractType: check.contract.contractType,
+      barrier: check.contract.barrier,
+      amount: stake,
+      duration: tradeDuration,
+      durationUnit: tradeDurationUnit,
+      mode: check.gate?.executionLane || check.mode,
     });
 
     const bought = await this.client.buyContract({
