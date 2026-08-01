@@ -6,8 +6,8 @@ const API_BASE_URL = "https://api.derivws.com";
 
 function normalizeSymbolRow(row = {}) {
   const symbol = String(
-    row.symbol ||
-      row.underlying_symbol ||
+    row.underlying_symbol ||
+      row.symbol ||
       row.id ||
       row.code ||
       ""
@@ -23,12 +23,31 @@ function normalizeSymbolRow(row = {}) {
 
   if (!symbol) return null;
 
-  const decimals = Number(
-    row.pip_size ??
-      row.decimal_places ??
-      row.decimals ??
-      3
+  const rawPipSize = Number(row.pip_size);
+
+  const decimalsFromPip =
+    Number.isFinite(rawPipSize) &&
+    rawPipSize > 0 &&
+    rawPipSize < 1
+      ? Math.min(
+          8,
+          Math.max(
+            0,
+            String(rawPipSize)
+              .replace(/0+$/, "")
+              .split(".")[1]?.length || 0
+          )
+        )
+      : null;
+
+  const explicitDecimals = Number(
+    row.decimal_places ??
+      row.decimals
   );
+
+  const decimals = Number.isInteger(explicitDecimals)
+    ? Math.max(0, Math.min(8, explicitDecimals))
+    : decimalsFromPip ?? 3;
 
   return {
     id: symbol,
@@ -39,9 +58,7 @@ function normalizeSymbolRow(row = {}) {
       .replace(/Index/gi, "")
       .replace(/\s+/g, "")
       .slice(0, 12),
-    decimals: Number.isFinite(decimals)
-      ? Math.max(0, Math.min(8, decimals))
-      : 3,
+    decimals,
     raw: row,
   };
 }
@@ -532,7 +549,6 @@ class DerivTradingClient {
   async getVolatilityMarkets() {
     const message = await this.request({
       active_symbols: "brief",
-      product_type: "basic",
     });
 
     const rawSymbols = extractRows(message);
@@ -541,13 +557,21 @@ class DerivTradingClient {
       .map(normalizeSymbolRow)
       .filter(Boolean);
 
-    return allMarkets.filter(isVolatilityMarket);
+    const volatilityMarkets =
+      allMarkets.filter(isVolatilityMarket);
+
+    if (volatilityMarkets.length === 0) {
+      throw new Error(
+        "Deriv connected, but no Volatility markets were returned."
+      );
+    }
+
+    return volatilityMarkets;
   }
 
   async inspectActiveSymbols() {
     const message = await this.request({
       active_symbols: "brief",
-      product_type: "basic",
     });
 
     const rawSymbols = extractRows(message);
