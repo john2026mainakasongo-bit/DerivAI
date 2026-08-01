@@ -1,4 +1,4 @@
-const DIGIT_MODES = new Set([
+﻿const DIGIT_MODES = new Set([
   "EVEN",
   "ODD",
   "OVER",
@@ -149,7 +149,7 @@ function candidate({
   };
 }
 
-function candidateConfidence(edge, spread, base = 65) {
+function candidateConfidence(edge, spread, base = 67) {
   return clamp(base + Math.max(0, edge) * 3.4 - Math.max(0, spread - 3) * 1.6);
 }
 
@@ -163,11 +163,11 @@ function buildParityCandidates(analysis, minConfidence, sampleReady) {
     const confidence = candidateConfidence(edge, profile.spread, 65);
     const approved =
       sampleReady &&
-      profile.full >= 54.5 &&
-      profile.recent >= 54 &&
-      profile.baseline >= 52 &&
-      profile.conservative >= 54.5 &&
-      profile.spread <= 11 &&
+      profile.full >= 52.5 &&
+      profile.recent >= 53.5 &&
+      profile.baseline >= 51.5 &&
+      profile.conservative >= 52.5 &&
+      profile.spread <= 12 &&
       confidence >= minConfidence;
 
     return candidate({
@@ -177,8 +177,8 @@ function buildParityCandidates(analysis, minConfidence, sampleReady) {
       confidence,
       approved,
       reason: approved
-        ? `${setup} stable · full ${profile.full.toFixed(1)}% · recent ${profile.recent.toFixed(1)}%`
-        : `WAIT · ${setup} full ${profile.full.toFixed(1)}% / recent ${profile.recent.toFixed(1)}% / base ${profile.baseline.toFixed(1)}%`,
+        ? `${setup} stable Â· full ${profile.full.toFixed(1)}% Â· recent ${profile.recent.toFixed(1)}%`
+        : `WAIT Â· ${setup} full ${profile.full.toFixed(1)}% / recent ${profile.recent.toFixed(1)}% / base ${profile.baseline.toFixed(1)}%`,
       edge,
       probability: profile.conservative,
       baseline: 50,
@@ -203,11 +203,11 @@ function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
     const confidence = candidateConfidence(edge, profile.spread, 66);
     const approved =
       sampleReady &&
-      profile.full >= naturalBaseline + 4 &&
-      profile.recent >= naturalBaseline + 3.5 &&
-      profile.baseline >= naturalBaseline + 2 &&
-      profile.conservative >= naturalBaseline + 4 &&
-      profile.spread <= 12 &&
+      profile.full >= naturalBaseline + 3 &&
+      profile.recent >= naturalBaseline + 2.5 &&
+      profile.baseline >= naturalBaseline + 1.5 &&
+      profile.conservative >= naturalBaseline + 3 &&
+      profile.spread <= 13 &&
       confidence >= minConfidence;
 
     rows.push(
@@ -219,8 +219,8 @@ function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
         confidence,
         approved,
         reason: approved
-          ? `OVER ${barrier} stable · conservative ${profile.conservative.toFixed(1)}%`
-          : `WAIT · OVER ${barrier} ${profile.full.toFixed(1)}% / ${profile.recent.toFixed(1)}% recent vs ${naturalBaseline.toFixed(1)}% base`,
+          ? `OVER ${barrier} stable Â· conservative ${profile.conservative.toFixed(1)}%`
+          : `WAIT Â· OVER ${barrier} ${profile.full.toFixed(1)}% / ${profile.recent.toFixed(1)}% recent vs ${naturalBaseline.toFixed(1)}% base`,
         edge,
         probability: profile.conservative,
         baseline: naturalBaseline,
@@ -239,11 +239,11 @@ function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
     const confidence = candidateConfidence(edge, profile.spread, 66);
     const approved =
       sampleReady &&
-      profile.full >= naturalBaseline + 4 &&
-      profile.recent >= naturalBaseline + 3.5 &&
-      profile.baseline >= naturalBaseline + 2 &&
-      profile.conservative >= naturalBaseline + 4 &&
-      profile.spread <= 12 &&
+      profile.full >= naturalBaseline + 3 &&
+      profile.recent >= naturalBaseline + 2.5 &&
+      profile.baseline >= naturalBaseline + 1.5 &&
+      profile.conservative >= naturalBaseline + 3 &&
+      profile.spread <= 13 &&
       confidence >= minConfidence;
 
     rows.push(
@@ -255,8 +255,8 @@ function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
         confidence,
         approved,
         reason: approved
-          ? `UNDER ${barrier} stable · conservative ${profile.conservative.toFixed(1)}%`
-          : `WAIT · UNDER ${barrier} ${profile.full.toFixed(1)}% / ${profile.recent.toFixed(1)}% recent vs ${naturalBaseline.toFixed(1)}% base`,
+          ? `UNDER ${barrier} stable Â· conservative ${profile.conservative.toFixed(1)}%`
+          : `WAIT Â· UNDER ${barrier} ${profile.full.toFixed(1)}% / ${profile.recent.toFixed(1)}% recent vs ${naturalBaseline.toFixed(1)}% base`,
         edge,
         probability: profile.conservative,
         baseline: naturalBaseline,
@@ -297,8 +297,8 @@ function buildMatchDiffersCandidates(analysis, minConfidence, sampleReady) {
         confidence: matchConfidence,
         approved: matchApproved,
         reason: matchApproved
-          ? `MATCH ${digit} stable · conservative ${match.conservative.toFixed(1)}%`
-          : `WAIT · MATCH ${digit} ${match.full.toFixed(1)}% / ${match.recent.toFixed(1)}% recent`,
+          ? `MATCH ${digit} stable Â· conservative ${match.conservative.toFixed(1)}%`
+          : `WAIT Â· MATCH ${digit} ${match.full.toFixed(1)}% / ${match.recent.toFixed(1)}% recent`,
         edge: matchEdge,
         probability: match.conservative,
         baseline: 10,
@@ -331,8 +331,8 @@ function buildMatchDiffersCandidates(analysis, minConfidence, sampleReady) {
         confidence: differsConfidence,
         approved: differsApproved,
         reason: differsApproved
-          ? `DIFFERS ${digit} stable · target worst-case ${targetWorst.toFixed(1)}%`
-          : `WAIT · DIFFERS ${digit}, target worst-case ${targetWorst.toFixed(1)}%`,
+          ? `DIFFERS ${digit} stable Â· target worst-case ${targetWorst.toFixed(1)}%`
+          : `WAIT Â· DIFFERS ${digit}, target worst-case ${targetWorst.toFixed(1)}%`,
         edge: differsEdge,
         probability: differsProbability,
         baseline: 90,
@@ -392,8 +392,8 @@ function buildRiseFallCandidates(analysis, minConfidence) {
       confidence,
       approved,
       reason: approved
-        ? `${setup} confirmed · estimate ${estimate.toFixed(1)}% · consistency ${consistency.toFixed(1)}%`
-        : `WAIT · direction ${preferred || "NEUTRAL"} / momentum ${momentumSetup || "NEUTRAL"} / consistency ${consistency.toFixed(1)}%`,
+        ? `${setup} confirmed Â· estimate ${estimate.toFixed(1)}% Â· consistency ${consistency.toFixed(1)}%`
+        : `WAIT Â· direction ${preferred || "NEUTRAL"} / momentum ${momentumSetup || "NEUTRAL"} / consistency ${consistency.toFixed(1)}%`,
       edge: Math.max(0, estimate - 50),
       probability: estimate,
       baseline: 50,
@@ -594,7 +594,7 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
     confidence: Number(nearest?.confidence || 0),
     minConfidence: minimumConfidence,
     reason:
-      (nearest?.reason || `WAIT · no approved ${selectedLabel} entry yet.`) +
+      (nearest?.reason || `WAIT Â· no approved ${selectedLabel} entry yet.`) +
       sampleReason,
     candidates: selectedCandidates,
     contractMode,
@@ -609,3 +609,5 @@ export function evaluateAnalysisAssistedSignal(analysis = {}, input = {}) {
 }
 
 export default evaluateAnalysisAssistedSignal;
+
+

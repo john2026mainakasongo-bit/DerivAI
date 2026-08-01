@@ -1,4 +1,4 @@
-import {
+﻿import {
   cloneElement,
   useEffect,
   useId,
@@ -28,7 +28,7 @@ const INITIAL_SETTINGS = {
   maxRuns: 56,
   stake: 1,
   duration: 5,
-  minConfidence: 80,
+  minConfidence: 75,
   minVotes: 1,
   takeProfit: 20,
   stopLoss: 6,
@@ -43,8 +43,8 @@ const INITIAL_SETTINGS = {
   prediction: 2,
   durationUnit: "t",
   autoSwitchVolatility: true,
-  marketScanSeconds: 18,
-  confirmationCount: 2,
+  marketScanSeconds: 12,
+  confirmationCount: 1,
   confirmationSeconds: 1,
   signalMaxAgeSeconds: 6,
   lossSetupBlockSeconds: 90,
@@ -73,7 +73,7 @@ const INITIAL_BOT_STATE = {
   largestLossStreak: 0,
   martingaleStep: 0,
   currentStake: 1,
-  activeSetup: "—",
+  activeSetup: "â€”",
   activeContractId: "",
   scanStartedAt: 0,
   scanElapsedSeconds: 0,
@@ -82,7 +82,7 @@ const INITIAL_BOT_STATE = {
   signalConfirmations: 0,
   requiredConfirmations: 2,
   blockedSetupUntil: 0,
-  lastLossSetup: "—",
+  lastLossSetup: "â€”",
   lossProtectionCount: 0,
   deepScore: 0,
   deepConsensus: 0,
@@ -670,7 +670,7 @@ export default function Bot() {
             }
           >
             {isDemo
-              ? "✓ DEMO ACCOUNT"
+              ? "âœ“ DEMO ACCOUNT"
               : "DEMO ACCOUNT REQUIRED"}
           </div>
         </section>
@@ -718,7 +718,7 @@ export default function Bot() {
                   disabled={running || paused}
                   onChange={updateContractMode}
                 >
-                  <option value="AUTO">Auto SAFE — validated contract only</option>
+                  <option value="AUTO">Auto SAFE â€” validated contract only</option>
                   <option value="RISE">Rise</option>
                   <option value="FALL">Fall</option>
                   <option value="EVEN">Even</option>
@@ -770,7 +770,7 @@ export default function Bot() {
                     value="s"
                     disabled={isDigitContractMode(settings.contractMode)}
                   >
-                    Seconds — Rise/Fall or Auto
+                    Seconds â€” Rise/Fall or Auto
                   </option>
                 </select>
               </Field>
@@ -888,7 +888,7 @@ export default function Bot() {
 
               <div className="botRecoverySchedule">
                 <span>Smart recovery schedule</span>
-                <strong>Step 1 ×1.35 only</strong>
+                <strong>Step 1 Ã—1.35 only</strong>
                 <small>
                   Safer cap. It remains OFF by default and a win resets to base.
                 </small>
@@ -965,7 +965,7 @@ export default function Bot() {
                   autocorrelation, sequence behaviour and observed-cycle analysis.
                 </span>
                 <small>
-                  Strong setups use FAST AI entry after one fresh confirmation; normal
+                  Validated setups enter after one fresh confirmation; weak or conflicting setups still wait.
                   setups use two. Losing setups are blocked for 90 seconds, AUTO digit
                   trades remain one tick, and weak or unstable regimes are skipped.
                 </small>
@@ -1030,8 +1030,8 @@ export default function Bot() {
                   : "DEEP SCAN FOR A REAL EDGE"}
               </strong>
               <span>
-                {market?.label || symbol} · {settings.duration}{" "}
-                {settings.durationUnit === "s" ? "seconds" : "ticks"} ·{" "}
+                {market?.label || symbol} Â· {settings.duration}{" "}
+                {settings.durationUnit === "s" ? "seconds" : "ticks"} Â·{" "}
                 {botState.lastBlockReason ||
                   analysisGate.reason ||
                   syntheticIntelligence.bestDetail}
@@ -1070,7 +1070,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Best deep setup"
-                  value={`${syntheticIntelligence.bestSetup || "WAIT"} · ${Number(
+                  value={`${syntheticIntelligence.bestSetup || "WAIT"} Â· ${Number(
                     syntheticIntelligence.bestScore || 0
                   ).toFixed(1)}%`}
                 />
@@ -1082,7 +1082,7 @@ export default function Bot() {
                   label="Observed cycle"
                   value={
                     syntheticIntelligence.cycle?.period
-                      ? `${syntheticIntelligence.cycle.period} ticks · ${Number(
+                      ? `${syntheticIntelligence.cycle.period} ticks Â· ${Number(
                           syntheticIntelligence.cycle.strength || 0
                         ).toFixed(0)}%`
                       : "NO STABLE CYCLE"
@@ -1090,7 +1090,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Momentum consensus"
-                  value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} · ${Number(
+                  value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} Â· ${Number(
                     syntheticIntelligence.momentum?.agreement || 0
                   ).toFixed(0)}%`}
                 />
@@ -1098,13 +1098,13 @@ export default function Bot() {
                   label="Digit entropy"
                   value={`${Number(
                     syntheticIntelligence.entropy?.normalized || 0
-                  ).toFixed(1)}% · ${
+                  ).toFixed(1)}% Â· ${
                     syntheticIntelligence.entropy?.label || "UNKNOWN"
                   }`}
                 />
                 <Metric
                   label="Autocorrelation"
-                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "—"} · ${Number(
+                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "â€”"} Â· ${Number(
                     syntheticIntelligence.autocorrelation?.strength || 0
                   ).toFixed(0)}%`}
                 />
@@ -1114,7 +1114,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Volatility phase"
-                  value={`${syntheticIntelligence.volatility?.state || "UNKNOWN"} · ${Number(
+                  value={`${syntheticIntelligence.volatility?.state || "UNKNOWN"} Â· ${Number(
                     syntheticIntelligence.volatility?.stability || 0
                   ).toFixed(0)}% stable`}
                 />
@@ -1126,7 +1126,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Professional layer"
-                  value={`${professionalDecision.bestContract || "WAIT"} · ${Number(
+                  value={`${professionalDecision.bestContract || "WAIT"} Â· ${Number(
                     professionalDecision.professionalScore ||
                       professionalDecision.confidence ||
                       0
@@ -1134,7 +1134,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Entry speed"
-                  value={syntheticIntelligence.fastLane ? "FAST AI · 1 confirm" : "DEEP · 2 confirms"}
+                  value={"VALIDATED Â· 1 fresh confirm"}
                 />
               </div>
 
@@ -1320,7 +1320,7 @@ export default function Bot() {
               <Metric
                 label="Fresh confirmations"
                 value={`${botState.signalConfirmations || 0}/${
-                  botState.requiredConfirmations || settings.confirmationCount || 2
+                  botState.requiredConfirmations || settings.confirmationCount || 1
                 }`}
               />
               <Metric
@@ -1437,23 +1437,23 @@ export default function Bot() {
                   >
                     <div className="botHistoryMain">
                       <strong>
-                        {item.setup} · {item.symbol || market?.id || symbol}
+                        {item.setup} Â· {item.symbol || market?.id || symbol}
                       </strong>
                       <small>
-                        {new Date(item.time).toLocaleTimeString()} · Contract{" "}
-                        {item.contractId || "—"}
+                        {new Date(item.time).toLocaleTimeString()} Â· Contract{" "}
+                        {item.contractId || "â€”"}
                       </small>
                       <small>
-                        Entry {Number(item.entrySpot || 0).toFixed(3)} · Exit{" "}
-                        {Number(item.exitSpot || 0).toFixed(3)} · Stake{" "}
-                        {Number(item.stake || 0).toFixed(2)} ·{" "}
+                        Entry {Number(item.entrySpot || 0).toFixed(3)} Â· Exit{" "}
+                        {Number(item.exitSpot || 0).toFixed(3)} Â· Stake{" "}
+                        {Number(item.stake || 0).toFixed(2)} Â·{" "}
                         {Number(item.duration || 0)}{" "}
-                        {item.durationUnit === "s" ? "sec" : "ticks"} · MG{" "}
+                        {item.durationUnit === "s" ? "sec" : "ticks"} Â· MG{" "}
                         {Number(item.martingaleStep || 0)}
                       </small>
                       <small>
-                        Mode {item.executionMode || "V12_DEEP_CYCLE_AI"} ·
-                        Confidence {Number(item.confidence || 0).toFixed(1)}% ·{" "}
+                        Mode {item.executionMode || "V12_DEEP_CYCLE_AI"} Â·
+                        Confidence {Number(item.confidence || 0).toFixed(1)}% Â·{" "}
                         Entry {item.entryStage || "ENTER"}
                       </small>
                     </div>
@@ -1480,3 +1480,5 @@ export default function Bot() {
     </div>
   );
 }
+
+

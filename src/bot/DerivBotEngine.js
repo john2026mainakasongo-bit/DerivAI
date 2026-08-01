@@ -1,9 +1,9 @@
-import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
+﻿import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
 import { evaluateSyntheticSetup } from "../analysis/syntheticIntelligenceEngine";
 
 const DEFAULTS = {
   maxRuns: 56,
-  minConfidence: 80,
+  minConfidence: 75,
   minVotes: 1,
   stake: 1,
   duration: 5,
@@ -20,7 +20,7 @@ const DEFAULTS = {
   contractMode: "AUTO",
   prediction: 2,
   durationUnit: "t",
-  confirmationCount: 2,
+  confirmationCount: 1,
   confirmationSeconds: 1,
   signalMaxAgeSeconds: 6,
   lossSetupBlockSeconds: 90,
@@ -258,7 +258,7 @@ export default class DerivBotEngine {
       largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: DEFAULTS.stake,
-      activeSetup: "—",
+      activeSetup: "â€”",
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
@@ -267,7 +267,7 @@ export default class DerivBotEngine {
       signalConfirmations: 0,
       requiredConfirmations: DEFAULTS.confirmationCount,
       blockedSetupUntil: 0,
-      lastLossSetup: "—",
+      lastLossSetup: "â€”",
       lossProtectionCount: 0,
       deepScore: 0,
       deepConsensus: 0,
@@ -686,7 +686,7 @@ export default class DerivBotEngine {
     const fastLane = Boolean(deepAssessment.fastLane);
     const requiredConfirmations = fastLane
       ? 1
-      : Math.max(2, this.settings.confirmationCount);
+      : Math.max(1, this.settings.confirmationCount);
     const requiredMilliseconds = fastLane
       ? 500
       : this.settings.confirmationSeconds * 1000;
@@ -873,7 +873,7 @@ export default class DerivBotEngine {
       largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
-      activeSetup: "—",
+      activeSetup: "â€”",
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
@@ -882,7 +882,7 @@ export default class DerivBotEngine {
       signalConfirmations: 0,
       requiredConfirmations: this.settings.confirmationCount,
       blockedSetupUntil: 0,
-      lastLossSetup: "—",
+      lastLossSetup: "â€”",
       lossProtectionCount: 0,
       deepScore: 0,
       deepConsensus: 0,
@@ -990,7 +990,7 @@ export default class DerivBotEngine {
       consecutiveLosses: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
-      activeSetup: "—",
+      activeSetup: "â€”",
       signalConfirmations: 0,
       lastBlockReason: "",
     });
@@ -1021,7 +1021,7 @@ export default class DerivBotEngine {
         this.patch({
           status: "WAITING",
           message: check.reason,
-          activeSetup: "—",
+          activeSetup: "â€”",
           scanElapsedSeconds: number(check.elapsedSeconds),
           lastBlockReason: check.reason,
           signalConfirmations: number(check.confirmations),
@@ -1154,7 +1154,7 @@ export default class DerivBotEngine {
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V12 DEEP CONFIRMED`,
+      activeSetup: `${check.contract.label} Â· V12 DEEP CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
@@ -1274,8 +1274,8 @@ export default class DerivBotEngine {
         check.decision.professionalScore ?? check.decision.confidence
       ),
       marketQuality: number(check.decision.marketQuality),
-      riskLevel: String(check.decision.riskLevel || "—"),
-      entryStage: String(check.timing.state || "—"),
+      riskLevel: String(check.decision.riskLevel || "â€”"),
+      entryStage: String(check.timing.state || "â€”"),
       votes: number(check.decision.passedCount),
       martingaleStep: this.state.martingaleStep,
       executionMode: check.mode || "V12_DEEP_CYCLE_AI",
@@ -1328,7 +1328,7 @@ export default class DerivBotEngine {
         this.settings.confirmationCount
       ),
       blockedSetupUntil,
-      lastLossSetup: this.lastLossSetup || "—",
+      lastLossSetup: this.lastLossSetup || "â€”",
       lossProtectionCount,
       lastBlockReason: won
         ? ""
@@ -1406,3 +1406,5 @@ export default class DerivBotEngine {
     waiter.resolve(contract);
   }
 }
+
+
