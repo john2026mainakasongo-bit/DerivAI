@@ -73,7 +73,7 @@ const INITIAL_BOT_STATE = {
   largestLossStreak: 0,
   martingaleStep: 0,
   currentStake: 1,
-  activeSetup: "â€”",
+  activeSetup: "—",
   activeContractId: "",
   scanStartedAt: 0,
   scanElapsedSeconds: 0,
@@ -82,7 +82,7 @@ const INITIAL_BOT_STATE = {
   signalConfirmations: 0,
   requiredConfirmations: 2,
   blockedSetupUntil: 0,
-  lastLossSetup: "â€”",
+  lastLossSetup: "—",
   lossProtectionCount: 0,
   deepScore: 0,
   deepConsensus: 0,
@@ -644,7 +644,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="56-Run Auto Bot V13 Pro Three-Layer AI + Market Switch"
+          title="56-Run Auto Bot V14 Professional Terminal AI + Market Switch"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -670,7 +670,7 @@ export default function Bot() {
             }
           >
             {isDemo
-              ? "âœ“ DEMO ACCOUNT"
+              ? "✓ DEMO ACCOUNT"
               : "DEMO ACCOUNT REQUIRED"}
           </div>
         </section>
@@ -718,7 +718,7 @@ export default function Bot() {
                   disabled={running || paused}
                   onChange={updateContractMode}
                 >
-                  <option value="AUTO">Auto SAFE â€” validated contract only</option>
+                  <option value="AUTO">Auto SAFE — validated contract only</option>
                   <option value="RISE">Rise</option>
                   <option value="FALL">Fall</option>
                   <option value="EVEN">Even</option>
@@ -770,7 +770,7 @@ export default function Bot() {
                     value="s"
                     disabled={isDigitContractMode(settings.contractMode)}
                   >
-                    Seconds â€” Rise/Fall or Auto
+                    Seconds — Rise/Fall or Auto
                   </option>
                 </select>
               </Field>
@@ -888,7 +888,7 @@ export default function Bot() {
 
               <div className="botRecoverySchedule">
                 <span>Smart recovery schedule</span>
-                <strong>Step 1 Ã—1.35 only</strong>
+                <strong>Step 1 ×1.35 only</strong>
                 <small>
                   Safer cap. It remains OFF by default and a win resets to base.
                 </small>
@@ -957,18 +957,25 @@ export default function Bot() {
                 />
               </Field>
 
-              <div className="botTimedFallbackInfo">
-                <strong>V12 DEEP CYCLE INTELLIGENCE ENGINE</strong>
-                <span>
-                  AUTO combines walk-forward validation with multi-window momentum,
-                  volatility regime detection, digit entropy, Bayesian transitions,
-                  autocorrelation, sequence behaviour and observed-cycle analysis.
-                </span>
-                <small>
-                  Validated setups enter after one fresh confirmation; weak or conflicting setups still wait.
-                  setups use two. Losing setups are blocked for 90 seconds, AUTO digit
-                  trades remain one tick, and weak or unstable regimes are skipped.
-                </small>
+              
+            </div>
+
+            <div className="botTerminalStrip">
+              <div>
+                <small>AI MODE</small>
+                <strong>{settings.analysisAssisted ? "ANALYSIS ASSISTED" : "DISABLED"}</strong>
+              </div>
+              <div>
+                <small>MARKET SWITCH</small>
+                <strong>{settings.autoSwitchVolatility ? `${settings.marketScanSeconds}s AUTO` : "MANUAL"}</strong>
+              </div>
+              <div>
+                <small>RISK CONTROL</small>
+                <strong>SL {settings.stopLoss} · HARD {settings.hardStopLossStreak}</strong>
+              </div>
+              <div>
+                <small>RECOVERY</small>
+                <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
             </div>
 
@@ -1197,7 +1204,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Autocorrelation"
-                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "â€”"} Â· ${Number(
+                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "—"} Â· ${Number(
                     syntheticIntelligence.autocorrelation?.strength || 0
                   ).toFixed(0)}%`}
                 />
@@ -1457,7 +1464,7 @@ export default function Bot() {
                       </strong>
                       <small>
                         {new Date(item.time).toLocaleTimeString()} Â· Contract{" "}
-                        {item.contractId || "â€”"}
+                        {item.contractId || "—"}
                       </small>
                       <small>
                         Entry {Number(item.entrySpot || 0).toFixed(3)} Â· Exit{" "}

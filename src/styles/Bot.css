@@ -1467,3 +1467,228 @@ main .botLayout > *,
 }
 
 /* === EDGEPILOT V13 THREE SECTION END === */
+
+
+/* === EDGEPILOT V14 PROFESSIONAL TERMINAL BEGIN === */
+
+/* Three independent, full-width terminal panels */
+.botLayout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: start !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+
+.botExecutionCard,
+.botAnalysisCard,
+.botPerformanceCard {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+}
+
+.botCard {
+  padding: 14px !important;
+  border-radius: 12px !important;
+}
+
+.botCardHeader {
+  margin-bottom: 10px !important;
+}
+
+/* EXECUTION RULES */
+.botExecutionCard .botFormGrid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+}
+
+.botExecutionCard .botField,
+.botExecutionCard .botToggle,
+.botExecutionCard .botRecoverySchedule {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+}
+
+.botExecutionCard .botField input,
+.botExecutionCard .botField select {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 7px 9px !important;
+  border-radius: 8px !important;
+}
+
+.botExecutionCard .botToggle {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  gap: 8px !important;
+  padding: 7px 10px !important;
+  box-sizing: border-box !important;
+}
+
+.botExecutionCard .botToggle input {
+  flex: 0 0 auto !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 !important;
+}
+
+.botExecutionCard .botRecoverySchedule {
+  min-height: 36px !important;
+  padding: 6px 9px !important;
+  gap: 1px !important;
+  align-content: center !important;
+  box-sizing: border-box !important;
+}
+
+.botExecutionCard .botRecoverySchedule small {
+  display: none !important;
+}
+
+.botTerminalStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.botTerminalStrip > div {
+  min-width: 0;
+  padding: 9px 10px;
+  background: #031522;
+  border: 1px solid #174159;
+  border-radius: 8px;
+}
+
+.botTerminalStrip small {
+  display: block;
+  margin-bottom: 3px;
+  color: #7ba9c3;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.botTerminalStrip strong {
+  display: block;
+  color: #ffffff;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* LIVE ANALYSIS */
+.botAnalysisCard .botDecisionBox,
+.botAnalysisCard .botIntelligenceGrid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: 8px !important;
+}
+
+.botAnalysisCard .botDecisionBox {
+  margin-top: 0 !important;
+}
+
+.botAnalysisCard .botIntelligence {
+  min-height: 0 !important;
+  height: auto !important;
+  margin-top: 8px !important;
+  padding: 10px !important;
+}
+
+.botAnalysisCard .botMetric,
+.botAnalysisCard .botDecisionBox > div {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 9px 10px !important;
+}
+
+.botAnalysisCard .botScoreBreakdown {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 7px 12px !important;
+}
+
+.botAnalysisCard .botScoreRow {
+  grid-template-columns:
+    minmax(130px, 0.9fr)
+    minmax(140px, 1.2fr)
+    34px !important;
+  gap: 7px !important;
+}
+
+/* LIVE PERFORMANCE */
+.botPerformanceCard .botMetrics {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row dense !important;
+  gap: 8px !important;
+}
+
+.botPerformanceCard .botMetric {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 9px 10px !important;
+}
+
+.botPerformanceCard .botHistory {
+  margin-top: 10px !important;
+  max-height: 380px !important;
+  overflow-y: auto !important;
+}
+
+.botPerformanceCard .botHistoryEmpty {
+  min-height: 0 !important;
+  padding: 12px 8px !important;
+}
+
+/* No repeated description panel inside Execution Rules */
+.botExecutionCard .botStrictGate,
+.botExecutionCard .botTimedFallbackInfo {
+  display: none !important;
+}
+
+@media (max-width: 1200px) {
+  .botExecutionCard .botFormGrid,
+  .botTerminalStrip,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botPerformanceCard .botMetrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 850px) {
+  .botExecutionCard .botFormGrid,
+  .botTerminalStrip,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botAnalysisCard .botScoreBreakdown,
+  .botPerformanceCard .botMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .botExecutionCard .botFormGrid,
+  .botTerminalStrip,
+  .botAnalysisCard .botDecisionBox,
+  .botAnalysisCard .botIntelligenceGrid,
+  .botAnalysisCard .botScoreBreakdown,
+  .botPerformanceCard .botMetrics {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* === EDGEPILOT V14 PROFESSIONAL TERMINAL END === */
