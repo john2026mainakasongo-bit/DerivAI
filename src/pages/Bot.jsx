@@ -243,6 +243,24 @@ export default function Bot() {
       )
     )
     .filter(Boolean);
+
+  const digitRunning = [
+    "RUNNING",
+    "SCANNING",
+    "BUYING",
+    "MONITORING",
+    "WON",
+    "LOST",
+    "COOLDOWN",
+    "SWITCHING",
+  ].includes(botState.status);
+
+
+  const running =
+    isDigitFamilyBot
+      ? digitRunning
+      : riseFallState.running;
+
   const quality = qualityLabel(autoSignal?.qualityScore);
 
   const liveSignalLabel = autoSignal?.setup || "";
@@ -272,22 +290,6 @@ export default function Bot() {
       ? liveRisk
       : botState.lastCompletedRisk || "SCANNING";
 
-  const digitRunning = [
-    "RUNNING",
-    "SCANNING",
-    "BUYING",
-    "MONITORING",
-    "WON",
-    "LOST",
-    "COOLDOWN",
-    "SWITCHING",
-  ].includes(botState.status);
-
-
-  const running =
-    isDigitFamilyBot
-      ? digitRunning
-      : riseFallState.running;
 
   const connecting =
     status === "CONNECTING" || loadingMarket;
@@ -794,7 +796,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V74 · Smart Signal Status Engine"
+          title="EdgePilot V74.1 · Smart Signal Status Engine"
           subtitle="Clear live signal state, last-trade memory, entry-risk labels and fast fresh rescanning"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
