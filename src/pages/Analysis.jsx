@@ -337,8 +337,8 @@ export default function Analysis() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V69 · Auto-Connected Owner Analysis"
-          subtitle="Persistent Deriv reconnect, live samples, heatmap, Owner AI and Rise/Fall timing"
+          title="EdgePilot V70 · Professional Owner Analysis"
+          subtitle="Professional Digit and Rise/Fall layouts with persistent live-feed reconnect"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -508,6 +508,31 @@ export default function Analysis() {
                   <small>Price</small>
                   <strong>{money(currentPrice)}</strong>
                 </div>
+              </div>
+            </section>
+
+            <section className="v70RiseSummary">
+              <div>
+                <small>DIRECTION</small>
+                <strong>{riseFall.signal}</strong>
+              </div>
+              <div>
+                <small>ENTRY QUALITY</small>
+                <strong className={riskClass(riseFall.risk)}>
+                  {riseFall.risk}
+                </strong>
+              </div>
+              <div>
+                <small>CONFIDENCE</small>
+                <strong>{percent(riseFall.confidence)}</strong>
+              </div>
+              <div>
+                <small>TREND</small>
+                <strong>{riseFall.trend}</strong>
+              </div>
+              <div>
+                <small>ENTRY LEVEL</small>
+                <strong>{money(riseFall.entryPrice)}</strong>
               </div>
             </section>
 
