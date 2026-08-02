@@ -306,6 +306,11 @@ export default function useDerivTicks() {
           // Keep market feed working even if transaction subscription fails.
         }
       }
+
+      return {
+        symbol: selected.id,
+        markets: liveMarkets,
+      };
     } catch (error) {
       derivPublicClient.disconnect({
         preserveAccount: true,
@@ -313,11 +318,14 @@ export default function useDerivTicks() {
 
       setConnected(false);
       setStatus("ERROR");
-      setStatusDetail(
+
+      const finalError =
         error instanceof Error
-          ? error.message
-          : "Connection failed."
-      );
+          ? error
+          : new Error("Connection failed.");
+
+      setStatusDetail(finalError.message);
+      throw finalError;
     }
   }, [
     auth.authenticated,

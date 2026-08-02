@@ -8,19 +8,19 @@ const DEFAULTS = {
   maxRuns: 5,
   unlimited: false,
   stopProfit: 0,
-  stopLoss: 0,
-  minimumConfidence: 82,
-  confirmationUpdates: 2,
+  stopLoss: 0.35,
+  minimumConfidence: 78,
+  confirmationUpdates: 1,
   lossCooldownMs: 750,
   sameSetupBlockMs: 15000,
-  maximumSignalAgeMs: 2000,
+  maximumSignalAgeMs: 3500,
   lossSkipSignals: 3,
   allowHighRiskContracts: false,
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  scanSwitchMs: 3500,
-  postTradeDelayMs: 80,
+  scanSwitchMs: 4000,
+  postTradeDelayMs: 250,
 };
 
 function sleep(ms) {
@@ -187,7 +187,7 @@ export default class TurboAutoDigitBotEngine {
 
     this.state = {
       status: "STOPPED",
-      message: "V66 Fast Professional Engine is ready.",
+      message: "V71 Unified One-Minute Engine is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -465,11 +465,10 @@ export default class TurboAutoDigitBotEngine {
       return "Maximum runs completed.";
     }
 
-    if (
-      this.accountType === "real" &&
-      this.state.losses >= 1
-    ) {
-      return "Real-account safety stop after one loss.";
+    if (this.state.losses >= 1) {
+      return this.accountType === "real"
+        ? "Real-account safety stop after one loss."
+        : "Risk stop after one loss.";
     }
 
     const recentTwo = (this.state.history || [])

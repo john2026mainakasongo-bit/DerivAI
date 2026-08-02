@@ -8,8 +8,9 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
-import { rankV66FastProfessional } from "../analysis/v66FastProfessionalEngine";
-import { analyzeRiseFall } from "../analysis/v67UnifiedAnalysisEngine";
+import {
+  analyzeUnifiedSignals,
+} from "../analysis/v71UnifiedSignalEngine";
 import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
 
 import "../styles/Bot.css";
@@ -24,19 +25,19 @@ const INITIAL_SETTINGS = {
   maxRuns: 5,
   unlimited: false,
   stopProfit: 0,
-  stopLoss: 0,
-  minimumConfidence: 82,
-  confirmationUpdates: 2,
+  stopLoss: 0.35,
+  minimumConfidence: 78,
+  confirmationUpdates: 1,
   lossCooldownMs: 6000,
   sameSetupBlockMs: 15000,
-  maximumSignalAgeMs: 2000,
+  maximumSignalAgeMs: 3500,
   lossSkipSignals: 3,
   allowHighRiskContracts: false,
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  scanSwitchMs: 3500,
-  postTradeDelayMs: 80,
+  scanSwitchMs: 4000,
+  postTradeDelayMs: 250,
 };
 
 const INITIAL_STATE = {
@@ -136,6 +137,12 @@ export default function Bot() {
     history: [],
   });
   const riseFallStopRef = useRef(false);
+  const liveDataRef = useRef({
+    prices: [],
+    currentPrice: null,
+    digitHistory: [],
+    symbol: "",
+  });
   const [realRiskAccepted, setRealRiskAccepted] = useState(false);
 
   const {
@@ -159,20 +166,26 @@ export default function Bot() {
   const selectedId = accountId(auth.selectedAccount);
   const isDemo = auth.selectedAccountType === "demo";
 
-  const v66Analysis = useMemo(
+  const unifiedSignals = useMemo(
     () =>
-      rankV66FastProfessional({
+      analyzeUnifiedSignals({
         digitHistory,
+        prices,
+        currentPrice,
         allowHighRisk: settings.allowHighRiskContracts,
         minimumConfidence: settings.minimumConfidence,
       }),
     [
       digitHistory,
+      prices,
+      currentPrice,
       settings.allowHighRiskContracts,
       settings.minimumConfidence,
     ]
   );
 
+  const v66Analysis = unifiedSignals.digit;
+  const riseFallAnalysis = unifiedSignals.riseFall;
   const rankedCandidates = v66Analysis.candidates || [];
   const executableCandidates = rankedCandidates.filter(
     (candidate) => candidate.executable
@@ -186,15 +199,6 @@ export default function Bot() {
       )
     )
     .filter(Boolean);
-  const riseFallAnalysis = useMemo(
-    () =>
-      analyzeRiseFall({
-        prices,
-        currentPrice,
-      }),
-    [prices, currentPrice]
-  );
-
   const quality = qualityLabel(autoSignal?.qualityScore);
 
   const digitRunning = [
@@ -259,7 +263,21 @@ export default function Bot() {
       symbol,
       changeSymbol,
     };
-  }, [markets, symbol, changeSymbol]);
+
+    liveDataRef.current = {
+      prices,
+      currentPrice,
+      digitHistory,
+      symbol,
+    };
+  }, [
+    markets,
+    symbol,
+    changeSymbol,
+    prices,
+    currentPrice,
+    digitHistory,
+  ]);
 
   useEffect(() => {
     const engine = new TurboAutoDigitBotEngine({
@@ -268,7 +286,7 @@ export default function Bot() {
       onRequestMarketSwitch: async () => {
         const context = marketContextRef.current;
         const list = Array.isArray(context.markets)
-          ? context.markets.filter((item) => item?.symbol)
+          ? context.markets.filter((item) => item?.id || item?.symbol)
           : [];
 
         if (list.length < 2 || typeof context.changeSymbol !== "function") {
@@ -279,7 +297,7 @@ export default function Bot() {
         }
 
         const currentIndex = list.findIndex(
-          (item) => item.symbol === context.symbol
+          (item) => (item.id || item.symbol) === context.symbol
         );
         const nextIndex =
           currentIndex >= 0
@@ -287,11 +305,12 @@ export default function Bot() {
             : 0;
         const next = list[nextIndex];
 
-        await context.changeSymbol(next.symbol);
+        const nextSymbol = next.id || next.symbol;
+        await context.changeSymbol(nextSymbol);
 
         return {
-          symbol: next.symbol,
-          label: next.label || next.symbol,
+          symbol: nextSymbol,
+          label: next.label || nextSymbol,
         };
       },
     });
@@ -345,6 +364,103 @@ export default function Bot() {
     };
   }
 
+  async function ensureTradingConnection() {
+    if (connected && marketContextRef.current.symbol) {
+      return marketContextRef.current.symbol;
+    }
+
+    const result = await connect();
+    const liveSymbol =
+      result?.symbol ||
+      marketContextRef.current.symbol ||
+      liveDataRef.current.symbol;
+
+    if (!liveSymbol) {
+      throw new Error(
+        "The Deriv feed connected but no volatility market was selected."
+      );
+    }
+
+    engineRef.current?.setMarket({
+      symbol: liveSymbol,
+      currency: auth.selectedAccount?.currency || "USD",
+    });
+
+    return liveSymbol;
+  }
+
+  async function rotateToNextMarket() {
+    const context = marketContextRef.current;
+    const list = Array.isArray(context.markets)
+      ? context.markets.filter((item) => item?.id || item?.symbol)
+      : [];
+
+    if (list.length < 2 || typeof context.changeSymbol !== "function") {
+      return context.symbol;
+    }
+
+    const currentIndex = list.findIndex(
+      (item) => (item.id || item.symbol) === context.symbol
+    );
+    const next = list[
+      currentIndex >= 0
+        ? (currentIndex + 1) % list.length
+        : 0
+    ];
+    const nextSymbol = next.id || next.symbol;
+
+    await context.changeSymbol(nextSymbol);
+    return nextSymbol;
+  }
+
+  function waitForSettlement(contractId, timeoutMs = 45000) {
+    return new Promise((resolve, reject) => {
+      let finished = false;
+
+      const cleanup = derivPublicClient.onContract((contract) => {
+        const id = String(
+          contract?.contract_id ||
+          contract?.id ||
+          ""
+        );
+
+        if (id !== String(contractId)) return;
+
+        const settled = Boolean(
+          contract?.is_sold ||
+          contract?.is_expired ||
+          ["won", "lost", "sold"].includes(
+            String(contract?.status || "").toLowerCase()
+          )
+        );
+
+        if (!settled || finished) return;
+        finished = true;
+        window.clearTimeout(timer);
+        cleanup();
+
+        const explicitProfit = Number(contract?.profit);
+        const profit = Number.isFinite(explicitProfit)
+          ? explicitProfit
+          : Number(contract?.sell_price || 0) -
+            Number(contract?.buy_price || 0);
+
+        resolve({
+          result: profit >= 0 ? "WIN" : "LOSS",
+          profit,
+          contract,
+        });
+      });
+
+      const timer = window.setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        reject(new Error("Contract settlement timed out."));
+      }, timeoutMs);
+    });
+  }
+
   async function startBot() {
     if (!auth.authenticated) {
       auth.login();
@@ -359,10 +475,7 @@ export default function Bot() {
     }
 
     try {
-      if (!connected) {
-        await connect();
-      }
-
+      await ensureTradingConnection();
       await engineRef.current?.start();
     } catch (error) {
       window.alert(
@@ -387,17 +500,14 @@ export default function Bot() {
       return;
     }
 
-    if (!connected) {
-      setRiseFallState((current) => ({
-        ...current,
-        running: false,
-        status: "CONNECTING",
-        message: "Connecting the authenticated Deriv feed...",
-      }));
+    setRiseFallState((current) => ({
+      ...current,
+      running: false,
+      status: "CONNECTING",
+      message: "Connecting the authenticated Deriv feed...",
+    }));
 
-      await connect();
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-    }
+    let activeSymbol = await ensureTradingConnection();
 
     riseFallStopRef.current = false;
     setRiseFallState((current) => ({
@@ -411,28 +521,58 @@ export default function Bot() {
     let wins = 0;
     let losses = 0;
     let profit = 0;
+    let noEntrySince = Date.now();
     const history = [];
 
     while (
       !riseFallStopRef.current &&
       (settings.unlimited || runs < settings.maxRuns)
     ) {
-      const signal = riseFallAnalysis;
+      const snapshot = liveDataRef.current;
+      const signal = analyzeUnifiedSignals({
+        digitHistory: snapshot.digitHistory,
+        prices: snapshot.prices,
+        currentPrice: snapshot.currentPrice,
+        allowHighRisk: false,
+        minimumConfidence: settings.minimumConfidence,
+      }).riseFall;
 
       if (
+        !signal.executable ||
         signal.risk !== "GOOD ENTRY" ||
         signal.signal === "WAIT"
       ) {
+        const waitedMs = Date.now() - noEntrySince;
+
         setRiseFallState((current) => ({
           ...current,
           status: "SCANNING",
           message:
-            signal.instruction ||
-            "Waiting for aligned Rise/Fall evidence.",
+            `${signal.reason || signal.instruction || "Waiting for aligned evidence."} ` +
+            `Market switch in ${Math.max(
+              0,
+              Math.ceil((5000 - waitedMs) / 1000)
+            )}s.`,
         }));
-        await new Promise((resolve) => setTimeout(resolve, 350));
+
+        if (waitedMs >= 5000) {
+          setRiseFallState((current) => ({
+            ...current,
+            status: "SWITCHING",
+            message: "No qualified Rise/Fall setup. Switching volatility.",
+          }));
+
+          activeSymbol = await rotateToNextMarket();
+          noEntrySince = Date.now();
+          await new Promise((resolve) => setTimeout(resolve, 700));
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 180));
+        }
+
         continue;
       }
+
+      noEntrySince = Date.now();
 
       setRiseFallState((current) => ({
         ...current,
@@ -442,7 +582,7 @@ export default function Bot() {
 
       try {
         const tradeRequest = {
-          symbol,
+          symbol: activeSymbol || liveDataRef.current.symbol,
           contractType: signal.signal === "RISE" ? "CALL" : "PUT",
           amount: Math.max(
             0.35,
@@ -483,7 +623,22 @@ export default function Bot() {
           result?.contract_id ||
           "opened";
 
+        setRiseFallState((current) => ({
+          ...current,
+          running: true,
+          status: "MONITORING",
+          message: `${signal.signal} contract ${contractId} is open.`,
+        }));
+
+        const settlement = await waitForSettlement(contractId);
         runs += 1;
+        profit += Number(settlement.profit || 0);
+
+        if (settlement.result === "WIN") {
+          wins += 1;
+        } else {
+          losses += 1;
+        }
 
         history.unshift({
           id: `${Date.now()}-${runs}`,
@@ -493,18 +648,24 @@ export default function Bot() {
             0.35,
             Number(settings.stake) || 0.35
           ),
-          result: "OPEN",
-          profit: 0,
+          result: settlement.result,
+          profit: Number(settlement.profit || 0),
           confidence: signal.confidence,
           contractId,
         });
 
         setRiseFallState({
-          running: !riseFallStopRef.current,
-          status: "MONITORING",
+          running:
+            !riseFallStopRef.current &&
+            settlement.result !== "LOSS",
+          status:
+            settlement.result === "WIN"
+              ? "SCANNING"
+              : "COMPLETED",
           message:
-            `${signal.signal} contract ${contractId} opened. ` +
-            "Waiting before the next scan.",
+            settlement.result === "WIN"
+              ? "Trade won. Rebuilding fresh analysis on this market."
+              : "Risk stop: bot stopped immediately after one loss.",
           runs,
           wins,
           losses,
@@ -512,8 +673,13 @@ export default function Bot() {
           history: [...history],
         });
 
+        if (settlement.result === "LOSS") {
+          riseFallStopRef.current = true;
+          break;
+        }
+
         await new Promise((resolve) =>
-          setTimeout(resolve, Math.max(900, Number(settings.postTradeDelayMs) || 900))
+          setTimeout(resolve, Math.max(250, Number(settings.postTradeDelayMs) || 250))
         );
       } catch (error) {
         riseFallStopRef.current = true;
@@ -556,8 +722,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V68 · Multi-Bot Live Engine"
-          subtitle="Authenticated feed reconnect, Fast Digit Bot and Rise/Fall Auto Bot"
+          title="EdgePilot V71 · Unified One-Minute Engine"
+          subtitle="Shared live analysis, fast volatility rotation and strict one-loss risk control"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
           onConnect={auth.authenticated ? undefined : connect}

@@ -6,9 +6,8 @@ import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
 import useDerivTicks from "../hooks/useDerivTicks";
 import {
-  analyzeDigitSetups,
-  analyzeRiseFall,
-} from "../analysis/v67UnifiedAnalysisEngine";
+  analyzeUnifiedSignals,
+} from "../analysis/v71UnifiedSignalEngine";
 import "../styles/Analysis.css";
 
 function percent(value) {
@@ -165,23 +164,20 @@ export default function Analysis() {
     };
   }, [connected, connect]);
 
-  const digitAnalysis = useMemo(
+  const unifiedSignals = useMemo(
     () =>
-      analyzeDigitSetups({
+      analyzeUnifiedSignals({
         digitHistory,
-        allowHighRisk: false,
-      }),
-    [digitHistory]
-  );
-
-  const riseFall = useMemo(
-    () =>
-      analyzeRiseFall({
         prices,
         currentPrice,
+        allowHighRisk: false,
+        minimumConfidence: 78,
       }),
-    [prices, currentPrice]
+    [digitHistory, prices, currentPrice]
   );
+
+  const digitAnalysis = unifiedSignals.digit;
+  const riseFall = unifiedSignals.riseFall;
 
   const bestDigit = digitAnalysis.best;
   const bestTrade = digitTrade(bestDigit?.setup);
@@ -337,8 +333,8 @@ export default function Analysis() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V70 · Professional Owner Analysis"
-          subtitle="Professional Digit and Rise/Fall layouts with persistent live-feed reconnect"
+          title="EdgePilot V71 · Unified Live Analysis"
+          subtitle="One live feed and one signal engine shared with every automated bot"
           connected={connected}
           connecting={false}
           onConnect={connect}
