@@ -1130,6 +1130,113 @@ function executionQualificationMode(candidate = {}, isDemo = false) {
   return candidate.qualificationMode || "BLOCKED";
 }
 
+
+function v45NormalizeSetupFromText(value = "") {
+  const text = normalizeSetup(value);
+
+  const over = text.match(/\bOVER\s*([0-9])\b/);
+  if (over) return `OVER ${over[1]}`;
+
+  const under = text.match(/\bUNDER\s*([0-9])\b/);
+  if (under) return `UNDER ${under[1]}`;
+
+  const match = text.match(/\bMATCH(?:ES)?\s*([0-9])\b/);
+  if (match) return `MATCH ${match[1]}`;
+
+  const differs = text.match(/\bDIFFERS?\s*([0-9])\b/);
+  if (differs) return `DIFFERS ${differs[1]}`;
+
+  if (/\bEVEN\b/.test(text)) return "EVEN";
+  if (/\bODD\b/.test(text)) return "ODD";
+  if (/\bRISE\b|\bCALL\b|\bUP\b/.test(text)) return "RISE";
+  if (/\bFALL\b|\bPUT\b|\bDOWN\b/.test(text)) return "FALL";
+
+  return "";
+}
+
+function v45BuildFallbackCandidates(signal = {}, gate = {}) {
+  const analysis = signal.analysis || {};
+  const bayesian =
+    analysis.bayesianSetup ||
+    analysis.bayesian ||
+    analysis.bestSetup ||
+    {};
+
+  const probability = clampScore(
+    gate.selectedProbability ??
+    gate.probability ??
+    bayesian.probability ??
+    analysis.selectedProbability ??
+    analysis.probability ??
+    signal.probability ??
+    gate.confidence ??
+    0
+  );
+
+  const confidence = clampScore(
+    gate.confidence ??
+    bayesian.confidence ??
+    analysis.confidence ??
+    analysis.decisionConfidence ??
+    probability
+  );
+
+  const edge = Number(
+    gate.selectedEdge ??
+    gate.edge ??
+    bayesian.edge ??
+    analysis.selectedEdge ??
+    analysis.edge ??
+    0
+  );
+
+  const sources = [
+    gate.setup,
+    gate.action,
+    bayesian.setup,
+    bayesian.action,
+    bayesian.label,
+    analysis.bestContract,
+    analysis.topContract,
+    analysis.decision?.setup,
+    analysis.decision?.action,
+    analysis.signals?.best?.setup,
+    analysis.primarySignal?.setup,
+    analysis.secondarySignal?.setup,
+    signal.setup,
+    signal.action,
+  ];
+
+  const result = [];
+  const seen = new Set();
+
+  for (const source of sources) {
+    const setup = v45NormalizeSetupFromText(source);
+    if (!setup || seen.has(setup)) continue;
+
+    seen.add(setup);
+    result.push({
+      setup,
+      action: setup,
+      probability,
+      confidence,
+      edge,
+      approved: probability >= 60 || confidence >= 60,
+      family:
+        setup === "EVEN" || setup === "ODD"
+          ? "PARITY"
+          : setup.startsWith("OVER") || setup.startsWith("UNDER")
+            ? "OVER_UNDER"
+            : setup.startsWith("MATCH") || setup.startsWith("DIFFERS")
+              ? "MATCH_DIFFERS"
+              : "RISE_FALL",
+      source: "V45_FALLBACK",
+    });
+  }
+
+  return result;
+}
+
 export default class DerivBotEngine {
   constructor({ client, onState }) {
     this.client = client;
@@ -1483,14 +1590,8 @@ export default class DerivBotEngine {
       };
     }
 
-    if (this.settings.analysisAssisted === false) {
-      return {
-        ok: false,
-        reason: "Analysis Assisted is disabled.",
-        elapsedSeconds: 0,
-        confirmations: 0,
-      };
-    }
+    const analysisAssistedEnabled =
+      this.settings.analysisAssisted !== false;
 
     const signalAgeMs = Date.now() - Number(signal.updatedAt || 0);
 
@@ -1507,12 +1608,28 @@ export default class DerivBotEngine {
     }
 
     const analysis = signal.analysis || {};
-    const gate = evaluateAnalysisAssistedSignal(analysis, {
-      minimumConfidence: this.settings.minConfidence,
-      contractMode: this.settings.contractMode,
-      prediction: this.settings.prediction,
-      durationUnit: this.settings.durationUnit,
-    });
+
+    let gate = {
+      approved: false,
+      reason: analysisAssistedEnabled
+        ? "No assisted candidate was returned."
+        : "Analysis Assisted is disabled; V45 fallback candidate pipeline is active.",
+      candidates: [],
+    };
+
+    if (analysisAssistedEnabled) {
+      try {
+        gate =
+          evaluateAnalysisAssistedSignal(analysis, {
+            minimumConfidence: this.settings.minConfidence,
+            contractMode: this.settings.contractMode,
+            prediction: this.settings.prediction,
+            durationUnit: this.settings.durationUnit,
+          }) || gate;
+      } catch (error) {
+        console.error("[V45] ANALYSIS GATE ERROR", error);
+      }
+    }
 
     const startedAt =
       Number(this.state.scanStartedAt) > 0
@@ -1527,6 +1644,17 @@ export default class DerivBotEngine {
     const candidates = Array.isArray(gate.candidates)
       ? gate.candidates.filter(Boolean)
       : [];
+
+    for (const fallbackCandidate of v45BuildFallbackCandidates(signal, gate)) {
+      const fallbackKey = candidateAction(fallbackCandidate);
+      const exists = candidates.some(
+        (candidate) => candidateAction(candidate) === fallbackKey
+      );
+
+      if (!exists) {
+        candidates.push(fallbackCandidate);
+      }
+    }
 
     if (gate.setup) {
       const fallbackProbability = Number(
@@ -1579,7 +1707,7 @@ export default class DerivBotEngine {
           unique.set(key, scored);
         }
       } catch (error) {
-        console.error("[V44] CANDIDATE SCORE ERROR", {
+        console.error("[V45] CANDIDATE SCORE ERROR", {
           key,
           candidate,
           message: error?.message || String(error),
@@ -1596,7 +1724,7 @@ export default class DerivBotEngine {
     );
 
     if (!ranked.length) {
-      console.warn("[V44] NO RANKED CANDIDATES", {
+      console.warn("[V45] NO RANKED CANDIDATES", {
         gateSetup: gate.setup || "",
         gateCandidates: Array.isArray(gate.candidates)
           ? gate.candidates.length
@@ -1629,7 +1757,7 @@ export default class DerivBotEngine {
         );
 
       if (collapsed) {
-        console.warn("[V44] LOCK RELEASED: candidate materially weakened", {
+        console.warn("[V45] LOCK RELEASED: candidate materially weakened", {
           setup: this.lockedCandidate.setup,
           lockedScore: this.lockedCandidate.score,
           liveScore: liveLockedCandidate.score,
@@ -1772,7 +1900,7 @@ export default class DerivBotEngine {
       this.strictConfirmations = 0;
       this.executionPhase = "LOCKED";
 
-      console.log("[V44] CANDIDATE LOCKED", {
+      console.log("[V45] CANDIDATE LOCKED", {
         setup,
         score: selected.score,
         threshold: selected.threshold,
@@ -1851,7 +1979,7 @@ export default class DerivBotEngine {
       };
     }
 
-    console.log("[V44] CANDIDATE READY", {
+    console.log("[V45] CANDIDATE READY", {
       setup,
       confirmations: confirmationUpdates,
       requiredConfirmations,
@@ -2215,7 +2343,7 @@ export default class DerivBotEngine {
 
       const check = this.validSignal();
 
-      console.debug("[V44] GATE", {
+      console.debug("[V45] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
         lockedCandidate: this.lockedCandidate?.setup || "—",
@@ -2258,7 +2386,7 @@ export default class DerivBotEngine {
       }
 
       try {
-        console.log("[V44] EXECUTE TRADE", {
+        console.log("[V45] EXECUTE TRADE", {
           setup: check.contract?.label,
           phase: this.executionPhase,
           confirmations: check.confirmations,
@@ -2381,11 +2509,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V44 demo execution unblock confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V45 candidate pipeline confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V44 DEMO EXECUTION UNBLOCK`,
+      activeSetup: `${check.contract.label} · V45 CANDIDATE PIPELINE`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

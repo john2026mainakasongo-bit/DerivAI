@@ -695,7 +695,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V44 · Demo Execution Unblock"
+          title="EdgePilot V45 · Candidate Pipeline Fix"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1035,9 +1035,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>DEMO EXECUTION UNBLOCK · REAL STRICT</small>
+                <small>CANDIDATE PIPELINE · DEMO + REAL</small>
                 <strong>
-                  RANK → LOCK → 1 FRESH CONFIRM → PROPOSAL → BUY
+                  BUILD CANDIDATES → RANK → LOCK → CONFIRM → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1120,7 +1120,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V44 unblocks Demo standard-digit execution using probability 72%+, 60 samples, five transitions and two votes, followed by one fresh confirmation. Legacy weighted score, candidate confidence and candidate entropy remain visible for diagnosis but do not block Demo trades. Real remains unchanged and strict: score 65+, probability 79%+, confidence 76%+, 100 samples, seven transitions and three votes, followed by two fresh confirmations. MATCH and RISE/FALL remain strict. Real stake stays capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
+              V45 fixes the 0/0 candidate pipeline. When Analysis Assisted is disabled or returns no candidates, the engine builds candidates from the Bayesian setup, best contract, decision setup and live signal, then ranks them normally. Demo standard digits still require probability 72%+, 60 samples, five transitions and two votes plus one fresh confirmation. Real remains strict and requires its existing score, probability, confidence, sample, transition and vote rules plus two fresh confirmations. No bot can guarantee wins.
             </div>
           </article>
 
