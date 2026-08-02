@@ -860,7 +860,7 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     score >= 58 &&
     entropy <= 99.6;
 
-  // V39 Real digit safety path:
+  // V35 balanced Real digit path:
   // Standard digit contracts may qualify with practical evidence levels.
   const realDigitQualityPass =
     isReal &&
@@ -1078,7 +1078,7 @@ function candidatePassesStrictChecks(candidate = {}, signal = {}, isReal = false
 }
 
 
-function setupFromText(value = "") {
+function setupFromAnalysisText(value = "") {
   const text = normalizeSetup(value);
 
   const over = text.match(/\bOVER\s*([0-9])\b/);
@@ -1101,7 +1101,7 @@ function setupFromText(value = "") {
   return "";
 }
 
-function buildFallbackCandidates(signal = {}, gate = {}) {
+function fallbackAnalysisCandidates(signal = {}, gate = {}) {
   const analysis = signal.analysis || {};
   const bayesian =
     analysis.bayesianSetup ||
@@ -1109,25 +1109,35 @@ function buildFallbackCandidates(signal = {}, gate = {}) {
     analysis.bestSetup ||
     {};
 
-  const globalProbability = clampScore(
+  const probability = clampScore(
+    gate.selectedProbability ??
+    gate.probability ??
     bayesian.probability ??
     analysis.selectedProbability ??
     analysis.probability ??
     signal.probability ??
-    gate.selectedProbability ??
-    gate.probability ??
+    gate.confidence ??
     0
   );
 
-  const globalConfidence = clampScore(
+  const confidence = clampScore(
+    gate.confidence ??
     bayesian.confidence ??
     analysis.confidence ??
     analysis.decisionConfidence ??
-    gate.confidence ??
-    globalProbability
+    probability
   );
 
-  const setupSources = [
+  const edge = Number(
+    gate.selectedEdge ??
+    gate.edge ??
+    bayesian.edge ??
+    analysis.selectedEdge ??
+    analysis.edge ??
+    0
+  );
+
+  const sources = [
     gate.setup,
     gate.action,
     bayesian.setup,
@@ -1142,28 +1152,22 @@ function buildFallbackCandidates(signal = {}, gate = {}) {
     signal.action,
   ];
 
-  const candidates = [];
   const seen = new Set();
+  const result = [];
 
-  for (const source of setupSources) {
-    const setup = setupFromText(source);
+  for (const source of sources) {
+    const setup = setupFromAnalysisText(source);
+
     if (!setup || seen.has(setup)) continue;
-
     seen.add(setup);
-    candidates.push({
+
+    result.push({
       setup,
       action: setup,
-      confidence: globalConfidence,
-      probability: globalProbability,
-      edge: Number(
-        bayesian.edge ??
-        analysis.selectedEdge ??
-        analysis.edge ??
-        gate.selectedEdge ??
-        gate.edge ??
-        0
-      ),
-      approved: globalProbability >= 60 || globalConfidence >= 60,
+      probability,
+      confidence,
+      edge,
+      approved: probability >= 60 || confidence >= 60,
       family:
         setup === "EVEN" || setup === "ODD"
           ? "PARITY"
@@ -1172,11 +1176,46 @@ function buildFallbackCandidates(signal = {}, gate = {}) {
             : setup.startsWith("MATCH") || setup.startsWith("DIFFERS")
               ? "MATCH_DIFFERS"
               : "RISE_FALL",
-      source: "V39_FALLBACK",
+      source: "V40_ANALYSIS_FALLBACK",
     });
   }
 
-  return candidates;
+  return result;
+}
+
+function v40ExecutionPass(candidate = {}, isDemo = false) {
+  const setup = normalizeSetup(candidate.setup);
+  const standardDigit =
+    setup !== "RISE" &&
+    setup !== "FALL" &&
+    !setup.startsWith("MATCH");
+
+  if (isDemo && standardDigit) {
+    return (
+      Number(candidate.score || 0) >= 50 &&
+      Number(candidate.probability || 0) >= 75 &&
+      Number(candidate.confidence || 0) >= 68 &&
+      Number(candidate.samples || 0) >= 60 &&
+      Number(candidate.transitionCount || 0) >= 5 &&
+      Number(candidate.passedVotes || 0) >= 2 &&
+      Number(candidate.entropy || 100) <= 99.7
+    );
+  }
+
+  if (!isDemo && standardDigit) {
+    return (
+      Number(candidate.score || 0) >= 65 &&
+      Number(candidate.probability || 0) >= 79 &&
+      Number(candidate.confidence || 0) >= 76 &&
+      Number(candidate.samples || 0) >= 100 &&
+      Number(candidate.transitionCount || 0) >= 7 &&
+      Number(candidate.passedVotes || 0) >= 3 &&
+      Number(candidate.entropy || 100) <= 99.3
+    );
+  }
+
+  // MATCH and RISE/FALL retain their existing strict candidate.ok rules.
+  return Boolean(candidate.ok);
 }
 
 export default class DerivBotEngine {
@@ -1553,23 +1592,27 @@ export default class DerivBotEngine {
 
     let gate = {
       approved: false,
-      reason: "Using V39 fallback candidate generation.",
+      reason: "V40 fallback candidate scan active.",
       candidates: [],
     };
 
     if (analysisAssistedEnabled) {
       try {
-        gate = evaluateAnalysisAssistedSignal(analysis, {
-          minimumConfidence: this.settings.minConfidence,
-          contractMode: this.settings.contractMode,
-          prediction: this.settings.prediction,
-          durationUnit: this.settings.durationUnit,
-        }) || gate;
+        gate =
+          evaluateAnalysisAssistedSignal(analysis, {
+            minimumConfidence: this.settings.minConfidence,
+            contractMode: this.settings.contractMode,
+            prediction: this.settings.prediction,
+            durationUnit: this.settings.durationUnit,
+          }) || gate;
       } catch (error) {
-        console.error("[V39] ANALYSIS GATE ERROR", error);
+        console.error("[V40] ANALYSIS GATE ERROR", error);
         gate = {
           approved: false,
-          reason: error?.message || "Analysis gate failed.",
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Analysis gate evaluation failed.",
           candidates: [],
         };
       }
@@ -1589,16 +1632,14 @@ export default class DerivBotEngine {
       ? gate.candidates.filter(Boolean)
       : [];
 
-    const fallbackCandidates = buildFallbackCandidates(signal, gate);
-
-    for (const fallback of fallbackCandidates) {
-      const fallbackKey = candidateAction(fallback);
-      const exists = candidates.some(
+    for (const fallbackCandidate of fallbackAnalysisCandidates(signal, gate)) {
+      const fallbackKey = candidateAction(fallbackCandidate);
+      const alreadyIncluded = candidates.some(
         (candidate) => candidateAction(candidate) === fallbackKey
       );
 
-      if (!exists) {
-        candidates.push(fallback);
+      if (!alreadyIncluded) {
+        candidates.push(fallbackCandidate);
       }
     }
 
@@ -1653,7 +1694,7 @@ export default class DerivBotEngine {
           unique.set(key, scored);
         }
       } catch (error) {
-        console.error("[V39] CANDIDATE SCORE ERROR", {
+        console.error("[V40] CANDIDATE SCORE ERROR", {
           key,
           candidate,
           message: error?.message || String(error),
@@ -1670,7 +1711,7 @@ export default class DerivBotEngine {
     );
 
     if (!ranked.length) {
-      console.warn("[V39] NO RANKED CANDIDATES", {
+      console.warn("[V40] NO RANKED CANDIDATES", {
         gateSetup: gate.setup || "",
         gateCandidates: Array.isArray(gate.candidates)
           ? gate.candidates.length
@@ -1703,7 +1744,7 @@ export default class DerivBotEngine {
         );
 
       if (collapsed) {
-        console.warn("[V39] LOCK RELEASED: candidate materially weakened", {
+        console.warn("[V40] LOCK RELEASED: candidate materially weakened", {
           setup: this.lockedCandidate.setup,
           lockedScore: this.lockedCandidate.score,
           liveScore: liveLockedCandidate.score,
@@ -1726,10 +1767,18 @@ export default class DerivBotEngine {
     }
 
     if (!selected) {
-      selected = ranked.find((candidate) => candidate.ok) || ranked[0];
+      selected =
+        ranked.find((candidate) =>
+          v40ExecutionPass(candidate, this.isDemoAccount)
+        ) ||
+        ranked[0];
     }
 
-    if (!selected || !selected.ok) {
+    const selectedCanExecute =
+      selected &&
+      v40ExecutionPass(selected, this.isDemoAccount);
+
+    if (!selected || !selectedCanExecute) {
       this.strictSetupKey = "";
       this.strictConfirmations = 0;
       this.executionPhase = "SCAN";
@@ -1745,8 +1794,8 @@ export default class DerivBotEngine {
         reason:
           `${bestText} ${
             this.isDemoAccount
-              ? "Unified Demo gate needs score 58+, probability 76%+, confidence 72%+, 80 samples, 6 transitions and 2 votes."
-              : "Unified Real gate needs score 68+, probability 80%+, confidence 78%+, 120 samples, 8 transitions and 3 votes."
+              ? "V40 Demo gate needs score 50+, probability 75%+, confidence 68%+, 60 samples, 5 transitions and 2 votes."
+              : "V40 Real gate needs score 65+, probability 79%+, confidence 76%+, 100 samples, 7 transitions and 3 votes."
           } Probability, confidence and ranking now use one evidence model. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
@@ -1814,7 +1863,7 @@ export default class DerivBotEngine {
       this.strictConfirmations = 0;
       this.executionPhase = "LOCKED";
 
-      console.log("[V39] CANDIDATE LOCKED", {
+      console.log("[V40] CANDIDATE LOCKED", {
         setup,
         score: selected.score,
         threshold: selected.threshold,
@@ -1832,6 +1881,7 @@ export default class DerivBotEngine {
       selected = {
         ...this.lockedCandidate.snapshot,
         ok: true,
+        v40Qualified: true,
         setup,
         confirmations: requiredConfirmations,
       };
@@ -1884,7 +1934,7 @@ export default class DerivBotEngine {
       };
     }
 
-    console.log("[V39] CANDIDATE READY", {
+    console.log("[V40] CANDIDATE READY", {
       setup,
       confirmations: confirmationUpdates,
       requiredConfirmations,
@@ -1985,7 +2035,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V39 started. Candidate generation is active for both Demo and Real, including fallback ranking when Analysis Assisted is disabled or returns no candidates. The bot will buy the first setup that passes its account safety gate.",
+        "V40 started. Demo and Real candidate generation is active. Demo buys after one fresh confirmation; Real buys after two fresh confirmations when its stricter safety gate passes.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2236,7 +2286,7 @@ export default class DerivBotEngine {
 
       const check = this.validSignal();
 
-      console.debug("[V39] GATE", {
+      console.debug("[V40] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
         lockedCandidate: this.lockedCandidate?.setup || "—",
@@ -2279,7 +2329,7 @@ export default class DerivBotEngine {
       }
 
       try {
-        console.log("[V39] EXECUTE TRADE", {
+        console.log("[V40] EXECUTE TRADE", {
           setup: check.contract?.label,
           phase: this.executionPhase,
           confirmations: check.confirmations,
@@ -2402,11 +2452,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V39 auto execution confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V40 final execution confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V39 AUTO EXECUTION CONFIRMED`,
+      activeSetup: `${check.contract.label} · V40 FINAL EXECUTION CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
