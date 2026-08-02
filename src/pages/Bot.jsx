@@ -8,7 +8,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
-import { rankV62Contracts } from "../analysis/v62FreshContractRankingEngine";
+import { rankV64ConsensusContracts } from "../analysis/v64OneMinuteConsensusEngine";
 import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
 
 import "../styles/Bot.css";
@@ -34,7 +34,7 @@ const INITIAL_SETTINGS = {
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  scanSwitchMs: 2500,
+  scanSwitchMs: 5000,
   postTradeDelayMs: 150,
 };
 
@@ -144,9 +144,9 @@ export default function Bot() {
   const selectedId = accountId(auth.selectedAccount);
   const isDemo = auth.selectedAccountType === "demo";
 
-  const v62Analysis = useMemo(
+  const v64Analysis = useMemo(
     () =>
-      rankV62Contracts({
+      rankV64ConsensusContracts({
         digitHistory,
         allowHighRisk: settings.allowHighRiskContracts,
         minimumConfidence: settings.minimumConfidence,
@@ -158,11 +158,11 @@ export default function Bot() {
     ]
   );
 
-  const rankedCandidates = v62Analysis.candidates || [];
+  const rankedCandidates = v64Analysis.candidates || [];
   const executableCandidates = rankedCandidates.filter(
     (candidate) => candidate.executable
   );
-  const autoSignal = v62Analysis.best || null;
+  const autoSignal = v64Analysis.best || null;
   const topCandidates = rankedCandidates.slice(0, 6);
   const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
     .map((mode) =>
@@ -350,7 +350,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V63 · Fast Volatility Scanner"
+          title="EdgePilot V64 · One-Minute Consensus Scanner"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
@@ -723,9 +723,10 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                V63 scans every available volatility while the bot is running.
-                A market without a strict setup is skipped automatically. Standard
-                contracts require stronger EV, edge, stability and confidence before entry.
+                V64 checks ten independent conditions: EV, probability edge,
+                transition, stability, run behaviour, autocorrelation, distribution,
+                parity, recent backtest and sample strength. It enters only when
+                at least seven standard-contract checks agree.
               </span>
             </div>
 
@@ -742,26 +743,51 @@ export default function Bot() {
 
               <div className="v53Expected">
                 <span>
+                  <small>Consensus</small>
+                  <strong>
+                    {Number(autoSignal?.voteCount || 0)}/
+                    {Number(autoSignal?.totalVotes || 10)}
+                  </strong>
+                </span>
+                <span>
+                  <small>Backtest</small>
+                  <strong>
+                    {Number(autoSignal?.backtestWinRate || 0).toFixed(1)}%
+                  </strong>
+                </span>
+                <span>
                   <small>Expected value</small>
                   <strong>
                     {Number(autoSignal?.expectedValue || 0) >= 0 ? "+" : ""}
                     {Number(autoSignal?.expectedValue || 0).toFixed(1)}%
                   </strong>
                 </span>
-                <span>
-                  <small>Consistency</small>
-                  <strong>{Number(autoSignal?.consistency || 0).toFixed(1)}%</strong>
-                </span>
-                <span>
-                  <small>Samples</small>
-                  <strong>{v62Analysis.sampleSize || 0}</strong>
-                </span>
               </div>
             </div>
 
             <div className={autoSignal ? "v60Gate pass" : "v60Gate wait"}>
               <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — NO CONTRACT PASSES"}</strong>
-              <span>{v62Analysis.reason}</span>
+              <span>{v64Analysis.reason}</span>
+            </div>
+
+            <div className="v64AnalysisGrid">
+              {[
+                "Expected Value",
+                "Probability Edge",
+                "Markov Transition",
+                "Window Stability",
+                "Run Behaviour",
+                "Autocorrelation",
+                "Digit Distribution",
+                "Parity Balance",
+                "Recent Backtest",
+                "Sample Strength",
+              ].map((label, index) => (
+                <div key={label}>
+                  <span>{index + 1}</span>
+                  <strong>{label}</strong>
+                </div>
+              ))}
             </div>
 
             <div className="v61ScoreModel">

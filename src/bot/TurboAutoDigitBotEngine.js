@@ -19,7 +19,7 @@ const DEFAULTS = {
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  scanSwitchMs: 2500,
+  scanSwitchMs: 5000,
   postTradeDelayMs: 150,
 };
 
@@ -187,7 +187,7 @@ export default class TurboAutoDigitBotEngine {
 
     this.state = {
       status: "STOPPED",
-      message: "V63 Fast Volatility Scanner is ready.",
+      message: "V64 One-Minute Consensus Scanner is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -469,6 +469,17 @@ export default class TurboAutoDigitBotEngine {
       this.state.losses >= 1
     ) {
       return "Real-account safety stop after one loss.";
+    }
+
+    const recentTwo = (this.state.history || [])
+      .slice(0, 2)
+      .map((item) => item.result);
+
+    if (
+      recentTwo.length === 2 &&
+      recentTwo.every((result) => result === "LOSS")
+    ) {
+      return "Safety stop after two consecutive losses.";
     }
 
     return "";

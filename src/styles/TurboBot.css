@@ -657,3 +657,45 @@
   font-size: 11px;
   line-height: 1.45;
 }
+
+
+.v64AnalysisGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.v64AnalysisGrid > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #19465e;
+  border-radius: 9px;
+  background: #061a28;
+}
+
+.v64AnalysisGrid span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #0f3a50;
+  color: #27e5b8;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.v64AnalysisGrid strong {
+  color: #b7d0df;
+  font-size: 9px;
+}
+
+@media (max-width: 850px) {
+  .v64AnalysisGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
