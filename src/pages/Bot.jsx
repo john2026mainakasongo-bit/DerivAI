@@ -8,7 +8,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
-import { rankV61DigitContracts } from "../analysis/v61AdaptiveEvDecisionEngine";
+import { rankV62Contracts } from "../analysis/v62FreshContractRankingEngine";
 import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
 
 import "../styles/Bot.css";
@@ -142,12 +142,12 @@ export default function Bot() {
   const selectedId = accountId(auth.selectedAccount);
   const isDemo = auth.selectedAccountType === "demo";
 
-  const v61Analysis = useMemo(
+  const v62Analysis = useMemo(
     () =>
-      rankV61DigitContracts({
+      rankV62Contracts({
         digitHistory,
         allowHighRisk: settings.allowHighRiskContracts,
-        minimumQuality: settings.minimumConfidence,
+        minimumConfidence: settings.minimumConfidence,
       }),
     [
       digitHistory,
@@ -156,11 +156,11 @@ export default function Bot() {
     ]
   );
 
-  const rankedCandidates = v61Analysis.candidates || [];
+  const rankedCandidates = v62Analysis.candidates || [];
   const executableCandidates = rankedCandidates.filter(
     (candidate) => candidate.executable
   );
-  const autoSignal = v61Analysis.best || null;
+  const autoSignal = v62Analysis.best || null;
   const topCandidates = rankedCandidates.slice(0, 6);
   const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
     .map((mode) =>
@@ -348,7 +348,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V61 · Adaptive EV Decision Engine"
+          title="EdgePilot V62 · Fresh Contract Ranking"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
@@ -686,10 +686,9 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                V61 starts evaluating after 30 ticks and enables standard
-                contracts after 60 ticks. It scores Expected Value 40%,
-                probability edge 25%, Markov transition 15%, stability 10%
-                and Bayesian confidence 10%.
+                V62 recalculates every supported digit contract on each live
+                tick. It ranks by expected value, probability edge and stability,
+                then executes only the strongest setup that passes the decision gate.
               </span>
             </div>
 
@@ -718,36 +717,36 @@ export default function Bot() {
                 </span>
                 <span>
                   <small>Samples</small>
-                  <strong>{v61Analysis.sampleSize || 0}</strong>
+                  <strong>{v62Analysis.sampleSize || 0}</strong>
                 </span>
               </div>
             </div>
 
             <div className={autoSignal ? "v60Gate pass" : "v60Gate wait"}>
-              <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — DECISION GATE NOT PASSED"}</strong>
-              <span>{v61Analysis.reason}</span>
+              <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — NO CONTRACT PASSES"}</strong>
+              <span>{v62Analysis.reason}</span>
             </div>
 
             <div className="v61ScoreModel">
               <div>
-                <small>EXPECTED VALUE</small>
-                <strong>40%</strong>
+                <small>PRIMARY RANK</small>
+                <strong>EV</strong>
               </div>
               <div>
-                <small>PROBABILITY EDGE</small>
-                <strong>25%</strong>
+                <small>SECOND</small>
+                <strong>EDGE</strong>
               </div>
               <div>
-                <small>MARKOV TRANSITION</small>
-                <strong>15%</strong>
+                <small>THIRD</small>
+                <strong>STABILITY</strong>
               </div>
               <div>
-                <small>FREQUENCY STABILITY</small>
-                <strong>10%</strong>
+                <small>LIVE WINDOWS</small>
+                <strong>30–240</strong>
               </div>
               <div>
-                <small>BAYESIAN CONFIDENCE</small>
-                <strong>10%</strong>
+                <small>FRESH UPDATE</small>
+                <strong>EVERY TICK</strong>
               </div>
             </div>
 
@@ -897,7 +896,9 @@ export default function Bot() {
                     <th>Stake</th>
                     <th>Result</th>
                     <th>Profit</th>
-                    <th>Quality</th>
+                    <th>Evidence</th>
+                    <th>EV</th>
+                    <th>Stability</th>
                     <th>ID</th>
                   </tr>
                 </thead>
@@ -927,12 +928,17 @@ export default function Bot() {
                           {item.profit.toFixed(2)}
                         </td>
                         <td>{Number(item.confidence || 0).toFixed(1)}</td>
+                        <td>
+                          {Number(item.expectedValue || 0) >= 0 ? "+" : ""}
+                          {Number(item.expectedValue || 0).toFixed(1)}%
+                        </td>
+                        <td>{Number(item.consistency || 0).toFixed(1)}%</td>
                         <td>{item.contractId}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="7" className="turboEmpty">
+                      <td colSpan="9" className="turboEmpty">
                         No completed trades yet.
                       </td>
                     </tr>

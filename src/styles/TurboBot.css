@@ -627,3 +627,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.v62RankingNote {
+  color: #9ebdce;
+  font-size: 10px;
+  line-height: 1.45;
+}

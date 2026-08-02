@@ -659,6 +659,18 @@ export default class TurboAutoDigitBotEngine {
   }
 
   async openTrade(contract) {
+    const tradeSignal = this.signal
+      ? { ...this.signal }
+      : {
+          setup: contract.label,
+          confidence: 0,
+          qualityScore: 0,
+          expectedValue: 0,
+          probabilityEdge: 0,
+          consistency: 0,
+          source: "MANUAL CONTRACT",
+        };
+
     const configuredStake = Number(this.settings.stake.toFixed(2));
     const stake =
       this.accountType === "real"
@@ -672,12 +684,12 @@ export default class TurboAutoDigitBotEngine {
       message: `Buying ${contract.label} for ${stake.toFixed(2)} ${this.currency}.`,
       activeSetup: contract.label,
       selectedConfidence: safeNumber(
-        this.signal?.confidence,
+        tradeSignal.confidence,
         0
       ),
       selectedQuality: safeNumber(
-        this.signal?.qualityScore,
-        this.signal?.confidence
+        tradeSignal.qualityScore,
+        tradeSignal.confidence
       ),
       signalConfirmations: this.signalConfirmations,
       selectedSource:
@@ -743,10 +755,25 @@ export default class TurboAutoDigitBotEngine {
       stake,
       profit,
       result: won ? "WIN" : "LOSS",
-      confidence: safeNumber(this.signal?.confidence, 0),
+      confidence: safeNumber(
+        tradeSignal.qualityScore,
+        tradeSignal.confidence
+      ),
+      expectedValue: safeNumber(
+        tradeSignal.expectedValue,
+        0
+      ),
+      probabilityEdge: safeNumber(
+        tradeSignal.probabilityEdge,
+        0
+      ),
+      consistency: safeNumber(
+        tradeSignal.consistency,
+        0
+      ),
       source:
         this.settings.contractMode === "AUTO"
-          ? this.signal?.source || "LIVE ANALYSIS"
+          ? tradeSignal.source || "LIVE ANALYSIS"
           : "MANUAL CONTRACT",
     };
 
