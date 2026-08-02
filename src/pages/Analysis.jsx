@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
@@ -117,11 +117,52 @@ export default function Analysis() {
   const [stake, setStake] = useState(0.35);
   const [duration, setDuration] = useState(1);
   const [tradeMessage, setTradeMessage] = useState("");
+  const [feedMessage, setFeedMessage] = useState("Connecting Deriv feed...");
+  const connectBusyRef = useRef(false);
 
   useEffect(() => {
-    if (!connected) {
-      void connect();
+    let cancelled = false;
+    let retryTimer;
+
+    async function ensureLiveFeed() {
+      if (cancelled || connected || connectBusyRef.current) return;
+
+      connectBusyRef.current = true;
+      setFeedMessage("Connecting authenticated Deriv feed...");
+
+      try {
+        await connect();
+
+        if (!cancelled) {
+          setFeedMessage("Deriv feed connection requested.");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setFeedMessage(
+            error instanceof Error
+              ? `Feed connection failed: ${error.message}`
+              : "Feed connection failed. Retrying..."
+          );
+        }
+      } finally {
+        connectBusyRef.current = false;
+
+        if (!cancelled && !connected) {
+          retryTimer = window.setTimeout(ensureLiveFeed, 2500);
+        }
+      }
     }
+
+    if (connected) {
+      setFeedMessage("Deriv live feed connected.");
+    } else {
+      void ensureLiveFeed();
+    }
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
   }, [connected, connect]);
 
   const digitAnalysis = useMemo(
@@ -296,8 +337,8 @@ export default function Analysis() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V68 · Live Owner AI Analysis"
-          subtitle="Auto-connected feed, heatmap, live digit flow, Owner AI guidance and Rise/Fall timing"
+          title="EdgePilot V69 · Auto-Connected Owner Analysis"
+          subtitle="Persistent Deriv reconnect, live samples, heatmap, Owner AI and Rise/Fall timing"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -318,6 +359,16 @@ export default function Analysis() {
             <span>{market?.label || "Deriv market"}</span>
           </div>
         </section>
+
+        <div
+          className={`analysisNotice ${
+            connected ? "v69FeedLive" : "v69FeedWaiting"
+          }`}
+        >
+          {connected
+            ? `LIVE FEED · ${market?.label || symbol || "Deriv market"}`
+            : feedMessage}
+        </div>
 
         {statusDetail ? (
           <div className="analysisNotice error">{statusDetail}</div>

@@ -281,3 +281,16 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+.v69FeedWaiting {
+  border-color: #8a6c2e !important;
+  background: rgba(138, 108, 46, .13) !important;
+  color: #ffd66b !important;
+}
+
+.v69FeedLive {
+  border-color: #168d70 !important;
+  background: rgba(22, 141, 112, .13) !important;
+  color: #27e5b8 !important;
+}
