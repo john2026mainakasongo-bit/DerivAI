@@ -388,7 +388,15 @@ export default function Bot() {
     }
 
     if (!connected) {
+      setRiseFallState((current) => ({
+        ...current,
+        running: false,
+        status: "CONNECTING",
+        message: "Connecting the authenticated Deriv feed...",
+      }));
+
       await connect();
+      await new Promise((resolve) => setTimeout(resolve, 1200));
     }
 
     riseFallStopRef.current = false;
@@ -433,7 +441,7 @@ export default function Bot() {
       }));
 
       try {
-        const result = await placeTrade({
+        const tradeRequest = {
           symbol,
           contractType: signal.signal === "RISE" ? "CALL" : "PUT",
           amount: Math.max(
@@ -449,7 +457,26 @@ export default function Bot() {
             )
           ),
           durationUnit: "t",
-        });
+        };
+
+        let result;
+
+        try {
+          result = await placeTrade(tradeRequest);
+        } catch (firstError) {
+          const message =
+            firstError instanceof Error
+              ? firstError.message
+              : String(firstError || "");
+
+          if (/connect|feed|socket|authenticated/i.test(message)) {
+            await connect();
+            await new Promise((resolve) => setTimeout(resolve, 1400));
+            result = await placeTrade(tradeRequest);
+          } else {
+            throw firstError;
+          }
+        }
 
         const contractId =
           result?.contractId ||
@@ -529,8 +556,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V67 · Multi-Bot Trading Engine"
-          subtitle="Choose Fast Digit Bot or Rise/Fall Auto Bot with unified live analysis"
+          title="EdgePilot V68 · Multi-Bot Live Engine"
+          subtitle="Authenticated feed reconnect, Fast Digit Bot and Rise/Fall Auto Bot"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
           onConnect={auth.authenticated ? undefined : connect}

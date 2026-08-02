@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
@@ -118,6 +118,12 @@ export default function Analysis() {
   const [duration, setDuration] = useState(1);
   const [tradeMessage, setTradeMessage] = useState("");
 
+  useEffect(() => {
+    if (!connected) {
+      void connect();
+    }
+  }, [connected, connect]);
+
   const digitAnalysis = useMemo(
     () =>
       analyzeDigitSetups({
@@ -139,10 +145,84 @@ export default function Analysis() {
   const bestDigit = digitAnalysis.best;
   const bestTrade = digitTrade(bestDigit?.setup);
 
-  async function ensureConnected() {
+  const digitDistribution = useMemo(() => {
+    const counts = Array.from({ length: 10 }, () => 0);
+    digitHistory.forEach((value) => {
+      const digit = Number(value);
+      if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
+        counts[digit] += 1;
+      }
+    });
+
+    const total = Math.max(1, counts.reduce((sum, value) => sum + value, 0));
+
+    return counts.map((count, digit) => ({
+      digit,
+      count,
+      percent: (count / total) * 100,
+    }));
+  }, [digitHistory]);
+
+  const marketMode = useMemo(() => {
+    const standard = digitAnalysis.standard.slice(0, 8);
+    if (!standard.length || digitAnalysis.sampleSize < 25) return "COLLECTING";
+
+    const averageStability =
+      standard.reduce((sum, item) => sum + Number(item.stability || 0), 0) /
+      standard.length;
+
+    const executableCount = standard.filter((item) => item.executable).length;
+
+    if (averageStability >= 78 && executableCount >= 2) return "CLEAN";
+    if (averageStability >= 62) return "RANGING";
+    return "CHAOTIC";
+  }, [digitAnalysis]);
+
+  const ownerAi = useMemo(() => {
     if (!connected) {
-      await connect();
+      return {
+        action: "CONNECTING",
+        detail: "Reconnecting the authenticated Deriv feed.",
+        waitSeconds: 0,
+      };
     }
+
+    if (digitAnalysis.sampleSize < 40) {
+      return {
+        action: "WAIT",
+        detail: `Collecting evidence: ${digitAnalysis.sampleSize}/40 ticks.`,
+        waitSeconds: Math.max(1, Math.ceil((40 - digitAnalysis.sampleSize) / 4)),
+      };
+    }
+
+    if (bestDigit?.risk === "GOOD ENTRY") {
+      return {
+        action: `ENTER ${bestDigit.setup}`,
+        detail: bestDigit.triggerText,
+        waitSeconds: 0,
+      };
+    }
+
+    return {
+      action: "AVOID TRADING",
+      detail:
+        marketMode === "CHAOTIC"
+          ? "Market is unstable. Wait for stronger stability and positive EV."
+          : "No contract currently passes the GOOD ENTRY gate.",
+      waitSeconds: marketMode === "CHAOTIC" ? 12 : 6,
+    };
+  }, [
+    connected,
+    digitAnalysis.sampleSize,
+    bestDigit,
+    marketMode,
+  ]);
+
+  async function ensureConnected() {
+    if (connected) return;
+
+    await connect();
+    await new Promise((resolve) => setTimeout(resolve, 900));
   }
 
   async function runDigitTrade() {
@@ -216,8 +296,8 @@ export default function Analysis() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V67 · Unified Owner Analysis"
-          subtitle="Digit trigger zones, Rise/Fall trend timing, risk labels and Demo execution"
+          title="EdgePilot V68 · Live Owner AI Analysis"
+          subtitle="Auto-connected feed, heatmap, live digit flow, Owner AI guidance and Rise/Fall timing"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -285,6 +365,64 @@ export default function Analysis() {
                   <strong>{lastDigit ?? "—"}</strong>
                 </div>
               </div>
+            </section>
+
+            <section className="v68DashboardGrid">
+              <article className="analysisPanel v68Heatmap">
+                <div className="analysisPanelHeader">
+                  <div>
+                    <small>DIGIT HEATMAP</small>
+                    <h3>Live distribution 0–9</h3>
+                  </div>
+                  <span>{digitAnalysis.sampleSize} ticks</span>
+                </div>
+
+                <div className="v68HeatRows">
+                  {digitDistribution.map((item) => (
+                    <div key={item.digit}>
+                      <strong>{item.digit}</strong>
+                      <span>
+                        <i style={{ width: `${Math.max(2, item.percent)}%` }} />
+                      </span>
+                      <small>{item.percent.toFixed(1)}%</small>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="analysisPanel">
+                <div className="analysisPanelHeader">
+                  <div>
+                    <small>LIVE DIGIT FLOW</small>
+                    <h3>Most recent digits</h3>
+                  </div>
+                </div>
+
+                <div className="v68DigitFlow">
+                  {digitHistory.slice(-30).map((digit, index) => (
+                    <span key={`${digit}-${index}`}>{digit}</span>
+                  ))}
+                  {!digitHistory.length ? <em>Waiting for live ticks…</em> : null}
+                </div>
+
+                <div className="v68ModeRow">
+                  <div>
+                    <small>MARKET MODE</small>
+                    <strong>{marketMode}</strong>
+                  </div>
+                  <div>
+                    <small>OWNER AI</small>
+                    <strong>{ownerAi.action}</strong>
+                  </div>
+                </div>
+
+                <div className="v68OwnerMessage">
+                  <p>{ownerAi.detail}</p>
+                  {ownerAi.waitSeconds > 0 ? (
+                    <span>Recheck in about {ownerAi.waitSeconds}s</span>
+                  ) : null}
+                </div>
+              </article>
             </section>
 
             <section className="v67SetupGrid">

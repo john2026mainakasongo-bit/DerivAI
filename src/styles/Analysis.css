@@ -149,3 +149,135 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* V68: keep execution panel in normal document flow. */
+.analysisRunPanel,
+.v67RunPanel {
+  position: static !important;
+  inset: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  transform: none !important;
+  z-index: auto !important;
+  margin: 16px 0 24px !important;
+}
+
+.v68DashboardGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.v68HeatRows {
+  display: grid;
+  gap: 8px;
+}
+
+.v68HeatRows > div {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 9px;
+}
+
+.v68HeatRows strong {
+  color: #f3f8fb;
+}
+
+.v68HeatRows > div > span {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #0b3044;
+}
+
+.v68HeatRows i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1995ff, #27e5b8);
+}
+
+.v68HeatRows small {
+  color: #8db0c3;
+  text-align: right;
+}
+
+.v68DigitFlow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-height: 88px;
+  align-content: flex-start;
+}
+
+.v68DigitFlow span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #19506a;
+  border-radius: 9px;
+  background: #061923;
+  color: #eaf5fa;
+  font-weight: 900;
+}
+
+.v68DigitFlow em {
+  color: #819fb0;
+  font-style: normal;
+}
+
+.v68ModeRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.v68ModeRow > div {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  border: 1px solid #17465e;
+  border-radius: 9px;
+  background: #061923;
+}
+
+.v68ModeRow small {
+  color: #7fa4b8;
+  font-size: 8px;
+}
+
+.v68ModeRow strong {
+  color: #27e5b8;
+}
+
+.v68OwnerMessage {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid #765f26;
+  border-radius: 9px;
+  background: rgba(109, 78, 16, .13);
+}
+
+.v68OwnerMessage p {
+  margin: 0;
+  color: #c2d5df;
+  line-height: 1.45;
+}
+
+.v68OwnerMessage span {
+  display: block;
+  margin-top: 6px;
+  color: #ffd66b;
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .v68DashboardGrid {
+    grid-template-columns: 1fr;
+  }
+}

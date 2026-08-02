@@ -307,7 +307,7 @@ export function analyzeRiseFall({
         ? "FALL"
         : "WAIT";
 
-  const confidence = clamp(Math.max(riseScore, fallScore));
+  const confidence = Math.min(95, clamp(Math.max(riseScore, fallScore)));
   const distanceFromSupport = Math.abs(price - support);
   const distanceFromResistance = Math.abs(resistance - price);
   const range = Math.max(0.000001, resistance - support);

@@ -807,3 +807,10 @@
   color: #779eb4;
   font-size: 10px;
 }
+
+
+/* V68 authenticated-feed status */
+.turboStatusOrb.connecting {
+  border-color: #1995ff;
+  color: #1995ff;
+}
