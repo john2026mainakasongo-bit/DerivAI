@@ -1,0 +1,303 @@
+
+.analysisToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.analysisFeedSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid #173b52;
+  border-radius: 10px;
+  background: #071d2c;
+  color: #9fc1d6;
+  font-size: 12px;
+}
+
+.liveDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #21e6b7;
+  box-shadow: 0 0 12px rgba(33, 230, 183, 0.7);
+}
+
+.liveDot.offline {
+  background: #ff617d;
+  box-shadow: none;
+}
+
+.analysisHero,
+.analysisPanel {
+  border: 1px solid #16415a;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #082437 0%, #061b2a 100%);
+}
+
+.analysisHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.analysisHero small,
+.analysisPanelHeader small,
+.analysisSignalCard small,
+.analysisMetricGrid small,
+.analysisHeroMetrics small {
+  color: #23e7bd;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.analysisHero h2 {
+  margin: 6px 0;
+  color: #fff;
+  font-size: clamp(28px, 4vw, 46px);
+}
+
+.analysisHero p {
+  max-width: 760px;
+  margin: 0;
+  color: #91b3c8;
+}
+
+.analysisHeroMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.analysisHeroMetrics > div,
+.analysisMetricGrid > div {
+  padding: 14px;
+  border: 1px solid #18465f;
+  border-radius: 12px;
+  background: #051826;
+}
+
+.analysisHeroMetrics strong,
+.analysisMetricGrid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 18px;
+}
+
+.analysisGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding-bottom: 28px;
+}
+
+.analysisPanel {
+  padding: 18px;
+}
+
+.analysisPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.analysisPanelHeader h3 {
+  margin: 4px 0 0;
+  color: #fff;
+}
+
+.analysisPanelHeader > span {
+  color: #83aabe;
+  font-size: 12px;
+}
+
+.digitDistributionGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.digitDistributionItem {
+  padding: 12px;
+  border: 1px solid #173f56;
+  border-radius: 12px;
+  background: #051826;
+}
+
+.digitDistributionItem.current {
+  border-color: #20e6b6;
+  box-shadow: 0 0 0 1px rgba(32, 230, 182, 0.25);
+}
+
+.digitDistributionItem strong {
+  color: #fff;
+  font-size: 22px;
+}
+
+.digitDistributionItem span {
+  float: right;
+  color: #8eb2c7;
+  font-size: 11px;
+}
+
+.digitBar {
+  height: 4px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #123045;
+}
+
+.digitBar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1599ff, #20e6b6);
+}
+
+.analysisSignalGrid,
+.analysisMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analysisSignalCard {
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid #173f56;
+  border-radius: 12px;
+  background: #051826;
+}
+
+.analysisSignalCard.active {
+  border-color: #1ba988;
+}
+
+.analysisSignalCard strong {
+  display: block;
+  margin: 7px 0;
+  color: #fff;
+  font-size: 18px;
+}
+
+.analysisSignalCard p {
+  margin: 0;
+  color: #87aabf;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.analysisRunFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analysisRunFields label {
+  display: grid;
+  gap: 7px;
+  color: #8fb2c6;
+  font-size: 11px;
+}
+
+.analysisRunFields input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #1a4964;
+  border-radius: 9px;
+  outline: none;
+  background: #041724;
+  color: #fff;
+}
+
+.analysisRunActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.analysisRunButton,
+.analysisCopyButton {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.analysisRunButton {
+  flex: 1;
+  background: linear-gradient(135deg, #168cff, #18d8b0);
+  color: #fff;
+}
+
+.analysisRunButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.analysisCopyButton {
+  border: 1px solid #28546d;
+  background: #0b2b3d;
+  color: #dff7ff;
+}
+
+.analysisNotice {
+  margin-top: 12px;
+  padding: 11px 13px;
+  border: 1px solid #173f56;
+  border-radius: 10px;
+  background: #051826;
+  color: #9fc0d3;
+  font-size: 12px;
+}
+
+.analysisNotice.error {
+  margin-bottom: 14px;
+  border-color: #7b3441;
+  color: #ff9bab;
+}
+
+@media (max-width: 920px) {
+  .analysisHero,
+  .analysisGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .analysisHeroMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .analysisToolbar,
+  .analysisRunActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .digitDistributionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .analysisSignalGrid,
+  .analysisMetricGrid,
+  .analysisRunFields,
+  .analysisHeroMetrics {
+    grid-template-columns: 1fr;
+  }
+}
