@@ -726,3 +726,84 @@
   font-weight: 900;
   box-shadow: 0 0 20px rgba(39, 229, 184, .16);
 }
+
+
+.v67BotSelector {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.v67BotSelector button {
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1px solid #17465e;
+  border-radius: 10px;
+  background: #061a28;
+  color: #9fbdcf;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.v67BotSelector button.active {
+  border-color: #27e5b8;
+  background: rgba(39, 229, 184, .12);
+  color: #27e5b8;
+}
+
+.v67RiseFallSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.v67RiseFallSummary > div {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #17465e;
+  border-radius: 9px;
+  background: #061a28;
+}
+
+.v67RiseFallSummary small {
+  color: #7fa7bc;
+  font-size: 8px;
+}
+
+.v67RiseFallSummary strong {
+  color: #27e5b8;
+  font-size: 13px;
+}
+
+.turboFormGrid.riseFallMode label:nth-child(-n+3) {
+  opacity: .45;
+  pointer-events: none;
+}
+
+.v67RiseFallInstruction {
+  display: grid;
+  gap: 10px;
+  min-height: 220px;
+  place-content: center;
+  text-align: center;
+  border: 1px solid #17465e;
+  border-radius: 12px;
+  background: #061a28;
+}
+
+.v67RiseFallInstruction strong {
+  color: #27e5b8;
+  font-size: 34px;
+}
+
+.v67RiseFallInstruction p {
+  margin: 0;
+  color: #a4c0d1;
+}
+
+.v67RiseFallInstruction span {
+  color: #779eb4;
+  font-size: 10px;
+}

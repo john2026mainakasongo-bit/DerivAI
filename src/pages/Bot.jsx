@@ -9,6 +9,7 @@ import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
 import { rankV66FastProfessional } from "../analysis/v66FastProfessionalEngine";
+import { analyzeRiseFall } from "../analysis/v67UnifiedAnalysisEngine";
 import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
 
 import "../styles/Bot.css";
@@ -123,6 +124,18 @@ export default function Bot() {
 
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [botState, setBotState] = useState(INITIAL_STATE);
+  const [botType, setBotType] = useState("DIGIT");
+  const [riseFallState, setRiseFallState] = useState({
+    running: false,
+    status: "STOPPED",
+    message: "Rise/Fall Bot is ready.",
+    runs: 0,
+    wins: 0,
+    losses: 0,
+    profit: 0,
+    history: [],
+  });
+  const riseFallStopRef = useRef(false);
   const [realRiskAccepted, setRealRiskAccepted] = useState(false);
 
   const {
@@ -140,6 +153,7 @@ export default function Bot() {
     connect,
     disconnect,
     changeSymbol,
+    placeTrade,
   } = useDerivTicks();
 
   const selectedId = accountId(auth.selectedAccount);
@@ -172,9 +186,18 @@ export default function Bot() {
       )
     )
     .filter(Boolean);
+  const riseFallAnalysis = useMemo(
+    () =>
+      analyzeRiseFall({
+        prices,
+        currentPrice,
+      }),
+    [prices, currentPrice]
+  );
+
   const quality = qualityLabel(autoSignal?.qualityScore);
 
-  const running = [
+  const digitRunning = [
     "RUNNING",
     "SCANNING",
     "BUYING",
@@ -184,6 +207,11 @@ export default function Bot() {
     "COOLDOWN",
     "SWITCHING",
   ].includes(botState.status);
+
+  const running =
+    botType === "DIGIT"
+      ? digitRunning
+      : riseFallState.running;
 
   const connecting =
     status === "CONNECTING" || loadingMarket;
@@ -345,14 +373,164 @@ export default function Bot() {
     }
   }
 
+
+  async function startRiseFallBot() {
+    if (!auth.authenticated) {
+      auth.login();
+      return;
+    }
+
+    if (!isDemo && !realRiskAccepted) {
+      window.alert(
+        "Confirm the Real Account risk checkbox before starting. Real trades can lose money."
+      );
+      return;
+    }
+
+    if (!connected) {
+      await connect();
+    }
+
+    riseFallStopRef.current = false;
+    setRiseFallState((current) => ({
+      ...current,
+      running: true,
+      status: "SCANNING",
+      message: "Scanning Rise/Fall trend, momentum and entry level.",
+    }));
+
+    let runs = 0;
+    let wins = 0;
+    let losses = 0;
+    let profit = 0;
+    const history = [];
+
+    while (
+      !riseFallStopRef.current &&
+      (settings.unlimited || runs < settings.maxRuns)
+    ) {
+      const signal = riseFallAnalysis;
+
+      if (
+        signal.risk !== "GOOD ENTRY" ||
+        signal.signal === "WAIT"
+      ) {
+        setRiseFallState((current) => ({
+          ...current,
+          status: "SCANNING",
+          message:
+            signal.instruction ||
+            "Waiting for aligned Rise/Fall evidence.",
+        }));
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        continue;
+      }
+
+      setRiseFallState((current) => ({
+        ...current,
+        status: "BUYING",
+        message: `${signal.signal} validated. Opening trade.`,
+      }));
+
+      try {
+        const result = await placeTrade({
+          symbol,
+          contractType: signal.signal === "RISE" ? "CALL" : "PUT",
+          amount: Math.max(
+            0.35,
+            Number(settings.stake) || 0.35
+          ),
+          basis: "stake",
+          duration: Math.max(
+            1,
+            Math.min(
+              10,
+              Number(settings.duration) || signal.duration || 5
+            )
+          ),
+          durationUnit: "t",
+        });
+
+        const contractId =
+          result?.contractId ||
+          result?.contract_id ||
+          "opened";
+
+        runs += 1;
+
+        history.unshift({
+          id: `${Date.now()}-${runs}`,
+          time: Date.now(),
+          setup: signal.signal,
+          stake: Math.max(
+            0.35,
+            Number(settings.stake) || 0.35
+          ),
+          result: "OPEN",
+          profit: 0,
+          confidence: signal.confidence,
+          contractId,
+        });
+
+        setRiseFallState({
+          running: !riseFallStopRef.current,
+          status: "MONITORING",
+          message:
+            `${signal.signal} contract ${contractId} opened. ` +
+            "Waiting before the next scan.",
+          runs,
+          wins,
+          losses,
+          profit,
+          history: [...history],
+        });
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.max(900, Number(settings.postTradeDelayMs) || 900))
+        );
+      } catch (error) {
+        riseFallStopRef.current = true;
+        setRiseFallState((current) => ({
+          ...current,
+          running: false,
+          status: "ERROR",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Rise/Fall trade failed.",
+        }));
+      }
+    }
+
+    if (!riseFallStopRef.current) {
+      setRiseFallState((current) => ({
+        ...current,
+        running: false,
+        status: "COMPLETED",
+        message: "Maximum Rise/Fall runs completed.",
+      }));
+    }
+  }
+
+  function stopRiseFallBot() {
+    riseFallStopRef.current = true;
+    setRiseFallState((current) => ({
+      ...current,
+      running: false,
+      status: "STOPPED",
+      message: "Rise/Fall Bot stopped.",
+    }));
+  }
+
+
   return (
     <div className="appShell">
       <Sidebar />
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V66 · Fast Professional Engine"
-          subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
+          title="EdgePilot V67 · Multi-Bot Trading Engine"
+          subtitle="Choose Fast Digit Bot or Rise/Fall Auto Bot with unified live analysis"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
           onConnect={auth.authenticated ? undefined : connect}
@@ -374,6 +552,23 @@ export default function Bot() {
           </div>
         </section>
 
+        <section className="v67BotSelector">
+          <button
+            className={botType === "DIGIT" ? "active" : ""}
+            disabled={running}
+            onClick={() => setBotType("DIGIT")}
+          >
+            Fast Digit Bot
+          </button>
+          <button
+            className={botType === "RISE_FALL" ? "active" : ""}
+            disabled={running}
+            onClick={() => setBotType("RISE_FALL")}
+          >
+            Rise / Fall Bot
+          </button>
+        </section>
+
         {statusDetail ? (
           <div className="connectionError">{statusDetail}</div>
         ) : null}
@@ -381,11 +576,25 @@ export default function Bot() {
         <section className="turboStatusHero">
           <div>
             <small>BOT STATUS</small>
-            <strong>{statusLabel(botState.status)}</strong>
-            <p>{botState.message}</p>
+            <strong>
+              {botType === "DIGIT"
+                ? statusLabel(botState.status)
+                : statusLabel(riseFallState.status)}
+            </strong>
+            <p>
+              {botType === "DIGIT"
+                ? botState.message
+                : riseFallState.message}
+            </p>
           </div>
 
-          <div className={`turboStatusOrb ${botState.status.toLowerCase()}`}>
+          <div
+            className={`turboStatusOrb ${
+              botType === "DIGIT"
+                ? botState.status.toLowerCase()
+                : riseFallState.status.toLowerCase()
+            }`}
+          >
             {running ? "●" : "■"}
           </div>
         </section>
@@ -395,7 +604,11 @@ export default function Bot() {
             <div className="botCardHeader">
               <div>
                 <small>BOT CONFIGURATION</small>
-                <h2>Auto digit execution</h2>
+                <h2>
+                  {botType === "DIGIT"
+                    ? "Auto digit execution"
+                    : "Auto Rise/Fall execution"}
+                </h2>
               </div>
 
               <span className={`botStatus ${botState.status.toLowerCase()}`}>
@@ -403,7 +616,34 @@ export default function Bot() {
               </span>
             </div>
 
-            <div className="turboFormGrid">
+            {botType === "RISE_FALL" ? (
+              <div className="v67RiseFallSummary">
+                <div>
+                  <small>SIGNAL</small>
+                  <strong>{riseFallAnalysis.signal}</strong>
+                </div>
+                <div>
+                  <small>RISK</small>
+                  <strong>{riseFallAnalysis.risk}</strong>
+                </div>
+                <div>
+                  <small>CONFIDENCE</small>
+                  <strong>
+                    {Number(riseFallAnalysis.confidence || 0).toFixed(1)}%
+                  </strong>
+                </div>
+                <div>
+                  <small>ENTRY</small>
+                  <strong>
+                    {Number.isFinite(riseFallAnalysis.entryPrice)
+                      ? Number(riseFallAnalysis.entryPrice).toFixed(3)
+                      : "WAIT"}
+                  </strong>
+                </div>
+              </div>
+            ) : null}
+
+            <div className={botType === "DIGIT" ? "turboFormGrid" : "turboFormGrid riseFallMode"}>
               <label className="botField">
                 <span>Contract</span>
                 <select
@@ -890,14 +1130,22 @@ export default function Bot() {
               {!running ? (
                 <button
                   className="botStartButton turboStart"
-                  onClick={startBot}
+                  onClick={
+                    botType === "DIGIT"
+                      ? startBot
+                      : startRiseFallBot
+                  }
                 >
-                  ▶ START BOT
+                  ▶ START {botType === "DIGIT" ? "DIGIT" : "RISE/FALL"} BOT
                 </button>
               ) : (
                 <button
                   className="botStopButton turboStop"
-                  onClick={() => engineRef.current?.stop()}
+                  onClick={
+                    botType === "DIGIT"
+                      ? () => engineRef.current?.stop()
+                      : stopRiseFallBot
+                  }
                 >
                   ■ STOP BOT
                 </button>
@@ -925,9 +1173,13 @@ export default function Bot() {
               <div>
                 <small>LIVE PERFORMANCE</small>
                 <h2>
-                  {settings.unlimited
-                    ? `Run ${botState.runs}`
-                    : `Run ${botState.runs}/${settings.maxRuns}`}
+                  {botType === "DIGIT"
+                    ? settings.unlimited
+                      ? `Run ${botState.runs}`
+                      : `Run ${botState.runs}/${settings.maxRuns}`
+                    : settings.unlimited
+                      ? `Run ${riseFallState.runs}`
+                      : `Run ${riseFallState.runs}/${settings.maxRuns}`}
                 </h2>
               </div>
 
@@ -935,24 +1187,53 @@ export default function Bot() {
             </div>
 
             <div className="turboMetrics">
-              <Metric label="Runs" value={botState.runs} />
-              <Metric label="Wins" value={botState.wins} />
-              <Metric label="Losses" value={botState.losses} />
-              <Metric label="Win rate" value={`${winRate}%`} />
-              <Metric
-                label="Profit"
-                value={`${botState.profit >= 0 ? "+" : ""}${botState.profit.toFixed(2)} USD`}
-              />
-              <Metric
-                label="Current contract"
-                value={botState.activeSetup}
-              />
-              <Metric
-                label="Market switches"
-                value={botState.marketSwitches || 0}
-              />
+              {botType === "DIGIT" ? (
+                <>
+                  <Metric label="Runs" value={botState.runs} />
+                  <Metric label="Wins" value={botState.wins} />
+                  <Metric label="Losses" value={botState.losses} />
+                  <Metric label="Win rate" value={`${winRate}%`} />
+                  <Metric
+                    label="Profit"
+                    value={`${botState.profit >= 0 ? "+" : ""}${botState.profit.toFixed(2)} USD`}
+                  />
+                  <Metric label="Current contract" value={botState.activeSetup} />
+                  <Metric label="Market switches" value={botState.marketSwitches || 0} />
+                </>
+              ) : (
+                <>
+                  <Metric label="Runs" value={riseFallState.runs} />
+                  <Metric label="Signal" value={riseFallAnalysis.signal} />
+                  <Metric label="Risk" value={riseFallAnalysis.risk} />
+                  <Metric
+                    label="Confidence"
+                    value={`${Number(riseFallAnalysis.confidence || 0).toFixed(1)}%`}
+                  />
+                  <Metric label="Trend" value={riseFallAnalysis.trend} />
+                  <Metric
+                    label="Entry level"
+                    value={
+                      Number.isFinite(riseFallAnalysis.entryPrice)
+                        ? Number(riseFallAnalysis.entryPrice).toFixed(3)
+                        : "WAIT"
+                    }
+                  />
+                </>
+              )}
             </div>
 
+            {botType === "RISE_FALL" ? (
+              <div className="v67RiseFallInstruction">
+                <strong>{riseFallAnalysis.signal}</strong>
+                <p>{riseFallAnalysis.instruction}</p>
+                <span>
+                  Support {Number(riseFallAnalysis.support || 0).toFixed(3)} ·
+                  Resistance {Number(riseFallAnalysis.resistance || 0).toFixed(3)}
+                </span>
+              </div>
+            ) : null}
+
+            {botType === "DIGIT" ? (
             <div className="turboHistoryWrap">
               <table className="turboHistoryTable">
                 <thead>
@@ -1012,6 +1293,7 @@ export default function Bot() {
                 </tbody>
               </table>
             </div>
+            ) : null}
           </article>
         </section>
       </main>

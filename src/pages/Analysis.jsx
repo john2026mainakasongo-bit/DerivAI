@@ -5,9 +5,10 @@ import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
 import useDerivTicks from "../hooks/useDerivTicks";
-import { analyzeMarket } from "../analysis/analysisEngine";
-import { buildValidatedSignals } from "../analysis/backtestEngine";
-import { buildEntryTiming } from "../analysis/entryTimingEngine";
+import {
+  analyzeDigitSetups,
+  analyzeRiseFall,
+} from "../analysis/v67UnifiedAnalysisEngine";
 import "../styles/Analysis.css";
 
 function percent(value) {
@@ -20,56 +21,73 @@ function money(value) {
   return Number.isFinite(number) ? number.toFixed(3) : "—";
 }
 
-function signalToTrade(signal = "") {
-  const text = String(signal || "").trim().toUpperCase();
+function riskClass(risk) {
+  if (risk === "GOOD ENTRY") return "good";
+  if (risk === "RISKY") return "risky";
+  return "blocked";
+}
+
+function digitTrade(signal = "") {
+  const text = String(signal || "").toUpperCase();
+
+  if (text === "EVEN") {
+    return { label: text, contractType: "DIGITEVEN", barrier: undefined };
+  }
+
+  if (text === "ODD") {
+    return { label: text, contractType: "DIGITODD", barrier: undefined };
+  }
 
   const over = text.match(/^OVER\s+([0-9])$/);
-  if (over) {
-    return {
-      label: text,
-      contractType: "DIGITOVER",
-      barrier: over[1],
-    };
-  }
+  if (over) return { label: text, contractType: "DIGITOVER", barrier: over[1] };
 
   const under = text.match(/^UNDER\s+([0-9])$/);
-  if (under) {
-    return {
-      label: text,
-      contractType: "DIGITUNDER",
-      barrier: under[1],
-    };
-  }
+  if (under) return { label: text, contractType: "DIGITUNDER", barrier: under[1] };
 
   const match = text.match(/^MATCH\s+([0-9])$/);
-  if (match) {
-    return {
-      label: text,
-      contractType: "DIGITMATCH",
-      barrier: match[1],
-    };
-  }
+  if (match) return { label: text, contractType: "DIGITMATCH", barrier: match[1] };
 
   const differs = text.match(/^DIFFERS\s+([0-9])$/);
-  if (differs) {
-    return {
-      label: text,
-      contractType: "DIGITDIFF",
-      barrier: differs[1],
-    };
-  }
+  if (differs) return { label: text, contractType: "DIGITDIFF", barrier: differs[1] };
 
   return null;
 }
 
-function SignalCard({ title, signal, detail }) {
-  const active = signal && signal !== "WAIT";
-
+function SetupCard({ candidate }) {
   return (
-    <div className={`analysisSignalCard ${active ? "active" : ""}`}>
-      <small>{title}</small>
-      <strong>{signal || "WAIT"}</strong>
-      <p>{detail || "Collecting live market data."}</p>
+    <div className={`v67SetupCard ${riskClass(candidate.risk)}`}>
+      <div>
+        <small>{candidate.mode}</small>
+        <strong>{candidate.setup}</strong>
+      </div>
+
+      <span className={`v67Risk ${riskClass(candidate.risk)}`}>
+        {candidate.risk}
+      </span>
+
+      <div className="v67SetupMetrics">
+        <span>
+          <small>Probability</small>
+          <strong>{percent(candidate.probability)}</strong>
+        </span>
+        <span>
+          <small>EV</small>
+          <strong>
+            {candidate.expectedValue >= 0 ? "+" : ""}
+            {percent(candidate.expectedValue)}
+          </strong>
+        </span>
+        <span>
+          <small>Stability</small>
+          <strong>{percent(candidate.stability)}</strong>
+        </span>
+        <span>
+          <small>Confidence</small>
+          <strong>{percent(candidate.confidence)}</strong>
+        </span>
+      </div>
+
+      <p>{candidate.triggerText}</p>
     </div>
   );
 }
@@ -95,92 +113,49 @@ export default function Analysis() {
     placeTrade,
   } = useDerivTicks();
 
+  const [tab, setTab] = useState("DIGITS");
   const [stake, setStake] = useState(0.35);
   const [duration, setDuration] = useState(1);
   const [tradeMessage, setTradeMessage] = useState("");
 
-  const snapshot = useMemo(
-    () => ({
-      digitHistory,
-      prices,
-      currentPrice,
-      lastDigit,
-    }),
-    [digitHistory, prices, currentPrice, lastDigit]
-  );
-
-  const analysis = useMemo(
-    () => analyzeMarket(snapshot),
-    [snapshot]
-  );
-
-  const validated = useMemo(
-    () => buildValidatedSignals(snapshot),
-    [snapshot]
-  );
-
-  const timing = useMemo(
+  const digitAnalysis = useMemo(
     () =>
-      buildEntryTiming(validated, snapshot, {
-        tradeTicks: duration,
-        validitySeconds: 15,
+      analyzeDigitSetups({
+        digitHistory,
+        allowHighRisk: false,
       }),
-    [validated, snapshot, duration]
+    [digitHistory]
   );
 
-  const digitSignals = useMemo(() => {
-    const candidates = [
-      analysis.signals?.threshold,
-      analysis.signals?.matchDiff,
-      analysis.signals?.parity,
-    ].filter(Boolean);
+  const riseFall = useMemo(
+    () =>
+      analyzeRiseFall({
+        prices,
+        currentPrice,
+      }),
+    [prices, currentPrice]
+  );
 
-    return candidates
-      .filter((item) => item.signal !== "WAIT")
-      .filter((item) => signalToTrade(item.signal))
-      .sort(
-        (left, right) =>
-          Number(right.confidence || 0) -
-          Number(left.confidence || 0)
-      );
-  }, [analysis]);
+  const bestDigit = digitAnalysis.best;
+  const bestTrade = digitTrade(bestDigit?.setup);
 
-  const bestSignal =
-    validated.best?.approved &&
-    signalToTrade(validated.best.action)
-      ? {
-          signal: validated.best.action,
-          confidence: validated.best.lowerBound,
-          detail: validated.best.reason,
-          source: "BACKTEST VALIDATED",
-        }
-      : digitSignals[0]
-      ? {
-          ...digitSignals[0],
-          source: "LIVE ANALYSIS",
-        }
-      : null;
-
-  const bestTrade = signalToTrade(bestSignal?.signal);
-
-  async function runBestTrade() {
-    setTradeMessage("");
-
+  async function ensureConnected() {
     if (!connected) {
       await connect();
     }
+  }
+
+  async function runDigitTrade() {
+    setTradeMessage("");
+    await ensureConnected();
 
     if (selectedAccountType !== "demo") {
-      setTradeMessage(
-        "V50 is locked to Demo while the new analysis flow is being tested."
-      );
+      setTradeMessage("Analysis execution is Demo-only.");
       return;
     }
 
-    if (!bestTrade) {
-      setTradeMessage(
-        "No supported Over, Under, Match or Differs setup is ready yet."
-      );
+    if (!bestTrade || bestDigit?.risk !== "GOOD ENTRY") {
+      setTradeMessage("No GOOD ENTRY digit setup is ready.");
       return;
     }
 
@@ -196,26 +171,43 @@ export default function Analysis() {
       });
 
       setTradeMessage(
-        `${bestTrade.label} sent successfully. Contract ${
-          result?.contractId || "opened"
-        }.`
+        `${bestTrade.label} sent. Contract ${result?.contractId || "opened"}.`
       );
     } catch (error) {
-      setTradeMessage(
-        error instanceof Error ? error.message : "Trade failed."
-      );
+      setTradeMessage(error instanceof Error ? error.message : "Trade failed.");
     }
   }
 
-  async function copySignal() {
-    const text = bestTrade
-      ? `${bestTrade.label} | Confidence ${percent(
-          bestSignal?.confidence
-        )} | ${market?.label || symbol}`
-      : "WAIT — no supported digit setup yet";
+  async function runRiseFallTrade() {
+    setTradeMessage("");
+    await ensureConnected();
 
-    await navigator.clipboard?.writeText(text);
-    setTradeMessage("Signal copied.");
+    if (selectedAccountType !== "demo") {
+      setTradeMessage("Rise/Fall analysis execution is Demo-only.");
+      return;
+    }
+
+    if (riseFall.risk !== "GOOD ENTRY" || riseFall.signal === "WAIT") {
+      setTradeMessage("No GOOD ENTRY Rise/Fall setup is ready.");
+      return;
+    }
+
+    try {
+      const result = await placeTrade({
+        symbol,
+        contractType: riseFall.signal === "RISE" ? "CALL" : "PUT",
+        amount: Math.max(0.35, Number(stake) || 0.35),
+        basis: "stake",
+        duration: Math.max(1, Math.min(10, Number(duration) || riseFall.duration || 5)),
+        durationUnit: "t",
+      });
+
+      setTradeMessage(
+        `${riseFall.signal} sent. Contract ${result?.contractId || "opened"}.`
+      );
+    } catch (error) {
+      setTradeMessage(error instanceof Error ? error.message : "Trade failed.");
+    }
   }
 
   return (
@@ -224,8 +216,8 @@ export default function Analysis() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V50 · Owner Digit Analysis"
-          subtitle="Live Over/Under, Matches/Differs statistics and one-click Demo execution"
+          title="EdgePilot V67 · Unified Owner Analysis"
+          subtitle="Digit trigger zones, Rise/Fall trend timing, risk labels and Demo execution"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -243,7 +235,7 @@ export default function Analysis() {
           <div className="analysisFeedSummary">
             <span className={connected ? "liveDot" : "liveDot offline"} />
             <strong>{connected ? "LIVE" : "OFFLINE"}</strong>
-            <span>{market?.label || "Connect Deriv feed"}</span>
+            <span>{market?.label || "Deriv market"}</span>
           </div>
         </section>
 
@@ -251,192 +243,210 @@ export default function Analysis() {
           <div className="analysisNotice error">{statusDetail}</div>
         ) : null}
 
-        <section className="analysisHero">
-          <div>
-            <small>BEST CURRENT DIGIT SETUP</small>
-            <h2>{bestTrade?.label || "WAIT"}</h2>
-            <p>
-              {bestSignal?.detail ||
-                "Collecting enough live digits to identify the strongest supported setup."}
-            </p>
-          </div>
+        <div className="v67Tabs">
+          <button
+            className={tab === "DIGITS" ? "active" : ""}
+            onClick={() => setTab("DIGITS")}
+          >
+            Digit Analysis
+          </button>
+          <button
+            className={tab === "RISE_FALL" ? "active" : ""}
+            onClick={() => setTab("RISE_FALL")}
+          >
+            Rise / Fall AI
+          </button>
+        </div>
 
-          <div className="analysisHeroMetrics">
-            <div>
-              <small>Confidence</small>
-              <strong>{percent(bestSignal?.confidence)}</strong>
-            </div>
-            <div>
-              <small>Samples</small>
-              <strong>{analysis.sampleSize}</strong>
-            </div>
-            <div>
-              <small>Last digit</small>
-              <strong>{lastDigit ?? "—"}</strong>
-            </div>
-            <div>
-              <small>Price</small>
-              <strong>{money(currentPrice)}</strong>
-            </div>
-          </div>
-        </section>
-
-        <section className="analysisGrid">
-          <article className="analysisPanel">
-            <div className="analysisPanelHeader">
+        {tab === "DIGITS" ? (
+          <>
+            <section className="analysisHero">
               <div>
-                <small>LIVE DIGITS</small>
-                <h3>Distribution 0–9</h3>
+                <small>BEST CURRENT DIGIT SETUP</small>
+                <h2>{bestDigit?.setup || "WAIT"}</h2>
+                <p>{bestDigit?.triggerText || "Collecting live digit evidence."}</p>
               </div>
-              <span>{analysis.sampleSize} samples</span>
-            </div>
 
-            <div className="digitDistributionGrid">
-              {analysis.distribution.map((item) => (
-                <div
-                  className={
-                    item.digit === lastDigit
-                      ? "digitDistributionItem current"
-                      : "digitDistributionItem"
-                  }
-                  key={item.digit}
-                >
-                  <strong>{item.digit}</strong>
-                  <span>{percent(item.percent)}</span>
-                  <div className="digitBar">
-                    <i style={{ width: `${Math.min(100, item.percent * 5)}%` }} />
+              <div className="analysisHeroMetrics">
+                <div>
+                  <small>Risk</small>
+                  <strong>{bestDigit?.risk || "DO NOT TRADE"}</strong>
+                </div>
+                <div>
+                  <small>Confidence</small>
+                  <strong>{percent(bestDigit?.confidence)}</strong>
+                </div>
+                <div>
+                  <small>Samples</small>
+                  <strong>{digitAnalysis.sampleSize}</strong>
+                </div>
+                <div>
+                  <small>Last digit</small>
+                  <strong>{lastDigit ?? "—"}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="v67SetupGrid">
+              {digitAnalysis.standard.slice(0, 12).map((candidate) => (
+                <SetupCard candidate={candidate} key={candidate.setup} />
+              ))}
+            </section>
+          </>
+        ) : (
+          <>
+            <section className="analysisHero">
+              <div>
+                <small>RISE / FALL ANALYSIS</small>
+                <h2>{riseFall.signal}</h2>
+                <p>{riseFall.instruction}</p>
+              </div>
+
+              <div className="analysisHeroMetrics">
+                <div>
+                  <small>Risk</small>
+                  <strong>{riseFall.risk}</strong>
+                </div>
+                <div>
+                  <small>Confidence</small>
+                  <strong>{percent(riseFall.confidence)}</strong>
+                </div>
+                <div>
+                  <small>Trend</small>
+                  <strong>{riseFall.trend}</strong>
+                </div>
+                <div>
+                  <small>Price</small>
+                  <strong>{money(currentPrice)}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="analysisGrid">
+              <article className="analysisPanel">
+                <div className="analysisPanelHeader">
+                  <div>
+                    <small>TREND ENGINE</small>
+                    <h3>Current direction</h3>
+                  </div>
+                  <span className={`v67Risk ${riskClass(riseFall.risk)}`}>
+                    {riseFall.risk}
+                  </span>
+                </div>
+
+                <div className="analysisMetricGrid">
+                  <div>
+                    <small>Signal</small>
+                    <strong>{riseFall.signal}</strong>
+                  </div>
+                  <div>
+                    <small>Momentum</small>
+                    <strong>{money(riseFall.momentum)}</strong>
+                  </div>
+                  <div>
+                    <small>Support</small>
+                    <strong>{money(riseFall.support)}</strong>
+                  </div>
+                  <div>
+                    <small>Resistance</small>
+                    <strong>{money(riseFall.resistance)}</strong>
+                  </div>
+                  <div>
+                    <small>Entry level</small>
+                    <strong>{money(riseFall.entryPrice)}</strong>
+                  </div>
+                  <div>
+                    <small>Duration</small>
+                    <strong>{riseFall.duration || 5} ticks</strong>
                   </div>
                 </div>
-              ))}
-            </div>
-          </article>
+              </article>
 
-          <article className="analysisPanel">
-            <div className="analysisPanelHeader">
-              <div>
-                <small>CONTRACT ANALYSIS</small>
-                <h3>Live setup comparison</h3>
-              </div>
-            </div>
+              <article className="analysisPanel">
+                <div className="analysisPanelHeader">
+                  <div>
+                    <small>ENTRY TIMING</small>
+                    <h3>{riseFall.signal === "WAIT" ? "Wait for alignment" : "Conditional entry"}</h3>
+                  </div>
+                </div>
 
-            <div className="analysisSignalGrid">
-              <SignalCard
-                title="OVER / UNDER"
-                signal={analysis.signals?.threshold?.signal}
-                detail={analysis.signals?.threshold?.detail}
+                <div className="v67EntryInstruction">
+                  <strong>{riseFall.signal}</strong>
+                  <p>{riseFall.instruction}</p>
+                  <span>
+                    GOOD ENTRY is shown only when trend, momentum and price position agree.
+                  </span>
+                </div>
+              </article>
+            </section>
+          </>
+        )}
+
+        <section className="analysisPanel analysisRunPanel v67RunPanel">
+          <div className="analysisPanelHeader">
+            <div>
+              <small>DEMO EXECUTION</small>
+              <h3>Run selected setup</h3>
+            </div>
+            <span>
+              {tab === "DIGITS"
+                ? bestDigit?.risk || "WAIT"
+                : riseFall.risk}
+            </span>
+          </div>
+
+          <div className="analysisRunFields">
+            <label>
+              <span>Stake</span>
+              <input
+                type="number"
+                min="0.35"
+                step="0.01"
+                value={stake}
+                onChange={(event) => setStake(event.target.value)}
               />
-              <SignalCard
-                title="MATCHES / DIFFERS"
-                signal={analysis.signals?.matchDiff?.signal}
-                detail={analysis.signals?.matchDiff?.detail}
+            </label>
+
+            <label>
+              <span>Duration (ticks)</span>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={duration}
+                onChange={(event) => setDuration(event.target.value)}
               />
-              <SignalCard
-                title="EVEN / ODD"
-                signal={analysis.signals?.parity?.signal}
-                detail={analysis.signals?.parity?.detail}
-              />
-              <SignalCard
-                title="ENTRY TIMING"
-                signal={timing.state}
-                detail={timing.instruction}
-              />
-            </div>
-          </article>
+            </label>
+          </div>
 
-          <article className="analysisPanel">
-            <div className="analysisPanelHeader">
-              <div>
-                <small>MARKET QUALITY</small>
-                <h3>Current evidence</h3>
-              </div>
-            </div>
+          <div className="analysisRunActions">
+            <button
+              className="analysisRunButton"
+              disabled={
+                tradeBusy ||
+                (tab === "DIGITS"
+                  ? bestDigit?.risk !== "GOOD ENTRY"
+                  : riseFall.risk !== "GOOD ENTRY")
+              }
+              onClick={
+                tab === "DIGITS"
+                  ? runDigitTrade
+                  : runRiseFallTrade
+              }
+            >
+              {tradeBusy
+                ? "Opening trade..."
+                : tab === "DIGITS"
+                  ? `Run ${bestDigit?.setup || "Best Digit Trade"}`
+                  : `Run ${riseFall.signal}`}
+            </button>
+          </div>
 
-            <div className="analysisMetricGrid">
-              <div>
-                <small>Entropy</small>
-                <strong>{percent(Number(analysis.entropy?.normalized || 0) * 100)}</strong>
-              </div>
-              <div>
-                <small>Even</small>
-                <strong>{percent(analysis.parity?.evenPercent)}</strong>
-              </div>
-              <div>
-                <small>Odd</small>
-                <strong>{percent(analysis.parity?.oddPercent)}</strong>
-              </div>
-              <div>
-                <small>Over 2</small>
-                <strong>{percent(analysis.threshold2?.overPercent)}</strong>
-              </div>
-              <div>
-                <small>Under 2</small>
-                <strong>{percent(analysis.threshold2?.underPercent)}</strong>
-              </div>
-              <div>
-                <small>Best digit</small>
-                <strong>{analysis.bestDigit?.digit ?? "—"}</strong>
-              </div>
-            </div>
-          </article>
-
-          <article className="analysisPanel analysisRunPanel">
-            <div className="analysisPanelHeader">
-              <div>
-                <small>DEMO EXECUTION</small>
-                <h3>Run selected setup</h3>
-              </div>
-              <span>{bestSignal?.source || "WAIT"}</span>
-            </div>
-
-            <div className="analysisRunFields">
-              <label>
-                <span>Stake</span>
-                <input
-                  type="number"
-                  min="0.35"
-                  step="0.01"
-                  value={stake}
-                  onChange={(event) => setStake(event.target.value)}
-                />
-              </label>
-
-              <label>
-                <span>Duration (ticks)</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={duration}
-                  onChange={(event) => setDuration(event.target.value)}
-                />
-              </label>
-            </div>
-
-            <div className="analysisRunActions">
-              <button
-                className="analysisRunButton"
-                disabled={tradeBusy || !bestTrade}
-                onClick={runBestTrade}
-              >
-                {tradeBusy
-                  ? "Opening trade..."
-                  : `Run ${bestTrade?.label || "Best Trade"}`}
-              </button>
-
-              <button
-                className="analysisCopyButton"
-                onClick={copySignal}
-              >
-                Copy Signal
-              </button>
-            </div>
-
-            <div className="analysisNotice">
-              {tradeMessage ||
-                tradeError ||
-                "This page executes one Demo trade at a time. No strategy guarantees a win."}
-            </div>
-          </article>
+          <div className="analysisNotice">
+            {tradeMessage ||
+              tradeError ||
+              "Only GOOD ENTRY setups can be executed from this page. No strategy guarantees a win."}
+          </div>
         </section>
       </main>
     </div>
