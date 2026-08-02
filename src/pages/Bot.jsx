@@ -50,6 +50,7 @@ const INITIAL_STATE = {
   skipSignalsRemaining: 0,
   executionPhase: "IDLE",
   debugSteps: [],
+  marketSwitches: 0,
   history: [],
 };
 
@@ -275,6 +276,11 @@ function Metric({ label, value }) {
 export default function Bot() {
   const auth = useDerivAuth();
   const engineRef = useRef(null);
+  const marketContextRef = useRef({
+    markets: [],
+    symbol: "",
+    changeSymbol: null,
+  });
 
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [botState, setBotState] = useState(INITIAL_STATE);
@@ -342,6 +348,7 @@ export default function Bot() {
     "WON",
     "LOST",
     "COOLDOWN",
+    "SWITCHING",
   ].includes(botState.status);
 
   const connecting =
@@ -370,9 +377,46 @@ export default function Bot() {
   ]);
 
   useEffect(() => {
+    marketContextRef.current = {
+      markets: Array.isArray(markets) ? markets : [],
+      symbol,
+      changeSymbol,
+    };
+  }, [markets, symbol, changeSymbol]);
+
+  useEffect(() => {
     const engine = new TurboAutoDigitBotEngine({
       client: derivPublicClient,
       onState: setBotState,
+      onRequestMarketSwitch: async () => {
+        const context = marketContextRef.current;
+        const list = Array.isArray(context.markets)
+          ? context.markets.filter((item) => item?.symbol)
+          : [];
+
+        if (list.length < 2 || typeof context.changeSymbol !== "function") {
+          return {
+            symbol: context.symbol,
+            label: "current market",
+          };
+        }
+
+        const currentIndex = list.findIndex(
+          (item) => item.symbol === context.symbol
+        );
+        const nextIndex =
+          currentIndex >= 0
+            ? (currentIndex + 1) % list.length
+            : 0;
+        const next = list[nextIndex];
+
+        await context.changeSymbol(next.symbol);
+
+        return {
+          symbol: next.symbol,
+          label: next.label || next.symbol,
+        };
+      },
     });
 
     engineRef.current = engine;
@@ -450,7 +494,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V55 · Dynamic All-Digit Analysis"
+          title="EdgePilot V56 · Fresh Market Every Trade"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={connected}
           connecting={connecting}
@@ -741,6 +785,15 @@ export default function Bot() {
               <span>MATCH / DIFFERS</span>
             </div>
 
+            <div className="v56SwitchNotice">
+              <strong>FRESH MARKET MODE</strong>
+              <span>
+                Every settled trade — WIN or LOSS — clears the old signal,
+                switches to the next volatility market, collects fresh ticks,
+                and ranks OVER, UNDER, EVEN, ODD, MATCH and DIFFERS again.
+              </span>
+            </div>
+
             <div className="v53Recommendation">
               <div>
                 <small>AI RECOMMENDATION</small>
@@ -864,6 +917,10 @@ export default function Bot() {
               <Metric
                 label="Current contract"
                 value={botState.activeSetup}
+              />
+              <Metric
+                label="Market switches"
+                value={botState.marketSwitches || 0}
               />
             </div>
 

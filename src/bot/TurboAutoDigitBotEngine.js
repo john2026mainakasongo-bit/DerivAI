@@ -154,10 +154,14 @@ function contractProfit(contract = {}) {
 }
 
 export default class TurboAutoDigitBotEngine {
-  constructor({ client, onState }) {
+  constructor({ client, onState, onRequestMarketSwitch }) {
     this.client = client;
     this.onState =
       typeof onState === "function" ? onState : () => {};
+    this.onRequestMarketSwitch =
+      typeof onRequestMarketSwitch === "function"
+        ? onRequestMarketSwitch
+        : async () => null;
 
     this.settings = { ...DEFAULTS };
     this.symbol = "";
@@ -191,6 +195,7 @@ export default class TurboAutoDigitBotEngine {
       skipSignalsRemaining: 0,
       executionPhase: "IDLE",
       debugSteps: [],
+      marketSwitches: 0,
       history: [],
     };
 
@@ -475,6 +480,9 @@ export default class TurboAutoDigitBotEngine {
         );
         await this.openTrade(contract);
 
+        // V56: switch market after every settled trade — win or loss.
+        await this.switchMarketAfterTrade();
+
         if (
           this.state.history[0]?.result === "LOSS" &&
           this.settings.lossCooldownMs > 0
@@ -517,6 +525,45 @@ export default class TurboAutoDigitBotEngine {
     }
   }
 
+  async switchMarketAfterTrade() {
+    this.debug("MARKET_SWITCH", "Selecting a fresh volatility market.");
+
+    this.signal = null;
+    this.signalKey = "";
+    this.signalConfirmations = 0;
+    this.lastSignalUpdatedAt = 0;
+
+    this.patch({
+      status: "SWITCHING",
+      message: "Trade settled. Switching market and rebuilding fresh analysis.",
+      activeSetup: "—",
+      selectedConfidence: 0,
+      selectedQuality: 0,
+      signalConfirmations: 0,
+    });
+
+    const result = await this.onRequestMarketSwitch({
+      previousSymbol: this.symbol,
+      runs: this.state.runs,
+      lastResult: this.state.history?.[0]?.result || "",
+    });
+
+    if (result?.symbol) {
+      this.symbol = String(result.symbol);
+    }
+
+    this.patch({
+      marketSwitches: this.state.marketSwitches + 1,
+      message: result?.label
+        ? `Switched to ${result.label}. Collecting fresh ticks.`
+        : "Market switched. Collecting fresh ticks.",
+    });
+
+    // Give the hook time to reconnect/subscribe and collect a new tick.
+    await sleep(1200);
+    this.debug("FRESH_SCAN", this.symbol || "new market");
+  }
+
   stop(message = "Bot stopped.", status = "STOPPED") {
     this.stopRequested = true;
     this.running = false;
@@ -548,6 +595,7 @@ export default class TurboAutoDigitBotEngine {
       skipSignalsRemaining: 0,
       executionPhase: "IDLE",
       debugSteps: [],
+      marketSwitches: 0,
       history: [],
     });
   }
