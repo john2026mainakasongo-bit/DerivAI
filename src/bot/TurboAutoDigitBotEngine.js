@@ -9,7 +9,7 @@ const DEFAULTS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
-  minimumConfidence: 78,
+  minimumConfidence: 75,
   confirmationUpdates: 3,
   lossCooldownMs: 6000,
   sameSetupBlockMs: 15000,
@@ -136,6 +136,7 @@ export default class TurboAutoDigitBotEngine {
     this.settings = { ...DEFAULTS };
     this.symbol = "";
     this.currency = "USD";
+    this.accountType = "demo";
     this.signal = null;
     this.signalKey = "";
     this.signalConfirmations = 0;
@@ -149,7 +150,7 @@ export default class TurboAutoDigitBotEngine {
 
     this.state = {
       status: "STOPPED",
-      message: "Multi-Contract Ranking AI is ready.",
+      message: "Execution Fix Bot is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -162,6 +163,8 @@ export default class TurboAutoDigitBotEngine {
       selectedQuality: 0,
       signalConfirmations: 0,
       skipSignalsRemaining: 0,
+      executionPhase: "IDLE",
+      debugSteps: [],
       history: [],
     };
 
@@ -229,6 +232,27 @@ export default class TurboAutoDigitBotEngine {
     this.currency = String(currency || "USD");
   }
 
+  setAccountType(accountType) {
+    this.accountType =
+      String(accountType || "demo").toLowerCase() === "real"
+        ? "real"
+        : "demo";
+  }
+
+  debug(step, detail = "") {
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      time: Date.now(),
+      step,
+      detail,
+    };
+
+    this.patch({
+      executionPhase: step,
+      debugSteps: [entry, ...(this.state.debugSteps || [])].slice(0, 12),
+    });
+  }
+
   updateSignal(signal) {
     const next = signal || null;
     const nextKey = String(next?.setup || "").trim().toUpperCase();
@@ -261,8 +285,15 @@ export default class TurboAutoDigitBotEngine {
       return;
     }
 
+    if (this.state.activeContractId) {
+      return;
+    }
+
     if (nextKey === this.signalKey) {
-      this.signalConfirmations += 1;
+      this.signalConfirmations = Math.min(
+        this.settings.confirmationUpdates,
+        this.signalConfirmations + 1
+      );
     } else {
       this.signalKey = nextKey;
       this.signalConfirmations = 1;
@@ -293,7 +324,10 @@ export default class TurboAutoDigitBotEngine {
     }
 
     const auto = parseSetup(this.signal?.setup);
-    const confidence = safeNumber(this.signal?.confidence, 0);
+    const confidence = safeNumber(
+      this.signal?.qualityScore,
+      this.signal?.confidence
+    );
     const confirmations = safeNumber(this.signal?.confirmations, 0);
     const fresh =
       Date.now() - safeNumber(this.signal?.updatedAt, 0) <=
@@ -340,11 +374,23 @@ export default class TurboAutoDigitBotEngine {
       return `Loss limit reached: ${this.state.profit.toFixed(2)} ${this.currency}.`;
     }
 
+    const effectiveMaxRuns =
+      this.accountType === "real"
+        ? Math.min(10, this.settings.maxRuns)
+        : this.settings.maxRuns;
+
     if (
       !this.settings.unlimited &&
-      this.state.runs >= this.settings.maxRuns
+      this.state.runs >= effectiveMaxRuns
     ) {
       return "Maximum runs completed.";
+    }
+
+    if (
+      this.accountType === "real" &&
+      this.state.losses >= 1
+    ) {
+      return "Real-account safety stop after one loss.";
     }
 
     return "";
@@ -360,6 +406,7 @@ export default class TurboAutoDigitBotEngine {
     this.running = true;
     this.stopRequested = false;
 
+    this.debug("START", `${this.accountType.toUpperCase()} account`);
     this.patch({
       status: "SCANNING",
       message: "Scanning the latest digit setup.",
@@ -374,6 +421,7 @@ export default class TurboAutoDigitBotEngine {
           break;
         }
 
+        this.debug("SCAN", this.signal?.setup || "WAIT");
         const contract = this.selectedContract();
 
         if (!contract) {
@@ -395,6 +443,10 @@ export default class TurboAutoDigitBotEngine {
           continue;
         }
 
+        this.debug(
+          "CONFIRMED",
+          `${contract.label} · ${this.signalConfirmations}/${this.settings.confirmationUpdates}`
+        );
         await this.openTrade(contract);
 
         if (
@@ -432,7 +484,7 @@ export default class TurboAutoDigitBotEngine {
         message:
           error instanceof Error
             ? error.message
-            : "Multi-Contract Ranking AI failed.",
+            : "Execution Fix Bot failed.",
         activeContractId: "",
       });
       throw error;
@@ -468,12 +520,20 @@ export default class TurboAutoDigitBotEngine {
       selectedQuality: 0,
       signalConfirmations: 0,
       skipSignalsRemaining: 0,
+      executionPhase: "IDLE",
+      debugSteps: [],
       history: [],
     });
   }
 
   async openTrade(contract) {
-    const stake = Number(this.settings.stake.toFixed(2));
+    const configuredStake = Number(this.settings.stake.toFixed(2));
+    const stake =
+      this.accountType === "real"
+        ? Math.min(0.35, configuredStake)
+        : configuredStake;
+
+    this.debug("BUY_REQUEST", `${contract.label} · ${stake.toFixed(2)} ${this.currency}`);
 
     this.patch({
       status: "BUYING",
@@ -508,8 +568,11 @@ export default class TurboAutoDigitBotEngine {
     const contractId = contractIdFromBuy(bought);
 
     if (!contractId) {
+      this.debug("BUY_REJECTED", "Deriv did not return a contract ID.");
       throw new Error("Deriv did not return a contract ID.");
     }
+
+    this.debug("BUY_SENT", contractId);
 
     this.patch({
       status: "MONITORING",
@@ -518,6 +581,7 @@ export default class TurboAutoDigitBotEngine {
     });
 
     const settled = await this.waitForSettlement(contractId);
+    this.debug("SETTLED", contractId);
     const profit = contractProfit(settled);
     const won = profit > 0;
     const completedAt = Date.now();
@@ -544,6 +608,8 @@ export default class TurboAutoDigitBotEngine {
     }
 
     this.signalConfirmations = 0;
+    this.signalKey = "";
+    this.signal = null;
 
     this.patch({
       status: won ? "WON" : "LOST",

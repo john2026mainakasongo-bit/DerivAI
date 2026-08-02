@@ -25,7 +25,7 @@ const INITIAL_SETTINGS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
-  minimumConfidence: 78,
+  minimumConfidence: 75,
   confirmationUpdates: 3,
   lossCooldownMs: 6000,
   sameSetupBlockMs: 15000,
@@ -48,6 +48,8 @@ const INITIAL_STATE = {
   selectedQuality: 0,
   signalConfirmations: 0,
   skipSignalsRemaining: 0,
+  executionPhase: "IDLE",
+  debugSteps: [],
   history: [],
 };
 
@@ -267,6 +269,7 @@ export default function Bot() {
 
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [botState, setBotState] = useState(INITIAL_STATE);
+  const [realRiskAccepted, setRealRiskAccepted] = useState(false);
 
   const {
     markets,
@@ -380,7 +383,14 @@ export default function Bot() {
       symbol,
       currency: auth.selectedAccount?.currency || "USD",
     });
-  }, [symbol, auth.selectedAccount?.currency]);
+    engineRef.current?.setAccountType(
+      auth.selectedAccountType || "demo"
+    );
+  }, [
+    symbol,
+    auth.selectedAccount?.currency,
+    auth.selectedAccountType,
+  ]);
 
   useEffect(() => {
     engineRef.current?.updateSignal(autoSignal);
@@ -403,9 +413,9 @@ export default function Bot() {
       return;
     }
 
-    if (!isDemo) {
+    if (!isDemo && !realRiskAccepted) {
       window.alert(
-        "V53 Multi-Contract Ranking AI is Demo-only until its ranking is fully tested."
+        "Confirm the Real Account risk checkbox before starting. Real trades can lose money."
       );
       return;
     }
@@ -431,8 +441,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V53 · Multi-Contract Ranking AI"
-          subtitle="Probability, transition, frequency, entropy and momentum ranking"
+          title="EdgePilot V54 · Execution Fix Demo + Real"
+          subtitle="Fixed confirmation counter, direct execution and selected-account trading"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -449,8 +459,8 @@ export default function Bot() {
 
           <div className={isDemo ? "botDemoLock safe" : "botDemoLock real"}>
             {isDemo
-              ? "✓ DEMO TURBO BOT"
-              : `⚠ REAL LOCKED · ${selectedId || "SELECTED"}`}
+              ? "✓ DEMO EXECUTION"
+              : `⚠ REAL ACTIVE · ${selectedId || "SELECTED"}`}
           </div>
         </section>
 
@@ -655,7 +665,7 @@ export default function Bot() {
               <input
                 type="checkbox"
                 checked={settings.unlimited}
-                disabled={running}
+                disabled={running || !isDemo}
                 onChange={(event) =>
                   setSettings((current) => ({
                     ...current,
@@ -663,8 +673,28 @@ export default function Bot() {
                   }))
                 }
               />
-              <span>Unlimited runs until Stop, profit target or loss limit</span>
+              <span>
+                Unlimited runs until Stop, profit target or loss limit
+                {!isDemo ? " (disabled on Real)" : ""}
+              </span>
             </label>
+
+            {!isDemo ? (
+              <label className="v54RealRisk">
+                <input
+                  type="checkbox"
+                  checked={realRiskAccepted}
+                  disabled={running}
+                  onChange={(event) =>
+                    setRealRiskAccepted(event.target.checked)
+                  }
+                />
+                <span>
+                  I understand Real trades can lose money. Real stake is capped
+                  at 0.35 USD and the bot stops after one loss.
+                </span>
+              </label>
+            ) : null}
 
             <div className="turboSignalStrip">
               <div>
@@ -682,7 +712,10 @@ export default function Bot() {
               <div>
                 <small>CONFIRMS</small>
                 <strong>
-                  {botState.signalConfirmations || 0}/{settings.confirmationUpdates}
+                  {Math.min(
+                    settings.confirmationUpdates,
+                    botState.signalConfirmations || 0
+                  )}/{settings.confirmationUpdates}
                 </strong>
               </div>
             </div>
@@ -730,6 +763,26 @@ export default function Bot() {
               ))}
             </div>
 
+            <div className="v54DebugPanel">
+              <div className="v54DebugHeader">
+                <strong>Execution flow</strong>
+                <span>{botState.executionPhase || "IDLE"}</span>
+              </div>
+
+              <div className="v54DebugSteps">
+                {(botState.debugSteps || []).length ? (
+                  botState.debugSteps.slice(0, 7).map((step) => (
+                    <div key={step.id}>
+                      <strong>{step.step}</strong>
+                      <span>{step.detail || "—"}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p>START → SCAN → CONFIRM → BUY SENT → SETTLED → NEXT SCAN</p>
+                )}
+              </div>
+            </div>
+
             <div className="botActions turboActions">
               {!running ? (
                 <button
@@ -757,10 +810,10 @@ export default function Bot() {
             </div>
 
             <p className="botSafetyText">
-              AUTO ranks Over, Under, Matches and Differs using probability,
-              transition, frequency, entropy and momentum. A loss skips the next
-              configured signal updates. V53 remains Demo-only because automated
-              digit contracts can lose money.
+              V54 caps confirmations correctly, executes immediately when the
+              selected setup passes, and uses the currently selected Deriv account.
+              Real mode is capped at 0.35 USD and stops after one loss. No score or
+              strategy guarantees a win.
             </p>
           </article>
 
