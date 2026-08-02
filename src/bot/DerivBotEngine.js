@@ -1095,17 +1095,15 @@ function passesAccountExecutionGate(candidate = {}, isDemo = false) {
 
   if (isStandardDigitSetup(setup)) {
     if (isDemo) {
-      // V43 DEMO DIRECT-EVIDENCE PATH:
-      // The legacy weighted score and candidate-confidence fields can remain
-      // artificially low even when the same candidate has enough observable
-      // probability, samples, transitions and votes. Demo therefore does not
-      // use those two contradictory fields as execution blockers.
+      // V44 DEMO EXECUTION PATH:
+      // Demo standard-digit execution uses the candidate's observable setup
+      // evidence. Legacy weighted score, candidate confidence and candidate
+      // entropy remain visible for diagnosis but do not block Demo execution.
       return (
-        Number(candidate.probability || 0) >= 74 &&
+        Number(candidate.probability || 0) >= 72 &&
         Number(candidate.samples || 0) >= 60 &&
         Number(candidate.transitionCount || 0) >= 5 &&
-        Number(candidate.passedVotes || 0) >= 2 &&
-        Number(candidate.entropy || 100) <= 99.7
+        Number(candidate.passedVotes || 0) >= 2
       );
     }
 
@@ -1581,7 +1579,7 @@ export default class DerivBotEngine {
           unique.set(key, scored);
         }
       } catch (error) {
-        console.error("[V43] CANDIDATE SCORE ERROR", {
+        console.error("[V44] CANDIDATE SCORE ERROR", {
           key,
           candidate,
           message: error?.message || String(error),
@@ -1598,7 +1596,7 @@ export default class DerivBotEngine {
     );
 
     if (!ranked.length) {
-      console.warn("[V43] NO RANKED CANDIDATES", {
+      console.warn("[V44] NO RANKED CANDIDATES", {
         gateSetup: gate.setup || "",
         gateCandidates: Array.isArray(gate.candidates)
           ? gate.candidates.length
@@ -1631,7 +1629,7 @@ export default class DerivBotEngine {
         );
 
       if (collapsed) {
-        console.warn("[V43] LOCK RELEASED: candidate materially weakened", {
+        console.warn("[V44] LOCK RELEASED: candidate materially weakened", {
           setup: this.lockedCandidate.setup,
           lockedScore: this.lockedCandidate.score,
           liveScore: liveLockedCandidate.score,
@@ -1682,8 +1680,8 @@ export default class DerivBotEngine {
         reason:
           `${bestText} ${
             this.isDemoAccount
-              ? "V43 Demo direct-evidence gate needs probability 74%+, 60 samples, 5 transitions and 2 votes. Legacy score and candidate confidence are diagnostic only in Demo."
-              : "V43 Real gate remains strict: score 65+, probability 79%+, confidence 76%+, 100 samples, 7 transitions and 3 votes."
+              ? "V44 Demo execution gate needs probability 72%+, 60 samples, 5 transitions and 2 votes. Legacy score, candidate confidence and candidate entropy are diagnostic only in Demo."
+              : "V44 Real gate remains strict: score 65+, probability 79%+, confidence 76%+, 100 samples, 7 transitions and 3 votes."
           } The engine selects the highest-ranked candidate that can actually execute on the selected account. No blind entry.`,
         elapsedSeconds,
         confirmations: 0,
@@ -1714,7 +1712,14 @@ export default class DerivBotEngine {
           ),
           accountExecutionPass: Boolean(selectedCanExecute),
           executionPhase: "SCAN",
-          lockedCandidate: selected?.setup || "—",
+          lockedCandidate:
+            selected?.setup && selected.setup !== "WAIT"
+              ? selected.setup
+              : ranked.find(
+                  (candidate) =>
+                    candidate.setup &&
+                    candidate.setup !== "WAIT"
+                )?.setup || "—",
           signalVersion: this.signalVersion,
           lockedSignalVersion: 0,
         },
@@ -1767,7 +1772,7 @@ export default class DerivBotEngine {
       this.strictConfirmations = 0;
       this.executionPhase = "LOCKED";
 
-      console.log("[V43] CANDIDATE LOCKED", {
+      console.log("[V44] CANDIDATE LOCKED", {
         setup,
         score: selected.score,
         threshold: selected.threshold,
@@ -1846,7 +1851,7 @@ export default class DerivBotEngine {
       };
     }
 
-    console.log("[V43] CANDIDATE READY", {
+    console.log("[V44] CANDIDATE READY", {
       setup,
       confirmations: confirmationUpdates,
       requiredConfirmations,
@@ -2210,7 +2215,7 @@ export default class DerivBotEngine {
 
       const check = this.validSignal();
 
-      console.debug("[V43] GATE", {
+      console.debug("[V44] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
         lockedCandidate: this.lockedCandidate?.setup || "—",
@@ -2253,7 +2258,7 @@ export default class DerivBotEngine {
       }
 
       try {
-        console.log("[V43] EXECUTE TRADE", {
+        console.log("[V44] EXECUTE TRADE", {
           setup: check.contract?.label,
           phase: this.executionPhase,
           confirmations: check.confirmations,
@@ -2376,11 +2381,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V43 demo direct-evidence confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V44 demo execution unblock confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V43 DEMO DIRECT-EVIDENCE`,
+      activeSetup: `${check.contract.label} · V44 DEMO EXECUTION UNBLOCK`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

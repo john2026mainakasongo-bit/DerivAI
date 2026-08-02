@@ -695,7 +695,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V43 · Demo Direct-Evidence Execution"
+          title="EdgePilot V44 · Demo Execution Unblock"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1035,9 +1035,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>DEMO DIRECT-EVIDENCE · REAL STRICT</small>
+                <small>DEMO EXECUTION UNBLOCK · REAL STRICT</small>
                 <strong>
-                  RANK → DIRECT EVIDENCE → LOCK → CONFIRM → PROPOSAL → BUY
+                  RANK → LOCK → 1 FRESH CONFIRM → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1120,7 +1120,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V43 fixes the contradictory Demo legacy-score blocker. Demo standard-digit contracts now qualify from direct evidence: probability 74%+, 60 samples, five transitions, two votes and entropy at or below 99.7%. The old weighted score and candidate-confidence fields remain visible for diagnosis but do not block Demo execution. Real remains strict: score 65+, probability 79%+, confidence 76%+, 100 samples, seven transitions and three votes. MATCH and RISE/FALL remain strict. Real stake stays capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
+              V44 unblocks Demo standard-digit execution using probability 72%+, 60 samples, five transitions and two votes, followed by one fresh confirmation. Legacy weighted score, candidate confidence and candidate entropy remain visible for diagnosis but do not block Demo trades. Real remains unchanged and strict: score 65+, probability 79%+, confidence 76%+, 100 samples, seven transitions and three votes, followed by two fresh confirmations. MATCH and RISE/FALL remain strict. Real stake stays capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1424,12 +1424,29 @@ export default function Bot() {
               <Metric
                 label="Top contract"
                 value={
-                  botState.gate?.lockedCandidate ||
-                  botState.lockedCandidate ||
+                  (
+                    botState.gate?.lockedCandidate &&
+                    botState.gate.lockedCandidate !== "WAIT"
+                      ? botState.gate.lockedCandidate
+                      : ""
+                  ) ||
+                  (
+                    botState.lockedCandidate &&
+                    botState.lockedCandidate !== "WAIT"
+                      ? botState.lockedCandidate
+                      : ""
+                  ) ||
                   botState.gate?.scoredCandidates?.find(
-                    (candidate) => candidate.accountExecutionPass
+                    (candidate) =>
+                      candidate.accountExecutionPass &&
+                      candidate.setup &&
+                      candidate.setup !== "WAIT"
                   )?.setup ||
-                  botState.gate?.scoredCandidates?.[0]?.setup ||
+                  botState.gate?.scoredCandidates?.find(
+                    (candidate) =>
+                      candidate.setup &&
+                      candidate.setup !== "WAIT"
+                  )?.setup ||
                   botState.activeSetup ||
                   "WAIT"
                 }
@@ -1478,7 +1495,7 @@ export default function Bot() {
                     : botState.gate?.blockedChecks?.score
                       ? `BLOCKED ${botState.gate.blockedChecks.score} · ${
                           isDemo
-                            ? "P74 S60 T5 V2 E≤99.7"
+                            ? "P72 S60 T5 V2"
                             : "SCORE65 P79 C76 S100 T7 V3"
                         }`
                       : "WAIT"
