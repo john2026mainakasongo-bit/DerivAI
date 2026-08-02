@@ -590,3 +590,40 @@
   color: #a4c0d1;
   line-height: 1.45;
 }
+
+
+.v61ScoreModel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.v61ScoreModel > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #18445d;
+  border-radius: 9px;
+  background: #061a28;
+}
+
+.v61ScoreModel small {
+  display: block;
+  color: #8fb3c8;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .05em;
+}
+
+.v61ScoreModel strong {
+  display: block;
+  margin-top: 4px;
+  color: #27e5b8;
+  font-size: 14px;
+}
+
+@media (max-width: 850px) {
+  .v61ScoreModel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

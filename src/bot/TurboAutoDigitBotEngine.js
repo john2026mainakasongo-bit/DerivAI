@@ -515,8 +515,31 @@ export default class TurboAutoDigitBotEngine {
         );
         await this.openTrade(contract);
 
-        // V56: switch market after every settled trade — win or loss.
-        await this.switchMarketAfterTrade();
+        const recentResults = (this.state.history || [])
+          .slice(0, 2)
+          .map((item) => item.result);
+
+        const twoLosses =
+          recentResults.length === 2 &&
+          recentResults.every((result) => result === "LOSS");
+
+        if (twoLosses) {
+          await this.switchMarketAfterTrade();
+        } else {
+          this.debug("FRESH_ANALYSIS", this.symbol);
+          this.signal = null;
+          this.signalKey = "";
+          this.signalConfirmations = 0;
+          this.patch({
+            status: "SCANNING",
+            message:
+              "Trade settled. Rebuilding fresh analysis on the current market.",
+            activeSetup: "—",
+            activeContractId: "",
+            signalConfirmations: 0,
+          });
+          await sleep(400);
+        }
 
         if (
           this.state.history[0]?.result === "LOSS" &&

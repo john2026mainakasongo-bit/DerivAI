@@ -8,7 +8,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
-import { rankV60DigitContracts } from "../analysis/v60MultiWindowEvEngine";
+import { rankV61DigitContracts } from "../analysis/v61AdaptiveEvDecisionEngine";
 import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
 
 import "../styles/Bot.css";
@@ -142,21 +142,25 @@ export default function Bot() {
   const selectedId = accountId(auth.selectedAccount);
   const isDemo = auth.selectedAccountType === "demo";
 
-  const v60Analysis = useMemo(
+  const v61Analysis = useMemo(
     () =>
-      rankV60DigitContracts({
+      rankV61DigitContracts({
         digitHistory,
-        minimumSamples: 200,
         allowHighRisk: settings.allowHighRiskContracts,
+        minimumQuality: settings.minimumConfidence,
       }),
-    [digitHistory, settings.allowHighRiskContracts]
+    [
+      digitHistory,
+      settings.allowHighRiskContracts,
+      settings.minimumConfidence,
+    ]
   );
 
-  const rankedCandidates = v60Analysis.candidates || [];
+  const rankedCandidates = v61Analysis.candidates || [];
   const executableCandidates = rankedCandidates.filter(
     (candidate) => candidate.executable
   );
-  const autoSignal = v60Analysis.best || null;
+  const autoSignal = v61Analysis.best || null;
   const topCandidates = rankedCandidates.slice(0, 6);
   const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
     .map((mode) =>
@@ -344,11 +348,11 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V60 · Multi-Window EV Engine"
+          title="EdgePilot V61 · Adaptive EV Decision Engine"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
-          onConnect={connect}
+          onConnect={auth.authenticated ? undefined : connect}
           onDisconnect={disconnect}
         />
 
@@ -682,9 +686,10 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                V60 evaluates 200, 500 and 1000-tick windows, applies Bayesian
-                shrinkage and Markov transitions, then trades only when expected
-                value and cross-window consistency are both positive.
+                V61 starts evaluating after 30 ticks and enables standard
+                contracts after 60 ticks. It scores Expected Value 40%,
+                probability edge 25%, Markov transition 15%, stability 10%
+                and Bayesian confidence 10%.
               </span>
             </div>
 
@@ -713,14 +718,37 @@ export default function Bot() {
                 </span>
                 <span>
                   <small>Samples</small>
-                  <strong>{v60Analysis.sampleSize || 0}</strong>
+                  <strong>{v61Analysis.sampleSize || 0}</strong>
                 </span>
               </div>
             </div>
 
             <div className={autoSignal ? "v60Gate pass" : "v60Gate wait"}>
-              <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — NO POSITIVE EV SETUP"}</strong>
-              <span>{v60Analysis.reason}</span>
+              <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — DECISION GATE NOT PASSED"}</strong>
+              <span>{v61Analysis.reason}</span>
+            </div>
+
+            <div className="v61ScoreModel">
+              <div>
+                <small>EXPECTED VALUE</small>
+                <strong>40%</strong>
+              </div>
+              <div>
+                <small>PROBABILITY EDGE</small>
+                <strong>25%</strong>
+              </div>
+              <div>
+                <small>MARKOV TRANSITION</small>
+                <strong>15%</strong>
+              </div>
+              <div>
+                <small>FREQUENCY STABILITY</small>
+                <strong>10%</strong>
+              </div>
+              <div>
+                <small>BAYESIAN CONFIDENCE</small>
+                <strong>10%</strong>
+              </div>
             </div>
 
             <div className="v57FamilyBoard">
@@ -766,7 +794,8 @@ export default function Bot() {
                     {candidate.highRisk ? "HIGH RISK · " : ""}
                     EV {candidate.expectedValue >= 0 ? "+" : ""}
                     {candidate.expectedValue.toFixed(1)}% ·
-                    C {candidate.consistency.toFixed(1)}%
+                    Edge {candidate.probabilityEdge.toFixed(1)}% ·
+                    Stability {candidate.consistency.toFixed(1)}%
                   </small>
                 </div>
               ))}
