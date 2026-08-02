@@ -405,9 +405,54 @@ function buildConsensusVotes(candidate = {}, signal = {}, symbol = "", isReal = 
   const setup = candidateAction(candidate);
   const family = candidateFamily(candidate);
 
-  const confidence = clampScore(candidate.confidence);
-  const probability = clampScore(candidate.probability);
-  const edge = Math.max(0, Number(candidate.edge || 0));
+  const rawCandidateConfidence = clampScore(candidate.confidence);
+  const rawCandidateProbability = clampScore(candidate.probability);
+
+  const globalProbability = clampScore(
+    analysis.probability ??
+    analysis.selectedProbability ??
+    analysis.bayesianSetup?.probability ??
+    analysis.bayesian?.probability ??
+    signal.probability ??
+    0
+  );
+
+  const globalConfidence = clampScore(
+    analysis.confidence ??
+    analysis.decisionConfidence ??
+    analysis.bayesianSetup?.confidence ??
+    analysis.bayesian?.confidence ??
+    globalProbability
+  );
+
+  // Candidate-specific values remain primary. Global values are bounded
+  // fallbacks so the same analysis cannot report 90%+ probability while the
+  // execution candidate is scored as 15% merely because one field is missing.
+  const probability = clampScore(
+    rawCandidateProbability > 0
+      ? rawCandidateProbability * 0.78 + globalProbability * 0.22
+      : globalProbability
+  );
+
+  const confidence = clampScore(
+    rawCandidateConfidence >= 35
+      ? rawCandidateConfidence * 0.65 +
+        probability * 0.25 +
+        globalConfidence * 0.10
+      : probability * 0.72 +
+        globalConfidence * 0.28
+  );
+
+  const edge = Math.max(
+    0,
+    Number(
+      candidate.edge ??
+      analysis.selectedEdge ??
+      analysis.edge ??
+      0
+    )
+  );
+
   const samples = analysisSampleSize(signal, analysis);
 
   const entropy = analysisMetric(
@@ -599,14 +644,17 @@ function buildConsensusVotes(candidate = {}, signal = {}, symbol = "", isReal = 
   const passedVotes = votes.filter((vote) => vote.pass).length;
   const strongVotes = votes.filter((vote) => vote.strong).length;
 
-  let requiredVotes = profile.requiredVotes;
+  let requiredVotes = Math.max(
+    2,
+    Number(profile.requiredVotes || 2)
+  );
 
   if (setup.startsWith("MATCH")) {
     requiredVotes += 1;
   }
 
   if (isReal) {
-    requiredVotes += 2;
+    requiredVotes += 1;
   }
 
   return {
@@ -621,6 +669,10 @@ function buildConsensusVotes(candidate = {}, signal = {}, symbol = "", isReal = 
     randomRegime,
     confidence,
     probability,
+    rawCandidateConfidence,
+    rawCandidateProbability,
+    globalConfidence,
+    globalProbability,
     edge,
     samples,
     entropy,
@@ -647,6 +699,10 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     setup,
     confidence,
     probability,
+    rawCandidateConfidence,
+    rawCandidateProbability,
+    globalConfidence,
+    globalProbability,
     edge,
     samples,
     entropy,
@@ -688,11 +744,21 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     100 - Math.max(0, entropy - 94) * 12
   );
 
+  const voteScore = clampScore(
+    (passedVotes / Math.max(1, requiredVotes)) * 100
+  );
+
+  // One coherent standard-digit score. Every displayed component now feeds
+  // the same final number instead of independent gates contradicting it.
   let weightedScore =
-    probabilityScore * 0.40 +
-    confidenceScore * 0.25 +
-    transitionScore * 0.20 +
-    clampScore((passedVotes / Math.max(1, requiredVotes)) * 100) * 0.15;
+    probabilityScore * 0.34 +
+    confidenceScore * 0.28 +
+    transitionScore * 0.14 +
+    voteScore * 0.10 +
+    sampleScore * 0.06 +
+    entropyScore * 0.04 +
+    regimeScore * 0.02 +
+    autocorrelationScore * 0.02;
 
   if (setup === "RISE" || setup === "FALL") {
     // Direction contracts rely more on momentum/regime and less on digit
@@ -730,30 +796,30 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     ? setup.startsWith("MATCH")
       ? 96
       : setup === "RISE" || setup === "FALL"
-        ? 94
-        : 78
+        ? 92
+        : 72
     : setup.startsWith("MATCH")
-      ? 93
+      ? 92
       : setup === "RISE" || setup === "FALL"
-        ? 88
-        : 72;
+        ? 86
+        : 62;
 
   // Threshold may relax only for standard digit contracts, and never below 60.
   // This avoids waiting forever without enabling time-only forced entries.
   const adaptiveRelaxation =
     isStandardDigit
-      ? samples >= 250
-        ? 18
-        : samples >= 180
-          ? 14
+      ? samples >= 300
+        ? 8
+        : samples >= 200
+          ? 5
           : samples >= 120
-            ? 8
+            ? 3
             : 0
       : 0;
 
   const thresholdFloor =
-    !isReal && isStandardDigit
-      ? 45
+    isStandardDigit
+      ? (isReal ? 68 : 58)
       : 60;
 
   const threshold = Math.max(
@@ -787,10 +853,11 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     !isReal &&
     isStandardDigit &&
     samples >= 80 &&
-    confidence >= 65 &&
-    probability >= 78 &&
+    confidence >= 72 &&
+    probability >= 76 &&
     transitionCount >= 6 &&
     passedVotes >= 2 &&
+    score >= 58 &&
     entropy <= 99.6;
 
   // V35 balanced Real digit path:
@@ -798,12 +865,13 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
   const realDigitQualityPass =
     isReal &&
     isStandardDigit &&
-    samples >= 80 &&
-    confidence >= 70 &&
-    probability >= 74 &&
-    transitionCount >= 6 &&
-    passedVotes >= 2 &&
-    entropy <= 99.5;
+    samples >= 120 &&
+    confidence >= 78 &&
+    probability >= 80 &&
+    transitionCount >= 8 &&
+    passedVotes >= 3 &&
+    score >= 68 &&
+    entropy <= 99.2;
 
   const ok =
     (
@@ -877,12 +945,20 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
       votes: `${passedVotes}/${requiredVotes}`,
       strongVotes,
       entropy: `${entropy.toFixed(1)}%`,
-      demoNeeds: "P78 C65 S80 T6 V2 E<=99.6",
-      realNeeds: "P74 C70 S80 T6 V2 E<=99.5",
+      demoNeeds: "SCORE58 P76 C72 S80 T6 V2 E<=99.6",
+      realNeeds: "SCORE68 P80 C78 S120 T8 V3 E<=99.2",
+      rawCandidateConfidence: `${rawCandidateConfidence.toFixed(1)}%`,
+      rawCandidateProbability: `${rawCandidateProbability.toFixed(1)}%`,
+      globalConfidence: `${globalConfidence.toFixed(1)}%`,
+      globalProbability: `${globalProbability.toFixed(1)}%`,
     },
     scoreBreakdown: {
-      confidence: confidenceScore,
-      probability: probabilityScore,
+      unifiedConfidence: confidenceScore,
+      unifiedProbability: probabilityScore,
+      rawCandidateConfidence,
+      rawCandidateProbability,
+      globalConfidence,
+      globalProbability,
       transitions: transitionScore,
       momentum: momentumScore,
       entropy: entropyScore,
@@ -1406,15 +1482,24 @@ export default class DerivBotEngine {
         gate.selectedProbability ??
         gate.probability ??
         analysis.probability ??
+        analysis.bayesianSetup?.probability ??
         signal.probability ??
         gate.confidence ??
         0
       );
 
+      const fallbackConfidence = Number(
+        gate.confidence ??
+        analysis.confidence ??
+        analysis.decisionConfidence ??
+        analysis.bayesianSetup?.confidence ??
+        fallbackProbability
+      );
+
       candidates.push({
         setup: gate.setup,
         action: gate.setup,
-        confidence: Number(gate.confidence || fallbackProbability || 0),
+        confidence: fallbackConfidence,
         probability: fallbackProbability,
         edge: Number(gate.selectedEdge || gate.edge || 0),
         approved: Boolean(gate.approved),
@@ -1535,9 +1620,9 @@ export default class DerivBotEngine {
         reason:
           `${bestText} ${
             this.isDemoAccount
-              ? "Demo digit gate needs probability 78%+, confidence 65%+, 80 samples, 6 transitions and 2 votes."
-              : "Real digit gate needs probability 74%+, confidence 70%+, 80 samples, 6 transitions and 2 votes."
-          } Weighted score ranks candidates but does not override a passed direct-evidence gate. No forced entry.`,
+              ? "Unified Demo gate needs score 58+, probability 76%+, confidence 72%+, 80 samples, 6 transitions and 2 votes."
+              : "Unified Real gate needs score 68+, probability 80%+, confidence 78%+, 120 samples, 8 transitions and 3 votes."
+          } Probability, confidence and ranking now use one evidence model. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
         requiredConfirmations: this.isDemoAccount ? 1 : 2,
@@ -1765,7 +1850,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V37 keeps the V36 runtime fix and removes the contradictory Demo score blocker. Standard Demo digit contracts qualify from direct contract evidence, while weighted score remains the ranking tool. Real mode remains more conservative.",
+        "V38 replaces contradictory candidate scoring with one unified evidence model. Probability, confidence, votes, transitions, samples, entropy and regime now feed one final score. Candidate-specific values remain primary and global analysis is used only as a bounded fallback.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2182,11 +2267,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V37 practical demo gate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V38 unified scoring confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V37 DIRECT EVIDENCE CONFIRMED`,
+      activeSetup: `${check.contract.label} · V38 UNIFIED SCORE CONFIRMED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

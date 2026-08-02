@@ -691,7 +691,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V37 · Practical Demo Entry Gate + Hard Lock"
+          title="EdgePilot V38 · Unified Scoring Engine + Hard Lock"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1031,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>PRACTICAL DEMO ENTRY GATE · HARD LOCK</small>
+                <small>UNIFIED SCORING ENGINE · HARD LOCK</small>
                 <strong>
-                  DIRECT EVIDENCE → LOCK TOP CONTRACT → CONFIRM → BUY
+                  UNIFIED SCORE → RANK → LOCK → CONFIRM → BUY
                 </strong>
               </div>
             </div>
@@ -1116,7 +1116,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V37 keeps candidate ranking working and fixes the Demo gate that still blocked a valid digit setup only because its weighted score was below the display threshold. Demo standard-digit entries now qualify from direct evidence: probability 78%+, confidence 65%+, 80 samples, six transitions and two votes. Weighted score still ranks candidates. Real remains more conservative, stake stays capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
+              V38 uses one scoring model for probability, confidence, votes, transitions, samples, entropy and regime. Candidate-specific values remain primary; global analysis is used only as a bounded fallback when candidate fields are missing or abnormally low. Demo standard digits require unified score 58+, probability 76%+, confidence 72%+, 80 samples, six transitions and two votes. Real remains stricter. Stake stays capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1462,9 +1462,13 @@ export default function Bot() {
                 value={
                   botState.gate?.directEvidencePass ||
                   botState.gate?.qualificationMode === "WEIGHTED_SCORE"
-                    ? `QUALIFIED · ${botState.gate?.qualificationMode || "DIRECT"}`
+                    ? `QUALIFIED · ${botState.gate?.qualificationMode || "UNIFIED"}`
                     : botState.gate?.blockedChecks?.score
-                      ? `BLOCKED ${botState.gate.blockedChecks.score} · ${botState.gate.blockedChecks.demoNeeds || ""}`
+                      ? `BLOCKED ${botState.gate.blockedChecks.score} · ${
+                          isDemo
+                            ? botState.gate.blockedChecks.demoNeeds || ""
+                            : botState.gate.blockedChecks.realNeeds || ""
+                        }`
                       : "WAIT"
                 }
               />
