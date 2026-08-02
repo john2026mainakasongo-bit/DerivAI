@@ -31,6 +31,10 @@ const INITIAL_SETTINGS = {
   sameSetupBlockMs: 15000,
   maximumSignalAgeMs: 2000,
   lossSkipSignals: 3,
+  allowHighRiskContracts: false,
+  highRiskMinimumQuality: 90,
+  highRiskMinimumSamples: 220,
+  highRiskMinimumEdge: 12,
 };
 
 const INITIAL_STATE = {
@@ -189,6 +193,8 @@ function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = [])
     ? analysis.distribution
     : [];
 
+  const sampleSize = Number(analysis.sampleSize || digitHistory.length || 0);
+
   if (rows.length !== 10) return [];
 
   const entropy = entropyQuality(analysis);
@@ -228,25 +234,49 @@ function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = [])
     const validationBonus =
       normalizeSetup(setup) === validatedSetup ? 5 : 0;
 
-    // Score all families on comparable edge, not raw win probability.
-    // A DIFFERS candidate at 93% is only +3 points above its 90% baseline.
-    // EVEN at 56% is +6 above 50%, and may therefore rank higher.
-    const qualityScore = clamp(
+    const highRisk = mode === "MATCH" || mode === "DIFFERS";
+    const standardPriorityBonus = highRisk ? 0 : 5;
+
+    let qualityScore = clamp(
       68 +
         expectedValue * 1.1 +
         probabilityEdge * 0.12 +
         transitionEdge * 0.08 +
         (entropy - 50) * 0.05 +
         (momentum - 50) * 0.03 +
-        validationBonus
+        validationBonus +
+        standardPriorityBonus
     );
+
+    // High-risk digit contracts must never display artificial certainty.
+    if (highRisk) {
+      qualityScore = Math.min(88, qualityScore);
+    } else {
+      qualityScore = Math.min(96, qualityScore);
+    }
 
     const minimumObserved =
       baseline >= 80
-        ? baseline + 2.5
+        ? baseline + 3
         : baseline >= 50
           ? baseline + 3
-          : baseline + 1.5;
+          : baseline + 2;
+
+    const standardEligible =
+      !highRisk &&
+      probability >= minimumObserved &&
+      expectedValue > 0 &&
+      qualityScore >= 70;
+
+    // MATCH and DIFFERS remain visible but are marked high-risk.
+    // The engine will only execute them when the explicit toggle and
+    // stricter high-risk requirements are satisfied.
+    const highRiskEligible =
+      highRisk &&
+      probability >= minimumObserved &&
+      expectedValue >= 8 &&
+      qualityScore >= 82 &&
+      sampleSize >= 150;
 
     candidates.push({
       setup,
@@ -262,31 +292,39 @@ function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = [])
       qualityScore,
       entropy,
       momentum,
+      sampleSize,
+      highRisk,
       source:
         validationBonus > 0
           ? "BACKTEST VALIDATED"
-          : "UNBIASED EV RANKING",
+          : highRisk
+            ? "HIGH-RISK ANALYSIS"
+            : "STANDARD EV RANKING",
       detail:
         `${setup}: observed ${probability.toFixed(1)}% vs ` +
         `${baseline.toFixed(1)}% baseline, EV edge ` +
         `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(1)}%.`,
-      eligible:
-        probability >= minimumObserved &&
-        expectedValue > 0 &&
-        qualityScore >= 70,
+      eligible: standardEligible || highRiskEligible,
     });
   }
 
   const eligible = candidates
     .filter((candidate) => candidate.eligible)
     .sort(
-      (left, right) =>
-        right.qualityScore - left.qualityScore ||
-        right.expectedValue - left.expectedValue
+      (left, right) => {
+        const leftRiskPenalty = left.highRisk ? 12 : 0;
+        const rightRiskPenalty = right.highRisk ? 12 : 0;
+
+        const leftAdjusted = left.qualityScore - leftRiskPenalty;
+        const rightAdjusted = right.qualityScore - rightRiskPenalty;
+
+        return (
+          rightAdjusted - leftAdjusted ||
+          right.expectedValue - left.expectedValue
+        );
+      }
     );
 
-  // Keep only the strongest candidate from each family in the leading
-  // comparison so ten DIFFERS digits cannot crowd out every other family.
   const bestByFamily = new Map();
 
   for (const candidate of eligible) {
@@ -296,9 +334,17 @@ function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = [])
   }
 
   const familyLeaders = [...bestByFamily.values()].sort(
-    (left, right) =>
-      right.qualityScore - left.qualityScore ||
-      right.expectedValue - left.expectedValue
+    (left, right) => {
+      const leftRiskPenalty = left.highRisk ? 12 : 0;
+      const rightRiskPenalty = right.highRisk ? 12 : 0;
+
+      return (
+        right.qualityScore -
+          rightRiskPenalty -
+          (left.qualityScore - leftRiskPenalty) ||
+        right.expectedValue - left.expectedValue
+      );
+    }
   );
 
   const remaining = eligible.filter(
@@ -410,7 +456,18 @@ export default function Bot() {
     [analysis, validated, digitHistory]
   );
 
-  const autoSignal = rankedCandidates[0] || null;
+  const executableCandidates = rankedCandidates.filter(
+    (candidate) =>
+      !candidate.highRisk ||
+      (
+        settings.allowHighRiskContracts &&
+        candidate.qualityScore >= settings.highRiskMinimumQuality &&
+        candidate.sampleSize >= settings.highRiskMinimumSamples &&
+        candidate.expectedValue >= settings.highRiskMinimumEdge
+      )
+  );
+
+  const autoSignal = executableCandidates[0] || null;
   const topCandidates = rankedCandidates.slice(0, 6);
   const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
     .map((mode) =>
@@ -573,7 +630,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V57 · Unbiased Contract Ranking"
+          title="EdgePilot V58 · Match/Differs Safety Fix"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={connected}
           connecting={connecting}
@@ -796,7 +853,51 @@ export default function Bot() {
                   onChange={updateNumber("lossSkipSignals")}
                 />
               </label>
+
+              <label className="botField">
+                <span>High-risk minimum quality</span>
+                <input
+                  type="number"
+                  min="80"
+                  max="99"
+                  step="1"
+                  value={settings.highRiskMinimumQuality}
+                  disabled={running || !settings.allowHighRiskContracts}
+                  onChange={updateNumber("highRiskMinimumQuality")}
+                />
+              </label>
+
+              <label className="botField">
+                <span>High-risk minimum samples</span>
+                <input
+                  type="number"
+                  min="100"
+                  max="1000"
+                  step="10"
+                  value={settings.highRiskMinimumSamples}
+                  disabled={running || !settings.allowHighRiskContracts}
+                  onChange={updateNumber("highRiskMinimumSamples")}
+                />
+              </label>
             </div>
+
+            <label className="v58HighRiskToggle">
+              <input
+                type="checkbox"
+                checked={settings.allowHighRiskContracts}
+                disabled={running}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    allowHighRiskContracts: event.target.checked,
+                  }))
+                }
+              />
+              <span>
+                Allow MATCH and DIFFERS execution. Off by default because these
+                contracts have asymmetric payout/risk and require stricter evidence.
+              </span>
+            </label>
 
             <label className="turboUnlimited">
               <input
@@ -867,9 +968,9 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                Every settled trade clears the old signal and switches market.
-                Ranking compares each contract against its own fair baseline, so
-                DIFFERS no longer wins merely because its raw probability is near 90%.
+                MATCH and DIFFERS remain visible in analysis, but execution is
+                disabled by default. OVER, UNDER, EVEN and ODD are prioritized.
+                Enable high-risk execution only when you intentionally want it.
               </span>
             </div>
 
@@ -931,11 +1032,19 @@ export default function Bot() {
               </div>
 
               {topCandidates.map((candidate, index) => (
-                <div className="v53RankRow" key={candidate.setup}>
+                <div
+                  className={
+                    candidate.highRisk
+                      ? "v53RankRow highRisk"
+                      : "v53RankRow"
+                  }
+                  key={candidate.setup}
+                >
                   <span>#{index + 1}</span>
                   <strong>{candidate.setup}</strong>
                   <em>{candidate.qualityScore.toFixed(1)}</em>
                   <small>
+                    {candidate.highRisk ? "HIGH RISK · " : ""}
                     EV {candidate.expectedValue >= 0 ? "+" : ""}
                     {candidate.expectedValue.toFixed(1)}% ·
                     {" "}{candidate.probability.toFixed(1)}% /

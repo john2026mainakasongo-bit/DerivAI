@@ -15,6 +15,10 @@ const DEFAULTS = {
   sameSetupBlockMs: 15000,
   maximumSignalAgeMs: 2000,
   lossSkipSignals: 3,
+  allowHighRiskContracts: false,
+  highRiskMinimumQuality: 90,
+  highRiskMinimumSamples: 220,
+  highRiskMinimumEdge: 12,
 };
 
 function sleep(ms) {
@@ -255,6 +259,19 @@ export default class TurboAutoDigitBotEngine {
         0,
         Math.min(20, Math.floor(safeNumber(input.lossSkipSignals, 3)))
       ),
+      allowHighRiskContracts: Boolean(input.allowHighRiskContracts),
+      highRiskMinimumQuality: Math.max(
+        80,
+        Math.min(99, safeNumber(input.highRiskMinimumQuality, 90))
+      ),
+      highRiskMinimumSamples: Math.max(
+        100,
+        Math.min(1000, Math.floor(safeNumber(input.highRiskMinimumSamples, 220)))
+      ),
+      highRiskMinimumEdge: Math.max(
+        5,
+        Math.min(40, safeNumber(input.highRiskMinimumEdge, 12))
+      ),
     };
   }
 
@@ -360,6 +377,24 @@ export default class TurboAutoDigitBotEngine {
       this.signal?.confidence
     );
     const confirmations = safeNumber(this.signal?.confirmations, 0);
+
+    const highRisk =
+      auto?.mode === "MATCH" ||
+      auto?.mode === "DIFFERS";
+
+    if (highRisk) {
+      const sampleSize = safeNumber(this.signal?.sampleSize, 0);
+      const edge = safeNumber(this.signal?.expectedValue, 0);
+
+      if (
+        !this.settings.allowHighRiskContracts ||
+        confidence < this.settings.highRiskMinimumQuality ||
+        sampleSize < this.settings.highRiskMinimumSamples ||
+        edge < this.settings.highRiskMinimumEdge
+      ) {
+        return null;
+      }
+    }
     const fresh =
       Date.now() - safeNumber(this.signal?.updatedAt, 0) <=
       this.settings.maximumSignalAgeMs;

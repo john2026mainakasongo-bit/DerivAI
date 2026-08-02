@@ -529,3 +529,31 @@
     border-right: 0;
   }
 }
+
+
+.v58HighRiskToggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #7a5930;
+  border-radius: 10px;
+  background: rgba(115, 72, 20, .15);
+  color: #ffd59b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.v58HighRiskToggle input {
+  margin-top: 3px;
+}
+
+.v53RankRow.highRisk {
+  background: rgba(112, 64, 18, .11);
+}
+
+.v53RankRow.highRisk strong,
+.v53RankRow.highRisk small {
+  color: #e6b976;
+}
