@@ -695,7 +695,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V47 · Demo Blocker Removal"
+          title="EdgePilot V48 · Demo Digits Only"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1035,9 +1035,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>DEMO BLOCKER REMOVED · REAL STRICT</small>
+                <small>DEMO DIGITS ONLY · NO RISE/FALL</small>
                 <strong>
-                  RANK DEMO DIGIT → LOCK → CONFIRM → PROPOSAL → BUY
+                  DIGITS ONLY → RANK → LOCK → CONFIRM → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1120,7 +1120,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V47 removes the remaining legacy BLOCKED score veto for Demo standard-digit contracts. Demo selects the strongest executable EVEN, ODD, OVER, UNDER or DIFFERS candidate using probability 70%+, 50 samples, four transitions and two votes, then waits for one fresh confirmation before proposal and buy. FALL, RISE, MATCH and every Real trade remain strict. No bot can guarantee wins.
+              V48 removes RISE and FALL completely from Demo Auto. Demo only ranks digit contracts: EVEN, ODD, OVER, UNDER, MATCH and DIFFERS. Standard digit entries use probability 70%+, 50 samples, four transitions and two votes, followed by one fresh confirmation. Real remains unchanged and strict. No bot can guarantee wins.
             </div>
           </article>
 
