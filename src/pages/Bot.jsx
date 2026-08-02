@@ -8,7 +8,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
-import { rankV65DeepConsensus } from "../analysis/v65DeepConsensusEngine";
+import { rankV66FastProfessional } from "../analysis/v66FastProfessionalEngine";
 import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
 
 import "../styles/Bot.css";
@@ -24,8 +24,8 @@ const INITIAL_SETTINGS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
-  minimumConfidence: 84,
-  confirmationUpdates: 3,
+  minimumConfidence: 82,
+  confirmationUpdates: 2,
   lossCooldownMs: 6000,
   sameSetupBlockMs: 15000,
   maximumSignalAgeMs: 2000,
@@ -34,8 +34,8 @@ const INITIAL_SETTINGS = {
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  scanSwitchMs: 7000,
-  postTradeDelayMs: 150,
+  scanSwitchMs: 3500,
+  postTradeDelayMs: 80,
 };
 
 const INITIAL_STATE = {
@@ -54,6 +54,7 @@ const INITIAL_STATE = {
   signalConfirmations: 0,
   skipSignalsRemaining: 0,
   executionPhase: "IDLE",
+  entryCountdown: 0,
   debugSteps: [],
   marketSwitches: 0,
   history: [],
@@ -144,9 +145,9 @@ export default function Bot() {
   const selectedId = accountId(auth.selectedAccount);
   const isDemo = auth.selectedAccountType === "demo";
 
-  const v65Analysis = useMemo(
+  const v66Analysis = useMemo(
     () =>
-      rankV65DeepConsensus({
+      rankV66FastProfessional({
         digitHistory,
         allowHighRisk: settings.allowHighRiskContracts,
         minimumConfidence: settings.minimumConfidence,
@@ -158,11 +159,11 @@ export default function Bot() {
     ]
   );
 
-  const rankedCandidates = v65Analysis.candidates || [];
+  const rankedCandidates = v66Analysis.candidates || [];
   const executableCandidates = rankedCandidates.filter(
     (candidate) => candidate.executable
   );
-  const autoSignal = v65Analysis.best || null;
+  const autoSignal = v66Analysis.best || null;
   const topCandidates = rankedCandidates.slice(0, 6);
   const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
     .map((mode) =>
@@ -350,7 +351,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V65 · Deep Consensus Engine"
+          title="EdgePilot V66 · Fast Professional Engine"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
@@ -723,10 +724,9 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                V65 checks 20, 50, 100 and 200-tick probability windows plus
-                EV, edge, Markov transition, window agreement, stability, streaks,
-                reversal control, autocorrelation and walk-forward backtest.
-                Standard entries require at least 10 of 13 checks.
+                V66 keeps the same 13-check structure but uses faster 20, 40,
+                80 and 160-tick windows, a lighter Bayesian prior and a quick
+                120-tick backtest. Standard entries require 9 of 13 checks.
               </span>
             </div>
 
@@ -767,7 +767,7 @@ export default function Bot() {
 
             <div className={autoSignal ? "v60Gate pass" : "v60Gate wait"}>
               <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — NO CONTRACT PASSES"}</strong>
-              <span>{v65Analysis.reason}</span>
+              <span>{v66Analysis.reason}</span>
             </div>
 
             <div className="v64AnalysisGrid v65">

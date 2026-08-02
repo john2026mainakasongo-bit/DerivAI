@@ -710,3 +710,19 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.v66Countdown {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-left: auto;
+  border: 1px solid #27e5b8;
+  border-radius: 50%;
+  background: rgba(39, 229, 184, .12);
+  color: #27e5b8;
+  font-size: 22px;
+  font-weight: 900;
+  box-shadow: 0 0 20px rgba(39, 229, 184, .16);
+}

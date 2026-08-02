@@ -9,8 +9,8 @@ const DEFAULTS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
-  minimumConfidence: 84,
-  confirmationUpdates: 3,
+  minimumConfidence: 82,
+  confirmationUpdates: 2,
   lossCooldownMs: 750,
   sameSetupBlockMs: 15000,
   maximumSignalAgeMs: 2000,
@@ -19,8 +19,8 @@ const DEFAULTS = {
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  scanSwitchMs: 7000,
-  postTradeDelayMs: 150,
+  scanSwitchMs: 3500,
+  postTradeDelayMs: 80,
 };
 
 function sleep(ms) {
@@ -187,7 +187,7 @@ export default class TurboAutoDigitBotEngine {
 
     this.state = {
       status: "STOPPED",
-      message: "V65 Deep Consensus Engine is ready.",
+      message: "V66 Fast Professional Engine is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -201,6 +201,7 @@ export default class TurboAutoDigitBotEngine {
       signalConfirmations: 0,
       skipSignalsRemaining: 0,
       executionPhase: "IDLE",
+      entryCountdown: 0,
       debugSteps: [],
       marketSwitches: 0,
       history: [],
@@ -542,7 +543,7 @@ export default class TurboAutoDigitBotEngine {
             this.noSignalSince = 0;
             await this.switchMarketAfterTrade("No strict setup on current market.");
           } else {
-            await sleep(120);
+            await sleep(70);
           }
 
           continue;
@@ -554,6 +555,21 @@ export default class TurboAutoDigitBotEngine {
           "CONFIRMED",
           `${contract.label} · ${this.signalConfirmations}/${this.settings.confirmationUpdates}`
         );
+
+        for (const count of [2, 1]) {
+          this.patch({
+            status: "CONFIRMING",
+            entryCountdown: count,
+            message:
+              `${contract.label} validated. Entry in ${count}...`,
+          });
+          await sleep(180);
+        }
+
+        this.patch({
+          entryCountdown: 0,
+        });
+
         await this.openTrade(contract);
 
         const latestResult = this.state.history?.[0]?.result;
@@ -655,7 +671,7 @@ export default class TurboAutoDigitBotEngine {
     });
 
     // Fast reconnect while still allowing the new subscription to receive ticks.
-    await sleep(500);
+    await sleep(300);
     this.debug("FRESH_SCAN", this.symbol || "new market");
   }
 
@@ -689,6 +705,7 @@ export default class TurboAutoDigitBotEngine {
       signalConfirmations: 0,
       skipSignalsRemaining: 0,
       executionPhase: "IDLE",
+      entryCountdown: 0,
       debugSteps: [],
       marketSwitches: 0,
       history: [],
