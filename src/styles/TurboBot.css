@@ -921,3 +921,37 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* V74 smart signal state */
+.v72FamilySummary strong.riskLow,
+.turboMetric.riskLow strong {
+  color: #27e5b8;
+}
+
+.v72FamilySummary strong.riskMedium,
+.turboMetric.riskMedium strong {
+  color: #ffd66b;
+}
+
+.v72FamilySummary strong.riskHigh,
+.turboMetric.riskHigh strong {
+  color: #ff9a5f;
+}
+
+.v72FamilySummary strong.riskWait,
+.turboMetric.riskWait strong {
+  color: #84a8bb;
+}
+
+.turboMetric.riskLow {
+  border-color: rgba(39, 229, 184, .55);
+}
+
+.turboMetric.riskMedium {
+  border-color: rgba(255, 214, 107, .55);
+}
+
+.turboMetric.riskHigh {
+  border-color: rgba(255, 112, 136, .55);
+}

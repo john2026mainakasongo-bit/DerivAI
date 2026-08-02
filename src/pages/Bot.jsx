@@ -105,13 +105,32 @@ function statusLabel(status) {
   return value;
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value, tone = "" }) {
   return (
-    <div className="turboMetric">
+    <div className={`turboMetric ${tone}`}>
       <small>{label}</small>
       <strong>{value}</strong>
     </div>
   );
+}
+
+function entryRisk(candidate) {
+  if (!candidate) return "SCANNING";
+
+  const stability = Number(candidate.stability || candidate.consistency || 0);
+  const expectedValue = Number(candidate.expectedValue || 0);
+  const confidence = Number(candidate.qualityScore || candidate.confidence || 0);
+
+  if (confidence >= 90 && stability >= 85 && expectedValue >= 8) return "LOW";
+  if (confidence >= 82 && stability >= 70 && expectedValue >= 3) return "MEDIUM";
+  return "HIGH";
+}
+
+function riskTone(risk) {
+  if (risk === "LOW") return "riskLow";
+  if (risk === "MEDIUM") return "riskMedium";
+  if (risk === "HIGH") return "riskHigh";
+  return "riskWait";
 }
 
 export default function Bot() {
@@ -225,6 +244,33 @@ export default function Bot() {
     )
     .filter(Boolean);
   const quality = qualityLabel(autoSignal?.qualityScore);
+
+  const liveSignalLabel = autoSignal?.setup || "";
+  const liveConfidence = Number(autoSignal?.qualityScore || 0);
+  const liveRisk = entryRisk(autoSignal);
+
+  const displaySignal =
+    (liveSignalLabel || botState.activeSetup !== "—")
+      ? liveSignalLabel || botState.activeSetup
+      : botState.lastCompletedSetup
+        ? `LAST: ${botState.lastCompletedSetup}`
+        : running
+          ? "SCANNING..."
+          : "WAIT";
+
+  const displayConfidence =
+    liveSignalLabel
+      ? `${liveConfidence.toFixed(1)}%`
+      : running
+        ? "SCANNING..."
+        : botState.lastCompletedConfidence > 0
+          ? `${Number(botState.lastCompletedConfidence).toFixed(1)}% LAST`
+          : "—";
+
+  const displayRisk =
+    liveSignalLabel
+      ? liveRisk
+      : botState.lastCompletedRisk || "SCANNING";
 
   const digitRunning = [
     "RUNNING",
@@ -748,8 +794,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V73 · Stable Feed & Settlement Engine"
-          subtitle="Single shared connection, duplicate-subscription protection and resilient contract settlement"
+          title="EdgePilot V74 · Smart Signal Status Engine"
+          subtitle="Clear live signal state, last-trade memory, entry-risk labels and fast fresh rescanning"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
           onConnect={auth.authenticated ? undefined : connect}
@@ -920,18 +966,18 @@ export default function Bot() {
                   </strong>
                 </div>
                 <div>
-                  <small>BEST SIGNAL</small>
-                  <strong>{autoSignal?.setup || "WAIT"}</strong>
+                  <small>CURRENT SIGNAL</small>
+                  <strong>{displaySignal}</strong>
                 </div>
                 <div>
-                  <small>QUALIFIED</small>
-                  <strong>{executableCandidates.length}</strong>
+                  <small>ENTRY RISK</small>
+                  <strong className={riskTone(displayRisk)}>
+                    {displayRisk}
+                  </strong>
                 </div>
                 <div>
                   <small>CONFIDENCE</small>
-                  <strong>
-                    {Number(autoSignal?.qualityScore || 0).toFixed(1)}%
-                  </strong>
+                  <strong>{displayConfidence}</strong>
                 </div>
               </div>
             ) : null}
@@ -1207,11 +1253,11 @@ export default function Bot() {
             <div className="turboSignalStrip">
               <div>
                 <small>CURRENT BEST</small>
-                <strong>{autoSignal?.setup || "WAIT"}</strong>
+                <strong>{displaySignal}</strong>
               </div>
               <div>
                 <small>QUALITY</small>
-                <strong>{Number(autoSignal?.qualityScore || 0).toFixed(1)}</strong>
+                <strong>{displayConfidence}</strong>
               </div>
               <div>
                 <small>RATING</small>
@@ -1501,7 +1547,23 @@ export default function Bot() {
                     label="Profit"
                     value={`${botState.profit >= 0 ? "+" : ""}${botState.profit.toFixed(2)} USD`}
                   />
-                  <Metric label="Current contract" value={botState.activeSetup} />
+                  <Metric
+                    label={
+                      botState.activeSetup !== "—"
+                        ? "Current contract"
+                        : "Last contract"
+                    }
+                    value={
+                      botState.activeSetup !== "—"
+                        ? botState.activeSetup
+                        : botState.lastCompletedSetup || "—"
+                    }
+                  />
+                  <Metric
+                    label="Entry risk"
+                    value={displayRisk}
+                    tone={riskTone(displayRisk)}
+                  />
                   <Metric label="Market switches" value={botState.marketSwitches || 0} />
                 </>
               ) : (
