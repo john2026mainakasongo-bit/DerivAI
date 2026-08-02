@@ -1078,60 +1078,7 @@ function candidatePassesStrictChecks(candidate = {}, signal = {}, isReal = false
 }
 
 
-function isStandardDigitSetup(setup = "") {
-  const value = normalizeSetup(setup);
-
-  return (
-    value === "EVEN" ||
-    value === "ODD" ||
-    value.startsWith("OVER") ||
-    value.startsWith("UNDER") ||
-    value.startsWith("DIFFERS")
-  );
-}
-
-function passesAccountExecutionGate(candidate = {}, isDemo = false) {
-  const setup = normalizeSetup(candidate.setup);
-
-  if (isStandardDigitSetup(setup)) {
-    if (isDemo) {
-      // V44 DEMO EXECUTION PATH:
-      // Demo standard-digit execution uses the candidate's observable setup
-      // evidence. Legacy weighted score, candidate confidence and candidate
-      // entropy remain visible for diagnosis but do not block Demo execution.
-      return (
-        Number(candidate.probability || 0) >= 72 &&
-        Number(candidate.samples || 0) >= 60 &&
-        Number(candidate.transitionCount || 0) >= 5 &&
-        Number(candidate.passedVotes || 0) >= 2
-      );
-    }
-
-    return (
-      Number(candidate.score || 0) >= 65 &&
-      Number(candidate.probability || 0) >= 79 &&
-      Number(candidate.confidence || 0) >= 76 &&
-      Number(candidate.samples || 0) >= 100 &&
-      Number(candidate.transitionCount || 0) >= 7 &&
-      Number(candidate.passedVotes || 0) >= 3 &&
-      Number(candidate.entropy || 100) <= 99.3
-    );
-  }
-
-  // MATCH and RISE/FALL keep the existing strict scoring logic.
-  return Boolean(candidate.ok);
-}
-
-function executionQualificationMode(candidate = {}, isDemo = false) {
-  if (!candidate) return "BLOCKED";
-  if (passesAccountExecutionGate(candidate, isDemo)) {
-    return isDemo ? "DEMO_PRACTICAL_ENTRY" : "REAL_STRICT_ENTRY";
-  }
-  return candidate.qualificationMode || "BLOCKED";
-}
-
-
-function v45NormalizeSetupFromText(value = "") {
+function v46SetupFromText(value = "") {
   const text = normalizeSetup(value);
 
   const over = text.match(/\bOVER\s*([0-9])\b/);
@@ -1154,7 +1101,7 @@ function v45NormalizeSetupFromText(value = "") {
   return "";
 }
 
-function v45BuildFallbackCandidates(signal = {}, gate = {}) {
+function v46FallbackCandidates(signal = {}, gate = {}) {
   const analysis = signal.analysis || {};
   const bayesian =
     analysis.bayesianSetup ||
@@ -1200,26 +1147,27 @@ function v45BuildFallbackCandidates(signal = {}, gate = {}) {
     analysis.topContract,
     analysis.decision?.setup,
     analysis.decision?.action,
-    analysis.signals?.best?.setup,
     analysis.primarySignal?.setup,
     analysis.secondarySignal?.setup,
+    analysis.signals?.best?.setup,
     signal.setup,
     signal.action,
   ];
 
-  const result = [];
   const seen = new Set();
+  const result = [];
 
   for (const source of sources) {
-    const setup = v45NormalizeSetupFromText(source);
-    if (!setup || seen.has(setup)) continue;
+    const setup = v46SetupFromText(source);
 
+    if (!setup || seen.has(setup)) continue;
     seen.add(setup);
+
     result.push({
       setup,
       action: setup,
-      probability,
       confidence,
+      probability,
       edge,
       approved: probability >= 60 || confidence >= 60,
       family:
@@ -1230,11 +1178,47 @@ function v45BuildFallbackCandidates(signal = {}, gate = {}) {
             : setup.startsWith("MATCH") || setup.startsWith("DIFFERS")
               ? "MATCH_DIFFERS"
               : "RISE_FALL",
-      source: "V45_FALLBACK",
+      source: "V46_FALLBACK",
     });
   }
 
   return result;
+}
+
+function v46IsStandardDigit(candidate = {}) {
+  const setup = candidateAction(candidate);
+
+  return (
+    setup === "EVEN" ||
+    setup === "ODD" ||
+    setup.startsWith("OVER") ||
+    setup.startsWith("UNDER") ||
+    setup.startsWith("DIFFERS")
+  );
+}
+
+function v46CanExecute(candidate = {}, isDemo = false) {
+  if (!candidate) return false;
+
+  if (isDemo && v46IsStandardDigit(candidate)) {
+    return (
+      Number(candidate.probability || 0) >= 72 &&
+      Number(candidate.samples || 0) >= 60 &&
+      Number(candidate.transitionCount || 0) >= 5 &&
+      Number(candidate.passedVotes || 0) >= 2
+    );
+  }
+
+  // Real and high-risk families retain the engine's strict decision.
+  return Boolean(candidate.ok);
+}
+
+function v46Qualification(candidate = {}, isDemo = false) {
+  if (isDemo && v46CanExecute(candidate, true)) {
+    return "DEMO_EXECUTABLE_CANDIDATE";
+  }
+
+  return candidate?.qualificationMode || "BLOCKED";
 }
 
 export default class DerivBotEngine {
@@ -1613,7 +1597,7 @@ export default class DerivBotEngine {
       approved: false,
       reason: analysisAssistedEnabled
         ? "No assisted candidate was returned."
-        : "Analysis Assisted is disabled; V45 fallback candidate pipeline is active.",
+        : "Analysis Assisted is disabled; V46 fallback candidates are active.",
       candidates: [],
     };
 
@@ -1627,7 +1611,7 @@ export default class DerivBotEngine {
             durationUnit: this.settings.durationUnit,
           }) || gate;
       } catch (error) {
-        console.error("[V45] ANALYSIS GATE ERROR", error);
+        console.error("[V46] ANALYSIS GATE ERROR", error);
       }
     }
 
@@ -1645,7 +1629,7 @@ export default class DerivBotEngine {
       ? gate.candidates.filter(Boolean)
       : [];
 
-    for (const fallbackCandidate of v45BuildFallbackCandidates(signal, gate)) {
+    for (const fallbackCandidate of v46FallbackCandidates(signal, gate)) {
       const fallbackKey = candidateAction(fallbackCandidate);
       const exists = candidates.some(
         (candidate) => candidateAction(candidate) === fallbackKey
@@ -1707,7 +1691,7 @@ export default class DerivBotEngine {
           unique.set(key, scored);
         }
       } catch (error) {
-        console.error("[V45] CANDIDATE SCORE ERROR", {
+        console.error("[V46] CANDIDATE SCORE ERROR", {
           key,
           candidate,
           message: error?.message || String(error),
@@ -1724,7 +1708,7 @@ export default class DerivBotEngine {
     );
 
     if (!ranked.length) {
-      console.warn("[V45] NO RANKED CANDIDATES", {
+      console.warn("[V46] NO RANKED CANDIDATES", {
         gateSetup: gate.setup || "",
         gateCandidates: Array.isArray(gate.candidates)
           ? gate.candidates.length
@@ -1757,7 +1741,7 @@ export default class DerivBotEngine {
         );
 
       if (collapsed) {
-        console.warn("[V45] LOCK RELEASED: candidate materially weakened", {
+        console.warn("[V46] LOCK RELEASED: candidate materially weakened", {
           setup: this.lockedCandidate.setup,
           lockedScore: this.lockedCandidate.score,
           liveScore: liveLockedCandidate.score,
@@ -1782,7 +1766,7 @@ export default class DerivBotEngine {
     if (!selected) {
       selected =
         ranked.find((candidate) =>
-          passesAccountExecutionGate(candidate, this.isDemoAccount)
+          v46CanExecute(candidate, this.isDemoAccount)
         ) ||
         ranked.find((candidate) => candidate.ok) ||
         ranked[0];
@@ -1790,7 +1774,7 @@ export default class DerivBotEngine {
 
     const selectedCanExecute =
       selected &&
-      passesAccountExecutionGate(selected, this.isDemoAccount);
+      v46CanExecute(selected, this.isDemoAccount);
 
     if (!selected || !selectedCanExecute) {
       this.strictSetupKey = "";
@@ -1808,9 +1792,9 @@ export default class DerivBotEngine {
         reason:
           `${bestText} ${
             this.isDemoAccount
-              ? "V44 Demo execution gate needs probability 72%+, 60 samples, 5 transitions and 2 votes. Legacy score, candidate confidence and candidate entropy are diagnostic only in Demo."
-              : "V44 Real gate remains strict: score 65+, probability 79%+, confidence 76%+, 100 samples, 7 transitions and 3 votes."
-          } The engine selects the highest-ranked candidate that can actually execute on the selected account. No blind entry.`,
+              ? "V46 Demo standard-digit gate needs probability 72%+, 60 samples, 5 transitions and 2 votes."
+              : "V46 Real and high-risk contracts retain the strict scored gate."
+          } Probability, confidence and ranking now use one evidence model. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
         requiredConfirmations: this.isDemoAccount ? 1 : 2,
@@ -1818,7 +1802,7 @@ export default class DerivBotEngine {
           ...gate,
           scoredCandidates: ranked.map((candidate) => ({
             ...candidate,
-            accountExecutionPass: passesAccountExecutionGate(
+            accountExecutionPass: v46CanExecute(
               candidate,
               this.isDemoAccount
             ),
@@ -1834,20 +1818,13 @@ export default class DerivBotEngine {
           blockedChecks: selected?.blockedChecks || null,
           realDigitQualityPass: Boolean(selected?.realDigitQualityPass),
           directEvidencePass: Boolean(selected?.directEvidencePass),
-          qualificationMode: executionQualificationMode(
+          qualificationMode: v46Qualification(
             selected,
             this.isDemoAccount
           ),
           accountExecutionPass: Boolean(selectedCanExecute),
           executionPhase: "SCAN",
-          lockedCandidate:
-            selected?.setup && selected.setup !== "WAIT"
-              ? selected.setup
-              : ranked.find(
-                  (candidate) =>
-                    candidate.setup &&
-                    candidate.setup !== "WAIT"
-                )?.setup || "—",
+          lockedCandidate: selected?.setup || "—",
           signalVersion: this.signalVersion,
           lockedSignalVersion: 0,
         },
@@ -1886,7 +1863,7 @@ export default class DerivBotEngine {
           ...selected,
           ok: true,
           accountExecutionPass: true,
-          qualificationMode: executionQualificationMode(
+          qualificationMode: v46Qualification(
             selected,
             this.isDemoAccount
           ),
@@ -1900,7 +1877,7 @@ export default class DerivBotEngine {
       this.strictConfirmations = 0;
       this.executionPhase = "LOCKED";
 
-      console.log("[V45] CANDIDATE LOCKED", {
+      console.log("[V46] CANDIDATE LOCKED", {
         setup,
         score: selected.score,
         threshold: selected.threshold,
@@ -1919,7 +1896,7 @@ export default class DerivBotEngine {
         ...this.lockedCandidate.snapshot,
         ok: true,
         accountExecutionPass: true,
-        qualificationMode: executionQualificationMode(
+        qualificationMode: v46Qualification(
           this.lockedCandidate.snapshot,
           this.isDemoAccount
         ),
@@ -1966,7 +1943,7 @@ export default class DerivBotEngine {
           blockedChecks: selected.blockedChecks || null,
           realDigitQualityPass: Boolean(selected.realDigitQualityPass),
           directEvidencePass: Boolean(selected.directEvidencePass),
-          qualificationMode: executionQualificationMode(
+          qualificationMode: v46Qualification(
             selected,
             this.isDemoAccount
           ),
@@ -1979,7 +1956,7 @@ export default class DerivBotEngine {
       };
     }
 
-    console.log("[V45] CANDIDATE READY", {
+    console.log("[V46] CANDIDATE READY", {
       setup,
       confirmations: confirmationUpdates,
       requiredConfirmations,
@@ -2016,7 +1993,7 @@ export default class DerivBotEngine {
           ? "REAL CONSERVATIVE"
           : "DEMO CONSERVATIVE",
         passedCount: ranked.filter((item) =>
-          passesAccountExecutionGate(item, this.isDemoAccount)
+          v46CanExecute(item, this.isDemoAccount)
         ).length,
         validated: true,
         gateReason:
@@ -2033,13 +2010,7 @@ export default class DerivBotEngine {
       requiredConfirmations,
       gate: {
         ...gate,
-        scoredCandidates: ranked.map((candidate) => ({
-          ...candidate,
-          accountExecutionPass: passesAccountExecutionGate(
-            candidate,
-            this.isDemoAccount
-          ),
-        })),
+        scoredCandidates: ranked,
         executionScore: selected.score,
         executionThreshold: selected.threshold,
         engineVotes: selected.passedVotes,
@@ -2050,7 +2021,7 @@ export default class DerivBotEngine {
         demoDigitQualityPass: Boolean(selected.demoDigitQualityPass),
         realDigitQualityPass: Boolean(selected.realDigitQualityPass),
         directEvidencePass: Boolean(selected.directEvidencePass),
-        qualificationMode: executionQualificationMode(
+        qualificationMode: v46Qualification(
           selected,
           this.isDemoAccount
         ),
@@ -2092,7 +2063,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V38 replaces contradictory candidate scoring with one unified evidence model. Probability, confidence, votes, transitions, samples, entropy and regime now feed one final score. Candidate-specific values remain primary and global analysis is used only as a bounded fallback.",
+        "V46 builds and ranks candidates even when Analysis Assisted is disabled, then selects the highest-ranked contract that can actually execute on the selected account.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2343,7 +2314,7 @@ export default class DerivBotEngine {
 
       const check = this.validSignal();
 
-      console.debug("[V45] GATE", {
+      console.debug("[V46] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
         lockedCandidate: this.lockedCandidate?.setup || "—",
@@ -2386,7 +2357,7 @@ export default class DerivBotEngine {
       }
 
       try {
-        console.log("[V45] EXECUTE TRADE", {
+        console.log("[V46] EXECUTE TRADE", {
           setup: check.contract?.label,
           phase: this.executionPhase,
           confirmations: check.confirmations,
@@ -2509,11 +2480,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V45 candidate pipeline confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V46 executable candidate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V45 CANDIDATE PIPELINE`,
+      activeSetup: `${check.contract.label} · V46 EXECUTABLE CANDIDATE`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

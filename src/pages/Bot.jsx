@@ -695,7 +695,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V45 · Candidate Pipeline Fix"
+          title="EdgePilot V46 · Executable Candidate Engine"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1035,9 +1035,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>CANDIDATE PIPELINE · DEMO + REAL</small>
+                <small>EXECUTABLE CANDIDATE SELECTION · REAL STRICT</small>
                 <strong>
-                  BUILD CANDIDATES → RANK → LOCK → CONFIRM → PROPOSAL → BUY
+                  BUILD → RANK EXECUTABLE → LOCK → CONFIRM → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1120,7 +1120,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V45 fixes the 0/0 candidate pipeline. When Analysis Assisted is disabled or returns no candidates, the engine builds candidates from the Bayesian setup, best contract, decision setup and live signal, then ranks them normally. Demo standard digits still require probability 72%+, 60 samples, five transitions and two votes plus one fresh confirmation. Real remains strict and requires its existing score, probability, confidence, sample, transition and vote rules plus two fresh confirmations. No bot can guarantee wins.
+              V46 builds fallback candidates when Analysis Assisted is disabled, scores every candidate, then selects the highest-ranked contract that can actually execute. Demo standard digits require probability 72%+, 60 samples, five transitions and two votes plus one fresh confirmation. FALL, RISE and MATCH remain strict. Real remains on the strict scored gate and uses two fresh confirmations. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1488,6 +1488,7 @@ export default function Bot() {
                 value={
                   botState.gate?.accountExecutionPass ||
                   botState.gate?.directEvidencePass ||
+                  botState.gate?.qualificationMode === "DEMO_EXECUTABLE_CANDIDATE" ||
                   botState.gate?.qualificationMode === "WEIGHTED_SCORE"
                     ? `QUALIFIED · ${
                         botState.gate?.qualificationMode || "V42"
