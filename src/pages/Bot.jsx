@@ -414,6 +414,10 @@ export default function Bot() {
   const running = [
     "RUNNING",
     "WAITING",
+    "LOCKED",
+    "CONFIRMING",
+    "READY",
+    "PROPOSAL",
     "BUYING",
     "MONITORING",
     "COOLDOWN",
@@ -691,7 +695,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V38 · Unified Scoring Engine + Hard Lock"
+          title="EdgePilot V42 · Source-Aligned Execution Engine"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1031,9 +1035,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>UNIFIED SCORING ENGINE · HARD LOCK</small>
+                <small>SOURCE-ALIGNED EXECUTION · HARD LOCK</small>
                 <strong>
-                  UNIFIED SCORE → RANK → LOCK → CONFIRM → BUY
+                  RANK EXECUTABLE → LOCK → CONFIRM → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1116,7 +1120,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V38 uses one scoring model for probability, confidence, votes, transitions, samples, entropy and regime. Candidate-specific values remain primary; global analysis is used only as a bounded fallback when candidate fields are missing or abnormally low. Demo standard digits require unified score 58+, probability 76%+, confidence 72%+, 80 samples, six transitions and two votes. Real remains stricter. Stake stays capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
+              V42 ranks every candidate, then selects the highest-ranked contract that can actually execute on the selected account. Demo standard digits require probability 74%+, confidence 66%+, 60 samples, five transitions and two votes. Real standard digits require score 65+, probability 79%+, confidence 76%+, 100 samples, seven transitions and three votes. MATCH and RISE/FALL remain strict. Real stake stays capped at 0.35 USD, martingale stays off and the bot stops after one loss. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1420,6 +1424,11 @@ export default function Bot() {
               <Metric
                 label="Top contract"
                 value={
+                  botState.gate?.lockedCandidate ||
+                  botState.lockedCandidate ||
+                  botState.gate?.scoredCandidates?.find(
+                    (candidate) => candidate.accountExecutionPass
+                  )?.setup ||
                   botState.gate?.scoredCandidates?.[0]?.setup ||
                   botState.activeSetup ||
                   "WAIT"
@@ -1460,14 +1469,17 @@ export default function Bot() {
               <Metric
                 label="Entry gate"
                 value={
+                  botState.gate?.accountExecutionPass ||
                   botState.gate?.directEvidencePass ||
                   botState.gate?.qualificationMode === "WEIGHTED_SCORE"
-                    ? `QUALIFIED · ${botState.gate?.qualificationMode || "UNIFIED"}`
+                    ? `QUALIFIED · ${
+                        botState.gate?.qualificationMode || "V42"
+                      }`
                     : botState.gate?.blockedChecks?.score
                       ? `BLOCKED ${botState.gate.blockedChecks.score} · ${
                           isDemo
-                            ? botState.gate.blockedChecks.demoNeeds || ""
-                            : botState.gate.blockedChecks.realNeeds || ""
+                            ? "P74 C66 S60 T5 V2"
+                            : "SCORE65 P79 C76 S100 T7 V3"
                         }`
                       : "WAIT"
                 }
