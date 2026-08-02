@@ -233,7 +233,7 @@ export default class TurboAutoDigitBotEngine {
       stopLoss: Math.max(0, safeNumber(input.stopLoss, 0)),
       minimumConfidence: Math.max(
         50,
-        Math.min(99, safeNumber(input.minimumConfidence, 78))
+        Math.min(99, safeNumber(input.minimumConfidence, 75))
       ),
       confirmationUpdates: Math.max(
         1,

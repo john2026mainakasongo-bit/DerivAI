@@ -129,10 +129,20 @@ function candidateProbability(distribution = [], mode, digit) {
   if (mode === "MATCH") return clamp(percentage(digit));
   if (mode === "DIFFERS") return clamp(100 - percentage(digit));
   if (mode === "EVEN") {
-    return clamp([0, 2, 4, 6, 8].reduce((sum, value) => sum + percentage(value), 0));
+    return clamp(
+      [0, 2, 4, 6, 8].reduce(
+        (sum, value) => sum + percentage(value),
+        0
+      )
+    );
   }
   if (mode === "ODD") {
-    return clamp([1, 3, 5, 7, 9].reduce((sum, value) => sum + percentage(value), 0));
+    return clamp(
+      [1, 3, 5, 7, 9].reduce(
+        (sum, value) => sum + percentage(value),
+        0
+      )
+    );
   }
 
   let total = 0;
@@ -143,6 +153,35 @@ function candidateProbability(distribution = [], mode, digit) {
   }
 
   return clamp(total);
+}
+
+function baselineProbability(mode, digit) {
+  if (mode === "MATCH") return 10;
+  if (mode === "DIFFERS") return 90;
+  if (mode === "EVEN" || mode === "ODD") return 50;
+  if (mode === "OVER") return clamp((9 - Number(digit)) * 10);
+  if (mode === "UNDER") return clamp(Number(digit) * 10);
+  return 50;
+}
+
+function normalizedEdge(observed, baseline) {
+  const base = Math.max(1, Number(baseline || 1));
+  const availableUpside = Math.max(1, 100 - base);
+  const rawEdge = Number(observed || 0) - base;
+
+  // Positive deviation is measured relative to how much upside remains.
+  return clamp((rawEdge / availableUpside) * 100, -100, 100);
+}
+
+function payoutAwareExpectedValue(observed, baseline) {
+  const probability = clamp(observed) / 100;
+  const fairProbability = Math.max(0.01, clamp(baseline) / 100);
+
+  // Fair-return proxy: payout multiplier ≈ 1 / baseline probability.
+  // This prevents 90% DIFFERS probability from automatically beating
+  // lower-base contracts such as EVEN/ODD, MATCH, OVER and UNDER.
+  const fairMultiplier = 1 / fairProbability;
+  return clamp((probability * fairMultiplier - 1) * 100, -100, 100);
 }
 
 function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = []) {
@@ -161,8 +200,6 @@ function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = [])
       ? normalizeSetup(validated.best.action)
       : "";
 
-  const candidates = [];
-
   const definitions = [
     ...[1, 2, 3, 4, 5, 6].map((digit) => ({ mode: "OVER", digit })),
     ...[3, 4, 5, 6, 7, 8].map((digit) => ({ mode: "UNDER", digit })),
@@ -172,8 +209,9 @@ function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = [])
     ...Array.from({ length: 10 }, (_, digit) => ({ mode: "DIFFERS", digit })),
   ];
 
-  for (const definition of definitions) {
-    const { mode, digit } = definition;
+  const candidates = [];
+
+  for (const { mode, digit } of definitions) {
     const setup =
       mode === "EVEN" || mode === "ODD"
         ? mode
@@ -182,51 +220,93 @@ function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = [])
           : `${mode} ${digit}`;
 
     const probability = candidateProbability(rows, mode, digit);
+    const baseline = baselineProbability(mode, digit);
     const transition = transitionQuality(digitHistory, mode, digit);
-    const frequency = probability;
+    const transitionEdge = normalizedEdge(transition, baseline);
+    const probabilityEdge = normalizedEdge(probability, baseline);
+    const expectedValue = payoutAwareExpectedValue(probability, baseline);
     const validationBonus =
-      normalizeSetup(setup) === validatedSetup ? 8 : 0;
-    const familyPenalty = mode === "MATCH" ? 14 : 0;
+      normalizeSetup(setup) === validatedSetup ? 5 : 0;
 
+    // Score all families on comparable edge, not raw win probability.
+    // A DIFFERS candidate at 93% is only +3 points above its 90% baseline.
+    // EVEN at 56% is +6 above 50%, and may therefore rank higher.
     const qualityScore = clamp(
-      probability * 0.4 +
-        transition * 0.2 +
-        frequency * 0.15 +
-        entropy * 0.15 +
-        momentum * 0.1 +
-        validationBonus -
-        familyPenalty
+      68 +
+        expectedValue * 1.1 +
+        probabilityEdge * 0.12 +
+        transitionEdge * 0.08 +
+        (entropy - 50) * 0.05 +
+        (momentum - 50) * 0.03 +
+        validationBonus
     );
+
+    const minimumObserved =
+      baseline >= 80
+        ? baseline + 2.5
+        : baseline >= 50
+          ? baseline + 3
+          : baseline + 1.5;
 
     candidates.push({
       setup,
       mode,
       digit,
       probability,
+      baseline,
+      probabilityEdge,
+      transition,
+      transitionEdge,
+      expectedValue,
       confidence: qualityScore,
       qualityScore,
-      transition,
-      frequency,
       entropy,
       momentum,
       source:
         validationBonus > 0
           ? "BACKTEST VALIDATED"
-          : "DYNAMIC ALL-CONTRACT ANALYSIS",
+          : "UNBIASED EV RANKING",
       detail:
-        `${setup}: probability ${probability.toFixed(1)}%, ` +
-        `transition ${transition.toFixed(1)}%, entropy quality ` +
-        `${entropy.toFixed(1)}%.`,
+        `${setup}: observed ${probability.toFixed(1)}% vs ` +
+        `${baseline.toFixed(1)}% baseline, EV edge ` +
+        `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(1)}%.`,
+      eligible:
+        probability >= minimumObserved &&
+        expectedValue > 0 &&
+        qualityScore >= 70,
     });
   }
 
-  return candidates
-    .filter((candidate) => candidate.probability >= 55)
+  const eligible = candidates
+    .filter((candidate) => candidate.eligible)
     .sort(
       (left, right) =>
         right.qualityScore - left.qualityScore ||
-        right.probability - left.probability
+        right.expectedValue - left.expectedValue
     );
+
+  // Keep only the strongest candidate from each family in the leading
+  // comparison so ten DIFFERS digits cannot crowd out every other family.
+  const bestByFamily = new Map();
+
+  for (const candidate of eligible) {
+    if (!bestByFamily.has(candidate.mode)) {
+      bestByFamily.set(candidate.mode, candidate);
+    }
+  }
+
+  const familyLeaders = [...bestByFamily.values()].sort(
+    (left, right) =>
+      right.qualityScore - left.qualityScore ||
+      right.expectedValue - left.expectedValue
+  );
+
+  const remaining = eligible.filter(
+    (candidate) =>
+      !familyLeaders.some((leader) => leader.setup === candidate.setup)
+  );
+
+  return [...familyLeaders, ...remaining];
 }
 
 function qualityLabel(score) {
@@ -238,18 +318,12 @@ function qualityLabel(score) {
 }
 
 function signalReason(candidate = {}) {
-  const metrics = [
-    ["Probability", candidate.probability],
-    ["Transition", candidate.transition],
-    ["Frequency", candidate.frequency],
-    ["Entropy quality", candidate.entropy],
-    ["Momentum", candidate.momentum],
-  ].sort((left, right) => Number(right[1]) - Number(left[1]));
-
-  return metrics
-    .slice(0, 3)
-    .map(([label]) => label)
-    .join(" · ");
+  return (
+    `Observed ${Number(candidate.probability || 0).toFixed(1)}% vs ` +
+    `${Number(candidate.baseline || 0).toFixed(1)}% baseline · ` +
+    `EV edge ${Number(candidate.expectedValue || 0) >= 0 ? "+" : ""}` +
+    `${Number(candidate.expectedValue || 0).toFixed(1)}%`
+  );
 }
 
 function statusLabel(status) {
@@ -337,7 +411,12 @@ export default function Bot() {
   );
 
   const autoSignal = rankedCandidates[0] || null;
-  const topCandidates = rankedCandidates.slice(0, 4);
+  const topCandidates = rankedCandidates.slice(0, 6);
+  const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
+    .map((mode) =>
+      rankedCandidates.find((candidate) => candidate.mode === mode)
+    )
+    .filter(Boolean);
   const quality = qualityLabel(autoSignal?.qualityScore);
 
   const running = [
@@ -494,7 +573,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V56 · Fresh Market Every Trade"
+          title="EdgePilot V57 · Unbiased Contract Ranking"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={connected}
           connecting={connecting}
@@ -788,9 +867,9 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                Every settled trade — WIN or LOSS — clears the old signal,
-                switches to the next volatility market, collects fresh ticks,
-                and ranks OVER, UNDER, EVEN, ODD, MATCH and DIFFERS again.
+                Every settled trade clears the old signal and switches market.
+                Ranking compares each contract against its own fair baseline, so
+                DIFFERS no longer wins merely because its raw probability is near 90%.
               </span>
             </div>
 
@@ -807,17 +886,41 @@ export default function Bot() {
 
               <div className="v53Expected">
                 <span>
-                  <small>Probability</small>
+                  <small>Observed</small>
                   <strong>{Number(autoSignal?.probability || 0).toFixed(1)}%</strong>
                 </span>
                 <span>
-                  <small>Quality score</small>
-                  <strong>{Number(autoSignal?.qualityScore || 0).toFixed(1)}</strong>
+                  <small>Fair baseline</small>
+                  <strong>{Number(autoSignal?.baseline || 0).toFixed(1)}%</strong>
                 </span>
                 <span>
-                  <small>Freshness</small>
-                  <strong>≤ {settings.maximumSignalAgeMs / 1000}s</strong>
+                  <small>EV edge</small>
+                  <strong>
+                    {Number(autoSignal?.expectedValue || 0) >= 0 ? "+" : ""}
+                    {Number(autoSignal?.expectedValue || 0).toFixed(1)}%
+                  </strong>
                 </span>
+              </div>
+            </div>
+
+            <div className="v57FamilyBoard">
+              <div className="v53RankingHeader">
+                <strong>Best candidate per contract family</strong>
+                <span>No raw-probability bias</span>
+              </div>
+
+              <div className="v57FamilyGrid">
+                {familyLeaders.map((candidate) => (
+                  <div key={candidate.mode}>
+                    <small>{candidate.mode}</small>
+                    <strong>{candidate.setup}</strong>
+                    <span>
+                      Q {candidate.qualityScore.toFixed(1)} · EV
+                      {" "}{candidate.expectedValue >= 0 ? "+" : ""}
+                      {candidate.expectedValue.toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -832,7 +935,12 @@ export default function Bot() {
                   <span>#{index + 1}</span>
                   <strong>{candidate.setup}</strong>
                   <em>{candidate.qualityScore.toFixed(1)}</em>
-                  <small>{candidate.probability.toFixed(1)}% probability</small>
+                  <small>
+                    EV {candidate.expectedValue >= 0 ? "+" : ""}
+                    {candidate.expectedValue.toFixed(1)}% ·
+                    {" "}{candidate.probability.toFixed(1)}% /
+                    {candidate.baseline.toFixed(1)}%
+                  </small>
                 </div>
               ))}
             </div>

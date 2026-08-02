@@ -468,3 +468,64 @@
   color: #5cb8ff;
   box-shadow: 0 0 20px rgba(92, 184, 255, .2);
 }
+
+
+.v57FamilyBoard {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid #1a4962;
+  border-radius: 11px;
+  background: #051722;
+}
+
+.v57FamilyGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+}
+
+.v57FamilyGrid > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border-top: 1px solid #12384d;
+  border-right: 1px solid #12384d;
+}
+
+.v57FamilyGrid > div:nth-child(3n) {
+  border-right: 0;
+}
+
+.v57FamilyGrid small {
+  display: block;
+  color: #22e6b8;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.v57FamilyGrid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 13px;
+}
+
+.v57FamilyGrid span {
+  display: block;
+  margin-top: 4px;
+  color: #8eafc2;
+  font-size: 10px;
+}
+
+@media (max-width: 720px) {
+  .v57FamilyGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .v57FamilyGrid > div:nth-child(3n) {
+    border-right: 1px solid #12384d;
+  }
+
+  .v57FamilyGrid > div:nth-child(2n) {
+    border-right: 0;
+  }
+}
