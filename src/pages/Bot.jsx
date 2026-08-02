@@ -125,7 +125,7 @@ export default function Bot() {
 
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [botState, setBotState] = useState(INITIAL_STATE);
-  const [botType, setBotType] = useState("DIGIT");
+  const [botType, setBotType] = useState("OVER_UNDER");
   const [riseFallState, setRiseFallState] = useState({
     running: false,
     status: "STOPPED",
@@ -186,13 +186,35 @@ export default function Bot() {
 
   const v66Analysis = unifiedSignals.digit;
   const riseFallAnalysis = unifiedSignals.riseFall;
-  const rankedCandidates = v66Analysis.candidates || [];
+  const allRankedCandidates = v66Analysis.candidates || [];
+
+  const selectedModes =
+    botType === "OVER_UNDER"
+      ? ["OVER", "UNDER"]
+      : botType === "EVEN_ODD"
+        ? ["EVEN", "ODD"]
+        : botType === "MATCH_DIFFERS"
+          ? ["MATCH", "DIFFERS"]
+          : ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"];
+
+  const rankedCandidates =
+    isRiseFallBot
+      ? []
+      : allRankedCandidates.filter((candidate) =>
+          selectedModes.includes(candidate.mode)
+        );
+
   const executableCandidates = rankedCandidates.filter(
     (candidate) => candidate.executable
   );
-  const autoSignal = v66Analysis.best || null;
+
+  const autoSignal =
+    executableCandidates[0] ||
+    null;
+
   const topCandidates = rankedCandidates.slice(0, 6);
-  const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
+
+  const familyLeaders = selectedModes
     .map((mode) =>
       rankedCandidates.find(
         (candidate) => candidate.mode === mode
@@ -212,8 +234,11 @@ export default function Bot() {
     "SWITCHING",
   ].includes(botState.status);
 
+  const isRiseFallBot = isRiseFallBot;
+  const isDigitFamilyBot = !isRiseFallBot;
+
   const running =
-    botType === "DIGIT"
+    isDigitFamilyBot
       ? digitRunning
       : riseFallState.running;
 
@@ -351,7 +376,7 @@ export default function Bot() {
           }
         : null
     );
-  }, [autoSignal]);
+  }, [autoSignal, botType]);
 
   function updateNumber(key) {
     return (event) => {
@@ -722,8 +747,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V71 · Unified One-Minute Engine"
-          subtitle="Shared live analysis, fast volatility rotation and strict one-loss risk control"
+          title="EdgePilot V72 · Separate Contract Bots"
+          subtitle="Select Over/Under, Even/Odd, Rise/Fall, Matches/Differs or Smart Auto independently"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
           onConnect={auth.authenticated ? undefined : connect}
@@ -745,21 +770,58 @@ export default function Bot() {
           </div>
         </section>
 
-        <section className="v67BotSelector">
-          <button
-            className={botType === "DIGIT" ? "active" : ""}
-            disabled={running}
-            onClick={() => setBotType("DIGIT")}
-          >
-            Fast Digit Bot
-          </button>
-          <button
-            className={botType === "RISE_FALL" ? "active" : ""}
-            disabled={running}
-            onClick={() => setBotType("RISE_FALL")}
-          >
-            Rise / Fall Bot
-          </button>
+        <section className="v72BotSelector">
+          {[
+            {
+              id: "OVER_UNDER",
+              title: "Over / Under Bot",
+              subtitle: "Only OVER 1–6 and UNDER 3–8",
+            },
+            {
+              id: "EVEN_ODD",
+              title: "Even / Odd Bot",
+              subtitle: "Only EVEN and ODD",
+            },
+            {
+              id: "RISE_FALL",
+              title: "Rise / Fall Bot",
+              subtitle: "Only CALL and PUT trend entries",
+            },
+            {
+              id: "MATCH_DIFFERS",
+              title: "Matches / Differs Bot",
+              subtitle: "Only MATCH and DIFFERS",
+            },
+            {
+              id: "SMART_AUTO",
+              title: "Smart Auto AI",
+              subtitle: "Ranks every enabled contract family",
+            },
+          ].map((item) => (
+            <button
+              type="button"
+              key={item.id}
+              className={botType === item.id ? "active" : ""}
+              disabled={running}
+              onClick={() => {
+                setBotType(item.id);
+
+                setSettings((current) => ({
+                  ...current,
+                  contractMode: "AUTO",
+                  allowHighRiskContracts:
+                    item.id === "MATCH_DIFFERS"
+                      ? true
+                      : item.id === "SMART_AUTO"
+                        ? current.allowHighRiskContracts
+                        : false,
+                }));
+              }}
+            >
+              <strong>{item.title}</strong>
+              <small>{item.subtitle}</small>
+            </button>
+          ))}
         </section>
 
         {statusDetail ? (
@@ -770,12 +832,12 @@ export default function Bot() {
           <div>
             <small>BOT STATUS</small>
             <strong>
-              {botType === "DIGIT"
+              {isDigitFamilyBot
                 ? statusLabel(botState.status)
                 : statusLabel(riseFallState.status)}
             </strong>
             <p>
-              {botType === "DIGIT"
+              {isDigitFamilyBot
                 ? botState.message
                 : riseFallState.message}
             </p>
@@ -783,7 +845,7 @@ export default function Bot() {
 
           <div
             className={`turboStatusOrb ${
-              botType === "DIGIT"
+              isDigitFamilyBot
                 ? botState.status.toLowerCase()
                 : riseFallState.status.toLowerCase()
             }`}
@@ -798,9 +860,15 @@ export default function Bot() {
               <div>
                 <small>BOT CONFIGURATION</small>
                 <h2>
-                  {botType === "DIGIT"
-                    ? "Auto digit execution"
-                    : "Auto Rise/Fall execution"}
+                  {botType === "OVER_UNDER"
+                    ? "Over / Under execution"
+                    : botType === "EVEN_ODD"
+                      ? "Even / Odd execution"
+                      : botType === "MATCH_DIFFERS"
+                        ? "Matches / Differs execution"
+                        : botType === "SMART_AUTO"
+                          ? "Smart Auto AI execution"
+                          : "Auto Rise/Fall execution"}
                 </h2>
               </div>
 
@@ -809,7 +877,7 @@ export default function Bot() {
               </span>
             </div>
 
-            {botType === "RISE_FALL" ? (
+            {isRiseFallBot ? (
               <div className="v67RiseFallSummary">
                 <div>
                   <small>SIGNAL</small>
@@ -836,26 +904,46 @@ export default function Bot() {
               </div>
             ) : null}
 
-            <div className={botType === "DIGIT" ? "turboFormGrid" : "turboFormGrid riseFallMode"}>
+            {isDigitFamilyBot ? (
+              <div className="v72FamilySummary">
+                <div>
+                  <small>SELECTED BOT</small>
+                  <strong>
+                    {botType === "OVER_UNDER"
+                      ? "OVER / UNDER"
+                      : botType === "EVEN_ODD"
+                        ? "EVEN / ODD"
+                        : botType === "MATCH_DIFFERS"
+                          ? "MATCHES / DIFFERS"
+                          : "SMART AUTO AI"}
+                  </strong>
+                </div>
+                <div>
+                  <small>BEST SIGNAL</small>
+                  <strong>{autoSignal?.setup || "WAIT"}</strong>
+                </div>
+                <div>
+                  <small>QUALIFIED</small>
+                  <strong>{executableCandidates.length}</strong>
+                </div>
+                <div>
+                  <small>CONFIDENCE</small>
+                  <strong>
+                    {Number(autoSignal?.qualityScore || 0).toFixed(1)}%
+                  </strong>
+                </div>
+              </div>
+            ) : null}
+
+            <div className={isDigitFamilyBot ? "turboFormGrid" : "turboFormGrid riseFallMode"}>
               <label className="botField">
-                <span>Contract</span>
-                <select
-                  value={settings.contractMode}
-                  disabled={running}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      contractMode: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="AUTO">AUTO — Best contract</option>
-                  <option value="OVER">Over</option>
-                  <option value="UNDER">Under</option>
-                  <option value="MATCH">Matches</option>
-                  <option value="DIFFERS">Differs</option>
-                  <option value="EVEN">Even</option>
-                  <option value="ODD">Odd</option>
+                <span>Contract family</span>
+                <select value={botType} disabled>
+                  <option value="OVER_UNDER">OVER / UNDER ONLY</option>
+                  <option value="EVEN_ODD">EVEN / ODD ONLY</option>
+                  <option value="RISE_FALL">RISE / FALL ONLY</option>
+                  <option value="MATCH_DIFFERS">MATCHES / DIFFERS ONLY</option>
+                  <option value="SMART_AUTO">SMART AUTO AI</option>
                 </select>
               </label>
 
@@ -883,8 +971,9 @@ export default function Bot() {
                   disabled={
                     running ||
                     settings.predictionMode === "AUTO" ||
-                    settings.contractMode === "EVEN" ||
-                    settings.contractMode === "ODD"
+                    botType === "EVEN_ODD" ||
+                    botType === "RISE_FALL" ||
+                    botType === "SMART_AUTO"
                   }
                   onChange={updateNumber("prediction")}
                 >
@@ -1145,6 +1234,16 @@ export default function Bot() {
               <span>MATCH / DIFFERS</span>
             </div>
 
+            {botType === "MATCH_DIFFERS" ? (
+              <div className="v72HighRiskWarning">
+                <strong>HIGH-RISK CONTRACT FAMILY</strong>
+                <span>
+                  MATCH and DIFFERS have asymmetric payout and risk. V72 keeps
+                  the one-loss stop and minimum stake. No signal is guaranteed.
+                </span>
+              </div>
+            ) : null}
+
             <div className="v63ModeBanner">
               <strong>FAST STRICT MODE</strong>
               <span>
@@ -1157,9 +1256,10 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                V66 keeps the same 13-check structure but uses faster 20, 40,
-                80 and 160-tick windows, a lighter Bayesian prior and a quick
-                120-tick backtest. Standard entries require 9 of 13 checks.
+                V72 isolates each contract family. Over/Under never receives
+                Even/Odd signals; Even/Odd never receives Over/Under signals;
+                Rise/Fall uses only CALL/PUT; Matches/Differs stays separate.
+                Smart Auto is the only mode allowed to compare families.
               </span>
             </div>
 
@@ -1324,18 +1424,28 @@ export default function Bot() {
                 <button
                   className="botStartButton turboStart"
                   onClick={
-                    botType === "DIGIT"
+                    isDigitFamilyBot
                       ? startBot
                       : startRiseFallBot
                   }
                 >
-                  ▶ START {botType === "DIGIT" ? "DIGIT" : "RISE/FALL"} BOT
+                  ▶ START {
+                    botType === "OVER_UNDER"
+                      ? "OVER/UNDER"
+                      : botType === "EVEN_ODD"
+                        ? "EVEN/ODD"
+                        : botType === "MATCH_DIFFERS"
+                          ? "MATCH/DIFFERS"
+                          : botType === "SMART_AUTO"
+                            ? "SMART AUTO"
+                            : "RISE/FALL"
+                  } BOT
                 </button>
               ) : (
                 <button
                   className="botStopButton turboStop"
                   onClick={
-                    botType === "DIGIT"
+                    isDigitFamilyBot
                       ? () => engineRef.current?.stop()
                       : stopRiseFallBot
                   }
@@ -1366,7 +1476,7 @@ export default function Bot() {
               <div>
                 <small>LIVE PERFORMANCE</small>
                 <h2>
-                  {botType === "DIGIT"
+                  {isDigitFamilyBot
                     ? settings.unlimited
                       ? `Run ${botState.runs}`
                       : `Run ${botState.runs}/${settings.maxRuns}`
@@ -1380,7 +1490,7 @@ export default function Bot() {
             </div>
 
             <div className="turboMetrics">
-              {botType === "DIGIT" ? (
+              {isDigitFamilyBot ? (
                 <>
                   <Metric label="Runs" value={botState.runs} />
                   <Metric label="Wins" value={botState.wins} />
@@ -1415,7 +1525,7 @@ export default function Bot() {
               )}
             </div>
 
-            {botType === "RISE_FALL" ? (
+            {isRiseFallBot ? (
               <div className="v67RiseFallInstruction">
                 <strong>{riseFallAnalysis.signal}</strong>
                 <p>{riseFallAnalysis.instruction}</p>
@@ -1426,7 +1536,7 @@ export default function Bot() {
               </div>
             ) : null}
 
-            {botType === "DIGIT" ? (
+            {isDigitFamilyBot ? (
             <div className="turboHistoryWrap">
               <table className="turboHistoryTable">
                 <thead>
