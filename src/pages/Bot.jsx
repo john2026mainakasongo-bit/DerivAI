@@ -188,6 +188,9 @@ export default function Bot() {
   const riseFallAnalysis = unifiedSignals.riseFall;
   const allRankedCandidates = v66Analysis.candidates || [];
 
+  const isRiseFallBot = botType === "RISE_FALL";
+  const isDigitFamilyBot = !isRiseFallBot;
+
   const selectedModes =
     botType === "OVER_UNDER"
       ? ["OVER", "UNDER"]
@@ -234,8 +237,6 @@ export default function Bot() {
     "SWITCHING",
   ].includes(botState.status);
 
-  const isRiseFallBot = isRiseFallBot;
-  const isDigitFamilyBot = !isRiseFallBot;
 
   const running =
     isDigitFamilyBot
@@ -747,7 +748,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V72 · Separate Contract Bots"
+          title="EdgePilot V72.1 · Separate Contract Bots"
           subtitle="Select Over/Under, Even/Odd, Rise/Fall, Matches/Differs or Smart Auto independently"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
