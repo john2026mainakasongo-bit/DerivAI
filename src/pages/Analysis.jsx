@@ -333,8 +333,8 @@ export default function Analysis() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V71 · Unified Live Analysis"
-          subtitle="One live feed and one signal engine shared with every automated bot"
+          title="EdgePilot V73 · Stable Unified Analysis"
+          subtitle="Shared socket and idempotent subscriptions across Analysis and Auto Bot"
           connected={connected}
           connecting={false}
           onConnect={connect}

@@ -748,8 +748,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V72.1 · Separate Contract Bots"
-          subtitle="Select Over/Under, Even/Odd, Rise/Fall, Matches/Differs or Smart Auto independently"
+          title="EdgePilot V73 · Stable Feed & Settlement Engine"
+          subtitle="Single shared connection, duplicate-subscription protection and resilient contract settlement"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
           onConnect={auth.authenticated ? undefined : connect}

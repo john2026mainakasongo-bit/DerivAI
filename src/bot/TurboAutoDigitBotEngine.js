@@ -177,6 +177,8 @@ export default class TurboAutoDigitBotEngine {
     this.signalKey = "";
     this.signalConfirmations = 0;
     this.lastSignalUpdatedAt = 0;
+    this.lastSettlementAt = 0;
+    this.lastExecutedSetup = "";
     this.lastLossSetup = "";
     this.lastLossAt = 0;
     this.skipSignalUpdatesRemaining = 0;
@@ -184,6 +186,7 @@ export default class TurboAutoDigitBotEngine {
     this.running = false;
     this.stopRequested = false;
     this.contractWaiters = new Map();
+    this.settlementPollers = new Map();
 
     this.state = {
       status: "STOPPED",
@@ -408,15 +411,20 @@ export default class TurboAutoDigitBotEngine {
         return null;
       }
     }
+    const signalUpdatedAt = safeNumber(this.signal?.updatedAt, 0);
     const fresh =
-      Date.now() - safeNumber(this.signal?.updatedAt, 0) <=
+      Date.now() - signalUpdatedAt <=
       this.settings.maximumSignalAgeMs;
+
+    const newerThanSettlement =
+      signalUpdatedAt > this.lastSettlementAt + 150;
 
     if (
       !auto ||
       confidence < this.settings.minimumConfidence ||
       confirmations < this.settings.confirmationUpdates ||
-      !fresh
+      !fresh ||
+      !newerThanSettlement
     ) {
       return null;
     }
@@ -688,6 +696,9 @@ export default class TurboAutoDigitBotEngine {
   reset() {
     if (this.running) return;
 
+    this.lastSettlementAt = 0;
+    this.lastExecutedSetup = "";
+
     this.patch({
       status: "STOPPED",
       message: "Statistics reset. Bot is ready.",
@@ -787,6 +798,7 @@ export default class TurboAutoDigitBotEngine {
     }
 
     this.debug("BUY_SENT", contractId);
+    this.lastExecutedSetup = contract.label;
 
     this.patch({
       status: "MONITORING",
@@ -794,11 +806,29 @@ export default class TurboAutoDigitBotEngine {
       activeContractId: contractId,
     });
 
+    if (typeof this.client.subscribeOpenContract === "function") {
+      try {
+        await this.client.subscribeOpenContract(contractId);
+      } catch (error) {
+        if (
+          !/already subscribed|duplicate subscription/i.test(
+            error instanceof Error ? error.message : String(error || "")
+          )
+        ) {
+          this.debug(
+            "CONTRACT_SUBSCRIBE_WARN",
+            error instanceof Error ? error.message : String(error || "")
+          );
+        }
+      }
+    }
+
     const settled = await this.waitForSettlement(contractId);
     this.debug("SETTLED", contractId);
     const profit = contractProfit(settled);
     const won = profit > 0;
     const completedAt = Date.now();
+    this.lastSettlementAt = completedAt;
 
     const historyItem = {
       id: `${contractId}-${completedAt}`,
@@ -854,6 +884,7 @@ export default class TurboAutoDigitBotEngine {
       losses: this.state.losses + (won ? 0 : 1),
       profit: this.state.profit + profit,
       totalStake: this.state.totalStake + stake,
+      activeSetup: "—",
       activeContractId: "",
       signalConfirmations: 0,
       skipSignalsRemaining: this.skipSignalUpdatesRemaining,
@@ -861,21 +892,150 @@ export default class TurboAutoDigitBotEngine {
     });
   }
 
-  waitForSettlement(contractId) {
-    return new Promise((resolve, reject) => {
-      const key = String(contractId);
+  async waitForSettlement(contractId) {
+    const key = String(contractId);
+    const startedAt = Date.now();
+    const deadline = startedAt + 45000;
 
-      const timeout = window.setTimeout(() => {
-        this.contractWaiters.delete(key);
-        reject(new Error("Timed out waiting for contract settlement."));
-      }, 120000);
-
+    const eventPromise = new Promise((resolve, reject) => {
       this.contractWaiters.set(key, {
         resolve,
         reject,
-        timeout,
+        timeout: null,
       });
     });
+
+    const pollPromise = (async () => {
+      let directResubscribeDone = false;
+
+      while (Date.now() < deadline) {
+        if (this.stopRequested) {
+          throw new Error("Bot stopped while monitoring the contract.");
+        }
+
+        const elapsed = Date.now() - startedAt;
+
+        if (
+          !directResubscribeDone &&
+          elapsed >= 5000 &&
+          typeof this.client.subscribeOpenContract === "function"
+        ) {
+          directResubscribeDone = true;
+
+          try {
+            await this.client.subscribeOpenContract(key);
+            this.debug("CONTRACT_RESUBSCRIBE", key);
+          } catch (error) {
+            if (
+              !/already subscribed|duplicate subscription/i.test(
+                error instanceof Error ? error.message : String(error || "")
+              )
+            ) {
+              this.debug(
+                "CONTRACT_RESUBSCRIBE_WARN",
+                error instanceof Error ? error.message : String(error || "")
+              );
+            }
+          }
+        }
+
+        if (typeof this.client.getPortfolio === "function") {
+          try {
+            const portfolio = await this.client.getPortfolio();
+            const contracts =
+              portfolio?.contracts ||
+              portfolio?.portfolio?.contracts ||
+              portfolio?.open_contracts ||
+              [];
+
+            const matching = Array.isArray(contracts)
+              ? contracts.find(
+                  (item) =>
+                    String(
+                      item?.contract_id ||
+                      item?.contractId ||
+                      item?.id ||
+                      ""
+                    ) === key
+                )
+              : null;
+
+            if (matching && contractFinished(matching)) {
+              return matching;
+            }
+          } catch {
+            // Continue to statement fallback.
+          }
+        }
+
+        if (
+          elapsed >= 4000 &&
+          typeof this.client.getStatement === "function"
+        ) {
+          try {
+            const statement = await this.client.getStatement(50);
+            const rows =
+              statement?.transactions ||
+              statement?.statement?.transactions ||
+              statement?.statement ||
+              [];
+
+            const matching = Array.isArray(rows)
+              ? rows.find(
+                  (item) =>
+                    String(
+                      item?.contract_id ||
+                      item?.contractId ||
+                      item?.id ||
+                      item?.reference_id ||
+                      ""
+                    ) === key
+                )
+              : null;
+
+            if (matching) {
+              const amount = safeNumber(
+                matching.amount,
+                safeNumber(matching.profit, NaN)
+              );
+
+              if (Number.isFinite(amount)) {
+                return {
+                  ...matching,
+                  contract_id: key,
+                  is_sold: 1,
+                  status: amount >= 0 ? "won" : "lost",
+                  profit: amount,
+                };
+              }
+            }
+          } catch {
+            // Keep polling until the deadline.
+          }
+        }
+
+        this.patch({
+          status: "MONITORING",
+          message:
+            `Monitoring ${this.state.activeSetup || "contract"} · ` +
+            `${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))}s watchdog.`,
+        });
+
+        await sleep(1000);
+      }
+
+      throw new Error(
+        "Settlement could not be confirmed after 45 seconds. " +
+        "The bot stopped without opening another trade."
+      );
+    })();
+
+    try {
+      return await Promise.race([eventPromise, pollPromise]);
+    } finally {
+      this.contractWaiters.delete(key);
+      this.settlementPollers.delete(key);
+    }
   }
 
   handleContractUpdate(contract = {}) {
@@ -896,7 +1056,10 @@ export default class TurboAutoDigitBotEngine {
       return;
     }
 
-    window.clearTimeout(waiter.timeout);
+    if (waiter.timeout) {
+      window.clearTimeout(waiter.timeout);
+    }
+
     this.contractWaiters.delete(id);
     waiter.resolve(contract);
   }
@@ -905,7 +1068,9 @@ export default class TurboAutoDigitBotEngine {
     this.stop("Bot page closed.");
 
     for (const waiter of this.contractWaiters.values()) {
-      window.clearTimeout(waiter.timeout);
+      if (waiter.timeout) {
+        window.clearTimeout(waiter.timeout);
+      }
       waiter.reject(new Error("Bot page closed."));
     }
 
