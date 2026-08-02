@@ -258,10 +258,10 @@ export function rankV62Contracts({
 
     decisionConfidence = clamp(decisionConfidence);
 
-    const sampleMinimum = highRisk ? 300 : 40;
-    const evMinimum = highRisk ? 0.12 : 0.012;
-    const edgeMinimum = highRisk ? 0.035 : 0.01;
-    const stabilityMinimum = highRisk ? 75 : 55;
+    const sampleMinimum = highRisk ? 400 : 60;
+    const evMinimum = highRisk ? 0.14 : 0.025;
+    const edgeMinimum = highRisk ? 0.04 : 0.018;
+    const stabilityMinimum = highRisk ? 80 : 68;
 
     const executable =
       sampleSize >= sampleMinimum &&
@@ -319,14 +319,14 @@ export function rankV62Contracts({
     null;
 
   return {
-    ready: sampleSize >= 40,
+    ready: sampleSize >= 60,
     sampleSize,
     candidates,
     best,
     reason: best
       ? `EXECUTE ${best.setup}: strongest current EV evidence.`
-      : sampleSize < 40
-        ? `Collecting evidence: ${sampleSize}/40.`
+      : sampleSize < 60
+        ? `Collecting strict evidence: ${sampleSize}/60.`
         : "WAIT: no contract currently passes EV, edge and stability filters.",
   };
 }

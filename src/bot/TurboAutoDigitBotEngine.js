@@ -5,13 +5,13 @@ const DEFAULTS = {
   prediction: 2,
   stake: 0.35,
   duration: 1,
-  maxRuns: 10,
+  maxRuns: 5,
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
-  minimumConfidence: 75,
-  confirmationUpdates: 3,
-  lossCooldownMs: 6000,
+  minimumConfidence: 82,
+  confirmationUpdates: 2,
+  lossCooldownMs: 750,
   sameSetupBlockMs: 15000,
   maximumSignalAgeMs: 2000,
   lossSkipSignals: 3,
@@ -19,6 +19,8 @@ const DEFAULTS = {
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
+  scanSwitchMs: 2500,
+  postTradeDelayMs: 150,
 };
 
 function sleep(ms) {
@@ -178,13 +180,14 @@ export default class TurboAutoDigitBotEngine {
     this.lastLossSetup = "";
     this.lastLossAt = 0;
     this.skipSignalUpdatesRemaining = 0;
+    this.noSignalSince = 0;
     this.running = false;
     this.stopRequested = false;
     this.contractWaiters = new Map();
 
     this.state = {
       status: "STOPPED",
-      message: "Dynamic All-Digit Analysis Bot is ready.",
+      message: "V63 Fast Volatility Scanner is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -272,6 +275,14 @@ export default class TurboAutoDigitBotEngine {
         5,
         Math.min(40, safeNumber(input.highRiskMinimumEdge, 12))
       ),
+      scanSwitchMs: Math.max(
+        1000,
+        Math.min(15000, Math.floor(safeNumber(input.scanSwitchMs, 2500)))
+      ),
+      postTradeDelayMs: Math.max(
+        50,
+        Math.min(3000, Math.floor(safeNumber(input.postTradeDelayMs, 150)))
+      ),
     };
   }
 
@@ -348,6 +359,7 @@ export default class TurboAutoDigitBotEngine {
     }
 
     this.lastSignalUpdatedAt = Date.now();
+    this.noSignalSince = 0;
     this.signal = {
       ...next,
       confirmations: this.signalConfirmations,
@@ -494,20 +506,38 @@ export default class TurboAutoDigitBotEngine {
           const confidence = safeNumber(this.signal?.confidence, 0);
           const confirmations = safeNumber(this.signal?.confirmations, 0);
 
+          if (!this.noSignalSince) {
+            this.noSignalSince = Date.now();
+          }
+
+          const waitingMs = Date.now() - this.noSignalSince;
+
           this.patch({
             status: "SCANNING",
             message:
-              `Quality scan: confidence ${confidence.toFixed(1)}% / ` +
+              `Strict scan: confidence ${confidence.toFixed(1)}% / ` +
               `${this.settings.minimumConfidence}% · confirmations ` +
-              `${confirmations}/${this.settings.confirmationUpdates}.`,
+              `${confirmations}/${this.settings.confirmationUpdates} · ` +
+              `switch in ${Math.max(
+                0,
+                Math.ceil((this.settings.scanSwitchMs - waitingMs) / 1000)
+              )}s.`,
             activeSetup: this.signal?.setup || "—",
             selectedConfidence: confidence,
             selectedSource: this.signal?.source || "LIVE ANALYSIS",
           });
 
-          await sleep(180);
+          if (waitingMs >= this.settings.scanSwitchMs) {
+            this.noSignalSince = 0;
+            await this.switchMarketAfterTrade("No strict setup on current market.");
+          } else {
+            await sleep(120);
+          }
+
           continue;
         }
+
+        this.noSignalSince = 0;
 
         this.debug(
           "CONFIRMED",
@@ -515,31 +545,9 @@ export default class TurboAutoDigitBotEngine {
         );
         await this.openTrade(contract);
 
-        const recentResults = (this.state.history || [])
-          .slice(0, 2)
-          .map((item) => item.result);
-
-        const twoLosses =
-          recentResults.length === 2 &&
-          recentResults.every((result) => result === "LOSS");
-
-        if (twoLosses) {
-          await this.switchMarketAfterTrade();
-        } else {
-          this.debug("FRESH_ANALYSIS", this.symbol);
-          this.signal = null;
-          this.signalKey = "";
-          this.signalConfirmations = 0;
-          this.patch({
-            status: "SCANNING",
-            message:
-              "Trade settled. Rebuilding fresh analysis on the current market.",
-            activeSetup: "—",
-            activeContractId: "",
-            signalConfirmations: 0,
-          });
-          await sleep(400);
-        }
+        await this.switchMarketAfterTrade(
+          "Trade settled. Rotating volatility for fresh evidence."
+        );
 
         if (
           this.state.history[0]?.result === "LOSS" &&
@@ -567,7 +575,7 @@ export default class TurboAutoDigitBotEngine {
           activeContractId: "",
         });
 
-        await sleep(100);
+        await sleep(this.settings.postTradeDelayMs);
       }
     } catch (error) {
       this.running = false;
@@ -583,8 +591,8 @@ export default class TurboAutoDigitBotEngine {
     }
   }
 
-  async switchMarketAfterTrade() {
-    this.debug("MARKET_SWITCH", "Selecting a fresh volatility market.");
+  async switchMarketAfterTrade(reason = "Selecting a fresh volatility market.") {
+    this.debug("MARKET_SWITCH", reason);
 
     this.signal = null;
     this.signalKey = "";
@@ -617,8 +625,8 @@ export default class TurboAutoDigitBotEngine {
         : "Market switched. Collecting fresh ticks.",
     });
 
-    // Give the hook time to reconnect/subscribe and collect a new tick.
-    await sleep(1200);
+    // Fast reconnect while still allowing the new subscription to receive ticks.
+    await sleep(500);
     this.debug("FRESH_SCAN", this.symbol || "new market");
   }
 

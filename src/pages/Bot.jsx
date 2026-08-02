@@ -20,12 +20,12 @@ const INITIAL_SETTINGS = {
   prediction: 2,
   stake: 0.35,
   duration: 1,
-  maxRuns: 10,
+  maxRuns: 5,
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
-  minimumConfidence: 75,
-  confirmationUpdates: 3,
+  minimumConfidence: 82,
+  confirmationUpdates: 2,
   lossCooldownMs: 6000,
   sameSetupBlockMs: 15000,
   maximumSignalAgeMs: 2000,
@@ -34,6 +34,8 @@ const INITIAL_SETTINGS = {
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
+  scanSwitchMs: 2500,
+  postTradeDelayMs: 150,
 };
 
 const INITIAL_STATE = {
@@ -348,7 +350,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V62 · Fresh Contract Ranking"
+          title="EdgePilot V63 · Fast Volatility Scanner"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
@@ -560,6 +562,32 @@ export default function Bot() {
               </label>
 
               <label className="botField">
+                <span>Switch volatility after no setup (ms)</span>
+                <input
+                  type="number"
+                  min="1000"
+                  max="15000"
+                  step="250"
+                  value={settings.scanSwitchMs}
+                  disabled={running}
+                  onChange={updateNumber("scanSwitchMs")}
+                />
+              </label>
+
+              <label className="botField">
+                <span>Delay after trade (ms)</span>
+                <input
+                  type="number"
+                  min="50"
+                  max="3000"
+                  step="50"
+                  value={settings.postTradeDelayMs}
+                  disabled={running}
+                  onChange={updateNumber("postTradeDelayMs")}
+                />
+              </label>
+
+              <label className="botField">
                 <span>Skip signals after loss</span>
                 <input
                   type="number"
@@ -683,12 +711,21 @@ export default function Bot() {
               <span>MATCH / DIFFERS</span>
             </div>
 
+            <div className="v63ModeBanner">
+              <strong>FAST STRICT MODE</strong>
+              <span>
+                Maximum runs defaults to 5. The bot rotates volatility after
+                every completed trade, or after 2.5 seconds without a qualifying
+                setup. It enters immediately after two fresh confirmations.
+              </span>
+            </div>
+
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                V62 recalculates every supported digit contract on each live
-                tick. It ranks by expected value, probability edge and stability,
-                then executes only the strongest setup that passes the decision gate.
+                V63 scans every available volatility while the bot is running.
+                A market without a strict setup is skipped automatically. Standard
+                contracts require stronger EV, edge, stability and confidence before entry.
               </span>
             </div>
 
