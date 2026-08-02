@@ -8,8 +8,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
-import { analyzeMarket } from "../analysis/analysisEngine";
-import { buildValidatedSignals } from "../analysis/backtestEngine";
+import { rankV60DigitContracts } from "../analysis/v60MultiWindowEvEngine";
 import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
 
 import "../styles/Bot.css";
@@ -68,293 +67,6 @@ function accountId(account) {
   );
 }
 
-function supportedSetup(value) {
-  return /^(?:(?:OVER|UNDER|MATCH(?:ES)?|DIFFERS?)\s+[0-9]|EVEN|ODD)$/i.test(
-    String(value || "").trim()
-  );
-}
-
-function normalizeSetup(value) {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/^MATCHES\s+/, "MATCH ")
-    .replace(/^DIFFER\s+/, "DIFFERS ");
-}
-
-function setupConfidence(item = {}) {
-  return Number(
-    item.lowerBound ??
-      item.confidence ??
-      item.probability ??
-      0
-  );
-}
-
-function clamp(value, minimum = 0, maximum = 100) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return minimum;
-  return Math.max(minimum, Math.min(maximum, number));
-}
-
-function entropyQuality(analysis = {}) {
-  const normalized = Number(analysis.entropy?.normalized || 0);
-  return clamp((1 - normalized) * 100);
-}
-
-function transitionQuality(digits = [], mode, digit) {
-  if (!Array.isArray(digits) || digits.length < 12) return 50;
-
-  let total = 0;
-  let wins = 0;
-
-  for (let index = 1; index < digits.length; index += 1) {
-    const value = Number(digits[index]);
-    if (!Number.isInteger(value)) continue;
-
-    total += 1;
-
-    if (mode === "OVER" && value > digit) wins += 1;
-    if (mode === "UNDER" && value < digit) wins += 1;
-    if (mode === "MATCH" && value === digit) wins += 1;
-    if (mode === "DIFFERS" && value !== digit) wins += 1;
-    if (mode === "EVEN" && value % 2 === 0) wins += 1;
-    if (mode === "ODD" && value % 2 === 1) wins += 1;
-  }
-
-  return total ? clamp((wins / total) * 100) : 50;
-}
-
-function candidateProbability(distribution = [], mode, digit) {
-  const rows = Array.isArray(distribution) ? distribution : [];
-  const percentage = (target) =>
-    Number(rows.find((item) => Number(item.digit) === target)?.percent || 0);
-
-  if (mode === "MATCH") return clamp(percentage(digit));
-  if (mode === "DIFFERS") return clamp(100 - percentage(digit));
-  if (mode === "EVEN") {
-    return clamp(
-      [0, 2, 4, 6, 8].reduce(
-        (sum, value) => sum + percentage(value),
-        0
-      )
-    );
-  }
-  if (mode === "ODD") {
-    return clamp(
-      [1, 3, 5, 7, 9].reduce(
-        (sum, value) => sum + percentage(value),
-        0
-      )
-    );
-  }
-
-  let total = 0;
-
-  for (let value = 0; value <= 9; value += 1) {
-    if (mode === "OVER" && value > digit) total += percentage(value);
-    if (mode === "UNDER" && value < digit) total += percentage(value);
-  }
-
-  return clamp(total);
-}
-
-function baselineProbability(mode, digit) {
-  if (mode === "MATCH") return 10;
-  if (mode === "DIFFERS") return 90;
-  if (mode === "EVEN" || mode === "ODD") return 50;
-  if (mode === "OVER") return clamp((9 - Number(digit)) * 10);
-  if (mode === "UNDER") return clamp(Number(digit) * 10);
-  return 50;
-}
-
-function normalizedEdge(observed, baseline) {
-  const base = Math.max(1, Number(baseline || 1));
-  const availableUpside = Math.max(1, 100 - base);
-  const rawEdge = Number(observed || 0) - base;
-
-  // Positive deviation is measured relative to how much upside remains.
-  return clamp((rawEdge / availableUpside) * 100, -100, 100);
-}
-
-function payoutAwareExpectedValue(observed, baseline) {
-  const probability = clamp(observed) / 100;
-  const fairProbability = Math.max(0.01, clamp(baseline) / 100);
-
-  // Fair-return proxy: payout multiplier ≈ 1 / baseline probability.
-  // This prevents 90% DIFFERS probability from automatically beating
-  // lower-base contracts such as EVEN/ODD, MATCH, OVER and UNDER.
-  const fairMultiplier = 1 / fairProbability;
-  return clamp((probability * fairMultiplier - 1) * 100, -100, 100);
-}
-
-function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = []) {
-  const rows = Array.isArray(analysis.distribution)
-    ? analysis.distribution
-    : [];
-
-  const sampleSize = Number(analysis.sampleSize || digitHistory.length || 0);
-
-  if (rows.length !== 10) return [];
-
-  const entropy = entropyQuality(analysis);
-  const momentum = clamp(
-    50 + Math.abs(Number(analysis.momentum?.percent || 0)) * 3
-  );
-  const validatedSetup =
-    validated?.best?.approved && supportedSetup(validated.best.action)
-      ? normalizeSetup(validated.best.action)
-      : "";
-
-  const definitions = [
-    ...[1, 2, 3, 4, 5, 6].map((digit) => ({ mode: "OVER", digit })),
-    ...[3, 4, 5, 6, 7, 8].map((digit) => ({ mode: "UNDER", digit })),
-    { mode: "EVEN", digit: null },
-    { mode: "ODD", digit: null },
-    ...Array.from({ length: 10 }, (_, digit) => ({ mode: "MATCH", digit })),
-    ...Array.from({ length: 10 }, (_, digit) => ({ mode: "DIFFERS", digit })),
-  ];
-
-  const candidates = [];
-
-  for (const { mode, digit } of definitions) {
-    const setup =
-      mode === "EVEN" || mode === "ODD"
-        ? mode
-        : mode === "MATCH"
-          ? `MATCH ${digit}`
-          : `${mode} ${digit}`;
-
-    const probability = candidateProbability(rows, mode, digit);
-    const baseline = baselineProbability(mode, digit);
-    const transition = transitionQuality(digitHistory, mode, digit);
-    const transitionEdge = normalizedEdge(transition, baseline);
-    const probabilityEdge = normalizedEdge(probability, baseline);
-    const expectedValue = payoutAwareExpectedValue(probability, baseline);
-    const validationBonus =
-      normalizeSetup(setup) === validatedSetup ? 5 : 0;
-
-    const highRisk = mode === "MATCH" || mode === "DIFFERS";
-    const standardPriorityBonus = highRisk ? 0 : 5;
-
-    let qualityScore = clamp(
-      68 +
-        expectedValue * 1.1 +
-        probabilityEdge * 0.12 +
-        transitionEdge * 0.08 +
-        (entropy - 50) * 0.05 +
-        (momentum - 50) * 0.03 +
-        validationBonus +
-        standardPriorityBonus
-    );
-
-    // High-risk digit contracts must never display artificial certainty.
-    if (highRisk) {
-      qualityScore = Math.min(88, qualityScore);
-    } else {
-      qualityScore = Math.min(96, qualityScore);
-    }
-
-    const minimumObserved =
-      baseline >= 80
-        ? baseline + 3
-        : baseline >= 50
-          ? baseline + 3
-          : baseline + 2;
-
-    const standardEligible =
-      !highRisk &&
-      probability >= minimumObserved &&
-      expectedValue > 0 &&
-      qualityScore >= 70;
-
-    // MATCH and DIFFERS remain visible but are marked high-risk.
-    // The engine will only execute them when the explicit toggle and
-    // stricter high-risk requirements are satisfied.
-    const highRiskEligible =
-      highRisk &&
-      probability >= minimumObserved &&
-      expectedValue >= 8 &&
-      qualityScore >= 82 &&
-      sampleSize >= 150;
-
-    candidates.push({
-      setup,
-      mode,
-      digit,
-      probability,
-      baseline,
-      probabilityEdge,
-      transition,
-      transitionEdge,
-      expectedValue,
-      confidence: qualityScore,
-      qualityScore,
-      entropy,
-      momentum,
-      sampleSize,
-      highRisk,
-      source:
-        validationBonus > 0
-          ? "BACKTEST VALIDATED"
-          : highRisk
-            ? "HIGH-RISK ANALYSIS"
-            : "STANDARD EV RANKING",
-      detail:
-        `${setup}: observed ${probability.toFixed(1)}% vs ` +
-        `${baseline.toFixed(1)}% baseline, EV edge ` +
-        `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(1)}%.`,
-      eligible: standardEligible || highRiskEligible,
-    });
-  }
-
-  const eligible = candidates
-    .filter((candidate) => candidate.eligible)
-    .sort(
-      (left, right) => {
-        const leftRiskPenalty = left.highRisk ? 12 : 0;
-        const rightRiskPenalty = right.highRisk ? 12 : 0;
-
-        const leftAdjusted = left.qualityScore - leftRiskPenalty;
-        const rightAdjusted = right.qualityScore - rightRiskPenalty;
-
-        return (
-          rightAdjusted - leftAdjusted ||
-          right.expectedValue - left.expectedValue
-        );
-      }
-    );
-
-  const bestByFamily = new Map();
-
-  for (const candidate of eligible) {
-    if (!bestByFamily.has(candidate.mode)) {
-      bestByFamily.set(candidate.mode, candidate);
-    }
-  }
-
-  const familyLeaders = [...bestByFamily.values()].sort(
-    (left, right) => {
-      const leftRiskPenalty = left.highRisk ? 12 : 0;
-      const rightRiskPenalty = right.highRisk ? 12 : 0;
-
-      return (
-        right.qualityScore -
-          rightRiskPenalty -
-          (left.qualityScore - leftRiskPenalty) ||
-        right.expectedValue - left.expectedValue
-      );
-    }
-  );
-
-  const remaining = eligible.filter(
-    (candidate) =>
-      !familyLeaders.some((leader) => leader.setup === candidate.setup)
-  );
-
-  return [...familyLeaders, ...remaining];
-}
-
 function qualityLabel(score) {
   const value = Number(score || 0);
   if (value >= 88) return { stars: "★★★★★", label: "Excellent" };
@@ -364,11 +76,15 @@ function qualityLabel(score) {
 }
 
 function signalReason(candidate = {}) {
+  if (!candidate?.setup) {
+    return "Collecting fresh multi-window evidence.";
+  }
+
   return (
-    `Observed ${Number(candidate.probability || 0).toFixed(1)}% vs ` +
-    `${Number(candidate.baseline || 0).toFixed(1)}% baseline · ` +
-    `EV edge ${Number(candidate.expectedValue || 0) >= 0 ? "+" : ""}` +
-    `${Number(candidate.expectedValue || 0).toFixed(1)}%`
+    `EV ${Number(candidate.expectedValue || 0) >= 0 ? "+" : ""}` +
+    `${Number(candidate.expectedValue || 0).toFixed(1)}% · ` +
+    `consistency ${Number(candidate.consistency || 0).toFixed(1)}% · ` +
+    `${Number(candidate.sampleSize || 0)} ticks`
   );
 }
 
@@ -426,52 +142,27 @@ export default function Bot() {
   const selectedId = accountId(auth.selectedAccount);
   const isDemo = auth.selectedAccountType === "demo";
 
-  const snapshot = useMemo(
-    () => ({
-      prices,
-      currentPrice,
-      lastDigit,
-      digitHistory,
-    }),
-    [prices, currentPrice, lastDigit, digitHistory]
-  );
-
-  const analysis = useMemo(
-    () => analyzeMarket(snapshot),
-    [snapshot]
-  );
-
-  const validated = useMemo(
-    () => buildValidatedSignals(snapshot),
-    [snapshot]
-  );
-
-  const rankedCandidates = useMemo(
+  const v60Analysis = useMemo(
     () =>
-      buildRankedCandidates(
-        analysis,
-        validated,
-        digitHistory
-      ),
-    [analysis, validated, digitHistory]
+      rankV60DigitContracts({
+        digitHistory,
+        minimumSamples: 200,
+        allowHighRisk: settings.allowHighRiskContracts,
+      }),
+    [digitHistory, settings.allowHighRiskContracts]
   );
 
+  const rankedCandidates = v60Analysis.candidates || [];
   const executableCandidates = rankedCandidates.filter(
-    (candidate) =>
-      !candidate.highRisk ||
-      (
-        settings.allowHighRiskContracts &&
-        candidate.qualityScore >= settings.highRiskMinimumQuality &&
-        candidate.sampleSize >= settings.highRiskMinimumSamples &&
-        candidate.expectedValue >= settings.highRiskMinimumEdge
-      )
+    (candidate) => candidate.executable
   );
-
-  const autoSignal = executableCandidates[0] || null;
+  const autoSignal = v60Analysis.best || null;
   const topCandidates = rankedCandidates.slice(0, 6);
   const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
     .map((mode) =>
-      rankedCandidates.find((candidate) => candidate.mode === mode)
+      rankedCandidates.find(
+        (candidate) => candidate.mode === mode
+      )
     )
     .filter(Boolean);
   const quality = qualityLabel(autoSignal?.qualityScore);
@@ -494,6 +185,21 @@ export default function Bot() {
     botState.runs > 0
       ? ((botState.wins / botState.runs) * 100).toFixed(1)
       : "0.0";
+
+  useEffect(() => {
+    if (
+      auth.authenticated &&
+      !connected &&
+      !connecting
+    ) {
+      void connect();
+    }
+  }, [
+    auth.authenticated,
+    connected,
+    connecting,
+    connect,
+  ]);
 
   useEffect(() => {
     const changed = derivPublicClient.configureAccount({
@@ -582,7 +288,15 @@ export default function Bot() {
   ]);
 
   useEffect(() => {
-    engineRef.current?.updateSignal(autoSignal);
+    engineRef.current?.updateSignal(
+      autoSignal
+        ? {
+            ...autoSignal,
+            confidence: autoSignal.qualityScore,
+            qualityScore: autoSignal.qualityScore,
+          }
+        : null
+    );
   }, [autoSignal]);
 
   function updateNumber(key) {
@@ -630,10 +344,10 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V58 · Match/Differs Safety Fix"
+          title="EdgePilot V60 · Multi-Window EV Engine"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
-          connected={connected}
-          connecting={connecting}
+          connected={auth.authenticated || connected}
+          connecting={!auth.authenticated && connecting}
           onConnect={connect}
           onDisconnect={disconnect}
         />
@@ -968,9 +682,9 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                MATCH and DIFFERS remain visible in analysis, but execution is
-                disabled by default. OVER, UNDER, EVEN and ODD are prioritized.
-                Enable high-risk execution only when you intentionally want it.
+                V60 evaluates 200, 500 and 1000-tick windows, applies Bayesian
+                shrinkage and Markov transitions, then trades only when expected
+                value and cross-window consistency are both positive.
               </span>
             </div>
 
@@ -987,21 +701,26 @@ export default function Bot() {
 
               <div className="v53Expected">
                 <span>
-                  <small>Observed</small>
-                  <strong>{Number(autoSignal?.probability || 0).toFixed(1)}%</strong>
-                </span>
-                <span>
-                  <small>Fair baseline</small>
-                  <strong>{Number(autoSignal?.baseline || 0).toFixed(1)}%</strong>
-                </span>
-                <span>
-                  <small>EV edge</small>
+                  <small>Expected value</small>
                   <strong>
                     {Number(autoSignal?.expectedValue || 0) >= 0 ? "+" : ""}
                     {Number(autoSignal?.expectedValue || 0).toFixed(1)}%
                   </strong>
                 </span>
+                <span>
+                  <small>Consistency</small>
+                  <strong>{Number(autoSignal?.consistency || 0).toFixed(1)}%</strong>
+                </span>
+                <span>
+                  <small>Samples</small>
+                  <strong>{v60Analysis.sampleSize || 0}</strong>
+                </span>
               </div>
+            </div>
+
+            <div className={autoSignal ? "v60Gate pass" : "v60Gate wait"}>
+              <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — NO POSITIVE EV SETUP"}</strong>
+              <span>{v60Analysis.reason}</span>
             </div>
 
             <div className="v57FamilyBoard">
@@ -1047,8 +766,7 @@ export default function Bot() {
                     {candidate.highRisk ? "HIGH RISK · " : ""}
                     EV {candidate.expectedValue >= 0 ? "+" : ""}
                     {candidate.expectedValue.toFixed(1)}% ·
-                    {" "}{candidate.probability.toFixed(1)}% /
-                    {candidate.baseline.toFixed(1)}%
+                    C {candidate.consistency.toFixed(1)}%
                   </small>
                 </div>
               ))}

@@ -557,3 +557,36 @@
 .v53RankRow.highRisk small {
   color: #e6b976;
 }
+
+
+.v60Gate {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.v60Gate.pass {
+  border: 1px solid #168d70;
+  background: rgba(18, 125, 97, .13);
+}
+
+.v60Gate.wait {
+  border: 1px solid #8a6c2e;
+  background: rgba(125, 91, 20, .13);
+}
+
+.v60Gate.pass strong {
+  color: #27e5b8;
+}
+
+.v60Gate.wait strong {
+  color: #ffd66b;
+}
+
+.v60Gate span {
+  color: #a4c0d1;
+  line-height: 1.45;
+}
