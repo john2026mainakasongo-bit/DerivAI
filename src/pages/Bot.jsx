@@ -26,7 +26,7 @@ import "../styles/Bot.css";
 
 const INITIAL_SETTINGS = {
   maxRuns: 56,
-  maxScanTicks: 36,
+  maxScanTicks: 10,
   stake: 1,
   duration: 5,
   minConfidence: 75,
@@ -36,7 +36,7 @@ const INITIAL_SETTINGS = {
   cooldownAfterLosses: 1,
   cooldownSeconds: 45,
   hardStopLossStreak: 3,
-  delaySeconds: 5,
+  delaySeconds: 0,
   martingaleEnabled: false,
   maxMartingaleSteps: 1,
   analysisAssisted: true,
@@ -44,7 +44,7 @@ const INITIAL_SETTINGS = {
   prediction: 2,
   durationUnit: "t",
   autoSwitchVolatility: true,
-  marketScanSeconds: 12,
+  marketScanSeconds: 5,
   confirmationCount: 1,
   confirmationSeconds: 1,
   signalMaxAgeSeconds: 6,
@@ -695,7 +695,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V48 · Demo Digits Only"
+          title="EdgePilot V49 · Demo Turbo Digits"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1035,9 +1035,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>DEMO DIGITS ONLY · NO RISE/FALL</small>
+                <small>DEMO TURBO · 100MS SCAN · NO RISE/FALL</small>
                 <strong>
-                  DIGITS ONLY → RANK → LOCK → CONFIRM → PROPOSAL → BUY
+                  100MS SCAN → DIGIT RANK → 1 CONFIRM → BUY
                 </strong>
               </div>
             </div>
@@ -1120,7 +1120,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V48 removes RISE and FALL completely from Demo Auto. Demo only ranks digit contracts: EVEN, ODD, OVER, UNDER, MATCH and DIFFERS. Standard digit entries use probability 70%+, 50 samples, four transitions and two votes, followed by one fresh confirmation. Real remains unchanged and strict. No bot can guarantee wins.
+              V49 Turbo scans Demo every 100ms and keeps RISE/FALL excluded. Demo digit entries use probability 65%+, 30 samples, two transitions and one vote, then one fresh confirmation. Demo has no post-trade delay. Real remains unchanged and strict. No bot can guarantee wins.
             </div>
           </article>
 

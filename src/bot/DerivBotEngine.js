@@ -3,12 +3,12 @@ import { evaluateSyntheticSetup } from "../analysis/syntheticIntelligenceEngine"
 
 const DEFAULTS = {
   maxRuns: 56,
-  maxScanTicks: 36,
+  maxScanTicks: 10,
   minConfidence: 75,
   minVotes: 1,
   stake: 1,
   duration: 5,
-  delaySeconds: 5,
+  delaySeconds: 0,
   takeProfit: 20,
   stopLoss: 6,
   cooldownAfterLosses: 1,
@@ -29,7 +29,7 @@ const DEFAULTS = {
   confirmationSeconds: 1,
   signalMaxAgeSeconds: 8,
   lossSetupBlockSeconds: 90,
-  minimumTradeGapSeconds: 4,
+  minimumTradeGapSeconds: 1,
   deepMinimumScore: 70,
   deepOverrideScore: 90,
 };
@@ -1213,10 +1213,10 @@ function v47CanExecute(candidate = {}, isDemo = false) {
 
   if (isDemo && v46IsStandardDigit(candidate)) {
     return (
-      Number(candidate.probability || 0) >= 70 &&
-      Number(candidate.samples || 0) >= 50 &&
-      Number(candidate.transitionCount || 0) >= 4 &&
-      Number(candidate.passedVotes || 0) >= 2
+      Number(candidate.probability || 0) >= 65 &&
+      Number(candidate.samples || 0) >= 30 &&
+      Number(candidate.transitionCount || 0) >= 2 &&
+      Number(candidate.passedVotes || 0) >= 1
     );
   }
 
@@ -1622,7 +1622,7 @@ export default class DerivBotEngine {
             durationUnit: this.settings.durationUnit,
           }) || gate;
       } catch (error) {
-        console.error("[V48] ANALYSIS GATE ERROR", error);
+        console.error("[V49] ANALYSIS GATE ERROR", error);
       }
     }
 
@@ -1706,7 +1706,7 @@ export default class DerivBotEngine {
           unique.set(key, scored);
         }
       } catch (error) {
-        console.error("[V48] CANDIDATE SCORE ERROR", {
+        console.error("[V49] CANDIDATE SCORE ERROR", {
           key,
           candidate,
           message: error?.message || String(error),
@@ -1723,7 +1723,7 @@ export default class DerivBotEngine {
     );
 
     if (!ranked.length) {
-      console.warn("[V48] NO RANKED CANDIDATES", {
+      console.warn("[V49] NO RANKED CANDIDATES", {
         gateSetup: gate.setup || "",
         gateCandidates: Array.isArray(gate.candidates)
           ? gate.candidates.length
@@ -1766,7 +1766,7 @@ export default class DerivBotEngine {
         );
 
       if (collapsed) {
-        console.warn("[V48] LOCK RELEASED: candidate materially weakened", {
+        console.warn("[V49] LOCK RELEASED: candidate materially weakened", {
           setup: this.lockedCandidate.setup,
           lockedScore: this.lockedCandidate.score,
           liveScore: liveLockedCandidate.score,
@@ -1836,7 +1836,7 @@ export default class DerivBotEngine {
         reason:
           `${bestText} ${
             this.isDemoAccount
-              ? "V48 Demo Auto excludes RISE/FALL and uses digit contracts only. Standard digits need probability 70%+, 50 samples, 4 transitions and 2 votes."
+              ? "V49 Demo Turbo excludes RISE/FALL and uses digit contracts only. Standard digits need probability 65%+, 30 samples, 2 transitions and 1 vote."
               : "V48 Real remains unchanged and keeps the strict scored gate."
           } Probability, confidence and ranking now use one evidence model. No forced entry.`,
         elapsedSeconds,
@@ -1946,7 +1946,7 @@ export default class DerivBotEngine {
       this.strictConfirmations = 0;
       this.executionPhase = "LOCKED";
 
-      console.log("[V48] CANDIDATE LOCKED", {
+      console.log("[V49] CANDIDATE LOCKED", {
         setup,
         score: selected.score,
         threshold: selected.threshold,
@@ -2025,7 +2025,7 @@ export default class DerivBotEngine {
       };
     }
 
-    console.log("[V48] CANDIDATE READY", {
+    console.log("[V49] CANDIDATE READY", {
       setup,
       confirmations: confirmationUpdates,
       requiredConfirmations,
@@ -2158,7 +2158,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V48 removes RISE and FALL completely from Demo Auto. Demo ranks and executes digit contracts only; Real remains unchanged and strict.",
+        "V49 Turbo keeps Demo digits-only mode, scans every 100ms, uses one fresh confirmation, and removes the post-trade delay. Real remains unchanged and strict.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2409,7 +2409,7 @@ export default class DerivBotEngine {
 
       const check = this.validSignal();
 
-      console.debug("[V48] GATE", {
+      console.debug("[V49] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
         lockedCandidate: this.lockedCandidate?.setup || "—",
@@ -2447,12 +2447,12 @@ export default class DerivBotEngine {
           lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "—",
         });
 
-        await sleep(1000);
+        await sleep(this.isDemoAccount ? 100 : 1000);
         continue;
       }
 
       try {
-        console.log("[V48] EXECUTE TRADE", {
+        console.log("[V49] EXECUTE TRADE", {
           setup: check.contract?.label,
           phase: this.executionPhase,
           confirmations: check.confirmations,
@@ -2482,20 +2482,25 @@ export default class DerivBotEngine {
           activeContractId: "",
         });
 
-        await sleep(3000);
+        await sleep(this.isDemoAccount ? 500 : 3000);
       }
+
+      const effectiveDelaySeconds =
+        this.isDemoAccount
+          ? 0
+          : this.settings.delaySeconds;
 
       if (
         this.running &&
         Number(this.state.cooldownUntil || 0) <= Date.now() &&
-        this.settings.delaySeconds > 0
+        effectiveDelaySeconds > 0
       ) {
         this.patch({
           status: "COOLDOWN",
-          message: `Waiting ${this.settings.delaySeconds}s before the next scan.`,
+          message: `Waiting ${effectiveDelaySeconds}s before the next scan.`,
         });
 
-        await sleep(this.settings.delaySeconds * 1000);
+        await sleep(effectiveDelaySeconds * 1000);
       }
     }
   }
@@ -2575,11 +2580,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V48 demo digits-only confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V49 demo turbo confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V48 DEMO DIGITS ONLY`,
+      activeSetup: `${check.contract.label} · V49 DEMO TURBO`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
