@@ -695,7 +695,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V46 · Executable Candidate Engine"
+          title="EdgePilot V47 · Demo Blocker Removal"
           subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
           connected={connected}
           connecting={connecting}
@@ -1035,9 +1035,9 @@ export default function Bot() {
                 <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>EXECUTABLE CANDIDATE SELECTION · REAL STRICT</small>
+                <small>DEMO BLOCKER REMOVED · REAL STRICT</small>
                 <strong>
-                  BUILD → RANK EXECUTABLE → LOCK → CONFIRM → PROPOSAL → BUY
+                  RANK DEMO DIGIT → LOCK → CONFIRM → PROPOSAL → BUY
                 </strong>
               </div>
             </div>
@@ -1120,7 +1120,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V46 builds fallback candidates when Analysis Assisted is disabled, scores every candidate, then selects the highest-ranked contract that can actually execute. Demo standard digits require probability 72%+, 60 samples, five transitions and two votes plus one fresh confirmation. FALL, RISE and MATCH remain strict. Real remains on the strict scored gate and uses two fresh confirmations. No bot can guarantee wins.
+              V47 removes the remaining legacy BLOCKED score veto for Demo standard-digit contracts. Demo selects the strongest executable EVEN, ODD, OVER, UNDER or DIFFERS candidate using probability 70%+, 50 samples, four transitions and two votes, then waits for one fresh confirmation before proposal and buy. FALL, RISE, MATCH and every Real trade remain strict. No bot can guarantee wins.
             </div>
           </article>
 
@@ -1488,6 +1488,7 @@ export default function Bot() {
                 value={
                   botState.gate?.accountExecutionPass ||
                   botState.gate?.directEvidencePass ||
+                  botState.gate?.qualificationMode === "DEMO_BLOCKER_REMOVED" ||
                   botState.gate?.qualificationMode === "DEMO_EXECUTABLE_CANDIDATE" ||
                   botState.gate?.qualificationMode === "WEIGHTED_SCORE"
                     ? `QUALIFIED · ${
@@ -1496,7 +1497,7 @@ export default function Bot() {
                     : botState.gate?.blockedChecks?.score
                       ? `BLOCKED ${botState.gate.blockedChecks.score} · ${
                           isDemo
-                            ? "P72 S60 T5 V2"
+                            ? "P70 S50 T4 V2"
                             : "SCORE65 P79 C76 S100 T7 V3"
                         }`
                       : "WAIT"

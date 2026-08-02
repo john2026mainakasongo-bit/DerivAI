@@ -1197,25 +1197,25 @@ function v46IsStandardDigit(candidate = {}) {
   );
 }
 
-function v46CanExecute(candidate = {}, isDemo = false) {
+function v47CanExecute(candidate = {}, isDemo = false) {
   if (!candidate) return false;
 
   if (isDemo && v46IsStandardDigit(candidate)) {
     return (
-      Number(candidate.probability || 0) >= 72 &&
-      Number(candidate.samples || 0) >= 60 &&
-      Number(candidate.transitionCount || 0) >= 5 &&
+      Number(candidate.probability || 0) >= 70 &&
+      Number(candidate.samples || 0) >= 50 &&
+      Number(candidate.transitionCount || 0) >= 4 &&
       Number(candidate.passedVotes || 0) >= 2
     );
   }
 
-  // Real and high-risk families retain the engine's strict decision.
+  // Real and high-risk families remain on the original strict gate.
   return Boolean(candidate.ok);
 }
 
-function v46Qualification(candidate = {}, isDemo = false) {
-  if (isDemo && v46CanExecute(candidate, true)) {
-    return "DEMO_EXECUTABLE_CANDIDATE";
+function v47Qualification(candidate = {}, isDemo = false) {
+  if (isDemo && v47CanExecute(candidate, true)) {
+    return "DEMO_BLOCKER_REMOVED";
   }
 
   return candidate?.qualificationMode || "BLOCKED";
@@ -1611,7 +1611,7 @@ export default class DerivBotEngine {
             durationUnit: this.settings.durationUnit,
           }) || gate;
       } catch (error) {
-        console.error("[V46] ANALYSIS GATE ERROR", error);
+        console.error("[V47] ANALYSIS GATE ERROR", error);
       }
     }
 
@@ -1691,7 +1691,7 @@ export default class DerivBotEngine {
           unique.set(key, scored);
         }
       } catch (error) {
-        console.error("[V46] CANDIDATE SCORE ERROR", {
+        console.error("[V47] CANDIDATE SCORE ERROR", {
           key,
           candidate,
           message: error?.message || String(error),
@@ -1708,7 +1708,7 @@ export default class DerivBotEngine {
     );
 
     if (!ranked.length) {
-      console.warn("[V46] NO RANKED CANDIDATES", {
+      console.warn("[V47] NO RANKED CANDIDATES", {
         gateSetup: gate.setup || "",
         gateCandidates: Array.isArray(gate.candidates)
           ? gate.candidates.length
@@ -1741,7 +1741,7 @@ export default class DerivBotEngine {
         );
 
       if (collapsed) {
-        console.warn("[V46] LOCK RELEASED: candidate materially weakened", {
+        console.warn("[V47] LOCK RELEASED: candidate materially weakened", {
           setup: this.lockedCandidate.setup,
           lockedScore: this.lockedCandidate.score,
           liveScore: liveLockedCandidate.score,
@@ -1764,9 +1764,28 @@ export default class DerivBotEngine {
     }
 
     if (!selected) {
+      const executableDemoDigit =
+        this.isDemoAccount
+          ? ranked
+              .filter((candidate) => v46IsStandardDigit(candidate))
+              .filter((candidate) => v47CanExecute(candidate, true))
+              .sort((left, right) => {
+                const probabilityDifference =
+                  Number(right.probability || 0) -
+                  Number(left.probability || 0);
+
+                if (probabilityDifference !== 0) {
+                  return probabilityDifference;
+                }
+
+                return Number(right.score || 0) - Number(left.score || 0);
+              })[0]
+          : null;
+
       selected =
+        executableDemoDigit ||
         ranked.find((candidate) =>
-          v46CanExecute(candidate, this.isDemoAccount)
+          v47CanExecute(candidate, this.isDemoAccount)
         ) ||
         ranked.find((candidate) => candidate.ok) ||
         ranked[0];
@@ -1774,7 +1793,7 @@ export default class DerivBotEngine {
 
     const selectedCanExecute =
       selected &&
-      v46CanExecute(selected, this.isDemoAccount);
+      v47CanExecute(selected, this.isDemoAccount);
 
     if (!selected || !selectedCanExecute) {
       this.strictSetupKey = "";
@@ -1792,8 +1811,8 @@ export default class DerivBotEngine {
         reason:
           `${bestText} ${
             this.isDemoAccount
-              ? "V46 Demo standard-digit gate needs probability 72%+, 60 samples, 5 transitions and 2 votes."
-              : "V46 Real and high-risk contracts retain the strict scored gate."
+              ? "V47 Demo standard-digit gate needs probability 70%+, 50 samples, 4 transitions and 2 votes. Legacy score and blockedChecks cannot veto a qualifying Demo digit."
+              : "V47 Real and high-risk contracts retain the strict scored gate."
           } Probability, confidence and ranking now use one evidence model. No forced entry.`,
         elapsedSeconds,
         confirmations: 0,
@@ -1802,7 +1821,7 @@ export default class DerivBotEngine {
           ...gate,
           scoredCandidates: ranked.map((candidate) => ({
             ...candidate,
-            accountExecutionPass: v46CanExecute(
+            accountExecutionPass: v47CanExecute(
               candidate,
               this.isDemoAccount
             ),
@@ -1818,7 +1837,7 @@ export default class DerivBotEngine {
           blockedChecks: selected?.blockedChecks || null,
           realDigitQualityPass: Boolean(selected?.realDigitQualityPass),
           directEvidencePass: Boolean(selected?.directEvidencePass),
-          qualificationMode: v46Qualification(
+          qualificationMode: v47Qualification(
             selected,
             this.isDemoAccount
           ),
@@ -1861,9 +1880,12 @@ export default class DerivBotEngine {
         lockedAtSignalVersion: this.signalVersion,
         snapshot: {
           ...selected,
-          ok: true,
+          ok:
+            this.isDemoAccount && v46IsStandardDigit(selected)
+              ? true
+              : Boolean(selected.ok),
           accountExecutionPass: true,
-          qualificationMode: v46Qualification(
+          qualificationMode: v47Qualification(
             selected,
             this.isDemoAccount
           ),
@@ -1877,7 +1899,7 @@ export default class DerivBotEngine {
       this.strictConfirmations = 0;
       this.executionPhase = "LOCKED";
 
-      console.log("[V46] CANDIDATE LOCKED", {
+      console.log("[V47] CANDIDATE LOCKED", {
         setup,
         score: selected.score,
         threshold: selected.threshold,
@@ -1896,7 +1918,7 @@ export default class DerivBotEngine {
         ...this.lockedCandidate.snapshot,
         ok: true,
         accountExecutionPass: true,
-        qualificationMode: v46Qualification(
+        qualificationMode: v47Qualification(
           this.lockedCandidate.snapshot,
           this.isDemoAccount
         ),
@@ -1943,7 +1965,7 @@ export default class DerivBotEngine {
           blockedChecks: selected.blockedChecks || null,
           realDigitQualityPass: Boolean(selected.realDigitQualityPass),
           directEvidencePass: Boolean(selected.directEvidencePass),
-          qualificationMode: v46Qualification(
+          qualificationMode: v47Qualification(
             selected,
             this.isDemoAccount
           ),
@@ -1956,7 +1978,7 @@ export default class DerivBotEngine {
       };
     }
 
-    console.log("[V46] CANDIDATE READY", {
+    console.log("[V47] CANDIDATE READY", {
       setup,
       confirmations: confirmationUpdates,
       requiredConfirmations,
@@ -1993,7 +2015,7 @@ export default class DerivBotEngine {
           ? "REAL CONSERVATIVE"
           : "DEMO CONSERVATIVE",
         passedCount: ranked.filter((item) =>
-          v46CanExecute(item, this.isDemoAccount)
+          v47CanExecute(item, this.isDemoAccount)
         ).length,
         validated: true,
         gateReason:
@@ -2021,12 +2043,15 @@ export default class DerivBotEngine {
         demoDigitQualityPass: Boolean(selected.demoDigitQualityPass),
         realDigitQualityPass: Boolean(selected.realDigitQualityPass),
         directEvidencePass: Boolean(selected.directEvidencePass),
-        qualificationMode: v46Qualification(
+        qualificationMode: v47Qualification(
           selected,
           this.isDemoAccount
         ),
         accountExecutionPass: true,
-        blockedChecks: selected.blockedChecks || null,
+        blockedChecks:
+          this.isDemoAccount && v46IsStandardDigit(selected)
+            ? null
+            : selected.blockedChecks || null,
         executionPhase: "READY",
         lockedCandidate: setup,
         signalVersion: this.signalVersion,
@@ -2063,7 +2088,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V46 builds and ranks candidates even when Analysis Assisted is disabled, then selects the highest-ranked contract that can actually execute on the selected account.",
+        "V47 removes the remaining legacy execution veto for qualifying Demo standard-digit candidates. Real and high-risk contracts remain strict.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2314,7 +2339,7 @@ export default class DerivBotEngine {
 
       const check = this.validSignal();
 
-      console.debug("[V46] GATE", {
+      console.debug("[V47] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
         lockedCandidate: this.lockedCandidate?.setup || "—",
@@ -2357,7 +2382,7 @@ export default class DerivBotEngine {
       }
 
       try {
-        console.log("[V46] EXECUTE TRADE", {
+        console.log("[V47] EXECUTE TRADE", {
           setup: check.contract?.label,
           phase: this.executionPhase,
           confirmations: check.confirmations,
@@ -2480,11 +2505,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V46 executable candidate confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V47 demo blocker removed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V46 EXECUTABLE CANDIDATE`,
+      activeSetup: `${check.contract.label} · V47 DEMO BLOCKER REMOVED`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
