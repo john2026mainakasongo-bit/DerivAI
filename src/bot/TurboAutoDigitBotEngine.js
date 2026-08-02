@@ -36,7 +36,7 @@ function clampDigit(value, fallback = 2) {
 function normalizeMode(value) {
   const mode = String(value || "AUTO").toUpperCase();
 
-  return ["AUTO", "OVER", "UNDER", "MATCH", "DIFFERS"].includes(mode)
+  return ["AUTO", "OVER", "UNDER", "MATCH", "DIFFERS", "EVEN", "ODD"].includes(mode)
     ? mode
     : "AUTO";
 }
@@ -88,12 +88,38 @@ function parseSetup(value = "") {
     };
   }
 
+  if (setup === "EVEN") {
+    return {
+      label: "EVEN",
+      mode: "EVEN",
+      digit: null,
+      contractType: "DIGITEVEN",
+      barrier: undefined,
+    };
+  }
+
+  if (setup === "ODD") {
+    return {
+      label: "ODD",
+      mode: "ODD",
+      digit: null,
+      contractType: "DIGITODD",
+      barrier: undefined,
+    };
+  }
+
   return null;
 }
 
 function manualContract(mode, prediction) {
+  const normalized = normalizeMode(mode);
+
+  if (normalized === "EVEN" || normalized === "ODD") {
+    return parseSetup(normalized);
+  }
+
   const digit = clampDigit(prediction);
-  return parseSetup(`${normalizeMode(mode)} ${digit}`);
+  return parseSetup(`${normalized} ${digit}`);
 }
 
 function contractIdFromBuy(response = {}) {
@@ -150,7 +176,7 @@ export default class TurboAutoDigitBotEngine {
 
     this.state = {
       status: "STOPPED",
-      message: "Execution Fix Bot is ready.",
+      message: "Dynamic All-Digit Analysis Bot is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -484,7 +510,7 @@ export default class TurboAutoDigitBotEngine {
         message:
           error instanceof Error
             ? error.message
-            : "Execution Fix Bot failed.",
+            : "Dynamic All-Digit Analysis Bot failed.",
         activeContractId: "",
       });
       throw error;
@@ -554,16 +580,33 @@ export default class TurboAutoDigitBotEngine {
           : "MANUAL CONTRACT",
     });
 
-    const bought = await this.client.buyContract({
+    const request = {
       symbol: this.symbol,
       contractType: contract.contractType,
-      barrier: contract.barrier,
       amount: stake,
       basis: "stake",
       currency: this.currency,
       duration: this.settings.duration,
       durationUnit: "t",
-    });
+    };
+
+    if (contract.barrier !== undefined && contract.barrier !== null) {
+      request.barrier = contract.barrier;
+    }
+
+    const bought = await this.client.buyContract(request);
+
+    /* V55 request is deliberately built per contract family. */
+    const ignoredLegacyBuyShape = {
+      symbol: this.symbol,
+      contractType: contract.contractType,
+      amount: stake,
+      basis: "stake",
+      currency: this.currency,
+      duration: this.settings.duration,
+      durationUnit: "t",
+    };
+    void ignoredLegacyBuyShape;
 
     const contractId = contractIdFromBuy(bought);
 
@@ -610,6 +653,12 @@ export default class TurboAutoDigitBotEngine {
     this.signalConfirmations = 0;
     this.signalKey = "";
     this.signal = null;
+    this.lastSignalUpdatedAt = 0;
+
+    this.debug(
+      "REANALYZE",
+      "Previous result cleared. Ranking every contract again from fresh ticks."
+    );
 
     this.patch({
       status: won ? "WON" : "LOST",

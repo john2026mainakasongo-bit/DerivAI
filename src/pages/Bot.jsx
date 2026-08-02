@@ -64,7 +64,7 @@ function accountId(account) {
 }
 
 function supportedSetup(value) {
-  return /^(OVER|UNDER|MATCH(?:ES)?|DIFFERS?)\s+[0-9]$/i.test(
+  return /^(?:(?:OVER|UNDER|MATCH(?:ES)?|DIFFERS?)\s+[0-9]|EVEN|ODD)$/i.test(
     String(value || "").trim()
   );
 }
@@ -113,6 +113,8 @@ function transitionQuality(digits = [], mode, digit) {
     if (mode === "UNDER" && value < digit) wins += 1;
     if (mode === "MATCH" && value === digit) wins += 1;
     if (mode === "DIFFERS" && value !== digit) wins += 1;
+    if (mode === "EVEN" && value % 2 === 0) wins += 1;
+    if (mode === "ODD" && value % 2 === 1) wins += 1;
   }
 
   return total ? clamp((wins / total) * 100) : 50;
@@ -125,6 +127,12 @@ function candidateProbability(distribution = [], mode, digit) {
 
   if (mode === "MATCH") return clamp(percentage(digit));
   if (mode === "DIFFERS") return clamp(100 - percentage(digit));
+  if (mode === "EVEN") {
+    return clamp([0, 2, 4, 6, 8].reduce((sum, value) => sum + percentage(value), 0));
+  }
+  if (mode === "ODD") {
+    return clamp([1, 3, 5, 7, 9].reduce((sum, value) => sum + percentage(value), 0));
+  }
 
   let total = 0;
 
@@ -154,60 +162,61 @@ function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = [])
 
   const candidates = [];
 
-  for (let digit = 0; digit <= 9; digit += 1) {
-    for (const mode of ["OVER", "UNDER", "MATCH", "DIFFERS"]) {
-      // Avoid impossible/near-impossible threshold boundaries.
-      if (mode === "OVER" && digit >= 8) continue;
-      if (mode === "UNDER" && digit <= 1) continue;
+  const definitions = [
+    ...[1, 2, 3, 4, 5, 6].map((digit) => ({ mode: "OVER", digit })),
+    ...[3, 4, 5, 6, 7, 8].map((digit) => ({ mode: "UNDER", digit })),
+    { mode: "EVEN", digit: null },
+    { mode: "ODD", digit: null },
+    ...Array.from({ length: 10 }, (_, digit) => ({ mode: "MATCH", digit })),
+    ...Array.from({ length: 10 }, (_, digit) => ({ mode: "DIFFERS", digit })),
+  ];
 
-      const setup =
-        mode === "MATCH"
+  for (const definition of definitions) {
+    const { mode, digit } = definition;
+    const setup =
+      mode === "EVEN" || mode === "ODD"
+        ? mode
+        : mode === "MATCH"
           ? `MATCH ${digit}`
           : `${mode} ${digit}`;
 
-      const probability = candidateProbability(rows, mode, digit);
-      const transition = transitionQuality(digitHistory, mode, digit);
-      const frequency =
-        mode === "MATCH"
-          ? probability
-          : mode === "DIFFERS"
-            ? probability
-            : clamp(probability);
-      const validationBonus =
-        normalizeSetup(setup) === validatedSetup ? 8 : 0;
-      const familyPenalty = mode === "MATCH" ? 14 : 0;
+    const probability = candidateProbability(rows, mode, digit);
+    const transition = transitionQuality(digitHistory, mode, digit);
+    const frequency = probability;
+    const validationBonus =
+      normalizeSetup(setup) === validatedSetup ? 8 : 0;
+    const familyPenalty = mode === "MATCH" ? 14 : 0;
 
-      const qualityScore = clamp(
-        probability * 0.4 +
-          transition * 0.2 +
-          frequency * 0.15 +
-          entropy * 0.15 +
-          momentum * 0.1 +
-          validationBonus -
-          familyPenalty
-      );
+    const qualityScore = clamp(
+      probability * 0.4 +
+        transition * 0.2 +
+        frequency * 0.15 +
+        entropy * 0.15 +
+        momentum * 0.1 +
+        validationBonus -
+        familyPenalty
+    );
 
-      candidates.push({
-        setup,
-        mode,
-        digit,
-        probability,
-        confidence: qualityScore,
-        qualityScore,
-        transition,
-        frequency,
-        entropy,
-        momentum,
-        source:
-          validationBonus > 0
-            ? "BACKTEST VALIDATED"
-            : "MULTI-CONTRACT RANKING",
-        detail:
-          `${setup}: probability ${probability.toFixed(1)}%, ` +
-          `transition ${transition.toFixed(1)}%, entropy quality ` +
-          `${entropy.toFixed(1)}%.`,
-      });
-    }
+    candidates.push({
+      setup,
+      mode,
+      digit,
+      probability,
+      confidence: qualityScore,
+      qualityScore,
+      transition,
+      frequency,
+      entropy,
+      momentum,
+      source:
+        validationBonus > 0
+          ? "BACKTEST VALIDATED"
+          : "DYNAMIC ALL-CONTRACT ANALYSIS",
+      detail:
+        `${setup}: probability ${probability.toFixed(1)}%, ` +
+        `transition ${transition.toFixed(1)}%, entropy quality ` +
+        `${entropy.toFixed(1)}%.`,
+    });
   }
 
   return candidates
@@ -441,8 +450,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V54 · Execution Fix Demo + Real"
-          subtitle="Fixed confirmation counter, direct execution and selected-account trading"
+          title="EdgePilot V55 · Dynamic All-Digit Analysis"
+          subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -511,6 +520,8 @@ export default function Bot() {
                   <option value="UNDER">Under</option>
                   <option value="MATCH">Matches</option>
                   <option value="DIFFERS">Differs</option>
+                  <option value="EVEN">Even</option>
+                  <option value="ODD">Odd</option>
                 </select>
               </label>
 
@@ -536,7 +547,10 @@ export default function Bot() {
                 <select
                   value={settings.prediction}
                   disabled={
-                    running || settings.predictionMode === "AUTO"
+                    running ||
+                    settings.predictionMode === "AUTO" ||
+                    settings.contractMode === "EVEN" ||
+                    settings.contractMode === "ODD"
                   }
                   onChange={updateNumber("prediction")}
                 >
@@ -720,6 +734,13 @@ export default function Bot() {
               </div>
             </div>
 
+            <div className="v55Families">
+              <span>OVER 1–6</span>
+              <span>UNDER 3–8</span>
+              <span>EVEN / ODD</span>
+              <span>MATCH / DIFFERS</span>
+            </div>
+
             <div className="v53Recommendation">
               <div>
                 <small>AI RECOMMENDATION</small>
@@ -810,10 +831,10 @@ export default function Bot() {
             </div>
 
             <p className="botSafetyText">
-              V54 caps confirmations correctly, executes immediately when the
-              selected setup passes, and uses the currently selected Deriv account.
-              Real mode is capped at 0.35 USD and stops after one loss. No score or
-              strategy guarantees a win.
+              V55 analyzes Over 1–6, Under 3–8, Even, Odd, Match and Differs on
+              every fresh tick. A previous win never forces the next contract: after
+              settlement the signal is cleared and all families are ranked again.
+              Real mode stays capped at 0.35 USD and stops after one loss.
             </p>
           </article>
 
