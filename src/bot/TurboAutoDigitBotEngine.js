@@ -9,6 +9,10 @@ const DEFAULTS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
+  minimumConfidence: 78,
+  confirmationUpdates: 3,
+  lossCooldownMs: 6000,
+  sameSetupBlockMs: 15000,
 };
 
 function sleep(ms) {
@@ -131,13 +135,18 @@ export default class TurboAutoDigitBotEngine {
     this.symbol = "";
     this.currency = "USD";
     this.signal = null;
+    this.signalKey = "";
+    this.signalConfirmations = 0;
+    this.lastSignalUpdatedAt = 0;
+    this.lastLossSetup = "";
+    this.lastLossAt = 0;
     this.running = false;
     this.stopRequested = false;
     this.contractWaiters = new Map();
 
     this.state = {
       status: "STOPPED",
-      message: "Turbo Auto Digit Bot is ready.",
+      message: "Quality Entry Digit Bot is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -182,6 +191,22 @@ export default class TurboAutoDigitBotEngine {
       unlimited: Boolean(input.unlimited),
       stopProfit: Math.max(0, safeNumber(input.stopProfit, 0)),
       stopLoss: Math.max(0, safeNumber(input.stopLoss, 0)),
+      minimumConfidence: Math.max(
+        50,
+        Math.min(99, safeNumber(input.minimumConfidence, 78))
+      ),
+      confirmationUpdates: Math.max(
+        1,
+        Math.min(10, Math.floor(safeNumber(input.confirmationUpdates, 3)))
+      ),
+      lossCooldownMs: Math.max(
+        0,
+        Math.min(60000, Math.floor(safeNumber(input.lossCooldownMs, 6000)))
+      ),
+      sameSetupBlockMs: Math.max(
+        0,
+        Math.min(120000, Math.floor(safeNumber(input.sameSetupBlockMs, 15000)))
+      ),
     };
   }
 
@@ -191,7 +216,29 @@ export default class TurboAutoDigitBotEngine {
   }
 
   updateSignal(signal) {
-    this.signal = signal || null;
+    const next = signal || null;
+    const nextKey = String(next?.setup || "").trim().toUpperCase();
+
+    if (!nextKey) {
+      this.signal = null;
+      this.signalKey = "";
+      this.signalConfirmations = 0;
+      return;
+    }
+
+    if (nextKey === this.signalKey) {
+      this.signalConfirmations += 1;
+    } else {
+      this.signalKey = nextKey;
+      this.signalConfirmations = 1;
+    }
+
+    this.lastSignalUpdatedAt = Date.now();
+    this.signal = {
+      ...next,
+      confirmations: this.signalConfirmations,
+      updatedAt: this.lastSignalUpdatedAt,
+    };
   }
 
   selectedContract() {
@@ -205,8 +252,24 @@ export default class TurboAutoDigitBotEngine {
     }
 
     const auto = parseSetup(this.signal?.setup);
+    const confidence = safeNumber(this.signal?.confidence, 0);
+    const confirmations = safeNumber(this.signal?.confirmations, 0);
+    const fresh =
+      Date.now() - safeNumber(this.signal?.updatedAt, 0) <= 5000;
 
-    if (!auto) {
+    if (
+      !auto ||
+      confidence < this.settings.minimumConfidence ||
+      confirmations < this.settings.confirmationUpdates ||
+      !fresh
+    ) {
+      return null;
+    }
+
+    if (
+      auto.label === this.lastLossSetup &&
+      Date.now() - this.lastLossAt < this.settings.sameSetupBlockMs
+    ) {
       return null;
     }
 
@@ -272,23 +335,38 @@ export default class TurboAutoDigitBotEngine {
         const contract = this.selectedContract();
 
         if (!contract) {
+          const confidence = safeNumber(this.signal?.confidence, 0);
+          const confirmations = safeNumber(this.signal?.confirmations, 0);
+
           this.patch({
             status: "SCANNING",
             message:
-              "AUTO is scanning for OVER, UNDER, MATCH or DIFFERS.",
-            activeSetup: "—",
-            selectedConfidence: safeNumber(
-              this.signal?.confidence,
-              0
-            ),
+              `Quality scan: confidence ${confidence.toFixed(1)}% / ` +
+              `${this.settings.minimumConfidence}% · confirmations ` +
+              `${confirmations}/${this.settings.confirmationUpdates}.`,
+            activeSetup: this.signal?.setup || "—",
+            selectedConfidence: confidence,
             selectedSource: this.signal?.source || "LIVE ANALYSIS",
           });
 
-          await sleep(150);
+          await sleep(180);
           continue;
         }
 
         await this.openTrade(contract);
+
+        if (
+          this.state.history[0]?.result === "LOSS" &&
+          this.settings.lossCooldownMs > 0
+        ) {
+          this.patch({
+            status: "COOLDOWN",
+            message:
+              `Loss cooldown ${Math.ceil(this.settings.lossCooldownMs / 1000)}s ` +
+              "before scanning again.",
+          });
+          await sleep(this.settings.lossCooldownMs);
+        }
 
         const afterTradeReason = this.stopReason();
 
@@ -312,7 +390,7 @@ export default class TurboAutoDigitBotEngine {
         message:
           error instanceof Error
             ? error.message
-            : "Turbo bot failed.",
+            : "Quality Entry bot failed.",
         activeContractId: "",
       });
       throw error;
@@ -408,6 +486,13 @@ export default class TurboAutoDigitBotEngine {
           ? this.signal?.source || "LIVE ANALYSIS"
           : "MANUAL CONTRACT",
     };
+
+    if (!won) {
+      this.lastLossSetup = contract.label;
+      this.lastLossAt = completedAt;
+    }
+
+    this.signalConfirmations = 0;
 
     this.patch({
       status: won ? "WON" : "LOST",

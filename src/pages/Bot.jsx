@@ -25,6 +25,10 @@ const INITIAL_SETTINGS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
+  minimumConfidence: 78,
+  confirmationUpdates: 3,
+  lossCooldownMs: 6000,
+  sameSetupBlockMs: 15000,
 };
 
 const INITIAL_STATE = {
@@ -104,8 +108,25 @@ function bestAutoSignal(analysis, validated) {
     }
   }
 
-  return candidates.sort(
-    (left, right) => right.confidence - left.confidence
+  const scored = candidates.map((candidate) => {
+    const setup = String(candidate.setup || "").toUpperCase();
+    const familyPenalty = setup.startsWith("MATCH ") ? 8 : 0;
+    const validatedBonus =
+      candidate.source === "BACKTEST VALIDATED" ? 6 : 0;
+
+    return {
+      ...candidate,
+      qualityScore:
+        Number(candidate.confidence || 0) +
+        validatedBonus -
+        familyPenalty,
+    };
+  });
+
+  return scored.sort(
+    (left, right) =>
+      right.qualityScore - left.qualityScore ||
+      right.confidence - left.confidence
   )[0] || null;
 }
 
@@ -189,6 +210,7 @@ export default function Bot() {
     "MONITORING",
     "WON",
     "LOST",
+    "COOLDOWN",
   ].includes(botState.status);
 
   const connecting =
@@ -264,7 +286,7 @@ export default function Bot() {
 
     if (!isDemo) {
       window.alert(
-        "V51 Turbo Auto Digit Bot is Demo-only until its Auto flow is fully tested."
+        "V52 Quality Entry Digit Bot is Demo-only until its filters are fully tested."
       );
       return;
     }
@@ -290,8 +312,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V51 · Turbo Auto Digit Bot"
-          subtitle="AUTO, Over, Under, Matches and Differs with continuous execution"
+          title="EdgePilot V52 · Quality Entry Digit Bot"
+          subtitle="Validated multi-contract ranking with confirmation and loss protection"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -456,6 +478,32 @@ export default function Bot() {
                   onChange={updateNumber("stopLoss")}
                 />
               </label>
+
+              <label className="botField">
+                <span>Minimum confidence</span>
+                <input
+                  type="number"
+                  min="50"
+                  max="99"
+                  step="1"
+                  value={settings.minimumConfidence}
+                  disabled={running}
+                  onChange={updateNumber("minimumConfidence")}
+                />
+              </label>
+
+              <label className="botField">
+                <span>Signal confirmations</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={settings.confirmationUpdates}
+                  disabled={running}
+                  onChange={updateNumber("confirmationUpdates")}
+                />
+              </label>
             </div>
 
             <label className="turboUnlimited">
@@ -489,8 +537,10 @@ export default function Bot() {
                 <strong>{autoSignal?.source || "LIVE ANALYSIS"}</strong>
               </div>
               <div>
-                <small>LAST DIGIT</small>
-                <strong>{lastDigit ?? "—"}</strong>
+                <small>CONFIRMS</small>
+                <strong>
+                  {autoSignal?.confirmations || 0}/{settings.confirmationUpdates}
+                </strong>
               </div>
             </div>
 
@@ -521,9 +571,9 @@ export default function Bot() {
             </div>
 
             <p className="botSafetyText">
-              AUTO uses the live Analysis and Backtest engines. Manual
-              contracts enter continuously using your selected digit.
-              V51 is Demo-only because automated digit contracts can lose money.
+              AUTO ranks Over, Under, Matches and Differs independently,
+              requires repeated fresh confirmation, and pauses after a loss.
+              V52 remains Demo-only because automated digit contracts can lose money.
             </p>
           </article>
 
