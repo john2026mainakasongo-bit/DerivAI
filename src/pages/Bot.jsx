@@ -1,5 +1,5 @@
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
@@ -7,27 +7,38 @@ import MarketSelector from "../components/MarketSelector";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
-import QuickDigitBotEngine from "../bot/QuickDigitBotEngine";
+
+import { analyzeMarket } from "../analysis/analysisEngine";
+import { buildValidatedSignals } from "../analysis/backtestEngine";
+import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
+
 import "../styles/Bot.css";
+import "../styles/TurboBot.css";
 
 const INITIAL_SETTINGS = {
-  contractMode: "OVER",
+  contractMode: "AUTO",
+  predictionMode: "AUTO",
   prediction: 2,
   stake: 0.35,
-  duration: 5,
+  duration: 1,
   maxRuns: 10,
-  delayMs: 100,
+  unlimited: false,
+  stopProfit: 0,
+  stopLoss: 0,
 };
 
 const INITIAL_STATE = {
-  status: "IDLE",
-  message: "Quick Digit Bot is ready.",
+  status: "STOPPED",
+  message: "Turbo Auto Digit Bot is ready.",
   runs: 0,
   wins: 0,
   losses: 0,
   profit: 0,
-  activeContractId: "",
+  totalStake: 0,
   activeSetup: "—",
+  activeContractId: "",
+  selectedConfidence: 0,
+  selectedSource: "—",
   history: [],
 };
 
@@ -41,12 +52,81 @@ function accountId(account) {
   );
 }
 
-function Field({ label, children }) {
+function supportedSetup(value) {
+  return /^(OVER|UNDER|MATCH(?:ES)?|DIFFERS?)\s+[0-9]$/i.test(
+    String(value || "").trim()
+  );
+}
+
+function normalizeSetup(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/^MATCHES\s+/, "MATCH ")
+    .replace(/^DIFFER\s+/, "DIFFERS ");
+}
+
+function setupConfidence(item = {}) {
+  return Number(
+    item.lowerBound ??
+      item.confidence ??
+      item.probability ??
+      0
+  );
+}
+
+function bestAutoSignal(analysis, validated) {
+  const candidates = [];
+
+  if (
+    validated?.best?.approved &&
+    supportedSetup(validated.best.action)
+  ) {
+    candidates.push({
+      setup: normalizeSetup(validated.best.action),
+      confidence: setupConfidence(validated.best),
+      source: "BACKTEST VALIDATED",
+      detail: validated.best.reason || "",
+    });
+  }
+
+  for (const item of [
+    analysis?.signals?.threshold,
+    analysis?.signals?.matchDiff,
+  ]) {
+    if (item && supportedSetup(item.signal)) {
+      candidates.push({
+        setup: normalizeSetup(item.signal),
+        confidence: setupConfidence(item),
+        source: "LIVE ANALYSIS",
+        detail: item.detail || "",
+      });
+    }
+  }
+
+  return candidates.sort(
+    (left, right) => right.confidence - left.confidence
+  )[0] || null;
+}
+
+function statusLabel(status) {
+  const value = String(status || "STOPPED").toUpperCase();
+
+  if (value === "BUYING") return "BUYING";
+  if (value === "MONITORING") return "TRADE OPEN";
+  if (value === "SCANNING") return "SCANNING";
+  if (value === "RUNNING") return "RUNNING";
+  if (value === "COMPLETED") return "COMPLETED";
+  if (value === "ERROR") return "ERROR";
+  return value;
+}
+
+function Metric({ label, value }) {
   return (
-    <label className="botField">
-      <span>{label}</span>
-      {children}
-    </label>
+    <div className="turboMetric">
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -59,11 +139,16 @@ export default function Bot() {
 
   const {
     markets,
+    market,
     symbol,
-    connected,
-    connecting,
-    loadingMarket,
+    status,
     statusDetail,
+    connected,
+    loadingMarket,
+    prices,
+    currentPrice,
+    lastDigit,
+    digitHistory,
     connect,
     disconnect,
     changeSymbol,
@@ -71,9 +156,48 @@ export default function Bot() {
 
   const selectedId = accountId(auth.selectedAccount);
   const isDemo = auth.selectedAccountType === "demo";
-  const running = ["RUNNING", "BUYING", "MONITORING", "WON", "LOST"].includes(
-    botState.status
-  ) && botState.status !== "STOPPED";
+
+  const snapshot = useMemo(
+    () => ({
+      prices,
+      currentPrice,
+      lastDigit,
+      digitHistory,
+    }),
+    [prices, currentPrice, lastDigit, digitHistory]
+  );
+
+  const analysis = useMemo(
+    () => analyzeMarket(snapshot),
+    [snapshot]
+  );
+
+  const validated = useMemo(
+    () => buildValidatedSignals(snapshot),
+    [snapshot]
+  );
+
+  const autoSignal = useMemo(
+    () => bestAutoSignal(analysis, validated),
+    [analysis, validated]
+  );
+
+  const running = [
+    "RUNNING",
+    "SCANNING",
+    "BUYING",
+    "MONITORING",
+    "WON",
+    "LOST",
+  ].includes(botState.status);
+
+  const connecting =
+    status === "CONNECTING" || loadingMarket;
+
+  const winRate =
+    botState.runs > 0
+      ? ((botState.wins / botState.runs) * 100).toFixed(1)
+      : "0.0";
 
   useEffect(() => {
     const changed = derivPublicClient.configureAccount({
@@ -93,7 +217,7 @@ export default function Bot() {
   ]);
 
   useEffect(() => {
-    const engine = new QuickDigitBotEngine({
+    const engine = new TurboAutoDigitBotEngine({
       client: derivPublicClient,
       onState: setBotState,
     });
@@ -117,6 +241,10 @@ export default function Bot() {
     });
   }, [symbol, auth.selectedAccount?.currency]);
 
+  useEffect(() => {
+    engineRef.current?.updateSignal(autoSignal);
+  }, [autoSignal]);
+
   function updateNumber(key) {
     return (event) => {
       const value = Number(event.target.value);
@@ -136,7 +264,7 @@ export default function Bot() {
 
     if (!isDemo) {
       window.alert(
-        "Quick Digit Bot V1 is locked to Demo until it has been tested safely."
+        "V51 Turbo Auto Digit Bot is Demo-only until its Auto flow is fully tested."
       );
       return;
     }
@@ -149,7 +277,9 @@ export default function Bot() {
       await engineRef.current?.start();
     } catch (error) {
       window.alert(
-        error instanceof Error ? error.message : "Unable to start the bot."
+        error instanceof Error
+          ? error.message
+          : "Unable to start the bot."
       );
     }
   }
@@ -160,8 +290,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot Quick Digit Bot V1"
-          subtitle="Press Run to enter the selected digit contract immediately"
+          title="EdgePilot V51 · Turbo Auto Digit Bot"
+          subtitle="AUTO, Over, Under, Matches and Differs with continuous execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -178,7 +308,7 @@ export default function Bot() {
 
           <div className={isDemo ? "botDemoLock safe" : "botDemoLock real"}>
             {isDemo
-              ? "✓ DEMO QUICK BOT"
+              ? "✓ DEMO TURBO BOT"
               : `⚠ REAL LOCKED · ${selectedId || "SELECTED"}`}
           </div>
         </section>
@@ -187,21 +317,34 @@ export default function Bot() {
           <div className="connectionError">{statusDetail}</div>
         ) : null}
 
-        <section className="botLayout">
-          <article className="botCard botExecutionCard">
+        <section className="turboStatusHero">
+          <div>
+            <small>BOT STATUS</small>
+            <strong>{statusLabel(botState.status)}</strong>
+            <p>{botState.message}</p>
+          </div>
+
+          <div className={`turboStatusOrb ${botState.status.toLowerCase()}`}>
+            {running ? "●" : "■"}
+          </div>
+        </section>
+
+        <section className="turboLayout">
+          <article className="botCard turboControlCard">
             <div className="botCardHeader">
               <div>
-                <small>NEW BOT</small>
-                <h2>Immediate digit execution</h2>
+                <small>BOT CONFIGURATION</small>
+                <h2>Auto digit execution</h2>
               </div>
 
               <span className={`botStatus ${botState.status.toLowerCase()}`}>
-                {botState.status}
+                {statusLabel(botState.status)}
               </span>
             </div>
 
-            <div className="botFormGrid">
-              <Field label="Contract">
+            <div className="turboFormGrid">
+              <label className="botField">
+                <span>Contract</span>
                 <select
                   value={settings.contractMode}
                   disabled={running}
@@ -212,28 +355,50 @@ export default function Bot() {
                     }))
                   }
                 >
+                  <option value="AUTO">AUTO — Best contract</option>
                   <option value="OVER">Over</option>
                   <option value="UNDER">Under</option>
-                  <option value="DIFFERS">Differs</option>
                   <option value="MATCH">Matches</option>
+                  <option value="DIFFERS">Differs</option>
                 </select>
-              </Field>
+              </label>
 
-              <Field label="Prediction digit">
+              <label className="botField">
+                <span>Prediction digit</span>
+                <select
+                  value={settings.predictionMode}
+                  disabled={running}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      predictionMode: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="AUTO">AUTO — Signal digit</option>
+                  <option value="MANUAL">Manual digit</option>
+                </select>
+              </label>
+
+              <label className="botField">
+                <span>Manual digit</span>
                 <select
                   value={settings.prediction}
-                  disabled={running}
+                  disabled={
+                    running || settings.predictionMode === "AUTO"
+                  }
                   onChange={updateNumber("prediction")}
                 >
                   {Array.from({ length: 10 }, (_, digit) => (
-                    <option key={digit} value={digit}>
+                    <option value={digit} key={digit}>
                       {digit}
                     </option>
                   ))}
                 </select>
-              </Field>
+              </label>
 
-              <Field label="Stake">
+              <label className="botField">
+                <span>Stake</span>
                 <input
                   type="number"
                   min="0.35"
@@ -242,9 +407,10 @@ export default function Bot() {
                   disabled={running}
                   onChange={updateNumber("stake")}
                 />
-              </Field>
+              </label>
 
-              <Field label="Duration (ticks)">
+              <label className="botField">
+                <span>Duration (ticks)</span>
                 <input
                   type="number"
                   min="1"
@@ -253,66 +419,95 @@ export default function Bot() {
                   disabled={running}
                   onChange={updateNumber("duration")}
                 />
-              </Field>
+              </label>
 
-              <Field label="Maximum runs">
+              <label className="botField">
+                <span>Maximum runs</span>
                 <input
                   type="number"
                   min="1"
                   max="1000"
                   value={settings.maxRuns}
-                  disabled={running}
+                  disabled={running || settings.unlimited}
                   onChange={updateNumber("maxRuns")}
                 />
-              </Field>
+              </label>
 
-              <Field label="Delay between runs (ms)">
+              <label className="botField">
+                <span>Stop after profit</span>
                 <input
                   type="number"
                   min="0"
-                  max="10000"
-                  step="100"
-                  value={settings.delayMs}
+                  step="0.01"
+                  value={settings.stopProfit}
                   disabled={running}
-                  onChange={updateNumber("delayMs")}
+                  onChange={updateNumber("stopProfit")}
                 />
-              </Field>
+              </label>
+
+              <label className="botField">
+                <span>Stop after loss</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={settings.stopLoss}
+                  disabled={running}
+                  onChange={updateNumber("stopLoss")}
+                />
+              </label>
             </div>
 
-            <div className="botTerminalStrip">
+            <label className="turboUnlimited">
+              <input
+                type="checkbox"
+                checked={settings.unlimited}
+                disabled={running}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    unlimited: event.target.checked,
+                  }))
+                }
+              />
+              <span>Unlimited runs until Stop, profit target or loss limit</span>
+            </label>
+
+            <div className="turboSignalStrip">
               <div>
-                <small>MODE</small>
-                <strong>IMMEDIATE ENTRY</strong>
+                <small>ANALYSIS CONTRACT</small>
+                <strong>{autoSignal?.setup || "WAIT"}</strong>
               </div>
               <div>
-                <small>CONTRACT</small>
+                <small>CONFIDENCE</small>
                 <strong>
-                  {settings.contractMode} {settings.prediction}
+                  {Number(autoSignal?.confidence || 0).toFixed(1)}%
                 </strong>
               </div>
               <div>
-                <small>DURATION</small>
-                <strong>{settings.duration} TICKS</strong>
+                <small>SOURCE</small>
+                <strong>{autoSignal?.source || "LIVE ANALYSIS"}</strong>
               </div>
               <div>
-                <small>ACCOUNT</small>
-                <strong>{isDemo ? "DEMO" : "REAL LOCKED"}</strong>
+                <small>LAST DIGIT</small>
+                <strong>{lastDigit ?? "—"}</strong>
               </div>
             </div>
 
-            <div className="botMessageBar">{botState.message}</div>
-
-            <div className="botActions">
+            <div className="botActions turboActions">
               {!running ? (
-                <button className="botStartButton" onClick={startBot}>
-                  Run Quick Bot
+                <button
+                  className="botStartButton turboStart"
+                  onClick={startBot}
+                >
+                  ▶ START BOT
                 </button>
               ) : (
                 <button
-                  className="botStopButton"
+                  className="botStopButton turboStop"
                   onClick={() => engineRef.current?.stop()}
                 >
-                  Stop
+                  ■ STOP BOT
                 </button>
               )}
 
@@ -326,82 +521,90 @@ export default function Bot() {
             </div>
 
             <p className="botSafetyText">
-              Run opens the selected contract immediately without analysis.
-              This first version is Demo-only because immediate automated
-              entries can lose money.
+              AUTO uses the live Analysis and Backtest engines. Manual
+              contracts enter continuously using your selected digit.
+              V51 is Demo-only because automated digit contracts can lose money.
             </p>
           </article>
 
-          <article className="botCard">
+          <article className="botCard turboPerformanceCard">
             <div className="botCardHeader">
               <div>
                 <small>LIVE PERFORMANCE</small>
                 <h2>
-                  Run {botState.runs}/{settings.maxRuns}
+                  {settings.unlimited
+                    ? `Run ${botState.runs}`
+                    : `Run ${botState.runs}/${settings.maxRuns}`}
                 </h2>
               </div>
+
+              <span>{market?.label || symbol}</span>
             </div>
 
-            <div className="botMetricGrid">
-              <div>
-                <small>Wins</small>
-                <strong>{botState.wins}</strong>
-              </div>
-              <div>
-                <small>Losses</small>
-                <strong>{botState.losses}</strong>
-              </div>
-              <div>
-                <small>Win rate</small>
-                <strong>
-                  {botState.runs
-                    ? `${((botState.wins / botState.runs) * 100).toFixed(1)}%`
-                    : "0.0%"}
-                </strong>
-              </div>
-              <div>
-                <small>Total P&L</small>
-                <strong>{botState.profit.toFixed(2)} USD</strong>
-              </div>
+            <div className="turboMetrics">
+              <Metric label="Runs" value={botState.runs} />
+              <Metric label="Wins" value={botState.wins} />
+              <Metric label="Losses" value={botState.losses} />
+              <Metric label="Win rate" value={`${winRate}%`} />
+              <Metric
+                label="Profit"
+                value={`${botState.profit >= 0 ? "+" : ""}${botState.profit.toFixed(2)} USD`}
+              />
+              <Metric
+                label="Current contract"
+                value={botState.activeSetup}
+              />
             </div>
 
-            <div className="botTerminalStrip">
-              <div>
-                <small>ACTIVE SETUP</small>
-                <strong>{botState.activeSetup}</strong>
-              </div>
-              <div>
-                <small>CONTRACT ID</small>
-                <strong>{botState.activeContractId || "—"}</strong>
-              </div>
-              <div>
-                <small>STATUS</small>
-                <strong>{botState.status}</strong>
-              </div>
-            </div>
+            <div className="turboHistoryWrap">
+              <table className="turboHistoryTable">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Contract</th>
+                    <th>Stake</th>
+                    <th>Result</th>
+                    <th>Profit</th>
+                    <th>ID</th>
+                  </tr>
+                </thead>
 
-            <div className="botHistory">
-              <div className="botHistoryHeader">
-                <strong>Recent runs</strong>
-                <span>{botState.history.length}</span>
-              </div>
-
-              {botState.history.length ? (
-                botState.history.map((item) => (
-                  <div className="botHistoryRow" key={item.id}>
-                    <div>
-                      <strong>{item.setup}</strong>
-                      <small>{item.contractId}</small>
-                    </div>
-                    <strong className={item.result === "WIN" ? "win" : "loss"}>
-                      {item.result} {item.profit >= 0 ? "+" : ""}
-                      {item.profit.toFixed(2)}
-                    </strong>
-                  </div>
-                ))
-              ) : (
-                <div className="botHistoryEmpty">No completed runs yet.</div>
-              )}
+                <tbody>
+                  {botState.history.length ? (
+                    botState.history.map((item) => (
+                      <tr key={item.id}>
+                        <td>
+                          {new Date(item.time).toLocaleTimeString()}
+                        </td>
+                        <td>{item.setup}</td>
+                        <td>{item.stake.toFixed(2)}</td>
+                        <td>
+                          <strong
+                            className={
+                              item.result === "WIN"
+                                ? "turboWin"
+                                : "turboLoss"
+                            }
+                          >
+                            {item.result}
+                          </strong>
+                        </td>
+                        <td>
+                          {item.profit >= 0 ? "+" : ""}
+                          {item.profit.toFixed(2)}
+                        </td>
+                        <td>{item.contractId}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="turboEmpty">
+                        No completed trades yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </article>
         </section>

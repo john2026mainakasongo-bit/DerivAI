@@ -1,0 +1,230 @@
+
+.turboStatusHero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 18px 22px;
+  border: 1px solid #17455f;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #08283b, #061b2a);
+}
+
+.turboStatusHero small {
+  color: #24e7bc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+
+.turboStatusHero strong {
+  display: block;
+  margin-top: 5px;
+  color: #fff;
+  font-size: 26px;
+}
+
+.turboStatusHero p {
+  margin: 5px 0 0;
+  color: #8db0c4;
+}
+
+.turboStatusOrb {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid #27546c;
+  border-radius: 999px;
+  background: #102c3c;
+  color: #8ba8b8;
+  font-size: 24px;
+}
+
+.turboStatusOrb.scanning,
+.turboStatusOrb.running {
+  border-color: #d6b13b;
+  color: #ffd95b;
+  box-shadow: 0 0 20px rgba(255, 217, 91, .18);
+}
+
+.turboStatusOrb.buying,
+.turboStatusOrb.monitoring {
+  border-color: #8f65ff;
+  color: #bba4ff;
+  box-shadow: 0 0 20px rgba(143, 101, 255, .2);
+}
+
+.turboStatusOrb.won,
+.turboStatusOrb.completed {
+  border-color: #20e4b4;
+  color: #20e4b4;
+}
+
+.turboStatusOrb.lost,
+.turboStatusOrb.error {
+  border-color: #ff617d;
+  color: #ff617d;
+}
+
+.turboLayout {
+  display: grid;
+  grid-template-columns: minmax(0, .92fr) minmax(0, 1.28fr);
+  gap: 16px;
+  padding-bottom: 28px;
+}
+
+.turboControlCard,
+.turboPerformanceCard {
+  min-width: 0;
+}
+
+.turboFormGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.turboUnlimited {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 0;
+  color: #9ab8ca;
+  font-size: 12px;
+}
+
+.turboSignalStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.turboSignalStrip > div {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #18445d;
+  border-radius: 9px;
+  background: #061a28;
+}
+
+.turboSignalStrip small,
+.turboMetric small {
+  display: block;
+  color: #22e6b8;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.turboSignalStrip strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turboActions {
+  margin-top: 14px;
+}
+
+.turboStart,
+.turboStop {
+  min-height: 48px;
+  font-size: 14px;
+}
+
+.turboMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.turboMetric {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #18445d;
+  border-radius: 11px;
+  background: #061a28;
+}
+
+.turboMetric strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: #fff;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turboHistoryWrap {
+  overflow: auto;
+  border: 1px solid #173f56;
+  border-radius: 11px;
+}
+
+.turboHistoryTable {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.turboHistoryTable th,
+.turboHistoryTable td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #15384d;
+  color: #a4c0d0;
+  font-size: 11px;
+  text-align: left;
+}
+
+.turboHistoryTable th {
+  position: sticky;
+  top: 0;
+  background: #0a293b;
+  color: #55e9c6;
+  font-size: 9px;
+  letter-spacing: .06em;
+}
+
+.turboHistoryTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.turboWin {
+  color: #29e5b8;
+}
+
+.turboLoss {
+  color: #ff6f88;
+}
+
+.turboEmpty {
+  padding: 28px !important;
+  color: #779aaf !important;
+  text-align: center !important;
+}
+
+@media (max-width: 1050px) {
+  .turboLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .turboFormGrid,
+  .turboMetrics,
+  .turboSignalStrip {
+    grid-template-columns: 1fr;
+  }
+
+  .turboStatusHero {
+    align-items: flex-start;
+  }
+}
