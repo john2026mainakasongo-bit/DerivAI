@@ -29,6 +29,8 @@ const INITIAL_SETTINGS = {
   confirmationUpdates: 3,
   lossCooldownMs: 6000,
   sameSetupBlockMs: 15000,
+  maximumSignalAgeMs: 2000,
+  lossSkipSignals: 3,
 };
 
 const INITIAL_STATE = {
@@ -43,6 +45,9 @@ const INITIAL_STATE = {
   activeContractId: "",
   selectedConfidence: 0,
   selectedSource: "—",
+  selectedQuality: 0,
+  signalConfirmations: 0,
+  skipSignalsRemaining: 0,
   history: [],
 };
 
@@ -79,55 +84,160 @@ function setupConfidence(item = {}) {
   );
 }
 
-function bestAutoSignal(analysis, validated) {
-  const candidates = [];
+function clamp(value, minimum = 0, maximum = 100) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return minimum;
+  return Math.max(minimum, Math.min(maximum, number));
+}
 
-  if (
-    validated?.best?.approved &&
-    supportedSetup(validated.best.action)
-  ) {
-    candidates.push({
-      setup: normalizeSetup(validated.best.action),
-      confidence: setupConfidence(validated.best),
-      source: "BACKTEST VALIDATED",
-      detail: validated.best.reason || "",
-    });
+function entropyQuality(analysis = {}) {
+  const normalized = Number(analysis.entropy?.normalized || 0);
+  return clamp((1 - normalized) * 100);
+}
+
+function transitionQuality(digits = [], mode, digit) {
+  if (!Array.isArray(digits) || digits.length < 12) return 50;
+
+  let total = 0;
+  let wins = 0;
+
+  for (let index = 1; index < digits.length; index += 1) {
+    const value = Number(digits[index]);
+    if (!Number.isInteger(value)) continue;
+
+    total += 1;
+
+    if (mode === "OVER" && value > digit) wins += 1;
+    if (mode === "UNDER" && value < digit) wins += 1;
+    if (mode === "MATCH" && value === digit) wins += 1;
+    if (mode === "DIFFERS" && value !== digit) wins += 1;
   }
 
-  for (const item of [
-    analysis?.signals?.threshold,
-    analysis?.signals?.matchDiff,
-  ]) {
-    if (item && supportedSetup(item.signal)) {
+  return total ? clamp((wins / total) * 100) : 50;
+}
+
+function candidateProbability(distribution = [], mode, digit) {
+  const rows = Array.isArray(distribution) ? distribution : [];
+  const percentage = (target) =>
+    Number(rows.find((item) => Number(item.digit) === target)?.percent || 0);
+
+  if (mode === "MATCH") return clamp(percentage(digit));
+  if (mode === "DIFFERS") return clamp(100 - percentage(digit));
+
+  let total = 0;
+
+  for (let value = 0; value <= 9; value += 1) {
+    if (mode === "OVER" && value > digit) total += percentage(value);
+    if (mode === "UNDER" && value < digit) total += percentage(value);
+  }
+
+  return clamp(total);
+}
+
+function buildRankedCandidates(analysis = {}, validated = {}, digitHistory = []) {
+  const rows = Array.isArray(analysis.distribution)
+    ? analysis.distribution
+    : [];
+
+  if (rows.length !== 10) return [];
+
+  const entropy = entropyQuality(analysis);
+  const momentum = clamp(
+    50 + Math.abs(Number(analysis.momentum?.percent || 0)) * 3
+  );
+  const validatedSetup =
+    validated?.best?.approved && supportedSetup(validated.best.action)
+      ? normalizeSetup(validated.best.action)
+      : "";
+
+  const candidates = [];
+
+  for (let digit = 0; digit <= 9; digit += 1) {
+    for (const mode of ["OVER", "UNDER", "MATCH", "DIFFERS"]) {
+      // Avoid impossible/near-impossible threshold boundaries.
+      if (mode === "OVER" && digit >= 8) continue;
+      if (mode === "UNDER" && digit <= 1) continue;
+
+      const setup =
+        mode === "MATCH"
+          ? `MATCH ${digit}`
+          : `${mode} ${digit}`;
+
+      const probability = candidateProbability(rows, mode, digit);
+      const transition = transitionQuality(digitHistory, mode, digit);
+      const frequency =
+        mode === "MATCH"
+          ? probability
+          : mode === "DIFFERS"
+            ? probability
+            : clamp(probability);
+      const validationBonus =
+        normalizeSetup(setup) === validatedSetup ? 8 : 0;
+      const familyPenalty = mode === "MATCH" ? 14 : 0;
+
+      const qualityScore = clamp(
+        probability * 0.4 +
+          transition * 0.2 +
+          frequency * 0.15 +
+          entropy * 0.15 +
+          momentum * 0.1 +
+          validationBonus -
+          familyPenalty
+      );
+
       candidates.push({
-        setup: normalizeSetup(item.signal),
-        confidence: setupConfidence(item),
-        source: "LIVE ANALYSIS",
-        detail: item.detail || "",
+        setup,
+        mode,
+        digit,
+        probability,
+        confidence: qualityScore,
+        qualityScore,
+        transition,
+        frequency,
+        entropy,
+        momentum,
+        source:
+          validationBonus > 0
+            ? "BACKTEST VALIDATED"
+            : "MULTI-CONTRACT RANKING",
+        detail:
+          `${setup}: probability ${probability.toFixed(1)}%, ` +
+          `transition ${transition.toFixed(1)}%, entropy quality ` +
+          `${entropy.toFixed(1)}%.`,
       });
     }
   }
 
-  const scored = candidates.map((candidate) => {
-    const setup = String(candidate.setup || "").toUpperCase();
-    const familyPenalty = setup.startsWith("MATCH ") ? 8 : 0;
-    const validatedBonus =
-      candidate.source === "BACKTEST VALIDATED" ? 6 : 0;
+  return candidates
+    .filter((candidate) => candidate.probability >= 55)
+    .sort(
+      (left, right) =>
+        right.qualityScore - left.qualityScore ||
+        right.probability - left.probability
+    );
+}
 
-    return {
-      ...candidate,
-      qualityScore:
-        Number(candidate.confidence || 0) +
-        validatedBonus -
-        familyPenalty,
-    };
-  });
+function qualityLabel(score) {
+  const value = Number(score || 0);
+  if (value >= 88) return { stars: "★★★★★", label: "Excellent" };
+  if (value >= 80) return { stars: "★★★★☆", label: "Good" };
+  if (value >= 72) return { stars: "★★★☆☆", label: "Average" };
+  return { stars: "★★☆☆☆", label: "Weak" };
+}
 
-  return scored.sort(
-    (left, right) =>
-      right.qualityScore - left.qualityScore ||
-      right.confidence - left.confidence
-  )[0] || null;
+function signalReason(candidate = {}) {
+  const metrics = [
+    ["Probability", candidate.probability],
+    ["Transition", candidate.transition],
+    ["Frequency", candidate.frequency],
+    ["Entropy quality", candidate.entropy],
+    ["Momentum", candidate.momentum],
+  ].sort((left, right) => Number(right[1]) - Number(left[1]));
+
+  return metrics
+    .slice(0, 3)
+    .map(([label]) => label)
+    .join(" · ");
 }
 
 function statusLabel(status) {
@@ -198,10 +308,19 @@ export default function Bot() {
     [snapshot]
   );
 
-  const autoSignal = useMemo(
-    () => bestAutoSignal(analysis, validated),
-    [analysis, validated]
+  const rankedCandidates = useMemo(
+    () =>
+      buildRankedCandidates(
+        analysis,
+        validated,
+        digitHistory
+      ),
+    [analysis, validated, digitHistory]
   );
+
+  const autoSignal = rankedCandidates[0] || null;
+  const topCandidates = rankedCandidates.slice(0, 4);
+  const quality = qualityLabel(autoSignal?.qualityScore);
 
   const running = [
     "RUNNING",
@@ -286,7 +405,7 @@ export default function Bot() {
 
     if (!isDemo) {
       window.alert(
-        "V52 Quality Entry Digit Bot is Demo-only until its filters are fully tested."
+        "V53 Multi-Contract Ranking AI is Demo-only until its ranking is fully tested."
       );
       return;
     }
@@ -312,8 +431,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V52 · Quality Entry Digit Bot"
-          subtitle="Validated multi-contract ranking with confirmation and loss protection"
+          title="EdgePilot V53 · Multi-Contract Ranking AI"
+          subtitle="Probability, transition, frequency, entropy and momentum ranking"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -504,6 +623,32 @@ export default function Bot() {
                   onChange={updateNumber("confirmationUpdates")}
                 />
               </label>
+
+              <label className="botField">
+                <span>Signal age limit (ms)</span>
+                <input
+                  type="number"
+                  min="500"
+                  max="10000"
+                  step="100"
+                  value={settings.maximumSignalAgeMs}
+                  disabled={running}
+                  onChange={updateNumber("maximumSignalAgeMs")}
+                />
+              </label>
+
+              <label className="botField">
+                <span>Skip signals after loss</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="20"
+                  step="1"
+                  value={settings.lossSkipSignals}
+                  disabled={running}
+                  onChange={updateNumber("lossSkipSignals")}
+                />
+              </label>
             </div>
 
             <label className="turboUnlimited">
@@ -523,25 +668,66 @@ export default function Bot() {
 
             <div className="turboSignalStrip">
               <div>
-                <small>ANALYSIS CONTRACT</small>
+                <small>CURRENT BEST</small>
                 <strong>{autoSignal?.setup || "WAIT"}</strong>
               </div>
               <div>
-                <small>CONFIDENCE</small>
-                <strong>
-                  {Number(autoSignal?.confidence || 0).toFixed(1)}%
-                </strong>
+                <small>QUALITY</small>
+                <strong>{Number(autoSignal?.qualityScore || 0).toFixed(1)}</strong>
               </div>
               <div>
-                <small>SOURCE</small>
-                <strong>{autoSignal?.source || "LIVE ANALYSIS"}</strong>
+                <small>RATING</small>
+                <strong>{quality.stars} {quality.label}</strong>
               </div>
               <div>
                 <small>CONFIRMS</small>
                 <strong>
-                  {autoSignal?.confirmations || 0}/{settings.confirmationUpdates}
+                  {botState.signalConfirmations || 0}/{settings.confirmationUpdates}
                 </strong>
               </div>
+            </div>
+
+            <div className="v53Recommendation">
+              <div>
+                <small>AI RECOMMENDATION</small>
+                <h3>{autoSignal?.setup || "WAIT"}</h3>
+                <p>
+                  {autoSignal
+                    ? signalReason(autoSignal)
+                    : "Collecting live digit evidence."}
+                </p>
+              </div>
+
+              <div className="v53Expected">
+                <span>
+                  <small>Probability</small>
+                  <strong>{Number(autoSignal?.probability || 0).toFixed(1)}%</strong>
+                </span>
+                <span>
+                  <small>Quality score</small>
+                  <strong>{Number(autoSignal?.qualityScore || 0).toFixed(1)}</strong>
+                </span>
+                <span>
+                  <small>Freshness</small>
+                  <strong>≤ {settings.maximumSignalAgeMs / 1000}s</strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="v53Ranking">
+              <div className="v53RankingHeader">
+                <strong>Live contract ranking</strong>
+                <span>Updates with every tick</span>
+              </div>
+
+              {topCandidates.map((candidate, index) => (
+                <div className="v53RankRow" key={candidate.setup}>
+                  <span>#{index + 1}</span>
+                  <strong>{candidate.setup}</strong>
+                  <em>{candidate.qualityScore.toFixed(1)}</em>
+                  <small>{candidate.probability.toFixed(1)}% probability</small>
+                </div>
+              ))}
             </div>
 
             <div className="botActions turboActions">
@@ -571,9 +757,10 @@ export default function Bot() {
             </div>
 
             <p className="botSafetyText">
-              AUTO ranks Over, Under, Matches and Differs independently,
-              requires repeated fresh confirmation, and pauses after a loss.
-              V52 remains Demo-only because automated digit contracts can lose money.
+              AUTO ranks Over, Under, Matches and Differs using probability,
+              transition, frequency, entropy and momentum. A loss skips the next
+              configured signal updates. V53 remains Demo-only because automated
+              digit contracts can lose money.
             </p>
           </article>
 
@@ -615,6 +802,7 @@ export default function Bot() {
                     <th>Stake</th>
                     <th>Result</th>
                     <th>Profit</th>
+                    <th>Quality</th>
                     <th>ID</th>
                   </tr>
                 </thead>
@@ -643,12 +831,13 @@ export default function Bot() {
                           {item.profit >= 0 ? "+" : ""}
                           {item.profit.toFixed(2)}
                         </td>
+                        <td>{Number(item.confidence || 0).toFixed(1)}</td>
                         <td>{item.contractId}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="6" className="turboEmpty">
+                      <td colSpan="7" className="turboEmpty">
                         No completed trades yet.
                       </td>
                     </tr>

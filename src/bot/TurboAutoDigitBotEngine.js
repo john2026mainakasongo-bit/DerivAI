@@ -13,6 +13,8 @@ const DEFAULTS = {
   confirmationUpdates: 3,
   lossCooldownMs: 6000,
   sameSetupBlockMs: 15000,
+  maximumSignalAgeMs: 2000,
+  lossSkipSignals: 3,
 };
 
 function sleep(ms) {
@@ -140,13 +142,14 @@ export default class TurboAutoDigitBotEngine {
     this.lastSignalUpdatedAt = 0;
     this.lastLossSetup = "";
     this.lastLossAt = 0;
+    this.skipSignalUpdatesRemaining = 0;
     this.running = false;
     this.stopRequested = false;
     this.contractWaiters = new Map();
 
     this.state = {
       status: "STOPPED",
-      message: "Quality Entry Digit Bot is ready.",
+      message: "Multi-Contract Ranking AI is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -156,6 +159,9 @@ export default class TurboAutoDigitBotEngine {
       activeContractId: "",
       selectedConfidence: 0,
       selectedSource: "—",
+      selectedQuality: 0,
+      signalConfirmations: 0,
+      skipSignalsRemaining: 0,
       history: [],
     };
 
@@ -207,6 +213,14 @@ export default class TurboAutoDigitBotEngine {
         0,
         Math.min(120000, Math.floor(safeNumber(input.sameSetupBlockMs, 15000)))
       ),
+      maximumSignalAgeMs: Math.max(
+        500,
+        Math.min(10000, Math.floor(safeNumber(input.maximumSignalAgeMs, 2000)))
+      ),
+      lossSkipSignals: Math.max(
+        0,
+        Math.min(20, Math.floor(safeNumber(input.lossSkipSignals, 3)))
+      ),
     };
   }
 
@@ -223,6 +237,27 @@ export default class TurboAutoDigitBotEngine {
       this.signal = null;
       this.signalKey = "";
       this.signalConfirmations = 0;
+      this.patch({
+        signalConfirmations: 0,
+      });
+      return;
+    }
+
+    if (this.skipSignalUpdatesRemaining > 0) {
+      this.skipSignalUpdatesRemaining -= 1;
+      this.signal = null;
+      this.signalKey = "";
+      this.signalConfirmations = 0;
+
+      this.patch({
+        status: this.running ? "COOLDOWN" : this.state.status,
+        message:
+          `Loss protection: skipping signal update ` +
+          `${this.settings.lossSkipSignals - this.skipSignalUpdatesRemaining}/` +
+          `${this.settings.lossSkipSignals}.`,
+        signalConfirmations: 0,
+        skipSignalsRemaining: this.skipSignalUpdatesRemaining,
+      });
       return;
     }
 
@@ -239,6 +274,12 @@ export default class TurboAutoDigitBotEngine {
       confirmations: this.signalConfirmations,
       updatedAt: this.lastSignalUpdatedAt,
     };
+
+    this.patch({
+      signalConfirmations: this.signalConfirmations,
+      selectedQuality: safeNumber(next?.qualityScore, 0),
+      skipSignalsRemaining: this.skipSignalUpdatesRemaining,
+    });
   }
 
   selectedContract() {
@@ -255,7 +296,8 @@ export default class TurboAutoDigitBotEngine {
     const confidence = safeNumber(this.signal?.confidence, 0);
     const confirmations = safeNumber(this.signal?.confirmations, 0);
     const fresh =
-      Date.now() - safeNumber(this.signal?.updatedAt, 0) <= 5000;
+      Date.now() - safeNumber(this.signal?.updatedAt, 0) <=
+      this.settings.maximumSignalAgeMs;
 
     if (
       !auto ||
@@ -390,7 +432,7 @@ export default class TurboAutoDigitBotEngine {
         message:
           error instanceof Error
             ? error.message
-            : "Quality Entry bot failed.",
+            : "Multi-Contract Ranking AI failed.",
         activeContractId: "",
       });
       throw error;
@@ -423,6 +465,9 @@ export default class TurboAutoDigitBotEngine {
       activeContractId: "",
       selectedConfidence: 0,
       selectedSource: "—",
+      selectedQuality: 0,
+      signalConfirmations: 0,
+      skipSignalsRemaining: 0,
       history: [],
     });
   }
@@ -438,6 +483,11 @@ export default class TurboAutoDigitBotEngine {
         this.signal?.confidence,
         0
       ),
+      selectedQuality: safeNumber(
+        this.signal?.qualityScore,
+        this.signal?.confidence
+      ),
+      signalConfirmations: this.signalConfirmations,
       selectedSource:
         this.settings.contractMode === "AUTO"
           ? this.signal?.source || "LIVE ANALYSIS"
@@ -490,6 +540,7 @@ export default class TurboAutoDigitBotEngine {
     if (!won) {
       this.lastLossSetup = contract.label;
       this.lastLossAt = completedAt;
+      this.skipSignalUpdatesRemaining = this.settings.lossSkipSignals;
     }
 
     this.signalConfirmations = 0;
@@ -503,6 +554,8 @@ export default class TurboAutoDigitBotEngine {
       profit: this.state.profit + profit,
       totalStake: this.state.totalStake + stake,
       activeContractId: "",
+      signalConfirmations: 0,
+      skipSignalsRemaining: this.skipSignalUpdatesRemaining,
       history: [historyItem, ...this.state.history].slice(0, 100),
     });
   }
