@@ -9,8 +9,8 @@ const DEFAULTS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
-  minimumConfidence: 82,
-  confirmationUpdates: 2,
+  minimumConfidence: 84,
+  confirmationUpdates: 3,
   lossCooldownMs: 750,
   sameSetupBlockMs: 15000,
   maximumSignalAgeMs: 2000,
@@ -19,7 +19,7 @@ const DEFAULTS = {
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  scanSwitchMs: 5000,
+  scanSwitchMs: 7000,
   postTradeDelayMs: 150,
 };
 
@@ -187,7 +187,7 @@ export default class TurboAutoDigitBotEngine {
 
     this.state = {
       status: "STOPPED",
-      message: "V64 One-Minute Consensus Scanner is ready.",
+      message: "V65 Deep Consensus Engine is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -556,9 +556,27 @@ export default class TurboAutoDigitBotEngine {
         );
         await this.openTrade(contract);
 
-        await this.switchMarketAfterTrade(
-          "Trade settled. Rotating volatility for fresh evidence."
-        );
+        const latestResult = this.state.history?.[0]?.result;
+
+        if (latestResult === "WIN") {
+          this.debug("MARKET_HOLD", `${this.symbol} retained after validated win.`);
+          this.signal = null;
+          this.signalKey = "";
+          this.signalConfirmations = 0;
+          this.patch({
+            status: "SCANNING",
+            message:
+              "Validated win settled. Holding this volatility and rebuilding fresh evidence.",
+            activeSetup: "—",
+            activeContractId: "",
+            signalConfirmations: 0,
+          });
+          await sleep(this.settings.postTradeDelayMs);
+        } else {
+          await this.switchMarketAfterTrade(
+            "Loss settled. Rotating volatility for different evidence."
+          );
+        }
 
         if (
           this.state.history[0]?.result === "LOSS" &&

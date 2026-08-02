@@ -8,7 +8,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
-import { rankV64ConsensusContracts } from "../analysis/v64OneMinuteConsensusEngine";
+import { rankV65DeepConsensus } from "../analysis/v65DeepConsensusEngine";
 import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
 
 import "../styles/Bot.css";
@@ -24,8 +24,8 @@ const INITIAL_SETTINGS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0,
-  minimumConfidence: 82,
-  confirmationUpdates: 2,
+  minimumConfidence: 84,
+  confirmationUpdates: 3,
   lossCooldownMs: 6000,
   sameSetupBlockMs: 15000,
   maximumSignalAgeMs: 2000,
@@ -34,7 +34,7 @@ const INITIAL_SETTINGS = {
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  scanSwitchMs: 5000,
+  scanSwitchMs: 7000,
   postTradeDelayMs: 150,
 };
 
@@ -144,9 +144,9 @@ export default function Bot() {
   const selectedId = accountId(auth.selectedAccount);
   const isDemo = auth.selectedAccountType === "demo";
 
-  const v64Analysis = useMemo(
+  const v65Analysis = useMemo(
     () =>
-      rankV64ConsensusContracts({
+      rankV65DeepConsensus({
         digitHistory,
         allowHighRisk: settings.allowHighRiskContracts,
         minimumConfidence: settings.minimumConfidence,
@@ -158,11 +158,11 @@ export default function Bot() {
     ]
   );
 
-  const rankedCandidates = v64Analysis.candidates || [];
+  const rankedCandidates = v65Analysis.candidates || [];
   const executableCandidates = rankedCandidates.filter(
     (candidate) => candidate.executable
   );
-  const autoSignal = v64Analysis.best || null;
+  const autoSignal = v65Analysis.best || null;
   const topCandidates = rankedCandidates.slice(0, 6);
   const familyLeaders = ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"]
     .map((mode) =>
@@ -350,7 +350,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V64 · One-Minute Consensus Scanner"
+          title="EdgePilot V65 · Deep Consensus Engine"
           subtitle="Fresh analysis after every trade: Over 1–6, Under 3–8, Even, Odd, Match and Differs"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
@@ -723,10 +723,10 @@ export default function Bot() {
             <div className="v56SwitchNotice">
               <strong>FRESH MARKET MODE</strong>
               <span>
-                V64 checks ten independent conditions: EV, probability edge,
-                transition, stability, run behaviour, autocorrelation, distribution,
-                parity, recent backtest and sample strength. It enters only when
-                at least seven standard-contract checks agree.
+                V65 checks 20, 50, 100 and 200-tick probability windows plus
+                EV, edge, Markov transition, window agreement, stability, streaks,
+                reversal control, autocorrelation and walk-forward backtest.
+                Standard entries require at least 10 of 13 checks.
               </span>
             </div>
 
@@ -767,21 +767,24 @@ export default function Bot() {
 
             <div className={autoSignal ? "v60Gate pass" : "v60Gate wait"}>
               <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — NO CONTRACT PASSES"}</strong>
-              <span>{v64Analysis.reason}</span>
+              <span>{v65Analysis.reason}</span>
             </div>
 
-            <div className="v64AnalysisGrid">
+            <div className="v64AnalysisGrid v65">
               {[
+                "20-Tick Probability",
+                "50-Tick Probability",
+                "100-Tick Probability",
+                "200-Tick Probability",
                 "Expected Value",
                 "Probability Edge",
                 "Markov Transition",
-                "Window Stability",
-                "Run Behaviour",
+                "Window Agreement",
+                "Stability",
+                "Streak Behaviour",
+                "Reversal Control",
                 "Autocorrelation",
-                "Digit Distribution",
-                "Parity Balance",
-                "Recent Backtest",
-                "Sample Strength",
+                "Walk-Forward Backtest",
               ].map((label, index) => (
                 <div key={label}>
                   <span>{index + 1}</span>
