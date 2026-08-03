@@ -8,6 +8,7 @@ const links = [
     label: "Rise/Fall",
     icon: "↗",
   },
+  { to: "/over-under-analysis", label: "Over/Under", icon: "â†•" },
   { to: "/bot", label: "Auto Bot", icon: "⚡" },
   { to: "/settings", label: "Settings", icon: "⚙" },
 ];

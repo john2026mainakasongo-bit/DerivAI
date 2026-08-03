@@ -8,6 +8,7 @@
 import Dashboard from "./pages/Dashboard";
 import Analysis from "./pages/Analysis";
 import RiseFallAnalysis from "./pages/RiseFallAnalysis";
+import OverUnderAnalysis from "./pages/OverUnderAnalysis";
 import Bot from "./pages/Bot";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
