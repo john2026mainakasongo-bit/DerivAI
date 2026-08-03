@@ -27,6 +27,64 @@ function signalClass(value) {
   return String(value || "WAIT").toLowerCase();
 }
 
+const LEARNING_STORAGE_KEY = "edgepilot-rise-fall-learning-v70";
+const MAX_LEARNING_RECORDS = 300;
+
+function safeReadLearningHistory() {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const value = JSON.parse(
+      window.localStorage.getItem(LEARNING_STORAGE_KEY) || "[]"
+    );
+
+    return Array.isArray(value)
+      ? value.slice(0, MAX_LEARNING_RECORDS)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function scoreBucket(value) {
+  const score = Number(value || 0);
+
+  if (score >= 90) return "90+";
+  if (score >= 82) return "82-89";
+  if (score >= 74) return "74-81";
+  return "<74";
+}
+
+function noiseBucket(value) {
+  const noise = Number(value || 0);
+
+  if (noise >= 75) return "HIGH";
+  if (noise >= 55) return "MEDIUM";
+  return "LOW";
+}
+
+function rate(records = []) {
+  if (!records.length) return 0;
+
+  const wins = records.filter((item) => item.result === "WON").length;
+  return wins / records.length * 100;
+}
+
+function currentLossStreak(records = []) {
+  let streak = 0;
+
+  for (const item of records) {
+    if (item.result === "LOST") {
+      streak += 1;
+      continue;
+    }
+
+    if (item.result === "WON") break;
+  }
+
+  return streak;
+}
+
 function MiniChart({
   points = [],
   signal = "WAIT",
@@ -192,12 +250,16 @@ export default function RiseFallAnalysis() {
   );
   const [executionRuns, setExecutionRuns] = useState(0);
   const [sessionTrades, setSessionTrades] = useState([]);
+  const [learningHistory, setLearningHistory] = useState(
+    safeReadLearningHistory
+  );
   const previousSignalRef = useRef("WAIT");
   const lastAlertAtRef = useRef(0);
   const lastExecutedSignalRef = useRef("");
   const executionBusyRef = useRef(false);
   const autoRunningRef = useRef(false);
   const executionRunsRef = useRef(0);
+  const learnedContractsRef = useRef(new Set());
 
   const connectingRef = useRef(false);
 
@@ -250,6 +312,97 @@ export default function RiseFallAnalysis() {
 
   const active =
     mode === "15s" ? analysis15 : analysis10;
+
+  const learningProfile = useMemo(() => {
+    const records = Array.isArray(learningHistory)
+      ? learningHistory
+      : [];
+
+    const symbolRecords = records.filter(
+      (item) => item.symbol === symbol
+    );
+
+    const directionRecords = symbolRecords.filter(
+      (item) => item.signal === active.signal
+    );
+
+    const durationRecords = directionRecords.filter(
+      (item) => item.durationMode === durationMode
+    );
+
+    const setupRecords = durationRecords.filter(
+      (item) =>
+        item.regime === active.regime &&
+        item.scoreBucket === scoreBucket(active.opportunityScore) &&
+        item.noiseBucket === noiseBucket(active.noiseRatio)
+    );
+
+    const referenceRecords =
+      setupRecords.length >= 5
+        ? setupRecords
+        : durationRecords.length >= 8
+          ? durationRecords
+          : directionRecords;
+
+    const sampleCount = referenceRecords.length;
+    const winRate = rate(referenceRecords);
+    const lossStreak = currentLossStreak(symbolRecords);
+
+    let thresholdAdjustment = 0;
+
+    if (sampleCount >= 12 && winRate < 42) {
+      thresholdAdjustment = 8;
+    } else if (sampleCount >= 8 && winRate < 48) {
+      thresholdAdjustment = 5;
+    } else if (sampleCount >= 8 && winRate >= 68) {
+      thresholdAdjustment = -2;
+    }
+
+    if (lossStreak >= 3) {
+      thresholdAdjustment = Math.max(thresholdAdjustment, 8);
+    }
+
+    const baseBuy = Number(active.adaptiveThresholds?.buy || 72);
+    const learnedBuyThreshold = Math.max(
+      70,
+      Math.min(92, baseBuy + thresholdAdjustment)
+    );
+
+    const setupRejected =
+      sampleCount >= 6 &&
+      winRate < 40;
+
+    return {
+      sampleCount,
+      winRate,
+      lossStreak,
+      thresholdAdjustment,
+      learnedBuyThreshold,
+      setupRejected,
+      directionSamples: directionRecords.length,
+      directionRate: rate(directionRecords),
+      durationSamples: durationRecords.length,
+      durationRate: rate(durationRecords),
+      totalSamples: symbolRecords.length,
+      totalRate: rate(symbolRecords),
+    };
+  }, [
+    learningHistory,
+    symbol,
+    active.signal,
+    active.regime,
+    active.opportunityScore,
+    active.noiseRatio,
+    active.adaptiveThresholds?.buy,
+    durationMode,
+  ]);
+
+  const learnedEntryAllowed =
+    !active.autoSkip &&
+    !learningProfile.setupRejected &&
+    Number(active.opportunityScore || 0) >=
+      Number(learningProfile.learnedBuyThreshold || 72) &&
+    learningProfile.lossStreak < 3;
 
   const consensus =
     analysis15.signal !== "WAIT" &&
@@ -327,6 +480,7 @@ export default function RiseFallAnalysis() {
 
     const oneTickQualified =
       allowOneTick &&
+      learnedEntryAllowed &&
       analysis?.fastScalpReady &&
       finalScore >= Number(oneTickMinimumScore || 78) &&
       (
@@ -501,10 +655,22 @@ export default function RiseFallAnalysis() {
           displayDuration: parameters.displayDuration,
           fastEntry: parameters.fastEntry,
           stake: safeStake,
-          confidence: Number(analysis?.confidence || 0),
+          confidence: Number(
+            analysis?.smartConfidence ??
+              analysis?.confidence ??
+              0
+          ),
           finalScore: Number(analysis?.scores?.final || 0),
+          opportunityScore: Number(analysis?.opportunityScore || 0),
+          regime: String(analysis?.regime || "UNKNOWN"),
+          noiseRatio: Number(analysis?.noiseRatio || 0),
+          quality: String(analysis?.quality || "REJECT"),
+          learnedBuyThreshold: Number(
+            learningProfile.learnedBuyThreshold || 72
+          ),
           status: "OPEN",
           profit: 0,
+          learned: false,
         },
         ...current,
       ].slice(0, 30));
@@ -637,7 +803,13 @@ export default function RiseFallAnalysis() {
 
 
   useEffect(() => {
-    if (!autoRunning || !active.tradeNow || active.autoSkip) return;
+    if (
+      !autoRunning ||
+      !active.tradeNow ||
+      !learnedEntryAllowed
+    ) {
+      return;
+    }
 
     void executeConfirmedSignal(active.signal, active);
   }, [
@@ -646,6 +818,9 @@ export default function RiseFallAnalysis() {
     active.signal,
     active.confirmationsPassed,
     active.scores?.final,
+    active.opportunityScore,
+    learnedEntryAllowed,
+    learningProfile.learnedBuyThreshold,
     symbol,
     mode,
   ]);
@@ -654,6 +829,8 @@ export default function RiseFallAnalysis() {
     const contracts = Array.isArray(openContracts) ? openContracts : [];
 
     if (!contracts.length) return;
+
+    const learningRecords = [];
 
     setSessionTrades((current) =>
       current.map((trade) => {
@@ -664,9 +841,40 @@ export default function RiseFallAnalysis() {
 
         if (!match) return trade;
 
+        const status = contractStatus(match);
+        const closed = ["WON", "LOST", "SOLD", "EXPIRED"].includes(status);
+        const contractId = String(trade.contractId || "");
+
+        if (
+          closed &&
+          contractId &&
+          !learnedContractsRef.current.has(contractId)
+        ) {
+          learnedContractsRef.current.add(contractId);
+
+          learningRecords.push({
+            id: contractId,
+            time: Date.now(),
+            symbol,
+            signal: trade.signal,
+            durationMode,
+            duration: trade.displayDuration,
+            regime: trade.regime || "UNKNOWN",
+            opportunityScore: Number(trade.opportunityScore || 0),
+            smartConfidence: Number(trade.confidence || 0),
+            quality: trade.quality || "REJECT",
+            noiseRatio: Number(trade.noiseRatio || 0),
+            scoreBucket: scoreBucket(trade.opportunityScore),
+            noiseBucket: noiseBucket(trade.noiseRatio),
+            result: status === "WON" ? "WON" : "LOST",
+            profit: profitOf(match),
+          });
+        }
+
         return {
           ...trade,
-          status: contractStatus(match),
+          status,
+          learned: trade.learned || closed,
           profit: profitOf(match),
           currentSpot: Number(
             match?.current_spot ??
@@ -686,6 +894,31 @@ export default function RiseFallAnalysis() {
         };
       })
     );
+
+    if (learningRecords.length) {
+      setLearningHistory((current) => {
+        const next = [
+          ...learningRecords,
+          ...current.filter(
+            (item) =>
+              !learningRecords.some(
+                (record) => record.id === item.id
+              )
+          ),
+        ].slice(0, MAX_LEARNING_RECORDS);
+
+        try {
+          window.localStorage.setItem(
+            LEARNING_STORAGE_KEY,
+            JSON.stringify(next)
+          );
+        } catch {
+          // Browser storage unavailable: keep session memory only.
+        }
+
+        return next;
+      });
+    }
 
     const latestClosed = contracts.find((contract) => {
       const id = contractIdOf(contract);
@@ -711,7 +944,12 @@ export default function RiseFallAnalysis() {
         `Auto stopped after loss · ${profitOf(latestClosed).toFixed(2)}.`
       );
     }
-  }, [openContracts, stopAfterLoss]);
+  }, [
+    openContracts,
+    stopAfterLoss,
+    symbol,
+    durationMode,
+  ]);
 
   return (
     <div className="appShell">
@@ -719,8 +957,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V69 · Rise/Fall Pro Analysis"
-          subtitle="Quantum Consensus AI with 18 engines, adaptive confidence and smart 1-tick detection"
+          title="EdgePilot V70 · Rise/Fall Pro Analysis"
+          subtitle="Adaptive Learning AI with setup memory, learned thresholds and loss-streak protection"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1484,6 +1722,53 @@ export default function RiseFallAnalysis() {
                 <strong>{active.duration}</strong>
               </div>
             </div>
+          </article>
+        </section>
+
+        <section className="rfLearningPanel">
+          <article>
+            <small>LEARNING MEMORY</small>
+            <strong>{learningProfile.totalSamples}</strong>
+            <span>Saved outcomes for {symbol || "current market"}.</span>
+          </article>
+
+          <article>
+            <small>HISTORICAL WIN RATE</small>
+            <strong>{pct(learningProfile.totalRate)}</strong>
+            <span>
+              Direction {pct(learningProfile.directionRate)} from{" "}
+              {learningProfile.directionSamples} samples.
+            </span>
+          </article>
+
+          <article>
+            <small>LEARNED BUY LEVEL</small>
+            <strong>
+              {Number(learningProfile.learnedBuyThreshold).toFixed(0)}
+            </strong>
+            <span>
+              Base {Number(active.adaptiveThresholds?.buy || 72).toFixed(0)}
+              {" · "}
+              Adjustment {learningProfile.thresholdAdjustment >= 0 ? "+" : ""}
+              {learningProfile.thresholdAdjustment}
+            </span>
+          </article>
+
+          <article>
+            <small>LEARNING FILTER</small>
+            <strong>
+              {learningProfile.lossStreak >= 3
+                ? "COOLDOWN"
+                : learningProfile.setupRejected
+                  ? "REJECT SETUP"
+                  : learnedEntryAllowed
+                    ? "ENTRY ALLOWED"
+                    : "WAIT"}
+            </strong>
+            <span>
+              Setup {pct(learningProfile.winRate)} from{" "}
+              {learningProfile.sampleCount} relevant samples.
+            </span>
           </article>
         </section>
 

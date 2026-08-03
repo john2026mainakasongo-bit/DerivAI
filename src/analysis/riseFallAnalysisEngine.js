@@ -2436,22 +2436,50 @@ export function analyzeRiseFall(
     stability,
   });
 
+  const pressureDirection =
+    pressure.buying > pressure.selling
+      ? "RISE"
+      : pressure.selling > pressure.buying
+        ? "FALL"
+        : "WAIT";
+
+  const structureConflict =
+    direction !== "WAIT" &&
+    pressureDirection !== "WAIT" &&
+    pressureDirection !== direction &&
+    Math.max(pressure.buying, pressure.selling) >= 60;
+
+  const continuationConflict =
+    continuationReversal.reversal >
+    continuationReversal.continuation;
+
   const autoSkip =
     risk === "HIGH" ||
-    quality === "REJECT" ||
+    ["C", "REJECT"].includes(quality) ||
     noise >= 86 ||
-    consensus.direction === "WAIT";
+    consensus.direction === "WAIT" ||
+    structureConflict ||
+    continuationConflict ||
+    rhythm < 22;
 
   const skipReason =
-    noise >= 82
+    noise >= 86
       ? "Noise too high"
       : consensus.direction === "WAIT"
         ? "Consensus is mixed"
-        : risk === "HIGH"
-          ? "Risk is high"
-          : quality === "REJECT"
-            ? "Trade quality rejected"
-            : "";
+        : structureConflict
+          ? "Pressure conflicts with the selected direction"
+          : continuationConflict
+            ? "Reversal probability exceeds continuation"
+            : rhythm < 22
+              ? "Tick rhythm is too weak"
+              : risk === "HIGH"
+                ? "Risk is high"
+                : quality === "C"
+                  ? "Grade C is analysis-only"
+                  : quality === "REJECT"
+                    ? "Trade quality rejected"
+                    : "";
 
 
   const trendScore = clamp(
@@ -2605,6 +2633,8 @@ export function analyzeRiseFall(
     nextTicks,
     autoSkip,
     skipReason,
+    structureConflict,
+    continuationConflict,
     weightedScores,
     aiDecision,
     aiLevel,
