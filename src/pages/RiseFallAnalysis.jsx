@@ -713,6 +713,7 @@ export default function RiseFallAnalysis() {
     readStoredMap(RF_MARKET_SNAPSHOT_KEY)
   );
   const previousSignalRef = useRef("WAIT");
+  const lastResultSoundRef = useRef("");
   const lastAlertAtRef = useRef(0);
   const lastExecutedSignalRef = useRef("");
   const executionBusyRef = useRef(false);
@@ -1799,6 +1800,68 @@ export default function RiseFallAnalysis() {
     );
   }
 
+  function playResultFeedback(result) {
+    if (!soundEnabled || typeof window === "undefined") return;
+
+    const normalized = String(result || "").toUpperCase();
+    const isWin = normalized === "WON";
+    const frequencies = isWin
+      ? [660, 880, 1040]
+      : [420, 300, 220];
+
+    const AudioContextClass =
+      window.AudioContext || window.webkitAudioContext;
+
+    if (AudioContextClass) {
+      const context = new AudioContextClass();
+
+      frequencies.forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const startAt = context.currentTime + index * 0.16;
+
+        oscillator.type = isWin ? "sine" : "sawtooth";
+        oscillator.frequency.value = frequency;
+
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(
+          isWin ? 0.22 : 0.15,
+          startAt + 0.02
+        );
+        gain.gain.exponentialRampToValueAtTime(
+          0.0001,
+          startAt + 0.14
+        );
+
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + 0.15);
+      });
+
+      window.setTimeout(() => {
+        context.close().catch(() => {});
+      }, 850);
+    }
+
+    if ("vibrate" in navigator) {
+      navigator.vibrate(
+        isWin ? [80, 55, 80] : [180, 80, 180]
+      );
+    }
+
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(
+        isWin ? "Trade won" : "Trade lost"
+      );
+      utterance.rate = 1.05;
+      utterance.pitch = isWin ? 1.2 : 0.8;
+      utterance.volume = 0.9;
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
   function playSignalTone(signal) {
     if (!soundEnabled || typeof window === "undefined") return;
 
@@ -2166,6 +2229,12 @@ export default function RiseFallAnalysis() {
         lastExecutedSignalRef.current = "";
         waitStartedAtRef.current = Date.now();
 
+        const resultSoundKey = `${latestId}:${latestStatus}`;
+        if (lastResultSoundRef.current !== resultSoundKey) {
+          lastResultSoundRef.current = resultSoundKey;
+          playResultFeedback(latestStatus);
+        }
+
         if (latestStatus === "WON") {
           consecutiveLossesRef.current = 0;
           setConsecutiveLosses(0);
@@ -2208,8 +2277,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V80 · Smooth Safe Mobile Trader"
-          subtitle="2+ tick adaptive execution, loss cooldown, bounded bursts, market rotation and mobile manual trading"
+          title="EdgePilot V81 · Compact Mobile Trader"
+          subtitle="Compact phone controls, account visibility, result sound/vibration and adaptive execution"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -2224,6 +2293,17 @@ export default function RiseFallAnalysis() {
             onChange={changeSymbol}
           />
 
+          <div className="rfCompactAccount">
+            <span>{String(selectedAccountType).toUpperCase()}</span>
+            <strong>
+              {selectedAccountId
+                ? String(selectedAccountId).slice(-8)
+                : connected
+                  ? "CONNECTED"
+                  : "LOG IN"}
+            </strong>
+          </div>
+
           <div className="rfToolbarActions">
             <button
               type="button"
@@ -2236,8 +2316,8 @@ export default function RiseFallAnalysis() {
               {tradeBusy
                 ? "SENDING..."
                 : autoRunning
-                  ? "â–  STOP"
-                  : "â–¶ START"}
+                  ? "■ STOP"
+                  : "▶ START"}
             </button>
 
             <button
@@ -2245,7 +2325,7 @@ export default function RiseFallAnalysis() {
               className={`rfSoundToggle ${soundEnabled ? "on" : "off"}`}
               onClick={() => setSoundEnabled((value) => !value)}
             >
-              {soundEnabled ? "ðŸ”Š SOUND ON" : "ðŸ”‡ SOUND OFF"}
+              {soundEnabled ? "🔊 SOUND" : "🔇 MUTED"}
             </button>
 
             <select

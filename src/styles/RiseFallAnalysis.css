@@ -2813,3 +2813,250 @@
   }
 }
 
+
+
+/* ================================================================
+   EdgePilot V81 â€” compact mobile header/account/result sound
+   ================================================================ */
+
+.rfPage {
+  padding-top: 4px !important;
+}
+
+.rfPage .topbar,
+.rfPage .topBar,
+.rfPage header.topbar {
+  min-height: 48px !important;
+  padding: 6px 8px !important;
+  gap: 6px !important;
+}
+
+.rfPage .topbar h1,
+.rfPage .topBar h1,
+.rfPage header.topbar h1 {
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.05 !important;
+  white-space: nowrap !important;
+}
+
+.rfPage .topbar p,
+.rfPage .topbar small,
+.rfPage .topBar p,
+.rfPage .topBar small {
+  font-size: 7px !important;
+  line-height: 1.1 !important;
+}
+
+.rfPage .topbar button,
+.rfPage .topbar select,
+.rfPage .topBar button,
+.rfPage .topBar select {
+  min-height: 31px !important;
+  padding: 5px 8px !important;
+  border-radius: 7px !important;
+  font-size: 9px !important;
+  white-space: nowrap !important;
+}
+
+.rfToolbar {
+  display: grid !important;
+  grid-template-columns: minmax(130px, 230px) auto minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 42px !important;
+  padding: 5px 7px !important;
+  margin: 0 0 7px !important;
+}
+
+.rfToolbar select,
+.rfToolbar button {
+  min-height: 32px !important;
+  padding: 5px 8px !important;
+  font-size: 9px !important;
+}
+
+.rfCompactAccount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid #1e576d;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #061f2e;
+}
+
+.rfCompactAccount span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: #061a17;
+  font-size: 8px;
+  font-weight: 950;
+  background: #2bdcaf;
+}
+
+.rfCompactAccount strong {
+  overflow: hidden;
+  color: #eaf9ff;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rfToolbarActions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 5px !important;
+  min-width: 0 !important;
+  flex-wrap: nowrap !important;
+}
+
+.rfToolbarActions > * {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+}
+
+.rfSideStartButton {
+  min-width: 82px !important;
+}
+
+.rfSoundToggle {
+  min-width: 68px !important;
+}
+
+.rfDurationSelect {
+  max-width: 185px !important;
+}
+
+.rfModeSwitch {
+  display: flex !important;
+  min-width: 160px !important;
+}
+
+.rfModeSwitch button {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  padding-inline: 8px !important;
+}
+
+.rfPage section,
+.rfPage article {
+  scroll-margin-top: 70px;
+}
+
+.rfPage h2,
+.rfPage h3 {
+  line-height: 1.1 !important;
+}
+
+.rfPage h2 {
+  font-size: 14px !important;
+}
+
+.rfPage h3 {
+  font-size: 12px !important;
+}
+
+.rfPage small,
+.rfPage label,
+.rfPage th {
+  font-size: 8px !important;
+}
+
+.rfPage td,
+.rfPage p,
+.rfPage span {
+  font-size: 9px;
+}
+
+@media (max-width: 900px) {
+  .rfPage .topbar,
+  .rfPage .topBar,
+  .rfPage header.topbar {
+    position: static !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    min-height: auto !important;
+  }
+
+  .rfPage .topbar > div,
+  .rfPage .topBar > div {
+    min-width: 0 !important;
+  }
+
+  .rfToolbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 28 !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 5px !important;
+    background: rgba(3, 18, 28, .97) !important;
+    backdrop-filter: blur(8px);
+  }
+
+  .rfToolbar > :first-child {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+
+  .rfCompactAccount {
+    grid-column: 1 !important;
+  }
+
+  .rfToolbarActions {
+    grid-column: 1 / -1 !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    width: 100% !important;
+  }
+
+  .rfToolbarActions > * {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .rfDurationSelect,
+  .rfModeSwitch {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .rfPage .topbar h1,
+  .rfPage .topBar h1 {
+    font-size: 13px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .rfPage {
+    padding: 4px !important;
+  }
+
+  .rfToolbar {
+    padding: 5px !important;
+  }
+
+  .rfToolbarActions {
+    gap: 4px !important;
+  }
+
+  .rfToolbarActions button,
+  .rfToolbarActions select {
+    min-height: 38px !important;
+    font-size: 8px !important;
+  }
+
+  .rfCompactAccount {
+    min-height: 36px !important;
+  }
+
+  .rfCompactAccount strong {
+    font-size: 8px !important;
+  }
+}
+
