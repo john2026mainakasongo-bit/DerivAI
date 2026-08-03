@@ -557,6 +557,16 @@ export default function useDerivTicks() {
     ]
   );
 
+  const refreshContract = useCallback(async (contractId) => {
+    const id = String(contractId || "").trim();
+
+    if (!id) {
+      throw new Error("A contract ID is required.");
+    }
+
+    return derivPublicClient.subscribeOpenContract(id);
+  }, []);
+
   const sellContract = useCallback(
     async (contractId, price = 0) => {
       setTradeBusy(true);
@@ -658,6 +668,7 @@ export default function useDerivTicks() {
     disconnect,
     changeSymbol,
     placeTrade,
+    refreshContract,
     sellContract,
     loadPortfolio,
     loadStatement,
