@@ -715,8 +715,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V64 · Rise/Fall Pro Analysis"
-          subtitle="Score-first AI entry: Prepare 70+, Buy 78+, Strong 85+, Instant 92+"
+          title="EdgePilot V65 · Rise/Fall Pro Analysis"
+          subtitle="Deep score-first entry: impulse and acceleration boost strong setups but do not block them"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1509,13 +1509,21 @@ export default function RiseFallAnalysis() {
 
           <div className="rfAiEntryGrid">
             {[
-              ["Micro trend · 25%", active.weightedScores?.microTrend],
-              ["Pressure · 20%", active.weightedScores?.pressure],
-              ["Momentum · 15%", active.weightedScores?.momentum],
-              ["Impulse · 15%", active.weightedScores?.impulse],
-              ["EMA · 10%", active.weightedScores?.ema],
-              ["Continuation · 10%", active.weightedScores?.continuation],
-              ["Noise safety · 5%", active.weightedScores?.noise],
+              ["Micro trend", active.weightedScores?.microTrend],
+              ["Pressure", active.weightedScores?.pressure],
+              ["Momentum", active.weightedScores?.momentum],
+              ["EMA", active.weightedScores?.ema],
+              ["Continuation", active.weightedScores?.continuation],
+              ["Direction stability", active.weightedScores?.stability],
+              ["Order flow", active.weightedScores?.orderFlow],
+              ["EMA ribbon", active.weightedScores?.ribbon],
+              ["Candle sequence", active.weightedScores?.sequence],
+              ["Pullback quality", active.weightedScores?.pullback],
+              ["Tick rhythm", active.weightedScores?.rhythm],
+              ["Noise safety", active.weightedScores?.noise],
+              ["Base entry score", active.baseEntryScore],
+              ["Impulse booster", active.weightedScores?.impulseBoost],
+              ["Acceleration booster", active.weightedScores?.accelerationBoost],
               ["AI final score", active.entryScore],
             ].map(([label, value]) => (
               <div key={label}>
@@ -1591,7 +1599,7 @@ export default function RiseFallAnalysis() {
                   : "WAIT"}
             </strong>
             <span>
-              Strong impulse, persistence and low noise are required.
+              Entry uses the weighted score. Impulse and acceleration only add bonus points.
             </span>
           </article>
 
@@ -1682,6 +1690,65 @@ export default function RiseFallAnalysis() {
           </article>
         </section>
 
+
+        <section className="rfDeepAnalysisGrid">
+          <article>
+            <small>ORDER FLOW DELTA</small>
+            <strong>
+              {Number(active.flowDelta?.delta || 0).toFixed(1)}
+            </strong>
+            <span>
+              Buy {pct(active.flowDelta?.buy)} · Sell {pct(active.flowDelta?.sell)}
+            </span>
+          </article>
+
+          <article>
+            <small>DIRECTION STABILITY</small>
+            <strong>{pct(active.stability)}</strong>
+            <span>Agreement across short, medium and long windows.</span>
+          </article>
+
+          <article>
+            <small>EMA RIBBON</small>
+            <strong>{active.ribbon?.state || "MIXED"}</strong>
+            <span>
+              3 / 5 / 8 / 13 EMA structure.
+            </span>
+          </article>
+
+          <article>
+            <small>CANDLE SEQUENCE</small>
+            <strong>
+              {active.sequence?.direction || "FLAT"}{" "}
+              {pct(active.sequence?.score)}
+            </strong>
+            <span>Recent directional sequence.</span>
+          </article>
+
+          <article>
+            <small>PULLBACK QUALITY</small>
+            <strong>{pct(active.pullbackScore)}</strong>
+            <span>Continuation, pressure and consistency combined.</span>
+          </article>
+
+          <article>
+            <small>MEAN REVERSION</small>
+            <strong>{pct(active.meanReversion)}</strong>
+            <span>Higher means stronger snap-back risk.</span>
+          </article>
+
+          <article>
+            <small>ATR EXPANSION</small>
+            <strong>{pct(active.atrExpansion)}</strong>
+            <span>Fresh move size versus recent baseline.</span>
+          </article>
+
+          <article>
+            <small>TICK RHYTHM</small>
+            <strong>{pct(active.rhythm)}</strong>
+            <span>How consistently consecutive ticks repeat direction.</span>
+          </article>
+        </section>
 
         <section className="rfAdvancedTools">
           <article>

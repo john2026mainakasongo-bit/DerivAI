@@ -1033,6 +1033,190 @@ function microReversal({
   };
 }
 
+
+function orderFlowDelta(values = []) {
+  if (values.length < 2) {
+    return {
+      buy: 50,
+      sell: 50,
+      delta: 0,
+    };
+  }
+
+  const changes = values
+    .slice(1)
+    .map((value, index) => Number(value) - Number(values[index]))
+    .slice(-20);
+
+  const buy = changes.reduce(
+    (sum, change) => sum + (change > 0 ? Math.abs(change) : 0),
+    0
+  );
+
+  const sell = changes.reduce(
+    (sum, change) => sum + (change < 0 ? Math.abs(change) : 0),
+    0
+  );
+
+  const total = buy + sell;
+
+  if (!total) {
+    return {
+      buy: 50,
+      sell: 50,
+      delta: 0,
+    };
+  }
+
+  const buyPct = clamp((buy / total) * 100);
+  const sellPct = clamp((sell / total) * 100);
+
+  return {
+    buy: buyPct,
+    sell: sellPct,
+    delta: buyPct - sellPct,
+  };
+}
+
+function tickRhythm(values = []) {
+  if (values.length < 5) return 0;
+
+  const changes = values
+    .slice(1)
+    .map((value, index) => Number(value) - Number(values[index]))
+    .slice(-12);
+
+  const signs = changes.map((value) => Math.sign(value)).filter(Boolean);
+
+  if (signs.length < 3) return 0;
+
+  let sameDirection = 0;
+
+  for (let index = 1; index < signs.length; index += 1) {
+    if (signs[index] === signs[index - 1]) sameDirection += 1;
+  }
+
+  return clamp(
+    (sameDirection / Math.max(1, signs.length - 1)) * 100
+  );
+}
+
+function directionStability(values = []) {
+  if (values.length < 4) return 0;
+
+  const short = directionConsistency(values.slice(-5));
+  const medium = directionConsistency(values.slice(-10));
+  const long = directionConsistency(values.slice(-20));
+
+  return clamp(short * 0.45 + medium * 0.35 + long * 0.2);
+}
+
+function emaRibbon(values = []) {
+  const ema3 = ema(values, 3);
+  const ema5 = ema(values, 5);
+  const ema8 = ema(values, 8);
+  const ema13 = ema(values, 13);
+
+  const bullish =
+    ema3 > ema5 &&
+    ema5 > ema8 &&
+    ema8 > ema13;
+
+  const bearish =
+    ema3 < ema5 &&
+    ema5 < ema8 &&
+    ema8 < ema13;
+
+  return {
+    state: bullish
+      ? "BULLISH"
+      : bearish
+        ? "BEARISH"
+        : "MIXED",
+    score: bullish || bearish ? 100 : 45,
+    ema3,
+    ema5,
+    ema8,
+    ema13,
+  };
+}
+
+function pullbackQuality({
+  pullback,
+  continuation,
+  pressure,
+  consistency,
+}) {
+  if (pullback === "NONE") return 0;
+
+  return clamp(
+    continuation * 0.4 +
+      pressure * 0.3 +
+      consistency * 0.3
+  );
+}
+
+function meanReversionScore({
+  zScoreValue,
+  rsiValue,
+  stochasticValue,
+}) {
+  const z = clamp(Math.abs(zScoreValue) * 28);
+  const rsi = clamp(Math.abs(rsiValue - 50) * 1.6);
+  const stochastic = clamp(Math.abs(stochasticValue - 50) * 1.35);
+
+  return clamp(z * 0.4 + rsi * 0.3 + stochastic * 0.3);
+}
+
+function atrExpansionScore({
+  atr,
+  values,
+}) {
+  if (values.length < 8 || !atr) return 0;
+
+  const recentMoves = values
+    .slice(1)
+    .map((value, index) =>
+      Math.abs(Number(value) - Number(values[index]))
+    );
+
+  const fast = mean(recentMoves.slice(-3));
+  const slow = mean(recentMoves.slice(-8));
+
+  if (!slow) return 0;
+
+  return clamp((fast / slow) * 50);
+}
+
+function candleSequence(values = []) {
+  if (values.length < 4) {
+    return {
+      direction: "FLAT",
+      score: 0,
+    };
+  }
+
+  const recent = values.slice(-6);
+  const changes = recent
+    .slice(1)
+    .map((value, index) => Number(value) - Number(recent[index]));
+
+  const rise = changes.filter((value) => value > 0).length;
+  const fall = changes.filter((value) => value < 0).length;
+
+  return {
+    direction:
+      rise > fall
+        ? "RISE"
+        : fall > rise
+          ? "FALL"
+          : "FLAT",
+    score: clamp(
+      (Math.max(rise, fall) / Math.max(1, changes.length)) * 100
+    ),
+  };
+}
+
 function durationRecommendation({
   mode,
   confidence,
@@ -1148,6 +1332,20 @@ export function analyzeRiseFall(
   const compressionExpansionState = compressionExpansion(values);
   const bias = consecutiveBias(values);
   const squeeze = squeezeDetector(values);
+  const flowDelta = orderFlowDelta(values);
+  const rhythm = tickRhythm(values);
+  const stability = directionStability(values);
+  const ribbon = emaRibbon(values);
+  const sequence = candleSequence(values);
+  const atrExpansion = atrExpansionScore({
+    atr,
+    values,
+  });
+  const meanReversion = meanReversionScore({
+    zScoreValue,
+    rsiValue,
+    stochasticValue,
+  });
 
   const levels = supportResistance(values);
 
@@ -1398,6 +1596,20 @@ export function analyzeRiseFall(
     acceleration,
   });
 
+  const dominantPressureValue =
+    direction === "RISE"
+      ? pressure.buying
+      : direction === "FALL"
+        ? pressure.selling
+        : Math.max(pressure.buying, pressure.selling);
+
+  const pullbackScore = pullbackQuality({
+    pullback,
+    continuation: continuationReversal.continuation,
+    pressure: dominantPressureValue,
+    consistency,
+  });
+
   const confirmationChecks = [
     {
       id: "direction",
@@ -1528,35 +1740,94 @@ export function analyzeRiseFall(
         Math.max(atr, 0.0000001) *
         36
     ),
-    impulse: impulse.score,
     ema: emaAlignmentScore,
     continuation: continuationScore,
+    stability,
+    orderFlow:
+      direction === "RISE"
+        ? flowDelta.buy
+        : direction === "FALL"
+          ? flowDelta.sell
+          : Math.max(flowDelta.buy, flowDelta.sell),
+    ribbon:
+      ribbon.state === "MIXED"
+        ? 45
+        : (
+            ribbon.state === "BULLISH" && direction === "RISE"
+          ) || (
+            ribbon.state === "BEARISH" && direction === "FALL"
+          )
+          ? 100
+          : 0,
+    sequence:
+      sequence.direction === direction
+        ? sequence.score
+        : 0,
+    pullback: pullbackScore,
+    rhythm,
+    atrExpansion,
+    meanReversionSafety: Math.max(0, 100 - meanReversion),
     noise: noiseSafetyScore,
+    impulseBoost: impulse.score,
+    accelerationBoost: clamp(Math.abs(acceleration) * 40),
   };
 
-  const entryScore = clamp(
-    weightedScores.microTrend * 0.25 +
-      weightedScores.pressure * 0.2 +
-      weightedScores.momentum * 0.15 +
-      weightedScores.impulse * 0.15 +
+  const baseEntryScore = clamp(
+    weightedScores.microTrend * 0.18 +
+      weightedScores.pressure * 0.16 +
+      weightedScores.momentum * 0.13 +
       weightedScores.ema * 0.1 +
       weightedScores.continuation * 0.1 +
-      weightedScores.noise * 0.05
+      weightedScores.stability * 0.08 +
+      weightedScores.orderFlow * 0.08 +
+      weightedScores.ribbon * 0.05 +
+      weightedScores.sequence * 0.04 +
+      weightedScores.pullback * 0.03 +
+      weightedScores.rhythm * 0.02 +
+      weightedScores.atrExpansion * 0.01 +
+      weightedScores.meanReversionSafety * 0.01 +
+      weightedScores.noise * 0.01
   );
+
+  const boosterScore = clamp(
+    (
+      weightedScores.impulseBoost >= 55
+        ? weightedScores.impulseBoost * 0.06
+        : 0
+    ) +
+      (
+        weightedScores.accelerationBoost >= 35
+          ? weightedScores.accelerationBoost * 0.04
+          : 0
+      ),
+    0,
+    10
+  );
+
+  const entryScore = clamp(baseEntryScore + boosterScore);
 
   const tradeNow =
     direction !== "WAIT" &&
     entryScore >= 78 &&
     dominantVotes >= 7 &&
-    microTrend.dominantDirection === direction &&
-    microTrend.dominantVotes >= 4 &&
+    dominantPressure >= 60 &&
     continuationReversal.continuation >= 52 &&
-    exhaustion <= 82 &&
     (
       emaAligned ||
       momentumAligned ||
-      confirmationsPassed >= 8
-    );
+      ribbon.state !== "MIXED"
+    ) &&
+    (
+      microTrend.dominantDirection === direction ||
+      sequence.direction === direction ||
+      flowDelta.delta === 0 ||
+      (
+        direction === "RISE"
+          ? flowDelta.delta > 0
+          : flowDelta.delta < 0
+      )
+    ) &&
+    exhaustion <= 85;
 
   const strongTrade =
     tradeNow &&
@@ -1567,16 +1838,24 @@ export function analyzeRiseFall(
   const instantOneTick =
     strongTrade &&
     entryScore >= 92 &&
-    impulse.score >= 65 &&
-    persistence >= 62 &&
-    noise <= 72;
+    dominantPressure >= 68 &&
+    continuationReversal.continuation >= 62 &&
+    (
+      stability >= 62 ||
+      ribbon.state !== "MIXED" ||
+      sequence.score >= 75
+    );
 
   const prepare =
     !tradeNow &&
     direction !== "WAIT" &&
     entryScore >= 70 &&
     dominantVotes >= 6 &&
-    microTrend.dominantVotes >= 3;
+    (
+      dominantPressure >= 55 ||
+      continuationReversal.continuation >= 50 ||
+      stability >= 55
+    );
 
   const decision = tradeNow
     ? `TRADE ${direction}`
@@ -1639,12 +1918,12 @@ export function analyzeRiseFall(
   const fastScalpReady =
     tradeNow &&
     entryScore >= 78 &&
-    microTrend.dominantDirection === direction &&
+    dominantPressure >= 60 &&
     continuationReversal.continuation >= 52 &&
     (
-      impulse.score >= 52 ||
-      persistence >= 58 ||
-      confirmationsPassed >= 9
+      microTrend.dominantDirection === direction ||
+      sequence.direction === direction ||
+      stability >= 58
     );
 
   const finalScore = clamp(
@@ -1751,6 +2030,16 @@ export function analyzeRiseFall(
     resistanceReaction,
     liquiditySweep: sweep,
     microReversal: reversalSignal,
+    flowDelta,
+    rhythm,
+    stability,
+    ribbon,
+    sequence,
+    pullbackScore,
+    meanReversion,
+    atrExpansion,
+    baseEntryScore,
+    boosterScore,
     trend,
     bollinger: bands,
     pressure,

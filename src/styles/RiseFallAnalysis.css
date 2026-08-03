@@ -1409,3 +1409,55 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+.rfAiEntryGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rfDeepAnalysisGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.rfDeepAnalysisGrid article {
+  border: 1px solid #184f66;
+  border-radius: 11px;
+  padding: 12px;
+  background: linear-gradient(145deg, #082638, #061b2a);
+}
+
+.rfDeepAnalysisGrid small {
+  display: block;
+  color: #2ee1b2;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.rfDeepAnalysisGrid strong {
+  display: block;
+  margin: 5px 0;
+  font-size: 18px;
+}
+
+.rfDeepAnalysisGrid span {
+  color: #7fa7b6;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+@media (max-width: 1100px) {
+  .rfDeepAnalysisGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .rfDeepAnalysisGrid,
+  .rfAiEntryGrid {
+    grid-template-columns: 1fr;
+  }
+}
