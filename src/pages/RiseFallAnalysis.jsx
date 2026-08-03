@@ -272,7 +272,7 @@ export default function RiseFallAnalysis() {
   }
 
   useEffect(() => {
-    const currentSignal = active.signal;
+    const currentSignal = active.tradeNow ? active.signal : "WAIT";
     const previousSignal = previousSignalRef.current;
     const now = Date.now();
 
@@ -322,8 +322,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V56 · Rise/Fall Pro Analysis"
-          subtitle="Visible BUY/WAIT alerts, optional sound, confirmations and expanded indicators"
+          title="EdgePilot V57 · Rise/Fall Pro Analysis"
+          subtitle="Fast TRADE / PREPARE / NO TRADE decisions with sound and live confirmations"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -389,9 +389,7 @@ export default function RiseFallAnalysis() {
           <div>
             <small>VISIBLE ENTRY ALERT</small>
             <strong>
-              {active.ready
-                ? `BUY ${active.signal}`
-                : "NO TRADE — WAIT"}
+              {active.decision || "NO TRADE"}
             </strong>
             <span>{active.reason}</span>
           </div>
@@ -413,6 +411,48 @@ export default function RiseFallAnalysis() {
               <strong>{active.duration}</strong>
             </span>
           </div>
+        </section>
+
+        <section className="rfFastDecisionRow">
+          <article className={active.tradeNow ? "active trade" : ""}>
+            <small>TRADE NOW</small>
+            <strong>
+              {active.tradeNow ? active.signal : "NO"}
+            </strong>
+            <span>
+              {active.tradeNow
+                ? `${pct(active.confidence)} confidence`
+                : "Waiting for final alignment"}
+            </span>
+          </article>
+
+          <article className={active.prepare ? "active prepare" : ""}>
+            <small>PREPARE</small>
+            <strong>
+              {active.prepare
+                ? active.rawDirection
+                : "NO"}
+            </strong>
+            <span>
+              {active.prepare
+                ? "Signal is forming"
+                : "No early setup"}
+            </span>
+          </article>
+
+          <article className={!active.tradeNow && !active.prepare ? "active wait" : ""}>
+            <small>NO TRADE</small>
+            <strong>
+              {!active.tradeNow && !active.prepare
+                ? "WAIT"
+                : "—"}
+            </strong>
+            <span>
+              {!active.tradeNow && !active.prepare
+                ? active.reason
+                : "A directional setup exists"}
+            </span>
+          </article>
         </section>
 
         <section
@@ -684,11 +724,9 @@ export default function RiseFallAnalysis() {
 
           <MetricCard
             label="Decision"
-            value={
-              active.ready ? "READY" : "WAIT"
-            }
-            note="Requires aligned indicators and non-ranging regime."
-            tone={active.ready ? "ready" : ""}
+            value={active.decision || "NO TRADE"}
+            note="Fast decision updates on every fresh tick."
+            tone={active.tradeNow ? "ready" : ""}
           />
 
           <MetricCard

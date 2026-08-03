@@ -321,16 +321,16 @@ function regimeState({
     atr > 0 ? Math.abs(slopeValue) / atr : 0;
 
   if (
-    consistency >= 72 &&
-    normalizedSeparation >= 0.35 &&
-    normalizedSlope >= 0.08
+    consistency >= 64 &&
+    normalizedSeparation >= 0.24 &&
+    normalizedSlope >= 0.05
   ) {
     return "TREND";
   }
 
   if (
-    consistency <= 58 ||
-    normalizedSeparation <= 0.15
+    consistency <= 48 ||
+    normalizedSeparation <= 0.09
   ) {
     return "RANGE";
   }
@@ -442,7 +442,7 @@ export function analyzeRiseFall(
   const sample = windowForMode(points, mode);
   const values = sample.map((point) => point.quote);
 
-  if (values.length < 5) {
+  if (values.length < 4) {
     return {
       signal: "WAIT",
       rawDirection: "WAIT",
@@ -637,11 +637,11 @@ export function analyzeRiseFall(
       trendStrength * 0.19 +
       voteScore * 0.28 +
       emaScore * 0.13 +
-      Math.min(100, values.length * 6) * 0.1 +
-      (breakout !== "NONE" ? 5 : 0) +
-      (pullback !== "NONE" ? 4 : 0) -
-      reversalPenalty -
-      rangePenalty,
+      Math.min(100, values.length * 8) * 0.12 +
+      (breakout !== "NONE" ? 6 : 0) +
+      (pullback !== "NONE" ? 5 : 0) -
+      reversalPenalty * 0.65 -
+      rangePenalty * 0.55,
     0,
     96
   );
@@ -666,25 +666,27 @@ export function analyzeRiseFall(
     {
       id: "direction",
       label: "Directional votes",
-      passed: dominantVotes >= 8,
+      passed: dominantVotes >= 7,
       detail: `${dominantVotes}/${voteSignals.length}`,
     },
     {
       id: "confidence",
       label: "Confidence",
-      passed: confidence >= 80,
+      passed: confidence >= 68,
       detail: `${confidence.toFixed(1)}%`,
     },
     {
       id: "consistency",
       label: "Consistency",
-      passed: consistency >= 66,
+      passed: consistency >= 54,
       detail: `${consistency.toFixed(1)}%`,
     },
     {
       id: "regime",
       label: "Non-ranging regime",
-      passed: regime !== "RANGE",
+      passed:
+        regime !== "RANGE" ||
+        (consistency >= 58 && dominantVotes >= 9),
       detail: regime,
     },
     {
@@ -720,15 +722,32 @@ export function analyzeRiseFall(
     (item) => item.passed
   ).length;
 
-  const ready =
+  const tradeNow =
     direction !== "WAIT" &&
-    confirmationsPassed >= 6 &&
-    dominantVotes >= 8 &&
-    confidence >= 80 &&
-    consistency >= 66 &&
-    regime !== "RANGE";
+    confirmationsPassed >= 5 &&
+    dominantVotes >= 7 &&
+    confidence >= 68 &&
+    consistency >= 54 &&
+    (
+      regime !== "RANGE" ||
+      (dominantVotes >= 9 && consistency >= 58)
+    );
 
-  const signal = ready ? direction : "WAIT";
+  const prepare =
+    !tradeNow &&
+    direction !== "WAIT" &&
+    confirmationsPassed >= 4 &&
+    dominantVotes >= 7 &&
+    confidence >= 58;
+
+  const decision = tradeNow
+    ? `TRADE ${direction}`
+    : prepare
+      ? `PREPARE ${direction}`
+      : "NO TRADE";
+
+  const ready = tradeNow;
+  const signal = tradeNow ? direction : "WAIT";
 
   const risk = ready
     ? confidence >= 86 &&
@@ -747,25 +766,29 @@ export function analyzeRiseFall(
   });
 
   const setupGrade =
-    ready && confidence >= 90 && confirmationsPassed === confirmationChecks.length
+    tradeNow && confidence >= 86 && confirmationsPassed === confirmationChecks.length
       ? "A"
-      : ready && confidence >= 85
+      : tradeNow && confidence >= 76
         ? "B"
-        : ready
+        : tradeNow
           ? "C"
-          : "WAIT";
+          : prepare
+            ? "PREPARE"
+            : "WAIT";
 
   const failedConfirmations = confirmationChecks
     .filter((item) => !item.passed)
     .map((item) => item.label);
 
-  const reason = ready
-    ? `BUY ${direction}: ${confirmationsPassed}/${confirmationChecks.length} confirmations aligned.`
-    : regime === "RANGE"
-      ? "NO TRADE: market is ranging. Wait for stronger directional separation."
-      : direction === "WAIT"
-        ? "NO TRADE: direction is mixed. Continue collecting fresh prices."
-        : `WAIT: ${direction} is forming, but missing ${failedConfirmations.join(", ") || "strong confirmation"}.`;
+  const reason = tradeNow
+    ? `${decision}: ${confirmationsPassed}/${confirmationChecks.length} confirmations aligned.`
+    : prepare
+      ? `${decision}: one or two checks are still forming — ${failedConfirmations.join(", ") || "fresh confirmation"}.`
+      : regime === "RANGE"
+        ? "NO TRADE: market is ranging or noisy."
+        : direction === "WAIT"
+          ? "NO TRADE: direction is mixed."
+          : `NO TRADE: missing ${failedConfirmations.join(", ") || "strong confirmation"}.`;
 
   return {
     signal,
@@ -800,6 +823,9 @@ export function analyzeRiseFall(
     confirmationChecks,
     confirmationsPassed,
     setupGrade,
+    decision,
+    prepare,
+    tradeNow,
     supportResistance: levels,
     breakout,
     pullback,

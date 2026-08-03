@@ -668,3 +668,78 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+
+.rfFastDecisionRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.rfFastDecisionRow article {
+  min-height: 105px;
+  padding: 14px;
+  border: 1px solid #174e68;
+  border-radius: 12px;
+  background: #071f30;
+  opacity: .58;
+}
+
+.rfFastDecisionRow article.active {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.rfFastDecisionRow article.trade {
+  border-color: #1ee0aa;
+  background: linear-gradient(135deg, #073b30, #082638);
+  box-shadow: 0 0 24px #1ee0aa20;
+}
+
+.rfFastDecisionRow article.prepare {
+  border-color: #e4b84e;
+  background: linear-gradient(135deg, #392f10, #082638);
+}
+
+.rfFastDecisionRow article.wait {
+  border-color: #e25e75;
+  background: linear-gradient(135deg, #3a1822, #082638);
+}
+
+.rfFastDecisionRow small {
+  color: #7fa8ba;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.rfFastDecisionRow strong {
+  display: block;
+  font-size: 29px;
+  margin: 5px 0;
+}
+
+.rfFastDecisionRow article.trade strong {
+  color: #1ee0aa;
+}
+
+.rfFastDecisionRow article.prepare strong {
+  color: #e9c25d;
+}
+
+.rfFastDecisionRow article.wait strong {
+  color: #ff7189;
+}
+
+.rfFastDecisionRow span {
+  color: #8eafbd;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+@media (max-width: 800px) {
+  .rfFastDecisionRow {
+    grid-template-columns: 1fr;
+  }
+}
