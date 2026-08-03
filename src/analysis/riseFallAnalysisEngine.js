@@ -841,6 +841,198 @@ function exhaustionScore({
   );
 }
 
+
+function consecutiveBias(values = []) {
+  if (values.length < 2) {
+    return {
+      direction: "FLAT",
+      count: 0,
+      score: 0,
+    };
+  }
+
+  let direction = 0;
+  let count = 0;
+
+  for (let index = values.length - 1; index > 0; index -= 1) {
+    const change = Number(values[index]) - Number(values[index - 1]);
+    const sign = Math.sign(change);
+
+    if (!sign) continue;
+
+    if (!direction) {
+      direction = sign;
+      count = 1;
+      continue;
+    }
+
+    if (sign !== direction) break;
+    count += 1;
+  }
+
+  return {
+    direction:
+      direction > 0
+        ? "RISE"
+        : direction < 0
+          ? "FALL"
+          : "FLAT",
+    count,
+    score: clamp(count * 18),
+  };
+}
+
+function squeezeDetector(values = []) {
+  if (values.length < 8) {
+    return {
+      state: "NORMAL",
+      compression: 50,
+      breakoutReadiness: 0,
+    };
+  }
+
+  const changes = values
+    .slice(1)
+    .map((value, index) =>
+      Math.abs(Number(value) - Number(values[index]))
+    );
+
+  const fast = mean(changes.slice(-4));
+  const slow = mean(changes.slice(-12));
+
+  if (!slow) {
+    return {
+      state: "NORMAL",
+      compression: 50,
+      breakoutReadiness: 0,
+    };
+  }
+
+  const ratio = fast / slow;
+  const compression = clamp((1 - ratio) * 100 + 50);
+  const breakoutReadiness = clamp(compression * 0.75);
+
+  return {
+    state:
+      compression >= 72
+        ? "SQUEEZE"
+        : ratio >= 1.35
+          ? "EXPANSION"
+          : "NORMAL",
+    compression,
+    breakoutReadiness,
+  };
+}
+
+function reactionStrength(values = [], level, atr) {
+  if (!values.length || !Number.isFinite(level)) return 0;
+
+  const tolerance = Math.max(Number(atr || 0) * 0.8, 0.0000001);
+  const recent = values.slice(-20);
+
+  let reactions = 0;
+
+  for (let index = 1; index < recent.length; index += 1) {
+    const previousDistance = Math.abs(Number(recent[index - 1]) - level);
+    const currentDistance = Math.abs(Number(recent[index]) - level);
+
+    if (
+      previousDistance <= tolerance &&
+      currentDistance > previousDistance
+    ) {
+      reactions += 1;
+    }
+  }
+
+  return clamp(reactions * 20);
+}
+
+function liquiditySweep({
+  values,
+  support,
+  resistance,
+  atr,
+}) {
+  if (values.length < 4) {
+    return {
+      state: "NONE",
+      score: 0,
+    };
+  }
+
+  const recent = values.slice(-4);
+  const current = Number(recent.at(-1));
+  const previous = Number(recent.at(-2));
+  const buffer = Math.max(Number(atr || 0) * 0.45, 0.0000001);
+
+  if (
+    previous < support - buffer &&
+    current > support
+  ) {
+    return {
+      state: "BULLISH SWEEP",
+      score: 82,
+    };
+  }
+
+  if (
+    previous > resistance + buffer &&
+    current < resistance
+  ) {
+    return {
+      state: "BEARISH SWEEP",
+      score: 82,
+    };
+  }
+
+  return {
+    state: "NONE",
+    score: 0,
+  };
+}
+
+function microReversal({
+  values,
+  rsiValue,
+  stochasticValue,
+  acceleration,
+}) {
+  if (values.length < 5) {
+    return {
+      direction: "NONE",
+      score: 0,
+    };
+  }
+
+  const lastMove =
+    Number(values.at(-1)) - Number(values.at(-2));
+  const previousMove =
+    Number(values.at(-2)) - Number(values.at(-3));
+
+  const bullish =
+    previousMove < 0 &&
+    lastMove > 0 &&
+    rsiValue <= 45 &&
+    stochasticValue <= 35 &&
+    acceleration > 0;
+
+  const bearish =
+    previousMove > 0 &&
+    lastMove < 0 &&
+    rsiValue >= 55 &&
+    stochasticValue >= 65 &&
+    acceleration < 0;
+
+  return {
+    direction: bullish
+      ? "RISE"
+      : bearish
+        ? "FALL"
+        : "NONE",
+    score: bullish || bearish ? 78 : 0,
+  };
+}
+
 function durationRecommendation({
   mode,
   confidence,
@@ -954,6 +1146,8 @@ export function analyzeRiseFall(
   const velocity = tickVelocity(values);
   const acceleration = tickAcceleration(values);
   const compressionExpansionState = compressionExpansion(values);
+  const bias = consecutiveBias(values);
+  const squeeze = squeezeDetector(values);
 
   const levels = supportResistance(values);
 
@@ -968,6 +1162,25 @@ export function analyzeRiseFall(
     values,
     emaFast,
     emaSlow,
+    atr,
+  });
+
+  const supportReaction = reactionStrength(
+    values,
+    levels.support,
+    atr
+  );
+
+  const resistanceReaction = reactionStrength(
+    values,
+    levels.resistance,
+    atr
+  );
+
+  const sweep = liquiditySweep({
+    values,
+    support: levels.support,
+    resistance: levels.resistance,
     atr,
   });
 
@@ -1178,6 +1391,13 @@ export function analyzeRiseFall(
     acceleration,
   });
 
+  const reversalSignal = microReversal({
+    values,
+    rsiValue,
+    stochasticValue,
+    acceleration,
+  });
+
   const confirmationChecks = [
     {
       id: "direction",
@@ -1312,17 +1532,15 @@ export function analyzeRiseFall(
   const ready = tradeNow;
   const fastScalpReady =
     direction !== "WAIT" &&
-    dominantVotes >= 9 &&
-    confirmationsPassed >= 9 &&
-    confidence >= 60 &&
-    impulse.score >= 58 &&
-    persistence >= 64 &&
-    noise <= 62 &&
+    entryScore >= 78 &&
+    dominantVotes >= 8 &&
+    confirmationsPassed >= 8 &&
     microTrend.dominantDirection === direction &&
     microTrend.dominantVotes >= 4 &&
     emaAligned &&
     momentumAligned &&
-    exhaustion <= 72;
+    continuationReversal.continuation >= 55 &&
+    exhaustion <= 78;
 
   const signal = tradeNow ? direction : "WAIT";
 
@@ -1375,22 +1593,60 @@ export function analyzeRiseFall(
       (100 - breakoutFakeProbability) * 0.1
   );
 
+  const dominantPressure =
+    direction === "RISE"
+      ? pressure.buying
+      : direction === "FALL"
+        ? pressure.selling
+        : Math.max(pressure.buying, pressure.selling);
+
+  const emaAlignmentScore = emaAligned ? 100 : 0;
+  const continuationScore = continuationReversal.continuation;
+  const noiseSafetyScore = Math.max(0, 100 - noise);
+
+  const weightedScores = {
+    microTrend: microTrend.averageStrength,
+    pressure: dominantPressure,
+    momentum: clamp(
+      Math.max(
+        Math.abs(momentum.fast),
+        Math.abs(momentum.medium),
+        Math.abs(momentum.slow)
+      ) /
+        Math.max(atr, 0.0000001) *
+        36
+    ),
+    impulse: impulse.score,
+    ema: emaAlignmentScore,
+    continuation: continuationScore,
+    noise: noiseSafetyScore,
+  };
+
   const entryScore = clamp(
-    confidence * 0.2 +
-      impulse.score * 0.16 +
-      persistence * 0.12 +
-      Math.max(0, 100 - noise) * 0.12 +
-      microTrend.averageStrength * 0.15 +
-      continuationReversal.continuation * 0.12 +
-      compressionExpansionState.expansion * 0.06 +
-      Math.max(0, 100 - exhaustion) * 0.07
+    weightedScores.microTrend * 0.25 +
+      weightedScores.pressure * 0.2 +
+      weightedScores.momentum * 0.15 +
+      weightedScores.impulse * 0.15 +
+      weightedScores.ema * 0.1 +
+      weightedScores.continuation * 0.1 +
+      weightedScores.noise * 0.05
   );
 
   const finalScore = clamp(
-    qualityScore * 0.52 +
-      confirmationsPassed / confirmationChecks.length * 100 * 0.23 +
-      entryScore * 0.25
+    qualityScore * 0.42 +
+      confirmationsPassed / confirmationChecks.length * 100 * 0.18 +
+      entryScore * 0.4
   );
+
+  const aiDecision =
+    entryScore >= 78 &&
+    direction !== "WAIT" &&
+    emaAligned &&
+    momentumAligned
+      ? `BUY ${direction} NOW`
+      : entryScore >= 70 && direction !== "WAIT"
+        ? `PREPARE ${direction}`
+        : "WAIT";
 
   const setupGrade = tradeNow
     ? scoreGrade(finalScore)
@@ -1459,6 +1715,14 @@ export function analyzeRiseFall(
     expansion: compressionExpansionState.expansion,
     exhaustion,
     entryScore,
+    weightedScores,
+    aiDecision,
+    bias,
+    squeeze,
+    supportReaction,
+    resistanceReaction,
+    liquiditySweep: sweep,
+    microReversal: reversalSignal,
     trend,
     bollinger: bands,
     pressure,

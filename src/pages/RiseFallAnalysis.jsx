@@ -326,7 +326,7 @@ export default function RiseFallAnalysis() {
       analysis?.fastScalpReady &&
       finalScore >= Number(oneTickMinimumScore || 78) &&
       confidence >= dynamicMinimumConfidence &&
-      Number(analysis?.entryScore || 0) >= 72;
+      Number(analysis?.entryScore || 0) >= 78;
 
     if (durationMode === "1T") {
       if (!oneTickQualified) {
@@ -710,8 +710,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V62 · Rise/Fall Pro Analysis"
-          subtitle="Dynamic confidence, multi-window micro trend and AI fast-entry scoring"
+          title="EdgePilot V63 · Rise/Fall Pro Analysis"
+          subtitle="Weighted AI score, faster 1-tick decisions and expanded microstructure analysis"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1483,11 +1483,7 @@ export default function RiseFallAnalysis() {
             <div>
               <small>AI ENTRY ENGINE</small>
               <h2>
-                {active.fastScalpReady
-                  ? `BUY ${active.rawDirection} NOW`
-                  : active.prepare
-                    ? `PREPARE ${active.rawDirection}`
-                    : "WAIT FOR ENTRY"}
+                {active.aiDecision || "WAIT"}
               </h2>
             </div>
 
@@ -1498,17 +1494,14 @@ export default function RiseFallAnalysis() {
 
           <div className="rfAiEntryGrid">
             {[
-              ["Micro trend", active.microTrend?.averageStrength],
-              ["Impulse", active.impulse?.score],
-              ["Persistence", active.persistence],
-              ["Pressure", Math.max(
-                Number(active.pressure?.buying || 0),
-                Number(active.pressure?.selling || 0)
-              )],
-              ["Continuation", active.continuationProbability],
-              ["Expansion", active.expansion],
-              ["Noise", Math.max(0, 100 - Number(active.noiseRatio || 0))],
-              ["Exhaustion safety", Math.max(0, 100 - Number(active.exhaustion || 0))],
+              ["Micro trend · 25%", active.weightedScores?.microTrend],
+              ["Pressure · 20%", active.weightedScores?.pressure],
+              ["Momentum · 15%", active.weightedScores?.momentum],
+              ["Impulse · 15%", active.weightedScores?.impulse],
+              ["EMA · 10%", active.weightedScores?.ema],
+              ["Continuation · 10%", active.weightedScores?.continuation],
+              ["Noise safety · 5%", active.weightedScores?.noise],
+              ["AI final score", active.entryScore],
             ].map(([label, value]) => (
               <div key={label}>
                 <span>{label}</span>
@@ -1561,7 +1554,11 @@ export default function RiseFallAnalysis() {
           <article>
             <small>FAST SCALP STATUS</small>
             <strong>
-              {active.fastScalpReady ? "1-TICK READY" : "WAIT"}
+              {active.fastScalpReady
+                ? "1-TICK READY"
+                : active.entryScore >= 70
+                  ? "PREPARE"
+                  : "WAIT"}
             </strong>
             <span>
               Strong impulse, persistence and low noise are required.
@@ -1655,6 +1652,49 @@ export default function RiseFallAnalysis() {
           </article>
         </section>
 
+
+        <section className="rfAdvancedTools">
+          <article>
+            <small>CONSECUTIVE TICK BIAS</small>
+            <strong>
+              {active.bias?.direction || "FLAT"}{" "}
+              {active.bias?.count || 0}
+            </strong>
+            <span>Score {pct(active.bias?.score)}</span>
+          </article>
+
+          <article>
+            <small>VOLATILITY STATE</small>
+            <strong>{active.squeeze?.state || "NORMAL"}</strong>
+            <span>
+              Breakout readiness {pct(active.squeeze?.breakoutReadiness)}
+            </span>
+          </article>
+
+          <article>
+            <small>LIQUIDITY SWEEP</small>
+            <strong>{active.liquiditySweep?.state || "NONE"}</strong>
+            <span>Score {pct(active.liquiditySweep?.score)}</span>
+          </article>
+
+          <article>
+            <small>MICRO REVERSAL</small>
+            <strong>{active.microReversal?.direction || "NONE"}</strong>
+            <span>Score {pct(active.microReversal?.score)}</span>
+          </article>
+
+          <article>
+            <small>SUPPORT REACTION</small>
+            <strong>{pct(active.supportReaction)}</strong>
+            <span>Recent response from support.</span>
+          </article>
+
+          <article>
+            <small>RESISTANCE REACTION</small>
+            <strong>{pct(active.resistanceReaction)}</strong>
+            <span>Recent response from resistance.</span>
+          </article>
+        </section>
 
         <section className="rfProGrid">
           <article className="rfPanel">
