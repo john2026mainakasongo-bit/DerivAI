@@ -238,11 +238,119 @@ function candleSignal(candle) {
   return "WAIT";
 }
 
+
+function candleStructure(candles = []) {
+  if (!candles.length) {
+    return {
+      support: 0,
+      resistance: 0,
+      breakout: "NONE",
+      breakoutStrength: 0,
+      rangeWidth: 0,
+      trend: "WAIT",
+      closedCount: 0,
+    };
+  }
+
+  const current = candles.at(-1);
+  const closed = candles.slice(0, -1);
+  const sample = closed.slice(-20);
+  const usable = sample.length ? sample : candles.slice(-20);
+
+  const support = Math.min(...usable.map((item) => item.low));
+  const resistance = Math.max(...usable.map((item) => item.high));
+  const rangeWidth = Math.max(0.000001, resistance - support);
+  const close = Number(current?.close || 0);
+
+  let breakout = "NONE";
+  let breakoutStrength = 0;
+
+  if (close > resistance) {
+    breakout = "BULLISH";
+    breakoutStrength = (close - resistance) / rangeWidth * 100;
+  } else if (close < support) {
+    breakout = "BEARISH";
+    breakoutStrength = (support - close) / rangeWidth * 100;
+  }
+
+  const recentCloses = usable.slice(-8).map((item) => item.close);
+  const trend =
+    recentCloses.length >= 2
+      ? recentCloses.at(-1) > recentCloses[0]
+        ? "RISE"
+        : recentCloses.at(-1) < recentCloses[0]
+          ? "FALL"
+          : "WAIT"
+      : "WAIT";
+
+  return {
+    support,
+    resistance,
+    breakout,
+    breakoutStrength: clamp(breakoutStrength),
+    rangeWidth,
+    trend,
+    closedCount: closed.length,
+  };
+}
+
+function structureEntryChecklist({
+  structure,
+  active,
+  currentCandle,
+}) {
+  const direction = active?.signal || "WAIT";
+  const candleDirection = candleSignal(currentCandle);
+
+  const breakoutAligned =
+    structure.breakout === "NONE" ||
+    (structure.breakout === "BULLISH" && direction === "RISE") ||
+    (structure.breakout === "BEARISH" && direction === "FALL");
+
+  const trendAligned =
+    structure.trend === "WAIT" ||
+    structure.trend === direction;
+
+  const candleAligned =
+    candleDirection === "WAIT" ||
+    candleDirection === direction;
+
+  const confidencePassed =
+    Number(active?.confidence || 0) >= 70;
+
+  const qualityPassed =
+    Number(active?.opportunityScore || active?.scores?.final || 0) >= 75;
+
+  const pressurePassed =
+    Number(active?.dominantPressure || 0) >= 58 ||
+    Number(active?.pressure?.buying || 0) >= 58 ||
+    Number(active?.pressure?.selling || 0) >= 58;
+
+  const items = [
+    { label: "Closed-candle trend", passed: trendAligned, value: structure.trend },
+    { label: "Live candle direction", passed: candleAligned, value: candleDirection },
+    { label: "Breakout alignment", passed: breakoutAligned, value: structure.breakout },
+    { label: "Confidence", passed: confidencePassed, value: `${Number(active?.confidence || 0).toFixed(1)}%` },
+    { label: "Entry quality", passed: qualityPassed, value: `${Number(active?.opportunityScore || active?.scores?.final || 0).toFixed(1)}%` },
+    { label: "Directional pressure", passed: pressurePassed, value: `${Number(active?.dominantPressure || 0).toFixed(1)}%` },
+  ];
+
+  return {
+    items,
+    passed: items.filter((item) => item.passed).length,
+    total: items.length,
+    ready:
+      direction !== "WAIT" &&
+      items.filter((item) => item.passed).length >= 5,
+  };
+}
+
 function CandleChart({
   candles = [],
   signal = "WAIT",
   probabilityRise = 0,
   probabilityFall = 0,
+  structure = null,
 }) {
   if (!candles.length) {
     return <div className="rfEmptyChart">Building candlestick history…</div>;
@@ -261,6 +369,11 @@ function CandleChart({
   const y = (value) =>
     padding + (maximum - value) / range * (height - padding * 2);
 
+  const supportY =
+    structure?.support > 0 ? y(structure.support) : null;
+  const resistanceY =
+    structure?.resistance > 0 ? y(structure.resistance) : null;
+
   return (
     <div className={`rfCandleChart ${signalClass(signal)}`}>
       <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
@@ -276,17 +389,46 @@ function CandleChart({
           ))}
         </g>
 
+        {supportY !== null ? (
+          <g className="rfStructureLine support">
+            <line
+              x1={padding}
+              x2={width - padding}
+              y1={supportY}
+              y2={supportY}
+            />
+            <text x={padding + 8} y={supportY - 6}>
+              SUPPORT {Number(structure.support).toFixed(6)}
+            </text>
+          </g>
+        ) : null}
+
+        {resistanceY !== null ? (
+          <g className="rfStructureLine resistance">
+            <line
+              x1={padding}
+              x2={width - padding}
+              y1={resistanceY}
+              y2={resistanceY}
+            />
+            <text x={padding + 8} y={resistanceY - 6}>
+              RESISTANCE {Number(structure.resistance).toFixed(6)}
+            </text>
+          </g>
+        ) : null}
+
         {candles.map((candle, index) => {
           const x = padding + index * step + step / 2;
           const rising = candle.close >= candle.open;
           const bodyTop = y(Math.max(candle.open, candle.close));
           const bodyBottom = y(Math.min(candle.open, candle.close));
           const bodyHeight = Math.max(2, bodyBottom - bodyTop);
+          const isLive = index === candles.length - 1;
 
           return (
             <g
               key={`${candle.time}-${index}`}
-              className={rising ? "rise" : "fall"}
+              className={`${rising ? "rise" : "fall"} ${isLive ? "live" : "closed"}`}
             >
               <line
                 x1={x}
@@ -316,7 +458,7 @@ function CandleChart({
               y2={signal === "RISE" ? height * 0.18 : height * 0.82}
             />
             <text
-              x={width - padding - 150}
+              x={width - padding - 170}
               y={signal === "RISE" ? height * 0.15 : height * 0.78}
             >
               {signal === "RISE"
@@ -325,138 +467,25 @@ function CandleChart({
             </text>
           </g>
         ) : null}
+
+        {structure?.breakout !== "NONE" ? (
+          <g className={`rfBreakoutBadge ${structure.breakout.toLowerCase()}`}>
+            <rect x={width - 260} y={24} width={220} height={44} rx="8" />
+            <text x={width - 245} y={51}>
+              {structure.breakout} BREAKOUT · {Number(structure.breakoutStrength).toFixed(1)}%
+            </text>
+          </g>
+        ) : null}
       </svg>
 
       <div className="rfCandleLegend">
         <span className="rise">RISE candle</span>
         <span className="fall">FALL candle</span>
+        <span className="closed">Closed candles are frozen</span>
+        <span className="live">Only last candle moves</span>
         <strong>{num(candles.at(-1)?.close, 6)}</strong>
       </div>
     </div>
-  );
-}
-
-function MiniChart({
-  points = [],
-  signal = "WAIT",
-}) {
-  const values = points
-    .map((point) => Number(point.quote))
-    .filter(Number.isFinite);
-
-  if (values.length < 2) {
-    return (
-      <div className="rfEmptyChart">
-        Waiting for live prices…
-      </div>
-    );
-  }
-
-  const width = 1000;
-  const height = 280;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(0.00001, max - min);
-
-  const coordinates = values
-    .map((value, index) => {
-      const x =
-        (index /
-          Math.max(1, values.length - 1)) *
-        width;
-
-      const y =
-        height -
-        ((value - min) / range) *
-          (height - 30) -
-        15;
-
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-
-  return (
-    <div className={`rfChart ${signalClass(signal)}`}>
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        role="img"
-      >
-        <defs>
-          <linearGradient
-            id="rfFillV55"
-            x1="0"
-            x2="0"
-            y1="0"
-            y2="1"
-          >
-            <stop
-              offset="0%"
-              stopColor="currentColor"
-              stopOpacity=".28"
-            />
-            <stop
-              offset="100%"
-              stopColor="currentColor"
-              stopOpacity="0"
-            />
-          </linearGradient>
-        </defs>
-
-        <polyline
-          points={coordinates}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="4"
-          vectorEffect="non-scaling-stroke"
-        />
-
-        <polygon
-          points={`0,${height} ${coordinates} ${width},${height}`}
-          fill="url(#rfFillV55)"
-        />
-      </svg>
-
-      <span>{num(min)}</span>
-      <span>{num(max)}</span>
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  note,
-  tone = "",
-}) {
-  return (
-    <article className={`rfMetricCard ${tone}`}>
-      <small>{label}</small>
-      <strong>{value}</strong>
-      <p>{note}</p>
-    </article>
-  );
-}
-
-function ModeSummary({
-  label,
-  analysis,
-  active,
-  onClick,
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rfModeCard ${active ? "active" : ""} ${signalClass(
-        analysis.signal
-      )}`}
-    >
-      <small>{label}</small>
-      <strong>{analysis.signal}</strong>
-      <span>{pct(analysis.confidence)}</span>
-      <em>{analysis.regime}</em>
-    </button>
   );
 }
 
@@ -522,6 +551,8 @@ export default function RiseFallAnalysis() {
   const waitStartedAtRef = useRef(Date.now());
   const marketSwitchingRef = useRef(false);
   const lastMarketSwitchAtRef = useRef(0);
+  const historySeededRef = useRef(new Set());
+  const lastLiveTickRef = useRef({ symbol: "", key: "" });
 
   const connectingRef = useRef(false);
 
@@ -578,9 +609,48 @@ export default function RiseFallAnalysis() {
     if (!symbol || !Array.isArray(prices) || !prices.length) return;
 
     setPersistentHistory((current) => {
-      const incoming = prices.map((item, index) =>
-        normalizedTick(item, Date.now() - (prices.length - index) * 1000)
-      ).filter(Boolean);
+      const now = Date.now();
+      let incoming = [];
+
+      if (!historySeededRef.current.has(symbol) && !current.length) {
+        incoming = prices
+          .map((item, index) =>
+            normalizedTick(
+              item,
+              now - (prices.length - index) * 1000
+            )
+          )
+          .filter(Boolean);
+
+        historySeededRef.current.add(symbol);
+      } else {
+        const latestRaw = prices.at(-1);
+        const latest = normalizedTick(latestRaw, now);
+
+        if (latest) {
+          const explicitTime =
+            typeof latestRaw === "object" && latestRaw
+              ? latestRaw.epoch ??
+                latestRaw.time ??
+                latestRaw.timestamp ??
+                latestRaw.createdAt
+              : null;
+
+          const key = explicitTime
+            ? `${explicitTime}:${latest.quote}`
+            : `${prices.length}:${latest.quote}:${now}`;
+
+          if (
+            lastLiveTickRef.current.symbol !== symbol ||
+            lastLiveTickRef.current.key !== key
+          ) {
+            incoming = [latest];
+            lastLiveTickRef.current = { symbol, key };
+          }
+        }
+      }
+
+      if (!incoming.length) return current;
 
       const next = mergeTickHistory(current, incoming);
       const stored = readStoredMap(RF_HISTORY_STORAGE_KEY);
@@ -598,6 +668,12 @@ export default function RiseFallAnalysis() {
   const candles = useMemo(
     () => buildCandles(combinedPriceHistory, candleMode),
     [combinedPriceHistory, candleMode]
+  );
+
+
+  const candleMarketStructure = useMemo(
+    () => candleStructure(candles),
+    [candles]
   );
 
   const analysis15 = useMemo(
@@ -672,6 +748,27 @@ export default function RiseFallAnalysis() {
         .filter((item) => Number(item.score || 0) >= 90)
         .sort((a, b) => Number(b.score) - Number(a.score)),
     [marketSnapshots]
+  );
+
+
+  const preBuyStructure = useMemo(
+    () =>
+      structureEntryChecklist({
+        structure: candleMarketStructure,
+        active,
+        currentCandle: candles.at(-1),
+      }),
+    [
+      candleMarketStructure,
+      active.signal,
+      active.confidence,
+      active.opportunityScore,
+      active.scores?.final,
+      active.dominantPressure,
+      active.pressure?.buying,
+      active.pressure?.selling,
+      candles,
+    ]
   );
 
   const learningProfile = useMemo(() => {
@@ -804,6 +901,7 @@ export default function RiseFallAnalysis() {
 
   const immediateEntryReady =
     learnedEntryAllowed &&
+    preBuyStructure.ready &&
     active.signal !== "WAIT" &&
     (
       active.tradeNow ||
@@ -1504,8 +1602,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V73 · Rise/Fall Pro Analysis"
-          subtitle="Persistent candlesticks, Rise/Fall chart zones and 90%+ synthetic-market intelligence"
+          title="EdgePilot V74 · Rise/Fall Pro Analysis"
+          subtitle="Frozen historical candles, live last candle, support/resistance and breakout confirmation"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -2026,6 +2124,7 @@ export default function RiseFallAnalysis() {
             signal={active.signal}
             probabilityRise={active.probabilityRise}
             probabilityFall={active.probabilityFall}
+            structure={candleMarketStructure}
           />
 
           <div className="rfCandleMetrics">
@@ -2045,6 +2144,55 @@ export default function RiseFallAnalysis() {
               <small>Current synthetic score</small>
               <strong>{pct(syntheticScore)}</strong>
             </span>
+          </div>
+
+          <div className="rfStructureGrid">
+            <article>
+              <small>SUPPORT</small>
+              <strong>{num(candleMarketStructure.support, 6)}</strong>
+              <span>Calculated from closed candles only.</span>
+            </article>
+            <article>
+              <small>RESISTANCE</small>
+              <strong>{num(candleMarketStructure.resistance, 6)}</strong>
+              <span>Calculated from closed candles only.</span>
+            </article>
+            <article>
+              <small>BREAKOUT</small>
+              <strong>{candleMarketStructure.breakout}</strong>
+              <span>{pct(candleMarketStructure.breakoutStrength)} strength</span>
+            </article>
+            <article>
+              <small>CLOSED TREND</small>
+              <strong>{candleMarketStructure.trend}</strong>
+              <span>{candleMarketStructure.closedCount} frozen candles.</span>
+            </article>
+          </div>
+
+          <div className={`rfPreBuyChecklist ${preBuyStructure.ready ? "ready" : ""}`}>
+            <div className="rfPanelHead">
+              <div>
+                <small>PRE-BUY MARKET STRUCTURE</small>
+                <h2>
+                  {preBuyStructure.ready
+                    ? `READY TO BUY ${active.signal}`
+                    : "WAIT FOR STRUCTURE"}
+                </h2>
+              </div>
+              <strong>{preBuyStructure.passed}/{preBuyStructure.total}</strong>
+            </div>
+
+            <div>
+              {preBuyStructure.items.map((item) => (
+                <span
+                  key={item.label}
+                  className={item.passed ? "passed" : "failed"}
+                >
+                  <b>{item.passed ? "✓" : "×"} {item.label}</b>
+                  <strong>{item.value}</strong>
+                </span>
+              ))}
+            </div>
           </div>
         </section>
 
