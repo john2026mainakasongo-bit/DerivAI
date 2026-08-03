@@ -208,7 +208,9 @@ function windowForMode(points, mode) {
     (point) => latest - point.time <= 15000
   );
 
-  return timed.length >= 5 ? timed : points.slice(-15);
+  return timed.length >= 4
+    ? timed.slice(-30)
+    : points.slice(-12);
 }
 
 function momentumWindows(values = []) {
@@ -610,6 +612,80 @@ function scoreGrade(score) {
   return "WAIT";
 }
 
+
+function tickImpulse(values = []) {
+  if (values.length < 4) {
+    return {
+      direction: "FLAT",
+      score: 0,
+      acceleration: 0,
+    };
+  }
+
+  const changes = values
+    .slice(1)
+    .map((value, index) => Number(value) - Number(values[index]));
+
+  const recent = changes.slice(-3);
+  const earlier = changes.slice(-6, -3);
+
+  const recentMean = mean(recent);
+  const earlierMean = mean(earlier);
+  const acceleration = recentMean - earlierMean;
+
+  const direction =
+    recentMean > 0
+      ? "RISE"
+      : recentMean < 0
+        ? "FALL"
+        : "FLAT";
+
+  const noise = Math.max(0.0000001, stdDev(changes.slice(-8)));
+  const score = clamp(
+    (Math.abs(recentMean) / noise) * 38 +
+      (Math.abs(acceleration) / noise) * 22
+  );
+
+  return {
+    direction,
+    score,
+    acceleration,
+  };
+}
+
+function persistenceScore(values = []) {
+  if (values.length < 4) return 0;
+
+  const changes = values
+    .slice(1)
+    .map((value, index) => Number(value) - Number(values[index]))
+    .slice(-8);
+
+  const positive = changes.filter((value) => value > 0).length;
+  const negative = changes.filter((value) => value < 0).length;
+
+  return clamp(
+    (Math.max(positive, negative) / Math.max(1, changes.length)) * 100
+  );
+}
+
+function noiseRatio(values = []) {
+  if (values.length < 3) return 100;
+
+  const absoluteMoves = values
+    .slice(1)
+    .map((value, index) =>
+      Math.abs(Number(value) - Number(values[index]))
+    );
+
+  const path = absoluteMoves.reduce((sum, value) => sum + value, 0);
+  const direct = Math.abs(Number(values.at(-1)) - Number(values[0]));
+
+  if (!path) return 100;
+
+  return clamp((1 - direct / path) * 100);
+}
+
 function durationRecommendation({
   mode,
   confidence,
@@ -716,6 +792,9 @@ export function analyzeRiseFall(
   const trend = trendAge(values);
   const bands = bollinger(values, 20, 2);
   const pressure = pressureScore(values);
+  const impulse = tickImpulse(values);
+  const persistence = persistenceScore(values);
+  const noise = noiseRatio(values);
 
   const levels = supportResistance(values);
 
@@ -807,6 +886,20 @@ export function analyzeRiseFall(
       : streak.direction === "FALL" && streak.length >= 2
         ? -1
         : 0,
+    impulse.direction === "RISE" && impulse.score >= 55
+      ? 1
+      : impulse.direction === "FALL" && impulse.score >= 55
+        ? -1
+        : 0,
+    persistence >= 70
+      ? (
+          netMove > 0
+            ? 1
+            : netMove < 0
+              ? -1
+              : 0
+        )
+      : 0,
   ];
 
   const riseVotes = voteSignals.filter(
@@ -849,25 +942,31 @@ export function analyzeRiseFall(
         )
       : 0;
 
+  const reversalRate =
+    reversalCount / Math.max(1, values.length - 1);
+
   const reversalPenalty = clamp(
-    reversalCount * 6,
+    reversalRate * 28,
     0,
-    30
+    20
   );
 
   const rangePenalty =
     regime === "RANGE" ? 14 : 0;
 
   const confidence = clamp(
-    consistency * 0.24 +
-      trendStrength * 0.19 +
-      voteScore * 0.28 +
-      emaScore * 0.13 +
-      Math.min(100, values.length * 8) * 0.12 +
-      (breakout !== "NONE" ? 6 : 0) +
-      (pullback !== "NONE" ? 5 : 0) -
-      reversalPenalty * 0.65 -
-      rangePenalty * 0.55,
+    consistency * 0.18 +
+      trendStrength * 0.15 +
+      voteScore * 0.24 +
+      emaScore * 0.1 +
+      impulse.score * 0.12 +
+      persistence * 0.11 +
+      Math.max(0, 100 - noise) * 0.1 +
+      Math.min(100, values.length * 9) * 0.08 +
+      (breakout !== "NONE" ? 5 : 0) +
+      (pullback !== "NONE" ? 4 : 0) -
+      reversalPenalty -
+      rangePenalty * 0.35,
     0,
     96
   );
@@ -922,7 +1021,7 @@ export function analyzeRiseFall(
     {
       id: "confidence",
       label: "Confidence",
-      passed: confidence >= 68,
+      passed: confidence >= 64,
       detail: `${confidence.toFixed(1)}%`,
     },
     {
@@ -979,6 +1078,20 @@ export function analyzeRiseFall(
       detail:
         `${continuationReversal.continuation.toFixed(1)}% / ${continuationReversal.reversal.toFixed(1)}%`,
     },
+    {
+      id: "impulse",
+      label: "Fresh tick impulse",
+      passed:
+        impulse.score >= 52 &&
+        impulse.direction === direction,
+      detail: `${impulse.direction} ${impulse.score.toFixed(1)}%`,
+    },
+    {
+      id: "noise",
+      label: "Noise control",
+      passed: noise <= 68,
+      detail: `${noise.toFixed(1)}% noise`,
+    },
   ];
 
   const confirmationsPassed = confirmationChecks.filter(
@@ -987,7 +1100,7 @@ export function analyzeRiseFall(
 
   const tradeNow =
     direction !== "WAIT" &&
-    confirmationsPassed >= 6 &&
+    confirmationsPassed >= 7 &&
     dominantVotes >= 7 &&
     confidence >= 68 &&
     consistency >= 54 &&
@@ -999,9 +1112,9 @@ export function analyzeRiseFall(
   const prepare =
     !tradeNow &&
     direction !== "WAIT" &&
-    confirmationsPassed >= 5 &&
+    confirmationsPassed >= 6 &&
     dominantVotes >= 7 &&
-    confidence >= 58;
+    confidence >= 54;
 
   const decision = tradeNow
     ? `TRADE ${direction}`
@@ -1010,6 +1123,17 @@ export function analyzeRiseFall(
       : "NO TRADE";
 
   const ready = tradeNow;
+  const fastScalpReady =
+    direction !== "WAIT" &&
+    dominantVotes >= 9 &&
+    confirmationsPassed >= 8 &&
+    confidence >= 72 &&
+    impulse.score >= 62 &&
+    persistence >= 68 &&
+    noise <= 58 &&
+    emaAligned &&
+    momentumAligned;
+
   const signal = tradeNow ? direction : "WAIT";
 
   const risk = ready
@@ -1122,6 +1246,10 @@ export function analyzeRiseFall(
     decision,
     prepare,
     tradeNow,
+    fastScalpReady,
+    impulse,
+    persistence,
+    noiseRatio: noise,
     trend,
     bollinger: bands,
     pressure,

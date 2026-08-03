@@ -1115,3 +1115,69 @@
     width: 100%;
   }
 }
+
+
+.rfDurationSelect {
+  border: 1px solid #1c5a72;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #082538;
+  color: #dcebf1;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.rfDurationSelect:disabled {
+  opacity: .55;
+}
+
+.rfMicroGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.rfMicroGrid article {
+  border: 1px solid #195069;
+  border-radius: 12px;
+  padding: 13px;
+  background: linear-gradient(145deg, #082638, #061b29);
+}
+
+.rfMicroGrid small {
+  display: block;
+  color: #31ddb2;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.rfMicroGrid strong {
+  display: block;
+  margin: 5px 0;
+  font-size: 20px;
+}
+
+.rfMicroGrid span {
+  color: #81a5b4;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+@media (max-width: 1050px) {
+  .rfMicroGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .rfMicroGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .rfDurationSelect {
+    width: 100%;
+  }
+}

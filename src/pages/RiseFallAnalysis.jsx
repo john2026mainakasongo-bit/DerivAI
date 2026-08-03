@@ -183,9 +183,10 @@ export default function RiseFallAnalysis() {
   const [maxRuns, setMaxRuns] = useState(5);
   const [stopAfterLoss, setStopAfterLoss] = useState(true);
   const [allowReal, setAllowReal] = useState(false);
+  const [durationMode, setDurationMode] = useState("AUTO");
   const [allowOneTick, setAllowOneTick] = useState(true);
-  const [oneTickMinimumScore, setOneTickMinimumScore] = useState(88);
-  const [oneTickMinimumConfidence, setOneTickMinimumConfidence] = useState(82);
+  const [oneTickMinimumScore, setOneTickMinimumScore] = useState(80);
+  const [oneTickMinimumConfidence, setOneTickMinimumConfidence] = useState(72);
   const [executionMessage, setExecutionMessage] = useState(
     "Auto execution is stopped."
   );
@@ -310,23 +311,22 @@ export default function RiseFallAnalysis() {
     const rise = signal === "RISE";
     const finalScore = Number(analysis?.scores?.final || 0);
     const confidence = Number(analysis?.confidence || 0);
-    const confirmationsPassed = Number(
-      analysis?.confirmationsPassed || 0
-    );
-    const confirmationTotal = Math.max(
-      1,
-      Number(analysis?.confirmationChecks?.length || 8)
-    );
 
-    const qualifiesForOneTick =
+    const oneTickQualified =
       allowOneTick &&
-      finalScore >= Number(oneTickMinimumScore || 88) &&
-      confidence >= Number(oneTickMinimumConfidence || 82) &&
-      confirmationsPassed >= confirmationTotal &&
-      analysis?.regime === "TREND" &&
-      analysis?.tradeNow;
+      analysis?.fastScalpReady &&
+      finalScore >= Number(oneTickMinimumScore || 80) &&
+      confidence >= Number(oneTickMinimumConfidence || 72);
 
-    if (qualifiesForOneTick) {
+    if (durationMode === "1T") {
+      if (!oneTickQualified) {
+        return {
+          blocked: true,
+          reason:
+            "1-tick mode is waiting for a strong fast-scalp entry.",
+        };
+      }
+
       return {
         contractType: rise ? "CALL" : "PUT",
         label: rise ? "RISE" : "FALL",
@@ -334,6 +334,39 @@ export default function RiseFallAnalysis() {
         durationUnit: "t",
         fastEntry: true,
         displayDuration: "1 TICK",
+      };
+    }
+
+    if (durationMode === "AUTO" && oneTickQualified) {
+      return {
+        contractType: rise ? "CALL" : "PUT",
+        label: rise ? "RISE" : "FALL",
+        duration: 1,
+        durationUnit: "t",
+        fastEntry: true,
+        displayDuration: "1 TICK",
+      };
+    }
+
+    if (durationMode === "10T") {
+      return {
+        contractType: rise ? "CALL" : "PUT",
+        label: rise ? "RISE" : "FALL",
+        duration: 10,
+        durationUnit: "t",
+        fastEntry: false,
+        displayDuration: "10 TICKS",
+      };
+    }
+
+    if (durationMode === "15S") {
+      return {
+        contractType: rise ? "CALL" : "PUT",
+        label: rise ? "RISE" : "FALL",
+        duration: 15,
+        durationUnit: "s",
+        fastEntry: false,
+        displayDuration: "15 SECONDS",
       };
     }
 
@@ -407,6 +440,13 @@ export default function RiseFallAnalysis() {
 
     const parameters = tradeParameters(signal, analysis);
     const safeStake = Math.max(0.35, Number(stake) || 0.35);
+
+    if (parameters.blocked) {
+      lastExecutedSignalRef.current = "";
+      executionBusyRef.current = false;
+      setExecutionMessage(parameters.reason);
+      return;
+    }
 
     setExecutionMessage(
       `Sending ${parameters.label} · ${parameters.displayDuration} · stake ${safeStake.toFixed(2)}.`
@@ -660,8 +700,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V60 · Rise/Fall Pro Analysis"
-          subtitle="Side START control with adaptive 1-tick execution for strongest entries"
+          title="EdgePilot V61 · Rise/Fall Pro Analysis"
+          subtitle="Responsive confidence, explicit 1-tick mode and fast microstructure entry analysis"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -699,6 +739,18 @@ export default function RiseFallAnalysis() {
             >
               {soundEnabled ? "🔊 SOUND ON" : "🔇 SOUND OFF"}
             </button>
+
+            <select
+              className="rfDurationSelect"
+              value={durationMode}
+              disabled={autoRunning}
+              onChange={(event) => setDurationMode(event.target.value)}
+            >
+              <option value="AUTO">AUTO DURATION</option>
+              <option value="1T">1 TICK</option>
+              <option value="10T">10 TICKS</option>
+              <option value="15S">15 SECONDS</option>
+            </select>
 
             <div className="rfModeSwitch">
             <button
@@ -787,9 +839,13 @@ export default function RiseFallAnalysis() {
             <div>
               <span>Contract</span>
               <strong>
-                {mode === "15s"
-                  ? "RISE/FALL · 15 SECONDS"
-                  : "RISE/FALL · 10 TICKS"}
+                {durationMode === "1T"
+                  ? "RISE/FALL · 1 TICK"
+                  : durationMode === "10T"
+                    ? "RISE/FALL · 10 TICKS"
+                    : durationMode === "15S"
+                      ? "RISE/FALL · 15 SECONDS"
+                      : "RISE/FALL · AUTO"}
               </strong>
             </div>
 
@@ -1409,6 +1465,41 @@ export default function RiseFallAnalysis() {
                 <strong>{active.duration}</strong>
               </div>
             </div>
+          </article>
+        </section>
+
+        <section className="rfMicroGrid">
+          <article>
+            <small>FAST SCALP STATUS</small>
+            <strong>
+              {active.fastScalpReady ? "1-TICK READY" : "WAIT"}
+            </strong>
+            <span>
+              Strong impulse, persistence and low noise are required.
+            </span>
+          </article>
+
+          <article>
+            <small>TICK IMPULSE</small>
+            <strong>
+              {active.impulse?.direction || "FLAT"}{" "}
+              {pct(active.impulse?.score)}
+            </strong>
+            <span>
+              Acceleration {num(active.impulse?.acceleration, 6)}
+            </span>
+          </article>
+
+          <article>
+            <small>PERSISTENCE</small>
+            <strong>{pct(active.persistence)}</strong>
+            <span>Recent ticks moving consistently.</span>
+          </article>
+
+          <article>
+            <small>NOISE RATIO</small>
+            <strong>{pct(active.noiseRatio)}</strong>
+            <span>Lower is cleaner for fast entry.</span>
           </article>
         </section>
 
