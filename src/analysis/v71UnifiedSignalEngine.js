@@ -9,15 +9,17 @@ function clamp(value, min = 0, max = 100) {
 
 function mean(values = []) {
   if (!values.length) return 0;
-  return values.reduce((total, value) => total + value, 0) / values.length;
+  return values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length;
+}
+
+function variance(values = []) {
+  if (values.length < 2) return 0;
+  const average = mean(values);
+  return mean(values.map((value) => (Number(value) - average) ** 2));
 }
 
 function stdDev(values = []) {
-  if (values.length < 2) return 0;
-  const average = mean(values);
-  return Math.sqrt(
-    mean(values.map((value) => (Number(value) - average) ** 2))
-  );
+  return Math.sqrt(variance(values));
 }
 
 function cleanDigits(values = []) {
@@ -29,7 +31,7 @@ function cleanDigits(values = []) {
         digit >= 0 &&
         digit <= 9
     )
-    .slice(-300);
+    .slice(-500);
 }
 
 function lastDigitFromPrice(value) {
@@ -55,7 +57,7 @@ function digitsFromInput(input = {}) {
     digits.push(current);
   }
 
-  return digits.slice(-300);
+  return digits.slice(-500);
 }
 
 function countsOf(digits = []) {
@@ -66,104 +68,101 @@ function countsOf(digits = []) {
   return counts;
 }
 
-function probabilitiesOf(digits = [], smoothing = 1) {
+function smoothedProbabilities(digits = [], alpha = 1.5) {
   const counts = countsOf(digits);
-  const denominator = digits.length + smoothing * 10;
+  const denominator = digits.length + alpha * 10;
 
   return counts.map(
-    (count) => (count + smoothing) / Math.max(1, denominator)
+    (count) => (count + alpha) / Math.max(1, denominator)
   );
 }
 
-function transitionModel(digits = []) {
-  const matrix = Array.from(
-    { length: 10 },
-    () => Array(10).fill(0)
-  );
+function transitionTable(digits = []) {
+  const matrix = Array.from({ length: 10 }, () => Array(10).fill(0));
   const totals = Array(10).fill(0);
 
   for (let index = 1; index < digits.length; index += 1) {
-    const previous = digits[index - 1];
-    const next = digits[index];
-    matrix[previous][next] += 1;
-    totals[previous] += 1;
+    const from = digits[index - 1];
+    const to = digits[index];
+    matrix[from][to] += 1;
+    totals[from] += 1;
   }
 
   return { matrix, totals };
 }
 
-function blendedNextProbabilities(digits = []) {
-  const global = probabilitiesOf(digits, 1);
+function calibratedNextModel(digits = []) {
   const currentDigit = digits.at(-1);
-  const transitions = transitionModel(digits);
+  const global = smoothedProbabilities(digits, 1.5);
+  const transitions = transitionTable(digits);
   const transitionSamples =
-    Number.isInteger(currentDigit)
-      ? transitions.totals[currentDigit]
-      : 0;
+    Number.isInteger(currentDigit) ? transitions.totals[currentDigit] : 0;
 
-  if (!Number.isInteger(currentDigit) || transitionSamples < 3) {
+  if (!Number.isInteger(currentDigit) || transitionSamples < 8) {
     return {
       probabilities: global,
       currentDigit,
       transitionSamples,
-      source: "GLOBAL_FREQUENCY",
+      source: "GLOBAL_ONLY",
+      calibrationPenalty: transitionSamples < 4 ? 12 : 7,
     };
   }
 
   const row = transitions.matrix[currentDigit];
   const rowProbabilities = row.map(
-    (count) => (count + 1) / (transitionSamples + 10)
+    (count) => (count + 1.5) / (transitionSamples + 15)
   );
 
-  const transitionWeight = Math.min(
-    0.72,
-    0.28 + transitionSamples / 45
+  const transitionWeight = clamp(
+    28 + transitionSamples * 2.1,
+    28,
+    68
+  ) / 100;
+
+  const probabilities = rowProbabilities.map(
+    (probability, digit) =>
+      probability * transitionWeight +
+      global[digit] * (1 - transitionWeight)
   );
 
   return {
-    probabilities: rowProbabilities.map(
-      (value, digit) =>
-        value * transitionWeight +
-        global[digit] * (1 - transitionWeight)
-    ),
+    probabilities,
     currentDigit,
     transitionSamples,
-    source: "TRANSITION_BLEND",
+    source: "CALIBRATED_TRANSITION_BLEND",
+    calibrationPenalty: Math.max(0, 9 - transitionSamples * 0.22),
   };
 }
 
-function windowProfiles(digits = []) {
-  const sizes = [50, 100, 200].filter(
-    (size) => digits.length >= Math.min(size, 50)
-  );
-
-  return sizes.map((size) => {
-    const window = digits.slice(-Math.min(size, digits.length));
-    return {
-      size: window.length,
-      probabilities: blendedNextProbabilities(window).probabilities,
-    };
-  });
+function modelForWindow(digits, size) {
+  const window = digits.slice(-Math.min(size, digits.length));
+  return {
+    size: window.length,
+    ...calibratedNextModel(window),
+  };
 }
 
-function setupProbability(probabilities, mode, barrier) {
-  if (mode === "OVER") {
-    return probabilities.reduce(
-      (sum, probability, digit) =>
-        sum + (digit > barrier ? probability : 0),
-      0
-    );
-  }
+function windowModels(digits = []) {
+  return [60, 120, 240]
+    .filter((size) => digits.length >= Math.min(60, size))
+    .map((size) => modelForWindow(digits, size));
+}
 
-  if (mode === "UNDER") {
-    return probabilities.reduce(
-      (sum, probability, digit) =>
-        sum + (digit < barrier ? probability : 0),
-      0
-    );
-  }
+function sumProbability(probabilities, predicate) {
+  return probabilities.reduce(
+    (sum, probability, digit) =>
+      sum + (predicate(digit) ? probability : 0),
+    0
+  );
+}
 
-  return 0;
+function overUnderProbability(probabilities, mode, barrier) {
+  return sumProbability(
+    probabilities,
+    mode === "OVER"
+      ? (digit) => digit > barrier
+      : (digit) => digit < barrier
+  );
 }
 
 function naturalProbability(mode, barrier) {
@@ -172,83 +171,160 @@ function naturalProbability(mode, barrier) {
     : barrier / 10;
 }
 
-function qualityScore({
+function wilsonLowerBound(successes, samples, z = 1.64) {
+  if (!samples) return 0;
+  const rate = successes / samples;
+  const z2 = z * z;
+  const denominator = 1 + z2 / samples;
+  const center = rate + z2 / (2 * samples);
+  const margin =
+    z *
+    Math.sqrt(
+      (rate * (1 - rate) + z2 / (4 * samples)) / samples
+    );
+
+  return Math.max(0, (center - margin) / denominator);
+}
+
+function historicalHitRate(digits, candidate, lookback = 300) {
+  const sample = digits.slice(-lookback);
+  if (sample.length < 80) {
+    return {
+      samples: 0,
+      wins: 0,
+      hitRate: 0,
+      lowerBound: 0,
+    };
+  }
+
+  let wins = 0;
+  let samples = 0;
+
+  for (let index = 60; index < sample.length; index += 1) {
+    const previousWindow = sample.slice(Math.max(0, index - 120), index);
+    const nextDigit = sample[index];
+    const model = calibratedNextModel(previousWindow);
+
+    if (model.transitionSamples < 5) continue;
+
+    samples += 1;
+
+    if (candidate.mode === "OVER") {
+      if (nextDigit > candidate.prediction) wins += 1;
+    } else if (candidate.mode === "UNDER") {
+      if (nextDigit < candidate.prediction) wins += 1;
+    } else if (candidate.mode === "EVEN") {
+      if (nextDigit % 2 === 0) wins += 1;
+    } else if (candidate.mode === "ODD") {
+      if (nextDigit % 2 === 1) wins += 1;
+    } else if (candidate.mode === "DIFFERS") {
+      if (nextDigit !== candidate.prediction) wins += 1;
+    }
+  }
+
+  return {
+    samples,
+    wins,
+    hitRate: samples ? wins / samples : 0,
+    lowerBound: wilsonLowerBound(wins, samples),
+  };
+}
+
+function calibratedScore({
   probability,
   baseline,
   consistency,
   sampleSize,
   transitionSamples,
-  barrierPriority = 0,
+  historical,
+  penalty = 0,
+  priority = 0,
 }) {
-  const edge = (probability - baseline) * 100;
-  const sampleQuality = clamp((sampleSize / 120) * 100);
-  const transitionQuality = clamp((transitionSamples / 18) * 100);
+  const edgePct = (probability - baseline) * 100;
+  const historicalEdgePct =
+    (historical.lowerBound - baseline) * 100;
 
   return clamp(
-    48 +
-      edge * 1.8 +
-      consistency * 0.22 +
-      sampleQuality * 0.08 +
-      transitionQuality * 0.08 +
-      barrierPriority,
+    44 +
+      edgePct * 1.25 +
+      Math.max(0, historicalEdgePct) * 1.8 +
+      consistency * 0.18 +
+      Math.min(12, sampleSize / 18) +
+      Math.min(10, transitionSamples / 2.5) +
+      priority -
+      penalty,
     0,
-    96
+    94
   );
 }
 
-function buildOverUnderCandidates(digits, minimumConfidence) {
-  const blended = blendedNextProbabilities(digits);
-  const windows = windowProfiles(digits);
-  const rows = [];
+function overUnderCandidates(digits, minimumConfidence) {
+  const primary = calibratedNextModel(digits);
+  const windows = windowModels(digits);
+  const candidates = [];
 
   for (const mode of ["OVER", "UNDER"]) {
     const barriers = mode === "OVER" ? OVER_BARRIERS : UNDER_BARRIERS;
 
     for (const barrier of barriers) {
-      const probability = setupProbability(
-        blended.probabilities,
+      const probability = overUnderProbability(
+        primary.probabilities,
         mode,
         barrier
       );
       const baseline = naturalProbability(mode, barrier);
       const windowValues = windows.map((window) =>
-        setupProbability(window.probabilities, mode, barrier)
+        overUnderProbability(window.probabilities, mode, barrier)
       );
       const consistency = clamp(
-        100 - stdDev(windowValues.map((value) => value * 100)) * 7
+        100 - stdDev(windowValues.map((value) => value * 100)) * 8
       );
       const edge = (probability - baseline) * 100;
 
-      // Smaller barriers are preferred when evidence is comparable.
-      // Higher barriers can still win when their measured edge is stronger.
-      const barrierPriority =
-        mode === "OVER"
-          ? Math.max(-4, 4 - barrier * 0.8)
-          : Math.max(-4, barrier * 0.35 - 1.5);
+      const prototype = {
+        mode,
+        prediction: barrier,
+      };
+      const historical = historicalHitRate(digits, prototype);
 
-      const score = qualityScore({
+      const lowerBarrierPriority =
+        mode === "OVER"
+          ? Math.max(-5, 5 - barrier * 1.1)
+          : Math.max(-5, 1.5 - Math.abs(barrier - 6) * 0.6);
+
+      const qualityScore = calibratedScore({
         probability,
         baseline,
         consistency,
         sampleSize: digits.length,
-        transitionSamples: blended.transitionSamples,
-        barrierPriority,
+        transitionSamples: primary.transitionSamples,
+        historical,
+        penalty: primary.calibrationPenalty,
+        priority: lowerBarrierPriority,
       });
 
-      const minimumProbability =
-        mode === "OVER"
-          ? Math.max(0.22, baseline + 0.015)
-          : Math.max(0.18, baseline + 0.015);
+      const coreBarrier =
+        (mode === "OVER" && barrier <= 3) ||
+        (mode === "UNDER" && barrier >= 5);
+
+      const highBarrierEvidence =
+        historical.samples >= 180 &&
+        historical.lowerBound >= baseline + 0.025 &&
+        consistency >= 80 &&
+        primary.transitionSamples >= 12;
 
       const executable =
-        digits.length >= 50 &&
-        blended.transitionSamples >= 3 &&
-        probability >= minimumProbability &&
-        edge >= 1.5 &&
-        consistency >= 70 &&
-        score >= minimumConfidence;
+        digits.length >= 100 &&
+        primary.transitionSamples >= 8 &&
+        probability >= baseline + 0.02 &&
+        edge >= 2 &&
+        consistency >= 72 &&
+        historical.samples >= 80 &&
+        historical.lowerBound >= baseline + 0.01 &&
+        qualityScore >= minimumConfidence &&
+        (coreBarrier || highBarrierEvidence);
 
-      rows.push({
+      candidates.push({
         setup: `${mode} ${barrier}`,
         mode,
         prediction: barrier,
@@ -260,50 +336,68 @@ function buildOverUnderCandidates(digits, minimumConfidence) {
         expectedValue: edge,
         consistency,
         stability: consistency,
-        qualityScore: score,
-        confidence: score,
+        qualityScore,
+        confidence: qualityScore,
         sampleSize: digits.length,
-        transitionSamples: blended.transitionSamples,
+        transitionSamples: primary.transitionSamples,
+        historicalSamples: historical.samples,
+        historicalHitRate: historical.hitRate * 100,
+        historicalLowerBound: historical.lowerBound * 100,
         voteCount: [
-          probability >= minimumProbability,
-          edge >= 1.5,
-          consistency >= 58,
-          digits.length >= 50,
-          blended.transitionSamples >= 3,
+          probability >= baseline + 0.02,
+          consistency >= 72,
+          historical.samples >= 80,
+          historical.lowerBound >= baseline + 0.01,
+          primary.transitionSamples >= 8,
         ].filter(Boolean).length,
         totalVotes: 5,
         executable,
-        highRisk: barrier >= 5,
-        source: blended.source,
+        highRisk: !coreBarrier,
+        source: primary.source,
         reason: executable
-          ? `${mode} ${barrier} qualifies at ${(probability * 100).toFixed(1)}% with ${edge.toFixed(1)}% measured edge.`
-          : `${mode} ${barrier} scanning: ${(probability * 100).toFixed(1)}%, edge ${edge.toFixed(1)}%, consistency ${consistency.toFixed(0)}%.`,
+          ? `${mode} ${barrier} calibrated: ${(probability * 100).toFixed(1)}%, lower bound ${(historical.lowerBound * 100).toFixed(1)}%.`
+          : `${mode} ${barrier} waiting: model ${(probability * 100).toFixed(1)}%, history ${(historical.lowerBound * 100).toFixed(1)}%, stability ${consistency.toFixed(0)}%.`,
       });
     }
   }
 
-  return rows;
+  return candidates;
 }
 
-function buildParityCandidates(digits, minimumConfidence) {
-  const blended = blendedNextProbabilities(digits);
+function parityCandidates(digits, minimumConfidence) {
+  const primary = calibratedNextModel(digits);
 
   return [
     { setup: "EVEN", mode: "EVEN", digits: [0, 2, 4, 6, 8], contractType: "DIGITEVEN" },
     { setup: "ODD", mode: "ODD", digits: [1, 3, 5, 7, 9], contractType: "DIGITODD" },
   ].map((definition) => {
     const probability = definition.digits.reduce(
-      (sum, digit) => sum + blended.probabilities[digit],
+      (sum, digit) => sum + primary.probabilities[digit],
       0
     );
+    const historical = historicalHitRate(digits, definition);
     const edge = (probability - 0.5) * 100;
-    const score = clamp(50 + edge * 1.9 + Math.min(14, blended.transitionSamples), 0, 96);
+    const consistency = clamp(
+      70 + edge * 1.4 - primary.calibrationPenalty
+    );
+    const qualityScore = calibratedScore({
+      probability,
+      baseline: 0.5,
+      consistency,
+      sampleSize: digits.length,
+      transitionSamples: primary.transitionSamples,
+      historical,
+      penalty: primary.calibrationPenalty,
+    });
+
     const executable =
-      digits.length >= 60 &&
-      blended.transitionSamples >= 4 &&
-      probability >= 0.545 &&
-      clamp(65 + edge * 2) >= 70 &&
-      score >= minimumConfidence;
+      digits.length >= 120 &&
+      primary.transitionSamples >= 10 &&
+      probability >= 0.55 &&
+      historical.samples >= 100 &&
+      historical.lowerBound >= 0.52 &&
+      consistency >= 74 &&
+      qualityScore >= minimumConfidence;
 
     return {
       ...definition,
@@ -311,49 +405,68 @@ function buildParityCandidates(digits, minimumConfidence) {
       baselineProbability: 50,
       probabilityEdge: edge,
       expectedValue: edge,
-      consistency: clamp(65 + edge * 2),
-      stability: clamp(65 + edge * 2),
-      qualityScore: score,
-      confidence: score,
+      consistency,
+      stability: consistency,
+      qualityScore,
+      confidence: qualityScore,
       sampleSize: digits.length,
-      transitionSamples: blended.transitionSamples,
+      transitionSamples: primary.transitionSamples,
+      historicalSamples: historical.samples,
+      historicalHitRate: historical.hitRate * 100,
+      historicalLowerBound: historical.lowerBound * 100,
       voteCount: [
-        probability >= 0.535,
-        score >= minimumConfidence,
-        digits.length >= 60,
-        blended.transitionSamples >= 4,
+        probability >= 0.55,
+        historical.lowerBound >= 0.52,
+        consistency >= 74,
+        digits.length >= 120,
       ].filter(Boolean).length,
       totalVotes: 4,
       executable,
       highRisk: false,
-      source: blended.source,
+      source: primary.source,
       reason: executable
-        ? `${definition.setup} qualifies at ${(probability * 100).toFixed(1)}%.`
-        : `${definition.setup} scanning at ${(probability * 100).toFixed(1)}%.`,
+        ? `${definition.setup} calibrated at ${(probability * 100).toFixed(1)}%.`
+        : `${definition.setup} waiting at ${(probability * 100).toFixed(1)}%.`,
     };
   });
 }
 
-function buildDiffersCandidates(digits, minimumConfidence) {
-  const blended = blendedNextProbabilities(digits);
+function differsCandidates(digits, minimumConfidence) {
+  const primary = calibratedNextModel(digits);
 
   return DIGITS.map((target) => {
-    const targetProbability = blended.probabilities[target];
-    const differsProbability = 1 - targetProbability;
-    const edge = (differsProbability - 0.9) * 100;
-    const score = clamp(
-      52 +
-        edge * 2.2 +
-        Math.min(14, blended.transitionSamples * 0.75),
-      0,
-      96
+    const targetProbability = primary.probabilities[target];
+    const probability = 1 - targetProbability;
+    const baseline = 0.9;
+    const prototype = {
+      mode: "DIFFERS",
+      prediction: target,
+    };
+    const historical = historicalHitRate(digits, prototype);
+    const consistency = clamp(
+      100 -
+        targetProbability * 240 -
+        primary.calibrationPenalty
     );
+    const qualityScore = calibratedScore({
+      probability,
+      baseline,
+      consistency,
+      sampleSize: digits.length,
+      transitionSamples: primary.transitionSamples,
+      historical,
+      penalty: primary.calibrationPenalty + 4,
+    });
+
     const executable =
-      digits.length >= 70 &&
-      blended.transitionSamples >= 5 &&
-      targetProbability <= 0.075 &&
-      differsProbability >= 0.925 &&
-      score >= minimumConfidence;
+      digits.length >= 160 &&
+      primary.transitionSamples >= 12 &&
+      targetProbability <= 0.07 &&
+      probability >= 0.93 &&
+      historical.samples >= 140 &&
+      historical.lowerBound >= 0.91 &&
+      consistency >= 82 &&
+      qualityScore >= Math.max(88, minimumConfidence);
 
     return {
       setup: `DIFFERS ${target}`,
@@ -361,31 +474,34 @@ function buildDiffersCandidates(digits, minimumConfidence) {
       prediction: target,
       contractType: "DIGITDIFF",
       barrier: String(target),
-      probability: differsProbability * 100,
+      probability: probability * 100,
       targetProbability: targetProbability * 100,
       baselineProbability: 90,
-      probabilityEdge: edge,
-      expectedValue: edge,
-      consistency: clamp(100 - targetProbability * 250),
-      stability: clamp(100 - targetProbability * 250),
-      qualityScore: score,
-      confidence: score,
+      probabilityEdge: (probability - baseline) * 100,
+      expectedValue: (probability - baseline) * 100,
+      consistency,
+      stability: consistency,
+      qualityScore,
+      confidence: qualityScore,
       sampleSize: digits.length,
-      transitionSamples: blended.transitionSamples,
+      transitionSamples: primary.transitionSamples,
+      historicalSamples: historical.samples,
+      historicalHitRate: historical.hitRate * 100,
+      historicalLowerBound: historical.lowerBound * 100,
       voteCount: [
-        targetProbability <= 0.085,
-        differsProbability >= 0.915,
-        digits.length >= 70,
-        blended.transitionSamples >= 5,
-        score >= minimumConfidence,
+        targetProbability <= 0.07,
+        historical.lowerBound >= 0.91,
+        primary.transitionSamples >= 12,
+        consistency >= 82,
+        digits.length >= 160,
       ].filter(Boolean).length,
       totalVotes: 5,
       executable,
       highRisk: false,
-      source: blended.source,
+      source: primary.source,
       reason: executable
-        ? `After digit ${blended.currentDigit ?? "—"}, target ${target} has only ${(targetProbability * 100).toFixed(1)}% estimated return probability.`
-        : `DIFFERS ${target} scanning: target return ${(targetProbability * 100).toFixed(1)}%.`,
+        ? `After ${primary.currentDigit ?? "—"}, digit ${target} return estimate ${(targetProbability * 100).toFixed(1)}%; historical lower bound ${(historical.lowerBound * 100).toFixed(1)}%.`
+        : `DIFFERS ${target} waiting: return ${(targetProbability * 100).toFixed(1)}%, lower bound ${(historical.lowerBound * 100).toFixed(1)}%.`,
     };
   });
 }
@@ -396,44 +512,52 @@ function rankCandidates(candidates = []) {
       return Number(right.executable) - Number(left.executable);
     }
 
-    // Prefer low-barrier Over/Under when quality is close.
+    const historyDifference =
+      Number(right.historicalLowerBound || 0) -
+      Number(left.historicalLowerBound || 0);
+
+    if (Math.abs(historyDifference) >= 0.8) {
+      return historyDifference;
+    }
+
     const qualityDifference =
       Number(right.qualityScore || 0) -
       Number(left.qualityScore || 0);
 
-    if (Math.abs(qualityDifference) > 2.5) {
+    if (Math.abs(qualityDifference) >= 1.5) {
       return qualityDifference;
     }
 
     const leftPriority =
-      left.mode === "OVER" || left.mode === "UNDER"
-        ? 10 - Number(left.prediction || 0)
-        : 0;
-    const rightPriority =
-      right.mode === "OVER" || right.mode === "UNDER"
-        ? 10 - Number(right.prediction || 0)
-        : 0;
+      left.mode === "OVER"
+        ? 8 - Number(left.prediction || 0)
+        : left.mode === "UNDER"
+          ? Number(left.prediction || 0)
+          : 0;
 
-    return (
-      rightPriority - leftPriority ||
-      Number(right.probabilityEdge || 0) -
-        Number(left.probabilityEdge || 0)
-    );
+    const rightPriority =
+      right.mode === "OVER"
+        ? 8 - Number(right.prediction || 0)
+        : right.mode === "UNDER"
+          ? Number(right.prediction || 0)
+          : 0;
+
+    return rightPriority - leftPriority;
   });
 }
 
 export function analyzeUnifiedSignals(input = {}) {
   const digits = digitsFromInput(input);
   const minimumConfidence = clamp(
-    input.minimumConfidence ?? 76,
-    60,
+    input.minimumConfidence ?? 88,
+    70,
     95
   );
 
   const candidates = rankCandidates([
-    ...buildOverUnderCandidates(digits, minimumConfidence),
-    ...buildParityCandidates(digits, minimumConfidence),
-    ...buildDiffersCandidates(digits, minimumConfidence),
+    ...overUnderCandidates(digits, minimumConfidence),
+    ...parityCandidates(digits, minimumConfidence),
+    ...differsCandidates(digits, minimumConfidence),
   ]);
 
   const best = candidates.find((candidate) => candidate.executable) || null;
@@ -447,17 +571,17 @@ export function analyzeUnifiedSignals(input = {}) {
       currentDigit: digits.at(-1) ?? null,
       reason: best
         ? best.reason
-        : digits.length < 50
-          ? `Collecting fresh digits ${digits.length}/50.`
-          : "No digit contract has enough evidence yet. Continue scanning or switch market.",
+        : digits.length < 100
+          ? `Collecting calibrated history ${digits.length}/100.`
+          : "No calibrated digit entry. Continue scanning or switch market.",
     },
     riseFall: {
       executable: false,
       signal: "WAIT",
       setup: "WAIT",
       risk: "DISABLED",
-      reason: "RISE/FALL is disabled. This build trades digits only.",
-      instruction: "Use OVER, UNDER, EVEN, ODD or DIFFERS.",
+      reason: "RISE/FALL is disabled in V52.",
+      instruction: "Use calibrated digit contracts only.",
     },
   };
 }

@@ -26,26 +26,26 @@ const INITIAL_SETTINGS = {
   unlimited: false,
   stopProfit: 0,
   stopLoss: 0.35,
-  minimumConfidence: 88,
+  minimumConfidence: 90,
   confirmationUpdates: 3,
-  lossCooldownMs: 12000,
-  sameSetupBlockMs: 30000,
+  lossCooldownMs: 15000,
+  sameSetupBlockMs: 300000,
   maximumSignalAgeMs: 5000,
   lossSkipSignals: 3,
   allowHighRiskContracts: false,
   highRiskMinimumQuality: 90,
   highRiskMinimumSamples: 220,
   highRiskMinimumEdge: 12,
-  minimumPayoutEdgePct: 5,
-  minimumProposalEvPct: 3,
-  minimumStability: 70,
-  scanSwitchMs: 12000,
+  minimumPayoutEdgePct: 7,
+  minimumProposalEvPct: 5,
+  minimumStability: 78,
+  scanSwitchMs: 45000,
   postTradeDelayMs: 1500,
 };
 
 const INITIAL_STATE = {
   status: "STOPPED",
-  message: "V51 Payout-Adjusted Digit AI is ready.",
+  message: "V52 Adaptive Transition Calibration is ready.",
   runs: 0,
   wins: 0,
   losses: 0,
@@ -800,7 +800,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V51 · Dynamic Digit AI V74.1 · Smart Signal Status Engine"
+          title="EdgePilot V52 · Dynamic Digit AI V74.1 · Smart Signal Status Engine"
           subtitle="Clear live signal state, last-trade memory, entry-risk labels and fast fresh rescanning"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
@@ -1301,7 +1301,7 @@ export default function Bot() {
             <div className="v63ModeBanner">
               <strong>FAST STRICT MODE</strong>
               <span>
-                V51 checks the live proposal first. Buy is blocked unless model probability beats break-even, EV is positive and stability is sufficient. The bot rotates volatility after
+                V52 checks the live proposal first. Buy is blocked unless model probability beats break-even, EV is positive and stability is sufficient. The bot rotates volatility after
                 every completed trade, or after 2.5 seconds without a qualifying
                 setup. It enters immediately after two fresh confirmations.
               </span>

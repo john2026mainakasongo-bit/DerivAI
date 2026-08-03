@@ -68,7 +68,7 @@ export default class TurboAutoDigitBotEngine {
 
     this.state = {
       status: "STOPPED",
-      message: "V51 Payout-Adjusted Digit AI is ready.",
+      message: "V52 Adaptive Transition Calibration is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -121,15 +121,15 @@ export default class TurboAutoDigitBotEngine {
       ),
       minimumPayoutEdgePct: Math.max(
         3,
-        Number(settings.minimumPayoutEdgePct || 5)
+        Number(settings.minimumPayoutEdgePct || 7)
       ),
       minimumProposalEvPct: Math.max(
         1,
-        Number(settings.minimumProposalEvPct || 3)
+        Number(settings.minimumProposalEvPct || 5)
       ),
       minimumStability: Math.max(
         60,
-        Number(settings.minimumStability || 70)
+        Number(settings.minimumStability || 78)
       ),
       maximumSignalAgeMs: Math.max(
         1500,
@@ -202,7 +202,7 @@ export default class TurboAutoDigitBotEngine {
       status: "RUNNING",
       executionPhase: "SCANNING",
       message:
-        "V51 is scanning digit entries. Every candidate must pass the live Deriv payout, EV and stability gate before buy.",
+        "V52 scans calibrated transitions, historical lower bounds and live payout EV before every buy.",
     });
 
     void this.loop();
@@ -287,10 +287,13 @@ export default class TurboAutoDigitBotEngine {
     const real = this.accountType !== "demo";
     if (real) {
       return (
-        Number(signal.qualityScore || 0) >= 88 &&
-        Number(signal.sampleSize || 0) >= 120 &&
-        Number(signal.consistency || signal.stability || 0) >= 80 &&
-        Number(signal.voteCount || 0) >= 4 &&
+        Number(signal.qualityScore || 0) >= 92 &&
+        Number(signal.sampleSize || 0) >= 180 &&
+        Number(signal.consistency || signal.stability || 0) >= 86 &&
+        Number(signal.voteCount || 0) >= 5 &&
+        Number(signal.historicalSamples || 0) >= 140 &&
+        Number(signal.historicalLowerBound || 0) >
+          Number(signal.baselineProbability || 0) + 1 &&
         Number(signal.probability || 0) > 0
       );
     }
@@ -623,7 +626,10 @@ export default class TurboAutoDigitBotEngine {
       if (!won) {
         this.blockedSetups.set(
           signal.setup,
-          Date.now() + this.settings.sameSetupBlockMs
+          Date.now() + Math.max(
+            this.settings.sameSetupBlockMs,
+            5 * 60 * 1000
+          )
         );
       }
 
@@ -672,10 +678,34 @@ export default class TurboAutoDigitBotEngine {
       this.confirmations = 0;
       this.lastTradeAt = Date.now();
 
+      if (!won) {
+        this.patch({
+          status: "SWITCHING",
+          executionPhase: "LOSS_MARKET_SWITCH",
+          message:
+            `${signal.setup} lost. Blocking the setup for 5 minutes and switching market.`,
+        });
+
+        try {
+          const switched = await this.onRequestMarketSwitch();
+          this.patch({
+            marketSwitches: this.state.marketSwitches + 1,
+            message: `Loss recovery: scanning ${switched?.label || "new market"} with fresh data.`,
+          });
+        } catch (error) {
+          this.patch({
+            message:
+              error instanceof Error
+                ? error.message
+                : "Market switch after loss failed.",
+          });
+        }
+      }
+
       await sleep(
         won
           ? this.settings.postTradeDelayMs
-          : this.settings.lossCooldownMs
+          : Math.max(this.settings.lossCooldownMs, 12000)
       );
     } catch (error) {
       this.patch({
