@@ -743,3 +743,111 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+.rfProGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.rfPressureBars,
+.rfStrengthMeters {
+  display: grid;
+  gap: 14px;
+}
+
+.rfPressureBars > div,
+.rfStrengthMeters > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.rfPressureBars i,
+.rfStrengthMeters i,
+.rfScoreGrid i {
+  grid-column: 1 / -1;
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #081b28;
+}
+
+.rfPressureBars i b,
+.rfStrengthMeters i b,
+.rfScoreGrid i b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #27ddad;
+}
+
+.rfPressureBars .sell i b {
+  background: #ff6078;
+}
+
+.rfStrengthMeters > div:last-child i b {
+  background: #f2bf54;
+}
+
+.rfScoreTerminal {
+  margin-top: 14px;
+  padding: 17px;
+  border: 1px solid #225c74;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, #103a4c, transparent 42%),
+    linear-gradient(145deg, #082436, #061b2a);
+}
+
+.rfFinalGrade {
+  border: 1px solid #29d9aa;
+  color: #2ee6b5;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-weight: 900;
+}
+
+.rfScoreGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.rfScoreGrid > div {
+  border: 1px solid #174d65;
+  border-radius: 10px;
+  padding: 12px;
+  background: #061d2d;
+}
+
+.rfScoreGrid span {
+  color: #7fa8ba;
+  font-size: 10px;
+}
+
+.rfScoreGrid strong {
+  display: block;
+  font-size: 25px;
+  margin: 4px 0 9px;
+}
+
+@media (max-width: 1150px) {
+  .rfProGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .rfScoreGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .rfScoreGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

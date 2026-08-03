@@ -322,8 +322,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V57 · Rise/Fall Pro Analysis"
-          subtitle="Fast TRADE / PREPARE / NO TRADE decisions with sound and live confirmations"
+          title="EdgePilot V58 · Rise/Fall Pro Analysis"
+          subtitle="Professional Rise/Fall terminal with trend, pressure, reversal and quality scoring"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -399,13 +399,26 @@ export default function RiseFallAnalysis() {
               <small>Grade</small>
               <strong>{active.setupGrade || "WAIT"}</strong>
             </span>
+
             <span>
               <small>Confirmations</small>
               <strong>
                 {active.confirmationsPassed || 0}/
-                {active.confirmationChecks?.length || 6}
+                {active.confirmationChecks?.length || 8}
               </strong>
             </span>
+
+            <span>
+              <small>Direction probability</small>
+              <strong>
+                {active.rawDirection === "RISE"
+                  ? pct(active.probabilityRise)
+                  : active.rawDirection === "FALL"
+                    ? pct(active.probabilityFall)
+                    : "—"}
+              </strong>
+            </span>
+
             <span>
               <small>Duration</small>
               <strong>{active.duration}</strong>
@@ -928,7 +941,7 @@ export default function RiseFallAnalysis() {
               </div>
               <span>
                 {active.confirmationsPassed || 0}/
-                {active.confirmationChecks?.length || 6}
+                {active.confirmationChecks?.length || 8}
               </span>
             </div>
 
@@ -980,6 +993,175 @@ export default function RiseFallAnalysis() {
               ) : null}
             </div>
           </article>
+        </section>
+
+
+        <section className="rfProGrid">
+          <article className="rfPanel">
+            <div className="rfPanelHead">
+              <div>
+                <small>MARKET PRESSURE</small>
+                <h2>Buying vs selling pressure</h2>
+              </div>
+            </div>
+
+            <div className="rfPressureBars">
+              <div className="buy">
+                <span>Buying pressure</span>
+                <strong>{pct(active.pressure?.buying)}</strong>
+                <i>
+                  <b
+                    style={{
+                      width: `${active.pressure?.buying || 0}%`,
+                    }}
+                  />
+                </i>
+              </div>
+
+              <div className="sell">
+                <span>Selling pressure</span>
+                <strong>{pct(active.pressure?.selling)}</strong>
+                <i>
+                  <b
+                    style={{
+                      width: `${active.pressure?.selling || 0}%`,
+                    }}
+                  />
+                </i>
+              </div>
+            </div>
+
+            <div className="rfConditionList">
+              <div>
+                <span>Trend age</span>
+                <strong>
+                  {active.trend?.direction || "FLAT"}{" "}
+                  {active.trend?.ticks || 0} ticks
+                </strong>
+              </div>
+
+              <div>
+                <span>Continuation probability</span>
+                <strong>
+                  {pct(active.continuationProbability)}
+                </strong>
+              </div>
+
+              <div>
+                <span>Reversal probability</span>
+                <strong>
+                  {pct(active.reversalProbability)}
+                </strong>
+              </div>
+            </div>
+          </article>
+
+          <article className="rfPanel">
+            <div className="rfPanelHead">
+              <div>
+                <small>BOLLINGER & BREAKOUT</small>
+                <h2>Range and breakout quality</h2>
+              </div>
+            </div>
+
+            <div className="rfConditionList">
+              <div>
+                <span>Bollinger position</span>
+                <strong>{active.bollinger?.position || "MIDDLE"}</strong>
+              </div>
+
+              <div>
+                <span>Upper band</span>
+                <strong>{num(active.bollinger?.upper, 6)}</strong>
+              </div>
+
+              <div>
+                <span>Middle band</span>
+                <strong>{num(active.bollinger?.middle, 6)}</strong>
+              </div>
+
+              <div>
+                <span>Lower band</span>
+                <strong>{num(active.bollinger?.lower, 6)}</strong>
+              </div>
+
+              <div>
+                <span>Fake breakout probability</span>
+                <strong>{pct(active.breakoutFakeProbability)}</strong>
+              </div>
+            </div>
+          </article>
+
+          <article className="rfPanel">
+            <div className="rfPanelHead">
+              <div>
+                <small>LEVEL STRENGTH</small>
+                <h2>Support and resistance tests</h2>
+              </div>
+            </div>
+
+            <div className="rfStrengthMeters">
+              <div>
+                <span>Support strength</span>
+                <strong>{pct(active.supportStrength)}</strong>
+                <i>
+                  <b
+                    style={{
+                      width: `${active.supportStrength || 0}%`,
+                    }}
+                  />
+                </i>
+              </div>
+
+              <div>
+                <span>Resistance strength</span>
+                <strong>{pct(active.resistanceStrength)}</strong>
+                <i>
+                  <b
+                    style={{
+                      width: `${active.resistanceStrength || 0}%`,
+                    }}
+                  />
+                </i>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section className="rfScoreTerminal">
+          <div className="rfPanelHead">
+            <div>
+              <small>SMART SCORE TERMINAL</small>
+              <h2>Final analysis quality</h2>
+            </div>
+
+            <span className="rfFinalGrade">
+              Grade {active.setupGrade || "WAIT"}
+            </span>
+          </div>
+
+          <div className="rfScoreGrid">
+            {[
+              ["Trend", active.scores?.trend],
+              ["Pattern", active.scores?.pattern],
+              ["Momentum", active.scores?.momentum],
+              ["Volatility", active.scores?.volatility],
+              ["Quality", active.scores?.quality],
+              ["Final score", active.scores?.final],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <span>{label}</span>
+                <strong>{Number(value || 0).toFixed(0)}</strong>
+                <i>
+                  <b
+                    style={{
+                      width: `${Math.max(0, Math.min(100, Number(value || 0)))}%`,
+                    }}
+                  />
+                </i>
+              </div>
+            ))}
+          </div>
         </section>
 
         <div className="rfSafety">

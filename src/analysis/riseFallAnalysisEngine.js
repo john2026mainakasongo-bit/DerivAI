@@ -408,6 +408,208 @@ function directionalStreak(values = []) {
   };
 }
 
+
+function bollinger(values = [], period = 20, multiplier = 2) {
+  const recent = values.slice(-Math.min(period, values.length));
+
+  if (recent.length < 3) {
+    const current = Number(recent.at(-1) || 0);
+    return {
+      middle: current,
+      upper: current,
+      lower: current,
+      position: "MIDDLE",
+      width: 0,
+    };
+  }
+
+  const middle = mean(recent);
+  const deviation = stdDev(recent);
+  const upper = middle + deviation * multiplier;
+  const lower = middle - deviation * multiplier;
+  const current = Number(recent.at(-1));
+
+  const position =
+    current >= upper
+      ? "ABOVE UPPER"
+      : current <= lower
+        ? "BELOW LOWER"
+        : current > middle
+          ? "UPPER HALF"
+          : current < middle
+            ? "LOWER HALF"
+            : "MIDDLE";
+
+  return {
+    middle,
+    upper,
+    lower,
+    position,
+    width: upper - lower,
+  };
+}
+
+function trendAge(values = []) {
+  if (values.length < 2) {
+    return { direction: "FLAT", ticks: 0 };
+  }
+
+  const recentChanges = values
+    .slice(1)
+    .map((value, index) => Number(value) - Number(values[index]));
+
+  let direction = 0;
+  let ticks = 0;
+
+  for (let index = recentChanges.length - 1; index >= 0; index -= 1) {
+    const sign = Math.sign(recentChanges[index]);
+
+    if (!sign) continue;
+
+    if (!direction) {
+      direction = sign;
+      ticks = 1;
+      continue;
+    }
+
+    if (sign !== direction) break;
+    ticks += 1;
+  }
+
+  return {
+    direction:
+      direction > 0
+        ? "RISE"
+        : direction < 0
+          ? "FALL"
+          : "FLAT",
+    ticks,
+  };
+}
+
+function pressureScore(values = []) {
+  if (values.length < 2) {
+    return {
+      buying: 50,
+      selling: 50,
+    };
+  }
+
+  const changes = values
+    .slice(1)
+    .map((value, index) => Number(value) - Number(values[index]));
+
+  const weighted = changes.map((change, index) => ({
+    change,
+    weight: 1 + index / Math.max(1, changes.length - 1),
+  }));
+
+  const buy = weighted.reduce(
+    (sum, item) =>
+      sum + (item.change > 0 ? Math.abs(item.change) * item.weight : 0),
+    0
+  );
+
+  const sell = weighted.reduce(
+    (sum, item) =>
+      sum + (item.change < 0 ? Math.abs(item.change) * item.weight : 0),
+    0
+  );
+
+  const total = buy + sell;
+
+  if (!total) {
+    return {
+      buying: 50,
+      selling: 50,
+    };
+  }
+
+  return {
+    buying: clamp((buy / total) * 100),
+    selling: clamp((sell / total) * 100),
+  };
+}
+
+function supportResistanceStrength(values = [], level, tolerance) {
+  if (!values.length || !Number.isFinite(level)) return 0;
+
+  const hits = values.filter(
+    (value) => Math.abs(Number(value) - level) <= tolerance
+  ).length;
+
+  return clamp((hits / Math.max(1, values.length)) * 100 * 2.4);
+}
+
+function fakeBreakoutProbability({
+  breakout,
+  current,
+  support,
+  resistance,
+  atr,
+  consistency,
+}) {
+  if (breakout === "NONE") return 0;
+
+  const extension =
+    breakout === "BULLISH BREAKOUT"
+      ? current - resistance
+      : support - current;
+
+  const extensionScore =
+    atr > 0 ? clamp((extension / atr) * 100) : 0;
+
+  return clamp(
+    100 -
+      extensionScore * 0.55 -
+      consistency * 0.35
+  );
+}
+
+function reversalContinuation({
+  rsiValue,
+  stochasticValue,
+  zScoreValue,
+  trendTicks,
+  consistency,
+  emaAligned,
+  momentumAligned,
+}) {
+  const exhaustion =
+    Math.max(
+      Math.abs(rsiValue - 50) * 1.3,
+      Math.abs(stochasticValue - 50) * 1.1,
+      Math.abs(zScoreValue) * 18
+    );
+
+  const agePenalty = clamp(trendTicks * 3.2, 0, 35);
+
+  const reversal = clamp(
+    exhaustion * 0.45 +
+      agePenalty * 0.35 +
+      (100 - consistency) * 0.2
+  );
+
+  const continuation = clamp(
+    consistency * 0.42 +
+      (emaAligned ? 24 : 0) +
+      (momentumAligned ? 24 : 0) +
+      Math.max(0, 100 - agePenalty) * 0.1
+  );
+
+  return {
+    reversal,
+    continuation,
+  };
+}
+
+function scoreGrade(score) {
+  if (score >= 90) return "A";
+  if (score >= 82) return "B";
+  if (score >= 72) return "C";
+  return "WAIT";
+}
+
 function durationRecommendation({
   mode,
   confidence,
@@ -511,6 +713,9 @@ export function analyzeRiseFall(
   const rocValue = rateOfChange(values, 5);
   const zScoreValue = zScore(values, 20);
   const streak = directionalStreak(values);
+  const trend = trendAge(values);
+  const bands = bollinger(values, 20, 2);
+  const pressure = pressureScore(values);
 
   const levels = supportResistance(values);
 
@@ -526,6 +731,27 @@ export function analyzeRiseFall(
     emaFast,
     emaSlow,
     atr,
+  });
+
+  const tolerance = Math.max(atr * 0.7, 0.0000001);
+  const supportStrength = supportResistanceStrength(
+    values,
+    levels.support,
+    tolerance
+  );
+  const resistanceStrength = supportResistanceStrength(
+    values,
+    levels.resistance,
+    tolerance
+  );
+
+  const breakoutFakeProbability = fakeBreakoutProbability({
+    breakout,
+    current: Number(values.at(-1)),
+    support: levels.support,
+    resistance: levels.resistance,
+    atr,
+    consistency,
   });
 
   const regime = regimeState({
@@ -662,6 +888,30 @@ export function analyzeRiseFall(
 
   const probabilityFall = 100 - probabilityRise;
 
+  const emaAligned =
+    direction === "RISE"
+      ? emaFast > emaSlow
+      : direction === "FALL"
+        ? emaFast < emaSlow
+        : false;
+
+  const momentumAligned =
+    direction === "RISE"
+      ? momentum.fast > 0 && momentum.medium > 0
+      : direction === "FALL"
+        ? momentum.fast < 0 && momentum.medium < 0
+        : false;
+
+  const continuationReversal = reversalContinuation({
+    rsiValue,
+    stochasticValue,
+    zScoreValue,
+    trendTicks: trend.ticks,
+    consistency,
+    emaAligned,
+    momentumAligned,
+  });
+
   const confirmationChecks = [
     {
       id: "direction",
@@ -692,12 +942,7 @@ export function analyzeRiseFall(
     {
       id: "ema",
       label: "EMA alignment",
-      passed:
-        direction === "RISE"
-          ? emaFast > emaSlow
-          : direction === "FALL"
-            ? emaFast < emaSlow
-            : false,
+      passed: emaAligned,
       detail:
         emaFast > emaSlow
           ? "BULLISH"
@@ -708,13 +953,31 @@ export function analyzeRiseFall(
     {
       id: "momentum",
       label: "Momentum alignment",
+      passed: momentumAligned,
+      detail: `${momentum.fast.toFixed(5)} / ${momentum.medium.toFixed(5)}`,
+    },
+    {
+      id: "pressure",
+      label: "Directional pressure",
       passed:
         direction === "RISE"
-          ? momentum.fast > 0 && momentum.medium > 0
+          ? pressure.buying >= 58
           : direction === "FALL"
-            ? momentum.fast < 0 && momentum.medium < 0
+            ? pressure.selling >= 58
             : false,
-      detail: `${momentum.fast.toFixed(5)} / ${momentum.medium.toFixed(5)}`,
+      detail:
+        direction === "RISE"
+          ? `${pressure.buying.toFixed(1)}% BUY`
+          : `${pressure.selling.toFixed(1)}% SELL`,
+    },
+    {
+      id: "continuation",
+      label: "Continuation edge",
+      passed:
+        continuationReversal.continuation >=
+        continuationReversal.reversal + 8,
+      detail:
+        `${continuationReversal.continuation.toFixed(1)}% / ${continuationReversal.reversal.toFixed(1)}%`,
     },
   ];
 
@@ -724,7 +987,7 @@ export function analyzeRiseFall(
 
   const tradeNow =
     direction !== "WAIT" &&
-    confirmationsPassed >= 5 &&
+    confirmationsPassed >= 6 &&
     dominantVotes >= 7 &&
     confidence >= 68 &&
     consistency >= 54 &&
@@ -736,7 +999,7 @@ export function analyzeRiseFall(
   const prepare =
     !tradeNow &&
     direction !== "WAIT" &&
-    confirmationsPassed >= 4 &&
+    confirmationsPassed >= 5 &&
     dominantVotes >= 7 &&
     confidence >= 58;
 
@@ -765,16 +1028,49 @@ export function analyzeRiseFall(
     regime,
   });
 
-  const setupGrade =
-    tradeNow && confidence >= 86 && confirmationsPassed === confirmationChecks.length
-      ? "A"
-      : tradeNow && confidence >= 76
-        ? "B"
-        : tradeNow
-          ? "C"
-          : prepare
-            ? "PREPARE"
-            : "WAIT";
+  const trendScore = clamp(
+    consistency * 0.45 +
+      Math.min(100, dominantVotes / voteSignals.length * 100) * 0.35 +
+      (regime === "TREND" ? 20 : regime === "TRANSITION" ? 10 : 0)
+  );
+
+  const patternScore = clamp(
+    (breakout !== "NONE" ? 28 : 0) +
+      (pullback !== "NONE" ? 24 : 0) +
+      (bands.position.includes("UPPER") || bands.position.includes("LOWER") ? 18 : 10) +
+      Math.min(30, trend.ticks * 3)
+  );
+
+  const momentumScore = clamp(
+    Math.max(pressure.buying, pressure.selling) * 0.45 +
+      Math.min(100, Math.abs(rocValue) * 180) * 0.2 +
+      Math.min(100, dominantVotes / voteSignals.length * 100) * 0.35
+  );
+
+  const volatilityScore = clamp(
+    atr > 0
+      ? Math.min(100, (volatility / atr) * 45)
+      : 0
+  );
+
+  const qualityScore = clamp(
+    confidence * 0.34 +
+      trendScore * 0.2 +
+      momentumScore * 0.2 +
+      continuationReversal.continuation * 0.16 +
+      (100 - breakoutFakeProbability) * 0.1
+  );
+
+  const finalScore = clamp(
+    qualityScore * 0.72 +
+      confirmationsPassed / confirmationChecks.length * 100 * 0.28
+  );
+
+  const setupGrade = tradeNow
+    ? scoreGrade(finalScore)
+    : prepare
+      ? "PREPARE"
+      : "WAIT";
 
   const failedConfirmations = confirmationChecks
     .filter((item) => !item.passed)
@@ -826,6 +1122,22 @@ export function analyzeRiseFall(
     decision,
     prepare,
     tradeNow,
+    trend,
+    bollinger: bands,
+    pressure,
+    supportStrength,
+    resistanceStrength,
+    breakoutFakeProbability,
+    reversalProbability: continuationReversal.reversal,
+    continuationProbability: continuationReversal.continuation,
+    scores: {
+      trend: trendScore,
+      pattern: patternScore,
+      momentum: momentumScore,
+      volatility: volatilityScore,
+      quality: qualityScore,
+      final: finalScore,
+    },
     supportResistance: levels,
     breakout,
     pullback,
