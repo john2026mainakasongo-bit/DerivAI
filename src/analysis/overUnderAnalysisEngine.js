@@ -122,18 +122,21 @@ export function analyzeOverUnder(prices = []) {
         : "LOW";
 
   const tradeNow =
-    total >= 80 &&
-    best.score >= 72 &&
-    confidence >= 68 &&
-    quality >= 66 &&
-    best.exactRisk <= 14 &&
-    risk !== "HIGH";
+    total >= 100 &&
+    best.score >= 78 &&
+    confidence >= 76 &&
+    quality >= 72 &&
+    best.transitionScore >= 58 &&
+    best.exactRisk <= 10 &&
+    entropyScore <= 90 &&
+    risk === "LOW";
 
   const prepare =
     !tradeNow &&
-    total >= 60 &&
-    best.score >= 64 &&
-    confidence >= 60;
+    total >= 70 &&
+    best.score >= 68 &&
+    confidence >= 64 &&
+    best.exactRisk <= 14;
 
   return {
     total,

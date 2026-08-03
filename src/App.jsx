@@ -32,6 +32,7 @@ export default function App() {
           path="/rise-fall-analysis"
           element={<RiseFallAnalysis />}
         />
+        <Route path="/over-under-analysis" element={<OverUnderAnalysis />} />
 
         <Route path="/bot" element={<Bot />} />
         <Route path="/settings" element={<Settings />} />
@@ -44,3 +45,4 @@ export default function App() {
     </BrowserRouter>
   );
 }
+

@@ -1,4 +1,4 @@
-﻿
+
 import {
   useEffect,
   useMemo,
@@ -13,15 +13,6 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeRiseFall } from "../analysis/riseFallAnalysisEngine";
 import "../styles/RiseFallAnalysis.css";
 
-function clamp(value, minimum = 0, maximum = 100) {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return minimum;
-  }
-
-  return Math.max(minimum, Math.min(maximum, numeric));
-}
 function pct(value) {
   return `${Number(value || 0).toFixed(1)}%`;
 }
@@ -29,7 +20,7 @@ function pct(value) {
 function num(value, digits = 5) {
   return Number.isFinite(Number(value))
     ? Number(value).toFixed(digits)
-    : "â€”";
+    : "—";
 }
 
 function signalClass(value) {
@@ -175,9 +166,11 @@ function mergeTickHistory(existing = [], incoming = []) {
 }
 
 function candleBucketSize(mode) {
-  if (mode === "30S") return 30000;
+  if (mode === "10S") return 10000;
   if (mode === "15S") return 15000;
-  if (mode === "5S") return 5000;
+  if (mode === "30S") return 30000;
+  if (mode === "1M") return 60000;
+  if (mode === "5M") return 300000;
   return 0;
 }
 
@@ -245,6 +238,21 @@ function candleSignal(candle) {
   if (candle.close > candle.open) return "RISE";
   if (candle.close < candle.open) return "FALL";
   return "WAIT";
+}
+
+
+function freezeClosedCandles(previous = [], next = []) {
+  if (!next.length) return [];
+
+  const previousMap = new Map(
+    previous.slice(0, -1).map((item) => [item.time, item])
+  );
+
+  return next.map((item, index) => {
+    const isLive = index === next.length - 1;
+    if (isLive) return item;
+    return previousMap.get(item.time) || item;
+  });
 }
 
 
@@ -362,7 +370,7 @@ function CandleChart({
   structure = null,
 }) {
   if (!candles.length) {
-    return <div className="rfEmptyChart">Building candlestick historyâ€¦</div>;
+    return <div className="rfEmptyChart">Building candlestick history…</div>;
   }
 
   const width = 1200;
@@ -481,7 +489,7 @@ function CandleChart({
           <g className={`rfBreakoutBadge ${structure.breakout.toLowerCase()}`}>
             <rect x={width - 260} y={24} width={220} height={44} rx="8" />
             <text x={width - 245} y={51}>
-              {structure.breakout} BREAKOUT Â· {Number(structure.breakoutStrength).toFixed(1)}%
+              {structure.breakout} BREAKOUT · {Number(structure.breakoutStrength).toFixed(1)}%
             </text>
           </g>
         ) : null}
@@ -498,144 +506,6 @@ function CandleChart({
   );
 }
 
-
-function ModeSummary({
-  label,
-  analysis,
-  active = false,
-  onClick,
-}) {
-  const safeAnalysis = analysis || {};
-  const signal = safeAnalysis.signal || "WAIT";
-  const confidence = Number(safeAnalysis.confidence || 0);
-  const regime =
-    safeAnalysis.regime ||
-    safeAnalysis.marketRegime ||
-    "WAIT";
-
-  return (
-    <button
-      type="button"
-      className={`rfModeSummary ${signalClass(signal)} ${
-        active ? "active" : ""
-      }`}
-      onClick={onClick}
-    >
-      <small>{label}</small>
-      <strong>{signal}</strong>
-      <span>{pct(confidence)}</span>
-      <em>{regime}</em>
-    </button>
-  );
-}
-
-function MiniChart({
-  points = [],
-  signal = "WAIT",
-}) {
-  const values = (Array.isArray(points) ? points : [])
-    .map((item) =>
-      Number(
-        typeof item === "number"
-          ? item
-          : item?.quote ??
-              item?.price ??
-              item?.value ??
-              item?.close ??
-              item?.currentPrice ??
-              0
-      )
-    )
-    .filter(Number.isFinite)
-    .slice(-120);
-
-  if (values.length < 2) {
-    return (
-      <div className="rfMiniChartEmpty">
-        Waiting for enough live price pointsâ€¦
-      </div>
-    );
-  }
-
-  const width = 1000;
-  const height = 260;
-  const padding = 18;
-  const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
-  const range = Math.max(0.000001, maximum - minimum);
-
-  const coordinates = values.map((value, index) => {
-    const x =
-      padding +
-      index / Math.max(1, values.length - 1) *
-        (width - padding * 2);
-
-    const y =
-      padding +
-      (maximum - value) / range *
-        (height - padding * 2);
-
-    return `${x},${y}`;
-  });
-
-  const areaCoordinates = [
-    `${padding},${height - padding}`,
-    ...coordinates,
-    `${width - padding},${height - padding}`,
-  ].join(" ");
-
-  return (
-    <div className={`rfMiniChart ${signalClass(signal)}`}>
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        role="img"
-        aria-label="Recent Rise and Fall price action"
-      >
-        <g className="rfMiniChartGrid">
-          {[0.25, 0.5, 0.75].map((ratio) => (
-            <line
-              key={ratio}
-              x1={padding}
-              x2={width - padding}
-              y1={height * ratio}
-              y2={height * ratio}
-            />
-          ))}
-        </g>
-
-        <polygon
-          points={areaCoordinates}
-          className="rfMiniChartArea"
-        />
-
-        <polyline
-          points={coordinates.join(" ")}
-          className="rfMiniChartLine"
-        />
-      </svg>
-
-      <div className="rfMiniChartStatus">
-        <span>{signal}</span>
-        <strong>{values.at(-1).toFixed(6)}</strong>
-      </div>
-    </div>
-  );
-}
-function MetricCard({
-  label,
-  value,
-  note = "",
-  tone = "",
-}) {
-  return (
-    <article className={`rfMetricCard ${tone || ""}`}>
-      <small>{label}</small>
-      <strong>{value ?? "â€”"}</strong>
-      {note ? <span>{note}</span> : null}
-    </article>
-  );
-}
 export default function RiseFallAnalysis() {
   const {
     markets = [],
@@ -659,7 +529,7 @@ export default function RiseFallAnalysis() {
 
   const [mode, setMode] = useState("15s");
   const [feedMessage, setFeedMessage] = useState(
-    "Connecting live feedâ€¦"
+    "Connecting live feed…"
   );
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [signalLog, setSignalLog] = useState([]);
@@ -682,7 +552,8 @@ export default function RiseFallAnalysis() {
   const [learningHistory, setLearningHistory] = useState(
     safeReadLearningHistory
   );
-  const [candleMode, setCandleMode] = useState("10T");
+  const [candleMode, setCandleMode] = useState("10S");
+  const [displayedCandles, setDisplayedCandles] = useState([]);
   const [persistentHistory, setPersistentHistory] = useState([]);
   const [marketSnapshots, setMarketSnapshots] = useState(() =>
     readStoredMap(RF_MARKET_SNAPSHOT_KEY)
@@ -812,10 +683,18 @@ export default function RiseFallAnalysis() {
     [persistentHistory, prices]
   );
 
-  const candles = useMemo(
+  const rawCandles = useMemo(
     () => buildCandles(combinedPriceHistory, candleMode),
     [combinedPriceHistory, candleMode]
   );
+
+  useEffect(() => {
+    setDisplayedCandles((current) =>
+      freezeClosedCandles(current, rawCandles)
+    );
+  }, [rawCandles]);
+
+  const candles = displayedCandles;
 
 
   const candleMarketStructure = useMemo(
@@ -1087,7 +966,7 @@ export default function RiseFallAnalysis() {
     waitStartedAtRef.current = Date.now();
 
     setExecutionMessage(
-      `Switching volatility ${symbol || "market"} â†’ ${nextSymbol} Â· ${reason}.`
+      `Switching volatility ${symbol || "market"} → ${nextSymbol} · ${reason}.`
     );
 
     try {
@@ -1324,7 +1203,7 @@ export default function RiseFallAnalysis() {
     }
 
     setExecutionMessage(
-      `Sending ${parameters.label} Â· ${parameters.displayDuration} Â· stake ${safeStake.toFixed(2)}.`
+      `Sending ${parameters.label} · ${parameters.displayDuration} · stake ${safeStake.toFixed(2)}.`
     );
 
     try {
@@ -1379,7 +1258,7 @@ export default function RiseFallAnalysis() {
 
       setExecutionMessage(
         `${parameters.label} trade opened${
-          contractId ? ` Â· Contract ${contractId}` : ""
+          contractId ? ` · Contract ${contractId}` : ""
         }.`
       );
 
@@ -1749,8 +1628,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V74 Â· Rise/Fall Pro Analysis"
-          subtitle="Frozen historical candles, live last candle, support/resistance and breakout confirmation"
+          title="EdgePilot V76 · Rise/Fall Pro Analysis"
+          subtitle="True timeframe candles, only the latest candle moves, support/resistance and breakout confirmation"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1777,8 +1656,8 @@ export default function RiseFallAnalysis() {
               {tradeBusy
                 ? "SENDING..."
                 : autoRunning
-                  ? "â–  STOP"
-                  : "â–¶ START"}
+                  ? "■ STOP"
+                  : "▶ START"}
             </button>
 
             <button
@@ -1786,7 +1665,7 @@ export default function RiseFallAnalysis() {
               className={`rfSoundToggle ${soundEnabled ? "on" : "off"}`}
               onClick={() => setSoundEnabled((value) => !value)}
             >
-              {soundEnabled ? "ðŸ”Š SOUND ON" : "ðŸ”‡ SOUND OFF"}
+              {soundEnabled ? "🔊 SOUND ON" : "🔇 SOUND OFF"}
             </button>
 
             <select
@@ -1831,7 +1710,7 @@ export default function RiseFallAnalysis() {
           }`}
         >
           {connected
-            ? `LIVE FEED Â· ${
+            ? `LIVE FEED · ${
                 market?.label || symbol
               }`
             : feedMessage}
@@ -1892,7 +1771,7 @@ export default function RiseFallAnalysis() {
               <span>Auto market</span>
               <strong>
                 {autoSwitchMarket
-                  ? `ON Â· ${switchAfterSeconds}s`
+                  ? `ON · ${switchAfterSeconds}s`
                   : "OFF"}
               </strong>
             </div>
@@ -1901,18 +1780,18 @@ export default function RiseFallAnalysis() {
               <span>Contract</span>
               <strong>
                 {durationMode === "1T"
-                  ? "RISE/FALL Â· 1 TICK"
+                  ? "RISE/FALL · 1 TICK"
                   : durationMode === "10T"
-                    ? "RISE/FALL Â· 10 TICKS"
+                    ? "RISE/FALL · 10 TICKS"
                     : durationMode === "15S"
-                      ? "RISE/FALL Â· 15 SECONDS"
-                      : "RISE/FALL Â· AUTO"}
+                      ? "RISE/FALL · 15 SECONDS"
+                      : "RISE/FALL · AUTO"}
               </strong>
             </div>
 
             <div>
               <span>Session runs</span>
-              <strong>{executionRuns} Â· CONTINUOUS</strong>
+              <strong>{executionRuns} · CONTINUOUS</strong>
             </div>
 
             <label>
@@ -2033,7 +1912,7 @@ export default function RiseFallAnalysis() {
                   ? pct(active.probabilityRise)
                   : active.rawDirection === "FALL"
                     ? pct(active.probabilityFall)
-                    : "â€”"}
+                    : "—"}
               </strong>
             </span>
 
@@ -2076,7 +1955,7 @@ export default function RiseFallAnalysis() {
             <strong>
               {!active.tradeNow && !active.prepare
                 ? "WAIT"
-                : "â€”"}
+                : "—"}
             </strong>
             <span>
               {!active.tradeNow && !active.prepare
@@ -2253,7 +2132,7 @@ export default function RiseFallAnalysis() {
             </div>
 
             <div className="rfCandleModes">
-              {["5S", "15S", "30S", "5T", "10T", "20T"].map((item) => (
+              {["10S", "15S", "30S", "1M", "5M", "5T", "10T", "20T"].map((item) => (
                 <button
                   type="button"
                   key={item}
@@ -2335,7 +2214,7 @@ export default function RiseFallAnalysis() {
                   key={item.label}
                   className={item.passed ? "passed" : "failed"}
                 >
-                  <b>{item.passed ? "âœ“" : "Ã—"} {item.label}</b>
+                  <b>{item.passed ? "✓" : "×"} {item.label}</b>
                   <strong>{item.value}</strong>
                 </span>
               ))}
@@ -2719,7 +2598,7 @@ export default function RiseFallAnalysis() {
             </strong>
             <span>
               Base {Number(active.adaptiveThresholds?.buy || 72).toFixed(0)}
-              {" Â· "}
+              {" · "}
               Adjustment {learningProfile.thresholdAdjustment >= 0 ? "+" : ""}
               {learningProfile.thresholdAdjustment}
             </span>
@@ -2750,7 +2629,7 @@ export default function RiseFallAnalysis() {
             <p>
               {active.autoSkip
                 ? active.skipReason || "Searching for a cleaner setup."
-                : `${active.consensus?.riseVotes || 0} RISE Â· ${active.consensus?.fallVotes || 0} FALL Â· ${active.consensus?.waitVotes || 0} WAIT`}
+                : `${active.consensus?.riseVotes || 0} RISE · ${active.consensus?.fallVotes || 0} FALL · ${active.consensus?.waitVotes || 0} WAIT`}
             </p>
           </div>
 
@@ -2762,7 +2641,7 @@ export default function RiseFallAnalysis() {
             <span>
               <small>Consensus</small>
               <strong>
-                {active.consensus?.riseVotes || 0}/{active.consensus?.total || 12} R Â·{" "}
+                {active.consensus?.riseVotes || 0}/{active.consensus?.total || 12} R ·{" "}
                 {active.consensus?.fallVotes || 0}/{active.consensus?.total || 12} F
               </strong>
             </span>
@@ -2796,7 +2675,7 @@ export default function RiseFallAnalysis() {
               {Number(active.adaptiveThresholds?.buy || 72).toFixed(0)}
             </strong>
             <span>
-              {active.regime || "UNKNOWN"} regime Â· {pct(active.noiseRatio)} noise
+              {active.regime || "UNKNOWN"} regime · {pct(active.noiseRatio)} noise
             </span>
           </article>
 
@@ -2822,7 +2701,7 @@ export default function RiseFallAnalysis() {
               {active.freshTick?.passed || 0}/{active.freshTick?.total || 5}
             </strong>
             <span>
-              {active.freshTick?.ready ? "READY" : "FORMING"} Â· {pct(active.freshTick?.score)}
+              {active.freshTick?.ready ? "READY" : "FORMING"} · {pct(active.freshTick?.score)}
             </span>
           </article>
 
@@ -2874,7 +2753,7 @@ export default function RiseFallAnalysis() {
                   key={`${tick}-${index}`}
                   className={String(tick).toLowerCase()}
                 >
-                  {tick === "RISE" ? "â†‘" : tick === "FALL" ? "â†“" : "â€”"}
+                  {tick === "RISE" ? "↑" : tick === "FALL" ? "↓" : "—"}
                 </span>
               ))}
             </h2>
@@ -3019,7 +2898,7 @@ export default function RiseFallAnalysis() {
                 key={item.size}
                 className={String(item.direction).toLowerCase()}
               >
-                {item.size} {item.direction === "RISE" ? "â†‘" : item.direction === "FALL" ? "â†“" : "â€”"}
+                {item.size} {item.direction === "RISE" ? "↑" : item.direction === "FALL" ? "↓" : "—"}
               </span>
             ))}
           </div>
@@ -3102,7 +2981,7 @@ export default function RiseFallAnalysis() {
                   className={check.passed ? "passed" : "failed"}
                 >
                   <span>
-                    {check.passed ? "âœ“" : "Ã—"} {check.label}
+                    {check.passed ? "✓" : "×"} {check.label}
                   </span>
                   <strong>{check.detail}</strong>
                 </div>
@@ -3153,7 +3032,7 @@ export default function RiseFallAnalysis() {
               {Number(active.flowDelta?.delta || 0).toFixed(1)}
             </strong>
             <span>
-              Buy {pct(active.flowDelta?.buy)} Â· Sell {pct(active.flowDelta?.sell)}
+              Buy {pct(active.flowDelta?.buy)} · Sell {pct(active.flowDelta?.sell)}
             </span>
           </article>
 
@@ -3476,7 +3355,7 @@ export default function RiseFallAnalysis() {
                     >
                       {Number(trade.profit || 0).toFixed(2)}
                     </td>
-                    <td>{trade.contractId || "â€”"}</td>
+                    <td>{trade.contractId || "—"}</td>
                   </tr>
                 ))}
 
@@ -3530,7 +3409,3 @@ export default function RiseFallAnalysis() {
     </div>
   );
 }
-
-
-
-

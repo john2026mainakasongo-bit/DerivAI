@@ -57,7 +57,7 @@ export default function OverUnderAnalysis() {
   const [stake, setStake] = useState(0.35);
   const [durationTicks, setDurationTicks] = useState(1);
   const [autoSwitch, setAutoSwitch] = useState(true);
-  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(8);
+  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(4);
   const [runs, setRuns] = useState(0);
   const [switches, setSwitches] = useState(0);
   const [losses, setLosses] = useState(0);
@@ -72,6 +72,7 @@ export default function OverUnderAnalysis() {
   const switchRef = useRef(false);
   const lastSwitchRef = useRef(0);
   const processedRef = useRef(new Set());
+  const nextEntryAtRef = useRef(0);
 
   useEffect(() => {
     runningRef.current = autoRunning;
@@ -155,6 +156,7 @@ export default function OverUnderAnalysis() {
       busyRef.current ||
       !runningRef.current ||
       hasOpenTrade ||
+      Date.now() < nextEntryAtRef.current ||
       !analysis.tradeNow ||
       analysis.best.side === "WAIT"
     ) return;
@@ -218,6 +220,7 @@ export default function OverUnderAnalysis() {
       setMessage(
         `${analysis.best.side} ${analysis.best.barrier} opened immediately.`
       );
+      nextEntryAtRef.current = Date.now() + 2000;
       waitRef.current = Date.now();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Trade failed.");
@@ -341,11 +344,13 @@ export default function OverUnderAnalysis() {
     if (result === "WON") {
       lossRef.current = 0;
       setLosses(0);
+      nextEntryAtRef.current = Date.now() + 2000;
       waitRef.current = Date.now();
     } else if (result === "LOST") {
       const next = lossRef.current + 1;
       lossRef.current = next;
       setLosses(next);
+      nextEntryAtRef.current = Date.now() + 3000;
       waitRef.current = Date.now();
 
       if (next >= 3 && runningRef.current) {
@@ -362,8 +367,8 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V72 · Over/Under Pro Analysis"
-          subtitle="Standalone analysis, immediate execution, auto market switch and 3-loss hard stop"
+          title="EdgePilot V75 · Over/Under Fast Safe Analysis"
+          subtitle="Correct standalone route, fast market switching, stricter entries and 3-loss hard stop"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -440,7 +445,7 @@ export default function OverUnderAnalysis() {
               <span>Switch after</span>
               <input
                 type="number"
-                min="4"
+                min="3"
                 max="60"
                 value={switchAfterSeconds}
                 onChange={(event) => setSwitchAfterSeconds(event.target.value)}
