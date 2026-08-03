@@ -1,4 +1,4 @@
-
+﻿
 .rfPage {
   padding-bottom: 36px;
 }
@@ -2203,3 +2203,4 @@
 .rfCandleChart g.live .wick {
   transition: height .18s linear, y .18s linear;
 }
+
