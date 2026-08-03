@@ -1,4 +1,4 @@
-﻿
+
 import {
   useEffect,
   useMemo,
@@ -681,13 +681,13 @@ export default function RiseFallAnalysis() {
   const [stake, setStake] = useState(0.35);
   const [allowReal, setAllowReal] = useState(false);
   const [autoSwitchMarket, setAutoSwitchMarket] = useState(true);
-  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(5);
+  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(4);
   const [marketSwitches, setMarketSwitches] = useState(0);
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [durationMode, setDurationMode] = useState("AUTO");
-  const [allowOneTick, setAllowOneTick] = useState(true);
-  const [oneTickMinimumScore, setOneTickMinimumScore] = useState(78);
-  const [oneTickMinimumConfidence, setOneTickMinimumConfidence] = useState(60);
+  const [allowOneTick, setAllowOneTick] = useState(false);
+  const [oneTickMinimumScore, setOneTickMinimumScore] = useState(90);
+  const [oneTickMinimumConfidence, setOneTickMinimumConfidence] = useState(88);
   const [executionMessage, setExecutionMessage] = useState(
     "Auto execution is stopped."
   );
@@ -1101,17 +1101,25 @@ export default function RiseFallAnalysis() {
     active.noiseRatio ?? active.noise ?? 100
   );
 
+  const activeReversalRisk = Number(
+    active.reversalProbability ??
+      active.reversal ??
+      active.continuationReversal?.reversal ??
+      100
+  );
+
   const burstEntryReady =
     burstMode &&
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
-    activeDirectionProbability >= 82 &&
-    activeConfidence >= 80 &&
-    activeOpportunity >= 76 &&
-    activeContinuation >= 66 &&
-    activeNoise <= 68 &&
-    active.risk !== "HIGH" &&
-    preBuyStructure.passed >= 4;
+    activeDirectionProbability >= 86 &&
+    activeConfidence >= 84 &&
+    activeOpportunity >= 80 &&
+    activeContinuation >= 72 &&
+    activeReversalRisk <= 24 &&
+    activeNoise <= 58 &&
+    active.risk === "LOW" &&
+    preBuyStructure.passed >= 5;
 
   const immediateEntryReady =
     learnedEntryAllowed &&
@@ -1253,63 +1261,127 @@ export default function RiseFallAnalysis() {
         analysis?.continuationReversal?.continuation ??
         0
     );
+    const reversal = Number(
+      analysis?.reversalProbability ??
+        analysis?.reversal ??
+        analysis?.continuationReversal?.reversal ??
+        100
+    );
     const noise = Number(
       analysis?.noiseRatio ?? analysis?.noise ?? 100
     );
+    const confirmations = Number(analysis?.confirmationsPassed || 0);
+    const pressure = Number(
+      analysis?.dominantPressure ??
+        Math.max(
+          Number(analysis?.pressure?.buying || 0),
+          Number(analysis?.pressure?.selling || 0)
+        )
+    );
 
-    const dynamicMinimumConfidence =
-      durationMode === "1T"
-        ? Number(oneTickMinimumConfidence || 60)
-        : durationMode === "10T"
-          ? 68
-          : durationMode === "15S"
-            ? 72
-            : Number(oneTickMinimumConfidence || 60);
+    const base = {
+      contractType: rise ? "CALL" : "PUT",
+      label: rise ? "RISE" : "FALL",
+    };
 
-    const oneTickQualified =
+    const exceptionalOneTick =
       allowOneTick &&
       learnedEntryAllowed &&
-      probability >= 90 &&
-      confidence >= Math.max(86, dynamicMinimumConfidence) &&
-      finalScore >= Number(oneTickMinimumScore || 78) &&
-      continuation >= 72 &&
-      noise <= 50 &&
-      (analysis?.fastScalpReady || analysis?.instantOneTick);
+      probability >= 96 &&
+      confidence >= 94 &&
+      finalScore >= Math.max(92, Number(oneTickMinimumScore || 90)) &&
+      continuation >= 86 &&
+      reversal <= 10 &&
+      noise <= 28 &&
+      confirmations >= 10 &&
+      pressure >= 72 &&
+      analysis?.risk === "LOW" &&
+      analysis?.instantOneTick;
 
-    if (durationMode === "1T") {
-      if (!oneTickQualified) {
+    const twoTickQualified =
+      probability >= 91 &&
+      confidence >= 89 &&
+      finalScore >= 86 &&
+      continuation >= 80 &&
+      reversal <= 16 &&
+      noise <= 40 &&
+      confirmations >= 8 &&
+      pressure >= 66 &&
+      analysis?.risk === "LOW";
+
+    const fiveTickQualified =
+      probability >= 87 &&
+      confidence >= 84 &&
+      finalScore >= 81 &&
+      continuation >= 74 &&
+      reversal <= 22 &&
+      noise <= 52 &&
+      confirmations >= 7 &&
+      analysis?.risk !== "HIGH";
+
+    const tenSecondQualified =
+      probability >= 83 &&
+      confidence >= 80 &&
+      finalScore >= 77 &&
+      continuation >= 68 &&
+      reversal <= 28 &&
+      noise <= 62 &&
+      confirmations >= 6 &&
+      analysis?.risk !== "HIGH";
+
+    const fifteenSecondQualified =
+      probability >= 80 &&
+      confidence >= 77 &&
+      finalScore >= 74 &&
+      continuation >= 64 &&
+      reversal <= 32 &&
+      noise <= 68 &&
+      confirmations >= 5 &&
+      analysis?.risk !== "HIGH";
+
+    if (durationMode === "2T") {
+      if (!twoTickQualified) {
         return {
           blocked: true,
-          reason: "1-tick mode is waiting for a very strong fresh entry.",
+          reason:
+            "2-tick entry is not safe enough. Scanning or switching market.",
+          requestMarketSwitch: true,
         };
       }
 
       return {
-        contractType: rise ? "CALL" : "PUT",
-        label: rise ? "RISE" : "FALL",
-        duration: 1,
+        ...base,
+        duration: 2,
         durationUnit: "t",
         fastEntry: true,
-        displayDuration: "1 TICK",
+        displayDuration: "2 TICKS",
       };
     }
 
     if (durationMode === "AUTO") {
-      if (oneTickQualified) {
+      if (exceptionalOneTick) {
         return {
-          contractType: rise ? "CALL" : "PUT",
-          label: rise ? "RISE" : "FALL",
+          ...base,
           duration: 1,
           durationUnit: "t",
           fastEntry: true,
-          displayDuration: "1 TICK",
+          displayDuration: "1 TICK · EXCEPTIONAL",
         };
       }
 
-      if (probability >= 87 && confidence >= 84 && continuation >= 70 && noise <= 58) {
+      if (twoTickQualified) {
         return {
-          contractType: rise ? "CALL" : "PUT",
-          label: rise ? "RISE" : "FALL",
+          ...base,
+          duration: 2,
+          durationUnit: "t",
+          fastEntry: true,
+          displayDuration: "2 TICKS",
+        };
+      }
+
+      if (fiveTickQualified) {
+        return {
+          ...base,
           duration: 5,
           durationUnit: "t",
           fastEntry: true,
@@ -1317,22 +1389,45 @@ export default function RiseFallAnalysis() {
         };
       }
 
-      if (probability >= 82 && confidence >= 80 && continuation >= 66) {
+      if (tenSecondQualified) {
         return {
-          contractType: rise ? "CALL" : "PUT",
-          label: rise ? "RISE" : "FALL",
+          ...base,
           duration: 10,
           durationUnit: "s",
-          fastEntry: true,
+          fastEntry: false,
           displayDuration: "10 SECONDS",
         };
       }
+
+      if (fifteenSecondQualified) {
+        return {
+          ...base,
+          duration: 15,
+          durationUnit: "s",
+          fastEntry: false,
+          displayDuration: "15 SECONDS",
+        };
+      }
+
+      return {
+        blocked: true,
+        reason:
+          "No safe duration: weak probability, high reversal/noise, or insufficient confirmations. Switching market.",
+        requestMarketSwitch: true,
+      };
     }
 
     if (durationMode === "10T") {
+      if (!fiveTickQualified) {
+        return {
+          blocked: true,
+          reason: "10-tick setup is weak. Waiting or switching market.",
+          requestMarketSwitch: true,
+        };
+      }
+
       return {
-        contractType: rise ? "CALL" : "PUT",
-        label: rise ? "RISE" : "FALL",
+        ...base,
         duration: 10,
         durationUnit: "t",
         fastEntry: false,
@@ -1341,9 +1436,16 @@ export default function RiseFallAnalysis() {
     }
 
     if (durationMode === "15S") {
+      if (!fifteenSecondQualified) {
+        return {
+          blocked: true,
+          reason: "15-second setup is weak. Waiting or switching market.",
+          requestMarketSwitch: true,
+        };
+      }
+
       return {
-        contractType: rise ? "CALL" : "PUT",
-        label: rise ? "RISE" : "FALL",
+        ...base,
         duration: 15,
         durationUnit: "s",
         fastEntry: false,
@@ -1351,14 +1453,30 @@ export default function RiseFallAnalysis() {
       };
     }
 
+    if (mode === "15s" && fifteenSecondQualified) {
+      return {
+        ...base,
+        duration: 15,
+        durationUnit: "s",
+        fastEntry: false,
+        displayDuration: "15 SECONDS",
+      };
+    }
+
+    if (fiveTickQualified) {
+      return {
+        ...base,
+        duration: 10,
+        durationUnit: "t",
+        fastEntry: false,
+        displayDuration: "10 TICKS",
+      };
+    }
+
     return {
-      contractType: rise ? "CALL" : "PUT",
-      label: rise ? "RISE" : "FALL",
-      duration: mode === "15s" ? 15 : 10,
-      durationUnit: mode === "15s" ? "s" : "t",
-      fastEntry: false,
-      displayDuration:
-        mode === "15s" ? "15 SECONDS" : "10 TICKS",
+      blocked: true,
+      reason: "Current market is not clean enough. Switching market.",
+      requestMarketSwitch: true,
     };
   }
 
@@ -1434,6 +1552,19 @@ export default function RiseFallAnalysis() {
       lastExecutedSignalRef.current = "";
       executionBusyRef.current = false;
       setExecutionMessage(parameters.reason);
+
+      if (
+        parameters.requestMarketSwitch &&
+        autoSwitchMarket &&
+        !hasOpenSessionTrade
+      ) {
+        window.setTimeout(() => {
+          if (autoRunningRef.current) {
+            void switchToNextMarket(parameters.reason);
+          }
+        }, 250);
+      }
+
       return;
     }
 
@@ -1686,8 +1817,16 @@ export default function RiseFallAnalysis() {
       return;
     }
 
+    const weakMarket =
+      active.risk === "HIGH" ||
+      activeNoise > 68 ||
+      activeReversalRisk > 34 ||
+      activeConfidence < 72 ||
+      activeOpportunity < 70;
+
     const cleanEntry =
       immediateEntryReady &&
+      !weakMarket &&
       !active.autoSkip &&
       Number(active.opportunityScore || 0) >=
         Number(learningProfile.learnedBuyThreshold || 72);
@@ -1701,8 +1840,10 @@ export default function RiseFallAnalysis() {
       const now = Date.now();
       const waitedMs = now - waitStartedAtRef.current;
       const switchDelay = Math.max(
-        4,
-        Number(switchAfterSeconds) || 8
+        3,
+        weakMarket
+          ? 3
+          : Number(switchAfterSeconds) || 4
       ) * 1000;
 
       if (
@@ -1728,6 +1869,11 @@ export default function RiseFallAnalysis() {
     active.autoSkip,
     active.skipReason,
     active.opportunityScore,
+    active.risk,
+    activeNoise,
+    activeReversalRisk,
+    activeConfidence,
+    activeOpportunity,
     learningProfile.learnedBuyThreshold,
     switchAfterSeconds,
     consecutiveLosses,
@@ -1936,13 +2082,13 @@ export default function RiseFallAnalysis() {
   ]);
 
   return (
-    <div className="appShell">
+    <div className="appShell rfMobileReady">
       <Sidebar />
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V77 · Rise/Fall Smooth Burst AI"
-          subtitle="Smooth continuous execution, fresh-analysis burst entries, settlement recovery and full STOP control"
+          title="EdgePilot V78 · Adaptive Duration Mobile AI"
+          subtitle="Safer 2+ tick execution, adaptive seconds, weak-market switching, mobile layout and full STOP control"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1987,8 +2133,8 @@ export default function RiseFallAnalysis() {
               disabled={autoRunning}
               onChange={(event) => setDurationMode(event.target.value)}
             >
-              <option value="AUTO">AUTO DURATION</option>
-              <option value="1T">1 TICK</option>
+              <option value="AUTO">AUTO · 2T / 5T / 10S / 15S</option>
+              <option value="2T">2 TICKS · STRONG ONLY</option>
               <option value="10T">10 TICKS</option>
               <option value="15S">15 SECONDS</option>
             </select>
@@ -2103,8 +2249,8 @@ export default function RiseFallAnalysis() {
             <div>
               <span>Contract</span>
               <strong>
-                {durationMode === "1T"
-                  ? "RISE/FALL · 1 TICK"
+                {durationMode === "2T"
+                  ? "RISE/FALL · 2 TICKS"
                   : durationMode === "10T"
                     ? "RISE/FALL · 10 TICKS"
                     : durationMode === "15S"
@@ -2119,7 +2265,7 @@ export default function RiseFallAnalysis() {
             </div>
 
             <label>
-              <span>1-tick minimum score</span>
+              <span>Fast-entry minimum score</span>
               <input
                 type="number"
                 min="70"
@@ -2133,7 +2279,7 @@ export default function RiseFallAnalysis() {
             </label>
 
             <label>
-              <span>1-tick minimum confidence</span>
+              <span>Fast-entry minimum confidence</span>
               <input
                 type="number"
                 min="55"
@@ -2165,7 +2311,7 @@ export default function RiseFallAnalysis() {
                 disabled={autoRunning}
                 onChange={(event) => setAllowOneTick(event.target.checked)}
               />
-              Allow 1-tick execution only for strongest entries
+              Allow exceptional 1-tick execution (OFF recommended)
             </label>
 
             <label>

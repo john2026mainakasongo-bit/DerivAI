@@ -2377,3 +2377,189 @@
     min-height: 320px !important;
   }
 }
+
+
+/* ================================================================
+   EdgePilot V78 â€” Mobile / adaptive-duration overrides
+   ================================================================ */
+
+.rfMobileReady,
+.rfPage {
+  min-width: 0;
+}
+
+.rfMobileReady .mainContent,
+.rfPage {
+  overflow-x: hidden;
+}
+
+.rfMobileReady button,
+.rfMobileReady input,
+.rfMobileReady select {
+  touch-action: manipulation;
+}
+
+.rfMobileReady .rfExecutionPanel,
+.rfMobileReady .rfAlert,
+.rfMobileReady .rfDecisionGrid,
+.rfMobileReady .rfModeGrid,
+.rfMobileReady .rfAnalysisGrid,
+.rfMobileReady .rfMetricGrid,
+.rfMobileReady .rfStructureGrid,
+.rfMobileReady .rfSmartScoreGrid {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .rfMobileReady {
+    display: block !important;
+    width: 100% !important;
+    min-height: 100dvh !important;
+  }
+
+  .rfMobileReady .sidebar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 30 !important;
+    width: 100% !important;
+    min-height: auto !important;
+    height: auto !important;
+    display: flex !important;
+    align-items: center !important;
+    overflow-x: auto !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid #17485e !important;
+  }
+
+  .rfMobileReady .sidebar .brand,
+  .rfMobileReady .sidebarFooter {
+    display: none !important;
+  }
+
+  .rfMobileReady .sidebar nav {
+    display: flex !important;
+    flex: 1 0 max-content !important;
+    gap: 5px !important;
+    padding: 7px !important;
+  }
+
+  .rfMobileReady .sidebar .navLink {
+    flex: 0 0 auto !important;
+    min-height: 38px !important;
+    padding: 8px 11px !important;
+    border-radius: 8px !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+  }
+
+  .rfMobileReady .mainContent,
+  .rfMobileReady .rfPage {
+    width: 100% !important;
+    margin-left: 0 !important;
+    padding: 8px !important;
+  }
+
+  .rfMobileReady .topbar {
+    position: sticky !important;
+    top: 52px !important;
+    z-index: 25 !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 8px !important;
+  }
+
+  .rfMobileReady .topbar > *,
+  .rfMobileReady .rfExecutionPanel input,
+  .rfMobileReady .rfExecutionPanel select,
+  .rfMobileReady .rfExecutionPanel button {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .rfMobileReady .rfExecutionPanel,
+  .rfMobileReady .rfAlert,
+  .rfMobileReady .rfDecisionGrid,
+  .rfMobileReady .rfModeGrid,
+  .rfMobileReady .rfAnalysisGrid,
+  .rfMobileReady .rfMetricGrid,
+  .rfMobileReady .rfStructureGrid,
+  .rfMobileReady .rfSmartScoreGrid,
+  .rfMobileReady .rfCandleMetrics {
+    grid-template-columns: 1fr !important;
+  }
+
+  .rfMobileReady .rfPanelHead {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .rfMobileReady .rfPanelHead button {
+    width: 100% !important;
+  }
+
+  .rfMobileReady .rfCandleChart,
+  .rfMobileReady .rfCandleChart svg,
+  .rfMobileReady .rfMiniChart,
+  .rfMobileReady .rfMiniChart svg {
+    min-height: 280px !important;
+    height: 280px !important;
+  }
+
+  .rfMobileReady .rfCandleModes {
+    justify-content: flex-start !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 5px !important;
+  }
+
+  .rfMobileReady .rfCandleModes button {
+    flex: 0 0 auto !important;
+  }
+
+  .rfMobileReady .rfTradeViewer {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .rfMobileReady .rfTradeViewer table {
+    min-width: 760px !important;
+  }
+
+  .rfMobileReady h1 {
+    font-size: 18px !important;
+  }
+
+  .rfMobileReady h2 {
+    font-size: 15px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .rfMobileReady .mainContent,
+  .rfMobileReady .rfPage {
+    padding: 6px !important;
+  }
+
+  .rfMobileReady .rfExecutionPanel,
+  .rfMobileReady section,
+  .rfMobileReady article {
+    border-radius: 9px !important;
+  }
+
+  .rfMobileReady .rfCandleChart,
+  .rfMobileReady .rfCandleChart svg,
+  .rfMobileReady .rfMiniChart,
+  .rfMobileReady .rfMiniChart svg {
+    min-height: 230px !important;
+    height: 230px !important;
+  }
+
+  .rfMobileReady .rfMetricCard,
+  .rfMobileReady .rfModeSummary {
+    min-height: 88px !important;
+    padding: 10px !important;
+  }
+}
+
