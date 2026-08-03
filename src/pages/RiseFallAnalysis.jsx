@@ -613,6 +613,20 @@ function MiniChart({
     </div>
   );
 }
+function MetricCard({
+  label,
+  value,
+  note = "",
+  tone = "",
+}) {
+  return (
+    <article className={`rfMetricCard ${tone || ""}`}>
+      <small>{label}</small>
+      <strong>{value ?? "â€”"}</strong>
+      {note ? <span>{note}</span> : null}
+    </article>
+  );
+}
 export default function RiseFallAnalysis() {
   const {
     markets = [],
@@ -3507,5 +3521,6 @@ export default function RiseFallAnalysis() {
     </div>
   );
 }
+
 
 
