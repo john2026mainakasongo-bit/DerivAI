@@ -1530,18 +1530,6 @@ export function analyzeRiseFall(
       : "NO TRADE";
 
   const ready = tradeNow;
-  const fastScalpReady =
-    direction !== "WAIT" &&
-    entryScore >= 78 &&
-    dominantVotes >= 8 &&
-    confirmationsPassed >= 8 &&
-    microTrend.dominantDirection === direction &&
-    microTrend.dominantVotes >= 4 &&
-    emaAligned &&
-    momentumAligned &&
-    continuationReversal.continuation >= 55 &&
-    exhaustion <= 78;
-
   const signal = tradeNow ? direction : "WAIT";
 
   const risk = ready
@@ -1631,6 +1619,18 @@ export function analyzeRiseFall(
       weightedScores.continuation * 0.1 +
       weightedScores.noise * 0.05
   );
+
+  const fastScalpReady =
+    direction !== "WAIT" &&
+    entryScore >= 78 &&
+    dominantVotes >= 8 &&
+    confirmationsPassed >= 8 &&
+    microTrend.dominantDirection === direction &&
+    microTrend.dominantVotes >= 4 &&
+    emaAligned &&
+    momentumAligned &&
+    continuationReversal.continuation >= 55 &&
+    exhaustion <= 78;
 
   const finalScore = clamp(
     qualityScore * 0.42 +
