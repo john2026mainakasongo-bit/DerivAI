@@ -637,7 +637,7 @@ export default function RiseFallAnalysis() {
 
 
   useEffect(() => {
-    if (!autoRunning || !active.tradeNow) return;
+    if (!autoRunning || !active.tradeNow || active.autoSkip) return;
 
     void executeConfirmedSignal(active.signal, active);
   }, [
@@ -719,8 +719,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V66 · Rise/Fall Pro Analysis"
-          subtitle="Professional AI with smart confidence and market-adaptive entry thresholds"
+          title="EdgePilot V68 · Rise/Fall Pro Analysis"
+          subtitle="Consensus Engine with opportunity meter, quality grade, next-tick projection and auto-skip"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1487,6 +1487,40 @@ export default function RiseFallAnalysis() {
           </article>
         </section>
 
+        <section className="rfConsensusHero">
+          <div>
+            <small>AI CONSENSUS ENGINE</small>
+            <h2>{active.aiDecision || "WAIT"}</h2>
+            <p>
+              {active.autoSkip
+                ? active.skipReason || "Searching for a cleaner setup."
+                : `${active.consensus?.riseVotes || 0} RISE · ${active.consensus?.fallVotes || 0} FALL · ${active.consensus?.waitVotes || 0} WAIT`}
+            </p>
+          </div>
+
+          <div className="rfConsensusStats">
+            <span>
+              <small>Opportunity</small>
+              <strong>{pct(active.opportunityScore)}</strong>
+            </span>
+            <span>
+              <small>Consensus</small>
+              <strong>
+                {active.consensus?.riseVotes || 0}/{active.consensus?.total || 12} R ·{" "}
+                {active.consensus?.fallVotes || 0}/{active.consensus?.total || 12} F
+              </strong>
+            </span>
+            <span>
+              <small>Quality</small>
+              <strong>{active.quality || "REJECT"}</strong>
+            </span>
+            <span>
+              <small>Entry window</small>
+              <strong>{active.entryWindow?.label || "WAIT"}</strong>
+            </span>
+          </div>
+        </section>
+
         <section className="rfProfessionalSummary">
           <article>
             <small>SMART CONFIDENCE</small>
@@ -1517,6 +1551,71 @@ export default function RiseFallAnalysis() {
               Instant level {Number(active.adaptiveThresholds?.instant || 88).toFixed(0)}
             </span>
           </article>
+        </section>
+
+        <section className="rfConsensusBoard">
+          <div className="rfPanelHead">
+            <div>
+              <small>ANALYSIS VOTES</small>
+              <h2>Consensus by engine</h2>
+            </div>
+            <span>
+              {pct(active.consensus?.score)}
+            </span>
+          </div>
+
+          <div className="rfVoteGrid">
+            {(active.consensus?.votes || []).map((item) => (
+              <article
+                key={item.name}
+                className={String(item.vote || "WAIT").toLowerCase()}
+              >
+                <small>{item.name}</small>
+                <strong>{item.vote || "WAIT"}</strong>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="rfNextTickPanel">
+          <div>
+            <small>NEXT 5 TICKS</small>
+            <h2>
+              {(active.nextTicks?.ticks || []).map((tick, index) => (
+                <span
+                  key={`${tick}-${index}`}
+                  className={String(tick).toLowerCase()}
+                >
+                  {tick === "RISE" ? "↑" : tick === "FALL" ? "↓" : "—"}
+                </span>
+              ))}
+            </h2>
+          </div>
+
+          <div>
+            <small>PREDICTION CONFIDENCE</small>
+            <strong>{pct(active.nextTicks?.confidence)}</strong>
+          </div>
+
+          <div>
+            <small>MARKET REGIME</small>
+            <strong>{active.regime || "UNKNOWN"}</strong>
+          </div>
+
+          <div>
+            <small>TRADE STRENGTH</small>
+            <strong>
+              {active.quality === "A+"
+                ? "EXTREME"
+                : active.quality === "A"
+                  ? "STRONG"
+                  : active.quality === "B"
+                    ? "MEDIUM"
+                    : active.quality === "C"
+                      ? "WEAK"
+                      : "REJECT"}
+            </strong>
+          </div>
         </section>
 
         <section className="rfAiEntryTerminal">
