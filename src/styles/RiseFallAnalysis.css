@@ -1,1 +1,468 @@
-.rfPage{padding-bottom:32px}.rfToolbar{display:flex;justify-content:space-between;gap:14px;align-items:center;margin:12px 0}.rfModeSwitch{display:flex;padding:4px;border:1px solid #16455c;border-radius:12px;background:#061c2b}.rfModeSwitch button{border:0;background:transparent;color:#7fa8ba;font-weight:800;padding:10px 18px;border-radius:9px;cursor:pointer}.rfModeSwitch button.active{background:#087fff;color:#fff}.rfFeed{border:1px solid #15516a;border-radius:10px;padding:11px 14px;font-size:12px;font-weight:800;margin-bottom:12px}.rfFeed.live{border-color:#0aa981;color:#26e9b7;background:#052c2b}.rfFeed.waiting{color:#f2c35b}.rfHero,.rfPanel,.rfMetrics article,.rfCompare article{background:linear-gradient(145deg,#09283b,#061d2d);border:1px solid #174e68;border-radius:14px}.rfHero{display:flex;justify-content:space-between;align-items:center;padding:26px;margin-bottom:14px;min-height:150px}.rfHero h1{font-size:54px;margin:4px 0}.rfHero small,.rfPanel small,.rfMetrics small,.rfCompare small{color:#2feac0;font-size:10px;font-weight:900;letter-spacing:.08em}.rfHero.rise h1,.rfCompare .rise strong{color:#20e3a3}.rfHero.fall h1,.rfCompare .fall strong{color:#ff5974}.rfHero.wait h1{color:#f0c35b}.rfHeroStats{display:grid;grid-template-columns:repeat(4,minmax(100px,1fr));gap:10px}.rfHeroStats div{border:1px solid #17506b;border-radius:10px;padding:12px;min-width:105px}.rfHeroStats small{display:block;color:#46d9b5}.rfHeroStats strong{font-size:20px}.rfGrid{display:grid;grid-template-columns:1.7fr 1fr;gap:14px}.rfPanel{padding:16px}.rfPanelHead{display:flex;justify-content:space-between;align-items:center}.rfPanelHead h2{margin:3px 0 12px;font-size:20px}.rfPanelHead>span{font-weight:900;color:#38dcb4}.rfChart{height:260px;position:relative;color:#f0c35b}.rfChart.rise{color:#20e3a3}.rfChart.fall{color:#ff5974}.rfChart svg{width:100%;height:230px;overflow:visible}.rfChart>span{position:absolute;bottom:0;color:#789bac;font-size:11px}.rfChart>span:last-child{right:0}.rfEmptyChart{height:230px;display:grid;place-items:center;color:#789bac}.rfMomentum{display:grid;gap:12px;margin-top:16px}.rfMomentum>div{display:grid;grid-template-columns:1fr 1fr 90px;align-items:center;gap:12px;border-bottom:1px solid #123d54;padding-bottom:12px}.rfMomentum i{height:7px;border-radius:10px;background:#ff5974}.rfMomentum i.up{background:#20e3a3}.rfVotes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}.rfVotes span{padding:14px;border:1px solid #174e68;border-radius:10px}.rfMetrics{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-top:14px}.rfMetrics article{padding:14px}.rfMetrics strong{display:block;font-size:21px;margin:6px 0}.rfMetrics p,.rfCompare p{color:#7ea2b2;font-size:11px;line-height:1.45}.rfCompare{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}.rfCompare article{padding:18px;display:grid;grid-template-columns:1fr auto;gap:6px}.rfCompare article strong{font-size:28px}.rfCompare article span{font-weight:900;color:#b8d2de}.rfCompare article p{grid-column:1/-1}.rfCompare .consensus{border-color:#7f6923}@media(max-width:1100px){.rfGrid{grid-template-columns:1fr}.rfMetrics{grid-template-columns:repeat(3,1fr)}.rfHero{align-items:flex-start;gap:20px}.rfHeroStats{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.rfToolbar,.rfHero{flex-direction:column;align-items:stretch}.rfHeroStats,.rfMetrics,.rfCompare{grid-template-columns:1fr 1fr}.rfHero h1{font-size:42px}.rfModeSwitch button{flex:1}.rfModeSwitch{display:flex}}
+
+.rfPage {
+  padding-bottom: 36px;
+}
+
+.rfToolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  margin: 12px 0;
+}
+
+.rfModeSwitch {
+  display: flex;
+  padding: 4px;
+  border: 1px solid #16455c;
+  border-radius: 12px;
+  background: #061c2b;
+}
+
+.rfModeSwitch button {
+  border: 0;
+  background: transparent;
+  color: #7fa8ba;
+  font-weight: 800;
+  padding: 10px 18px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.rfModeSwitch button.active {
+  background: #087fff;
+  color: #fff;
+}
+
+.rfFeed {
+  border: 1px solid #15516a;
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.rfFeed.live {
+  border-color: #0aa981;
+  color: #26e9b7;
+  background: #052c2b;
+}
+
+.rfFeed.waiting {
+  color: #f2c35b;
+}
+
+.rfHero,
+.rfPanel,
+.rfMetricCard,
+.rfModeCard,
+.rfConsensus {
+  background: linear-gradient(
+    145deg,
+    #09283b,
+    #061d2d
+  );
+  border: 1px solid #174e68;
+  border-radius: 14px;
+}
+
+.rfHero {
+  display: grid;
+  grid-template-columns:
+    minmax(260px, 1.2fr)
+    minmax(260px, .9fr)
+    minmax(360px, 1fr);
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+  margin-bottom: 14px;
+  min-height: 168px;
+}
+
+.rfHero h1 {
+  font-size: 54px;
+  line-height: 1;
+  margin: 6px 0;
+}
+
+.rfHero small,
+.rfPanel small,
+.rfMetricCard small,
+.rfModeCard small,
+.rfConsensus small {
+  color: #2feac0;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.rfHero.rise h1,
+.rfModeCard.rise strong,
+.rfConsensus.rise strong {
+  color: #20e3a3;
+}
+
+.rfHero.fall h1,
+.rfModeCard.fall strong,
+.rfConsensus.fall strong {
+  color: #ff5974;
+}
+
+.rfHero.wait h1,
+.rfModeCard.wait strong,
+.rfConsensus.wait strong {
+  color: #f0c35b;
+}
+
+.rfHeroDecision p {
+  color: #86a9b9;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.rfDecisionChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.rfDecisionChips span {
+  border: 1px solid #19536e;
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: #a7c4d0;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.rfProbabilityBlock {
+  display: grid;
+  gap: 12px;
+}
+
+.rfProbability {
+  border: 1px solid #17506b;
+  border-radius: 11px;
+  padding: 12px;
+}
+
+.rfProbability strong {
+  display: block;
+  font-size: 23px;
+  margin: 4px 0 8px;
+}
+
+.rfProbability i {
+  display: block;
+  height: 8px;
+  background: #0a1c2a;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.rfProbability i b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.rfProbability.rise i b {
+  background: #20e3a3;
+}
+
+.rfProbability.fall i b {
+  background: #ff5974;
+}
+
+.rfHeroStats {
+  display: grid;
+  grid-template-columns: repeat(
+    2,
+    minmax(130px, 1fr)
+  );
+  gap: 10px;
+}
+
+.rfHeroStats div {
+  border: 1px solid #17506b;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.rfHeroStats small {
+  display: block;
+  color: #46d9b5;
+}
+
+.rfHeroStats strong {
+  font-size: 20px;
+}
+
+.rfModeCards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.rfModeCard {
+  appearance: none;
+  color: inherit;
+  text-align: left;
+  padding: 15px;
+  cursor: pointer;
+}
+
+.rfModeCard.active {
+  border-color: #21ddb2;
+  box-shadow: 0 0 0 1px #21ddb255;
+}
+
+.rfModeCard strong,
+.rfConsensus strong {
+  display: block;
+  font-size: 27px;
+  margin: 4px 0;
+}
+
+.rfModeCard span,
+.rfConsensus span {
+  font-weight: 900;
+}
+
+.rfModeCard em,
+.rfConsensus em {
+  display: block;
+  margin-top: 8px;
+  font-size: 10px;
+  font-style: normal;
+  color: #7fa8ba;
+}
+
+.rfConsensus {
+  padding: 15px;
+}
+
+.rfGrid {
+  display: grid;
+  grid-template-columns: 1.65fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.rfPanel {
+  padding: 16px;
+}
+
+.rfPanelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rfPanelHead h2 {
+  margin: 3px 0 12px;
+  font-size: 20px;
+}
+
+.rfPanelHead > span {
+  font-weight: 900;
+  color: #38dcb4;
+}
+
+.rfChart {
+  height: 298px;
+  position: relative;
+  color: #f0c35b;
+}
+
+.rfChart.rise {
+  color: #20e3a3;
+}
+
+.rfChart.fall {
+  color: #ff5974;
+}
+
+.rfChart svg {
+  width: 100%;
+  height: 264px;
+  overflow: visible;
+}
+
+.rfChart > span {
+  position: absolute;
+  bottom: 0;
+  color: #789bac;
+  font-size: 11px;
+}
+
+.rfChart > span:last-child {
+  right: 0;
+}
+
+.rfEmptyChart {
+  height: 264px;
+  display: grid;
+  place-items: center;
+  color: #789bac;
+}
+
+.rfIndicatorStack,
+.rfConditionList {
+  display: grid;
+  gap: 9px;
+}
+
+.rfIndicatorStack > div,
+.rfConditionList > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #123d54;
+  padding: 10px 0;
+}
+
+.rfIndicatorStack span,
+.rfConditionList span {
+  color: #7fa8ba;
+}
+
+.rfIndicatorStack strong,
+.rfConditionList strong {
+  text-align: right;
+}
+
+.rfMetrics {
+  display: grid;
+  grid-template-columns: repeat(
+    4,
+    minmax(0, 1fr)
+  );
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.rfMetricCard {
+  padding: 14px;
+}
+
+.rfMetricCard.ready {
+  border-color: #1bb890;
+}
+
+.rfMetricCard strong {
+  display: block;
+  font-size: 21px;
+  margin: 6px 0;
+}
+
+.rfMetricCard p {
+  color: #7ea2b2;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.rfMomentum {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.rfMomentum > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr 90px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #123d54;
+  padding-bottom: 12px;
+}
+
+.rfMomentum i {
+  height: 7px;
+  border-radius: 10px;
+  background: #ff5974;
+}
+
+.rfMomentum i.up {
+  background: #20e3a3;
+}
+
+.rfVotes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.rfVotes span {
+  padding: 14px;
+  border: 1px solid #174e68;
+  border-radius: 10px;
+}
+
+.rfSafety {
+  margin-top: 14px;
+  border: 1px solid #6d5e24;
+  border-radius: 11px;
+  padding: 12px;
+  color: #e6c86c;
+  background: #2a2411;
+  font-size: 11px;
+}
+
+@media (max-width: 1250px) {
+  .rfHero {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .rfHeroStats {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 1000px) {
+  .rfGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .rfMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .rfToolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rfHero {
+    grid-template-columns: 1fr;
+  }
+
+  .rfHeroStats {
+    grid-column: auto;
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .rfModeCards {
+    grid-template-columns: 1fr;
+  }
+
+  .rfMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .rfHero h1 {
+    font-size: 42px;
+  }
+
+  .rfModeSwitch button {
+    flex: 1;
+  }
+}
