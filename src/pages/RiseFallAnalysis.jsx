@@ -13,6 +13,15 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeRiseFall } from "../analysis/riseFallAnalysisEngine";
 import "../styles/RiseFallAnalysis.css";
 
+function clamp(value, minimum = 0, maximum = 100) {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return minimum;
+  }
+
+  return Math.max(minimum, Math.min(maximum, numeric));
+}
 function pct(value) {
   return `${Number(value || 0).toFixed(1)}%`;
 }
@@ -3521,6 +3530,7 @@ export default function RiseFallAnalysis() {
     </div>
   );
 }
+
 
 
 
