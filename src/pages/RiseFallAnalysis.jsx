@@ -489,6 +489,37 @@ function CandleChart({
   );
 }
 
+
+function ModeSummary({
+  label,
+  analysis,
+  active = false,
+  onClick,
+}) {
+  const safeAnalysis = analysis || {};
+  const signal = safeAnalysis.signal || "WAIT";
+  const confidence = Number(safeAnalysis.confidence || 0);
+  const regime =
+    safeAnalysis.regime ||
+    safeAnalysis.marketRegime ||
+    "WAIT";
+
+  return (
+    <button
+      type="button"
+      className={`rfModeSummary ${signalClass(signal)} ${
+        active ? "active" : ""
+      }`}
+      onClick={onClick}
+    >
+      <small>{label}</small>
+      <strong>{signal}</strong>
+      <span>{pct(confidence)}</span>
+      <em>{regime}</em>
+    </button>
+  );
+}
+
 export default function RiseFallAnalysis() {
   const {
     markets = [],

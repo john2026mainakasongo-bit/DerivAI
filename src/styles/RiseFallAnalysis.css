@@ -2182,3 +2182,63 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+.rfModeSummary {
+  min-height: 118px;
+  border: 1px solid #1d5268;
+  border-radius: 11px;
+  padding: 13px;
+  color: inherit;
+  text-align: left;
+  background: linear-gradient(145deg, #082638, #061b2a);
+  cursor: pointer;
+}
+
+.rfModeSummary small,
+.rfModeSummary strong,
+.rfModeSummary span,
+.rfModeSummary em {
+  display: block;
+}
+
+.rfModeSummary small {
+  color: #2ee0b1;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.rfModeSummary strong {
+  margin: 7px 0 3px;
+  font-size: 20px;
+}
+
+.rfModeSummary span {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.rfModeSummary em {
+  margin-top: 8px;
+  color: #7fa3b2;
+  font-size: 8px;
+  font-style: normal;
+}
+
+.rfModeSummary.active {
+  border-color: #25d8a9;
+  box-shadow: 0 0 0 1px rgba(37, 216, 169, .2);
+}
+
+.rfModeSummary.rise strong {
+  color: #2ee1b0;
+}
+
+.rfModeSummary.fall strong {
+  color: #ff6d85;
+}
+
+.rfModeSummary.wait strong {
+  color: #f0c45a;
+}
