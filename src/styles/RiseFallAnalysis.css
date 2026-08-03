@@ -1359,3 +1359,53 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+.rfAiEntryTerminal .rfPanelHead > span.strong {
+  border-color: #53a6ff;
+  color: #72b7ff;
+  box-shadow: 0 0 22px #3b98ff2e;
+}
+
+.rfAiEntryTerminal .rfPanelHead > span.instant {
+  border-color: #ffbc3f;
+  color: #ffd066;
+  background: #3a2a08;
+  box-shadow: 0 0 25px #ffbc3f38;
+}
+
+.rfEntryThresholds {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.rfEntryThresholds span {
+  border: 1px solid #284b5d;
+  border-radius: 9px;
+  padding: 9px;
+  text-align: center;
+  color: #6f8d9a;
+  background: #061924;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.rfEntryThresholds span.passed {
+  border-color: #1d9876;
+  color: #27e3ae;
+  background: #07362c;
+}
+
+.rfEntryThresholds span.instant {
+  border-color: #c8922e;
+  color: #ffd066;
+  background: #382907;
+}
+
+@media (max-width: 800px) {
+  .rfEntryThresholds {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

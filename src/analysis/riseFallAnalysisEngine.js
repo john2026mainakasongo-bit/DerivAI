@@ -1505,23 +1505,78 @@ export function analyzeRiseFall(
     (item) => item.passed
   ).length;
 
+  const dominantPressure =
+    direction === "RISE"
+      ? pressure.buying
+      : direction === "FALL"
+        ? pressure.selling
+        : Math.max(pressure.buying, pressure.selling);
+
+  const emaAlignmentScore = emaAligned ? 100 : 0;
+  const continuationScore = continuationReversal.continuation;
+  const noiseSafetyScore = Math.max(0, 100 - noise);
+
+  const weightedScores = {
+    microTrend: microTrend.averageStrength,
+    pressure: dominantPressure,
+    momentum: clamp(
+      Math.max(
+        Math.abs(momentum.fast),
+        Math.abs(momentum.medium),
+        Math.abs(momentum.slow)
+      ) /
+        Math.max(atr, 0.0000001) *
+        36
+    ),
+    impulse: impulse.score,
+    ema: emaAlignmentScore,
+    continuation: continuationScore,
+    noise: noiseSafetyScore,
+  };
+
+  const entryScore = clamp(
+    weightedScores.microTrend * 0.25 +
+      weightedScores.pressure * 0.2 +
+      weightedScores.momentum * 0.15 +
+      weightedScores.impulse * 0.15 +
+      weightedScores.ema * 0.1 +
+      weightedScores.continuation * 0.1 +
+      weightedScores.noise * 0.05
+  );
+
   const tradeNow =
     direction !== "WAIT" &&
-    confirmationsPassed >= 7 &&
+    entryScore >= 78 &&
     dominantVotes >= 7 &&
-    confidence >= 68 &&
-    consistency >= 54 &&
+    microTrend.dominantDirection === direction &&
+    microTrend.dominantVotes >= 4 &&
+    continuationReversal.continuation >= 52 &&
+    exhaustion <= 82 &&
     (
-      regime !== "RANGE" ||
-      (dominantVotes >= 9 && consistency >= 58)
+      emaAligned ||
+      momentumAligned ||
+      confirmationsPassed >= 8
     );
+
+  const strongTrade =
+    tradeNow &&
+    entryScore >= 85 &&
+    dominantVotes >= 9 &&
+    confirmationsPassed >= 8;
+
+  const instantOneTick =
+    strongTrade &&
+    entryScore >= 92 &&
+    impulse.score >= 65 &&
+    persistence >= 62 &&
+    noise <= 72;
 
   const prepare =
     !tradeNow &&
     direction !== "WAIT" &&
-    confirmationsPassed >= 6 &&
-    dominantVotes >= 7 &&
-    confidence >= 54;
+    entryScore >= 70 &&
+    dominantVotes >= 6 &&
+    microTrend.dominantVotes >= 3;
 
   const decision = tradeNow
     ? `TRADE ${direction}`
@@ -1581,56 +1636,16 @@ export function analyzeRiseFall(
       (100 - breakoutFakeProbability) * 0.1
   );
 
-  const dominantPressure =
-    direction === "RISE"
-      ? pressure.buying
-      : direction === "FALL"
-        ? pressure.selling
-        : Math.max(pressure.buying, pressure.selling);
-
-  const emaAlignmentScore = emaAligned ? 100 : 0;
-  const continuationScore = continuationReversal.continuation;
-  const noiseSafetyScore = Math.max(0, 100 - noise);
-
-  const weightedScores = {
-    microTrend: microTrend.averageStrength,
-    pressure: dominantPressure,
-    momentum: clamp(
-      Math.max(
-        Math.abs(momentum.fast),
-        Math.abs(momentum.medium),
-        Math.abs(momentum.slow)
-      ) /
-        Math.max(atr, 0.0000001) *
-        36
-    ),
-    impulse: impulse.score,
-    ema: emaAlignmentScore,
-    continuation: continuationScore,
-    noise: noiseSafetyScore,
-  };
-
-  const entryScore = clamp(
-    weightedScores.microTrend * 0.25 +
-      weightedScores.pressure * 0.2 +
-      weightedScores.momentum * 0.15 +
-      weightedScores.impulse * 0.15 +
-      weightedScores.ema * 0.1 +
-      weightedScores.continuation * 0.1 +
-      weightedScores.noise * 0.05
-  );
-
   const fastScalpReady =
-    direction !== "WAIT" &&
+    tradeNow &&
     entryScore >= 78 &&
-    dominantVotes >= 8 &&
-    confirmationsPassed >= 8 &&
     microTrend.dominantDirection === direction &&
-    microTrend.dominantVotes >= 4 &&
-    emaAligned &&
-    momentumAligned &&
-    continuationReversal.continuation >= 55 &&
-    exhaustion <= 78;
+    continuationReversal.continuation >= 52 &&
+    (
+      impulse.score >= 52 ||
+      persistence >= 58 ||
+      confirmationsPassed >= 9
+    );
 
   const finalScore = clamp(
     qualityScore * 0.42 +
@@ -1639,17 +1654,29 @@ export function analyzeRiseFall(
   );
 
   const aiDecision =
-    entryScore >= 78 &&
-    direction !== "WAIT" &&
-    emaAligned &&
-    momentumAligned
-      ? `BUY ${direction} NOW`
-      : entryScore >= 70 && direction !== "WAIT"
-        ? `PREPARE ${direction}`
-        : "WAIT";
+    instantOneTick
+      ? `INSTANT BUY ${direction} · 1 TICK`
+      : strongTrade
+        ? `STRONG BUY ${direction}`
+        : tradeNow
+          ? `BUY ${direction} NOW`
+          : prepare
+            ? `PREPARE ${direction}`
+            : "WAIT";
+
+  const aiLevel =
+    instantOneTick
+      ? "INSTANT"
+      : strongTrade
+        ? "STRONG"
+        : tradeNow
+          ? "BUY"
+          : prepare
+            ? "PREPARE"
+            : "WAIT";
 
   const setupGrade = tradeNow
-    ? scoreGrade(finalScore)
+    ? scoreGrade(Math.max(finalScore, entryScore))
     : prepare
       ? "PREPARE"
       : "WAIT";
@@ -1659,14 +1686,12 @@ export function analyzeRiseFall(
     .map((item) => item.label);
 
   const reason = tradeNow
-    ? `${decision}: ${confirmationsPassed}/${confirmationChecks.length} confirmations aligned.`
+    ? `${aiDecision}: weighted AI score ${entryScore.toFixed(1)}/100.`
     : prepare
-      ? `${decision}: one or two checks are still forming — ${failedConfirmations.join(", ") || "fresh confirmation"}.`
-      : regime === "RANGE"
-        ? "NO TRADE: market is ranging or noisy."
-        : direction === "WAIT"
-          ? "NO TRADE: direction is mixed."
-          : `NO TRADE: missing ${failedConfirmations.join(", ") || "strong confirmation"}.`;
+      ? `${aiDecision}: score ${entryScore.toFixed(1)}/100; setup is still forming.`
+      : direction === "WAIT"
+        ? "WAIT: direction is mixed."
+        : `WAIT: weighted AI score ${entryScore.toFixed(1)}/100 is below 70.`;
 
   return {
     signal,
@@ -1717,6 +1742,9 @@ export function analyzeRiseFall(
     entryScore,
     weightedScores,
     aiDecision,
+    aiLevel,
+    strongTrade,
+    instantOneTick,
     bias,
     squeeze,
     supportReaction,

@@ -325,8 +325,13 @@ export default function RiseFallAnalysis() {
       allowOneTick &&
       analysis?.fastScalpReady &&
       finalScore >= Number(oneTickMinimumScore || 78) &&
-      confidence >= dynamicMinimumConfidence &&
-      Number(analysis?.entryScore || 0) >= 78;
+      (
+        analysis?.instantOneTick ||
+        (
+          confidence >= dynamicMinimumConfidence &&
+          Number(analysis?.entryScore || 0) >= 78
+        )
+      );
 
     if (durationMode === "1T") {
       if (!oneTickQualified) {
@@ -710,8 +715,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V63 · Rise/Fall Pro Analysis"
-          subtitle="Weighted AI score, faster 1-tick decisions and expanded microstructure analysis"
+          title="EdgePilot V64 · Rise/Fall Pro Analysis"
+          subtitle="Score-first AI entry: Prepare 70+, Buy 78+, Strong 85+, Instant 92+"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1487,7 +1492,17 @@ export default function RiseFallAnalysis() {
               </h2>
             </div>
 
-            <span className={active.fastScalpReady ? "ready" : "wait"}>
+            <span
+              className={
+                active.instantOneTick
+                  ? "instant"
+                  : active.strongTrade
+                    ? "strong"
+                    : active.fastScalpReady
+                      ? "ready"
+                      : "wait"
+              }
+            >
               {pct(active.entryScore)}
             </span>
           </div>
@@ -1518,6 +1533,21 @@ export default function RiseFallAnalysis() {
                 </i>
               </div>
             ))}
+          </div>
+
+          <div className="rfEntryThresholds">
+            <span className={active.entryScore >= 70 ? "passed" : ""}>
+              70+ PREPARE
+            </span>
+            <span className={active.entryScore >= 78 ? "passed" : ""}>
+              78+ AUTO BUY
+            </span>
+            <span className={active.entryScore >= 85 ? "passed" : ""}>
+              85+ STRONG BUY
+            </span>
+            <span className={active.entryScore >= 92 ? "passed instant" : ""}>
+              92+ INSTANT 1 TICK
+            </span>
           </div>
 
           <div className="rfMicroVotes">
