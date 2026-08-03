@@ -85,6 +85,257 @@ function currentLossStreak(records = []) {
   return streak;
 }
 
+
+const RF_HISTORY_STORAGE_KEY = "edgepilot-rf-price-history-v73";
+const RF_MARKET_SNAPSHOT_KEY = "edgepilot-rf-market-snapshots-v73";
+const RF_MAX_HISTORY_POINTS = 2400;
+const RF_MAX_MARKET_SNAPSHOTS = 40;
+
+function normalizedTick(item, fallbackTime = Date.now()) {
+  const quote = Number(
+    typeof item === "number"
+      ? item
+      : item?.quote ??
+          item?.price ??
+          item?.value ??
+          item?.tick ??
+          item?.currentPrice ??
+          0
+  );
+
+  const rawTime =
+    typeof item === "object" && item
+      ? item.epoch ??
+        item.time ??
+        item.timestamp ??
+        item.createdAt ??
+        fallbackTime
+      : fallbackTime;
+
+  const parsedTime = Number(rawTime);
+  const time =
+    parsedTime > 0 && parsedTime < 1e12
+      ? parsedTime * 1000
+      : parsedTime > 0
+        ? parsedTime
+        : fallbackTime;
+
+  if (!Number.isFinite(quote) || quote <= 0) return null;
+
+  return {
+    quote,
+    time,
+  };
+}
+
+function readStoredMap(key) {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const value = JSON.parse(window.localStorage.getItem(key) || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredMap(key, value) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Continue with in-memory data when browser storage is unavailable.
+  }
+}
+
+function mergeTickHistory(existing = [], incoming = []) {
+  const merged = new Map();
+
+  [...existing, ...incoming].forEach((item, index) => {
+    const point = normalizedTick(item, Date.now() + index);
+    if (!point) return;
+
+    const key = `${Math.round(point.time)}:${point.quote}`;
+    merged.set(key, point);
+  });
+
+  return [...merged.values()]
+    .sort((a, b) => a.time - b.time)
+    .slice(-RF_MAX_HISTORY_POINTS);
+}
+
+function candleBucketSize(mode) {
+  if (mode === "30S") return 30000;
+  if (mode === "15S") return 15000;
+  if (mode === "5S") return 5000;
+  return 0;
+}
+
+function buildCandles(points = [], mode = "10T") {
+  const ticks = points
+    .map((item, index) => normalizedTick(item, Date.now() + index))
+    .filter(Boolean);
+
+  if (!ticks.length) return [];
+
+  if (mode.endsWith("T")) {
+    const tickCount = Math.max(1, Number(mode.replace("T", "")) || 10);
+    const candles = [];
+
+    for (let index = 0; index < ticks.length; index += tickCount) {
+      const group = ticks.slice(index, index + tickCount);
+      if (!group.length) continue;
+
+      const values = group.map((item) => item.quote);
+      candles.push({
+        time: group[0].time,
+        open: values[0],
+        high: Math.max(...values),
+        low: Math.min(...values),
+        close: values.at(-1),
+        ticks: group.length,
+      });
+    }
+
+    return candles.slice(-80);
+  }
+
+  const bucketSize = candleBucketSize(mode);
+  const buckets = new Map();
+
+  ticks.forEach((point) => {
+    const bucket = Math.floor(point.time / bucketSize) * bucketSize;
+    const current = buckets.get(bucket);
+
+    if (!current) {
+      buckets.set(bucket, {
+        time: bucket,
+        open: point.quote,
+        high: point.quote,
+        low: point.quote,
+        close: point.quote,
+        ticks: 1,
+      });
+      return;
+    }
+
+    current.high = Math.max(current.high, point.quote);
+    current.low = Math.min(current.low, point.quote);
+    current.close = point.quote;
+    current.ticks += 1;
+  });
+
+  return [...buckets.values()]
+    .sort((a, b) => a.time - b.time)
+    .slice(-80);
+}
+
+function candleSignal(candle) {
+  if (!candle) return "WAIT";
+  if (candle.close > candle.open) return "RISE";
+  if (candle.close < candle.open) return "FALL";
+  return "WAIT";
+}
+
+function CandleChart({
+  candles = [],
+  signal = "WAIT",
+  probabilityRise = 0,
+  probabilityFall = 0,
+}) {
+  if (!candles.length) {
+    return <div className="rfEmptyChart">Building candlestick history…</div>;
+  }
+
+  const width = 1200;
+  const height = 390;
+  const padding = 34;
+  const values = candles.flatMap((item) => [item.high, item.low]);
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const range = Math.max(0.000001, maximum - minimum);
+  const step = (width - padding * 2) / Math.max(1, candles.length);
+  const bodyWidth = Math.max(3, Math.min(14, step * 0.55));
+
+  const y = (value) =>
+    padding + (maximum - value) / range * (height - padding * 2);
+
+  return (
+    <div className={`rfCandleChart ${signalClass(signal)}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        <g className="rfCandleGrid">
+          {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
+            <line
+              key={ratio}
+              x1={padding}
+              x2={width - padding}
+              y1={height * ratio}
+              y2={height * ratio}
+            />
+          ))}
+        </g>
+
+        {candles.map((candle, index) => {
+          const x = padding + index * step + step / 2;
+          const rising = candle.close >= candle.open;
+          const bodyTop = y(Math.max(candle.open, candle.close));
+          const bodyBottom = y(Math.min(candle.open, candle.close));
+          const bodyHeight = Math.max(2, bodyBottom - bodyTop);
+
+          return (
+            <g
+              key={`${candle.time}-${index}`}
+              className={rising ? "rise" : "fall"}
+            >
+              <line
+                x1={x}
+                x2={x}
+                y1={y(candle.high)}
+                y2={y(candle.low)}
+                className="wick"
+              />
+              <rect
+                x={x - bodyWidth / 2}
+                y={bodyTop}
+                width={bodyWidth}
+                height={bodyHeight}
+                rx="1"
+                className="body"
+              />
+            </g>
+          );
+        })}
+
+        {signal !== "WAIT" ? (
+          <g className={`rfChartSignalMarker ${signalClass(signal)}`}>
+            <line
+              x1={padding}
+              x2={width - padding}
+              y1={signal === "RISE" ? height * 0.18 : height * 0.82}
+              y2={signal === "RISE" ? height * 0.18 : height * 0.82}
+            />
+            <text
+              x={width - padding - 150}
+              y={signal === "RISE" ? height * 0.15 : height * 0.78}
+            >
+              {signal === "RISE"
+                ? `RISE ZONE ${Number(probabilityRise).toFixed(1)}%`
+                : `FALL ZONE ${Number(probabilityFall).toFixed(1)}%`}
+            </text>
+          </g>
+        ) : null}
+      </svg>
+
+      <div className="rfCandleLegend">
+        <span className="rise">RISE candle</span>
+        <span className="fall">FALL candle</span>
+        <strong>{num(candles.at(-1)?.close, 6)}</strong>
+      </div>
+    </div>
+  );
+}
+
 function MiniChart({
   points = [],
   signal = "WAIT",
@@ -255,6 +506,11 @@ export default function RiseFallAnalysis() {
   const [learningHistory, setLearningHistory] = useState(
     safeReadLearningHistory
   );
+  const [candleMode, setCandleMode] = useState("10T");
+  const [persistentHistory, setPersistentHistory] = useState([]);
+  const [marketSnapshots, setMarketSnapshots] = useState(() =>
+    readStoredMap(RF_MARKET_SNAPSHOT_KEY)
+  );
   const previousSignalRef = useRef("WAIT");
   const lastAlertAtRef = useRef(0);
   const lastExecutedSignalRef = useRef("");
@@ -310,18 +566,113 @@ export default function RiseFallAnalysis() {
       });
   }, [connected, connect]);
 
+  useEffect(() => {
+    if (!symbol) return;
+
+    const stored = readStoredMap(RF_HISTORY_STORAGE_KEY);
+    const saved = Array.isArray(stored[symbol]) ? stored[symbol] : [];
+    setPersistentHistory(saved);
+  }, [symbol]);
+
+  useEffect(() => {
+    if (!symbol || !Array.isArray(prices) || !prices.length) return;
+
+    setPersistentHistory((current) => {
+      const incoming = prices.map((item, index) =>
+        normalizedTick(item, Date.now() - (prices.length - index) * 1000)
+      ).filter(Boolean);
+
+      const next = mergeTickHistory(current, incoming);
+      const stored = readStoredMap(RF_HISTORY_STORAGE_KEY);
+      stored[symbol] = next;
+      writeStoredMap(RF_HISTORY_STORAGE_KEY, stored);
+      return next;
+    });
+  }, [prices, symbol]);
+
+  const combinedPriceHistory = useMemo(
+    () => mergeTickHistory(persistentHistory, prices),
+    [persistentHistory, prices]
+  );
+
+  const candles = useMemo(
+    () => buildCandles(combinedPriceHistory, candleMode),
+    [combinedPriceHistory, candleMode]
+  );
+
   const analysis15 = useMemo(
-    () => analyzeRiseFall(prices, "15s"),
-    [prices]
+    () => analyzeRiseFall(combinedPriceHistory, "15s"),
+    [combinedPriceHistory]
   );
 
   const analysis10 = useMemo(
-    () => analyzeRiseFall(prices, "10ticks"),
-    [prices]
+    () => analyzeRiseFall(combinedPriceHistory, "10ticks"),
+    [combinedPriceHistory]
   );
 
   const active =
     mode === "15s" ? analysis15 : analysis10;
+
+
+  const syntheticScore = useMemo(
+    () =>
+      Math.max(
+        Number(active.opportunityScore || 0),
+        Number(active.scores?.final || 0),
+        Number(active.confidence || 0)
+      ),
+    [
+      active.opportunityScore,
+      active.scores?.final,
+      active.confidence,
+    ]
+  );
+
+  useEffect(() => {
+    if (!symbol || !active.samples) return;
+
+    setMarketSnapshots((current) => {
+      const next = {
+        ...current,
+        [symbol]: {
+          symbol,
+          label: market?.label || symbol,
+          score: syntheticScore,
+          confidence: Number(active.confidence || 0),
+          signal: active.signal || "WAIT",
+          risk: active.risk || "HIGH",
+          regime: active.regime || "UNKNOWN",
+          updatedAt: Date.now(),
+        },
+      };
+
+      const trimmed = Object.fromEntries(
+        Object.entries(next)
+          .sort(([, a], [, b]) => Number(b.updatedAt) - Number(a.updatedAt))
+          .slice(0, RF_MAX_MARKET_SNAPSHOTS)
+      );
+
+      writeStoredMap(RF_MARKET_SNAPSHOT_KEY, trimmed);
+      return trimmed;
+    });
+  }, [
+    symbol,
+    market?.label,
+    active.samples,
+    active.signal,
+    active.confidence,
+    active.risk,
+    active.regime,
+    syntheticScore,
+  ]);
+
+  const strongSyntheticMarkets = useMemo(
+    () =>
+      Object.values(marketSnapshots)
+        .filter((item) => Number(item.score || 0) >= 90)
+        .sort((a, b) => Number(b.score) - Number(a.score)),
+    [marketSnapshots]
+  );
 
   const learningProfile = useMemo(() => {
     const records = Array.isArray(learningHistory)
@@ -1153,8 +1504,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V71 · Rise/Fall Pro Analysis"
-          subtitle="Immediate execution, automatic volatility switching, unlimited runs and 3-loss hard stop"
+          title="EdgePilot V73 · Rise/Fall Pro Analysis"
+          subtitle="Persistent candlesticks, Rise/Fall chart zones and 90%+ synthetic-market intelligence"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1605,6 +1956,98 @@ export default function RiseFallAnalysis() {
           </article>
         </section>
 
+        <section className="rfSyntheticScanner">
+          <div className="rfPanelHead">
+            <div>
+              <small>SYNTHETIC INDEX INTELLIGENCE</small>
+              <h2>90%+ volatility and synthetic setups</h2>
+            </div>
+            <strong>{strongSyntheticMarkets.length} qualified</strong>
+          </div>
+
+          <div className="rfSyntheticRows">
+            {strongSyntheticMarkets.length ? (
+              strongSyntheticMarkets.map((item) => (
+                <button
+                  type="button"
+                  key={item.symbol}
+                  onClick={() => changeSymbol(item.symbol)}
+                >
+                  <span>
+                    <small>{item.label}</small>
+                    <strong>{item.signal}</strong>
+                  </span>
+                  <span>
+                    <small>Score</small>
+                    <strong>{Number(item.score).toFixed(1)}%</strong>
+                  </span>
+                  <span>
+                    <small>Confidence</small>
+                    <strong>{Number(item.confidence).toFixed(1)}%</strong>
+                  </span>
+                  <span>
+                    <small>State</small>
+                    <strong>{item.regime}</strong>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p>
+                No cached market is above 90% yet. Auto-switch will keep
+                scanning and save every visited synthetic index.
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="rfCandleSection">
+          <div className="rfPanelHead">
+            <div>
+              <small>PRO CANDLESTICK CHART</small>
+              <h2>Persistent Rise/Fall price action</h2>
+            </div>
+
+            <div className="rfCandleModes">
+              {["5S", "15S", "30S", "5T", "10T", "20T"].map((item) => (
+                <button
+                  type="button"
+                  key={item}
+                  className={candleMode === item ? "active" : ""}
+                  onClick={() => setCandleMode(item)}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <CandleChart
+            candles={candles}
+            signal={active.signal}
+            probabilityRise={active.probabilityRise}
+            probabilityFall={active.probabilityFall}
+          />
+
+          <div className="rfCandleMetrics">
+            <span>
+              <small>Last candle</small>
+              <strong>{candleSignal(candles.at(-1))}</strong>
+            </span>
+            <span>
+              <small>Stored ticks</small>
+              <strong>{combinedPriceHistory.length}</strong>
+            </span>
+            <span>
+              <small>Chart survives refresh</small>
+              <strong>YES</strong>
+            </span>
+            <span>
+              <small>Current synthetic score</small>
+              <strong>{pct(syntheticScore)}</strong>
+            </span>
+          </div>
+        </section>
+
         <section className="rfGrid">
           <article className="rfPanel rfChartPanel">
             <div className="rfPanelHead">
@@ -1623,7 +2066,11 @@ export default function RiseFallAnalysis() {
             </div>
 
             <MiniChart
-              points={active.points}
+              points={
+                active.points?.length
+                  ? active.points
+                  : combinedPriceHistory
+              }
               signal={active.signal}
             />
           </article>

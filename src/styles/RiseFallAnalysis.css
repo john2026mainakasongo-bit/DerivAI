@@ -1811,3 +1811,204 @@
   padding: 7px 9px;
   background: #061c2a;
 }
+
+
+.rfSyntheticScanner,
+.rfCandleSection {
+  margin: 14px 0;
+  padding: 15px;
+  border: 1px solid #1b5a72;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, #103f55, transparent 44%),
+    linear-gradient(145deg, #082638, #061b2a);
+}
+
+.rfSyntheticRows {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.rfSyntheticRows > button {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(3, 1fr);
+  gap: 9px;
+  border: 1px solid #1c5b73;
+  border-radius: 10px;
+  padding: 10px;
+  color: inherit;
+  text-align: left;
+  background: #061d2b;
+  cursor: pointer;
+}
+
+.rfSyntheticRows > button:hover {
+  border-color: #25d7aa;
+  background: #09372f;
+}
+
+.rfSyntheticRows span small,
+.rfCandleMetrics small {
+  display: block;
+  color: #70a0b2;
+  font-size: 8px;
+}
+
+.rfSyntheticRows span strong,
+.rfCandleMetrics strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.rfSyntheticRows p {
+  margin: 0;
+  color: #7fa5b4;
+  font-size: 10px;
+}
+
+.rfCandleModes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rfCandleModes button {
+  border: 1px solid #1e566d;
+  border-radius: 7px;
+  padding: 6px 10px;
+  color: #86a9b7;
+  background: #061c2a;
+  cursor: pointer;
+}
+
+.rfCandleModes button.active {
+  color: #fff;
+  border-color: #21d4a4;
+  background: #0c7259;
+}
+
+.rfCandleChart {
+  position: relative;
+  height: 390px;
+  margin-top: 12px;
+  border: 1px solid #17485e;
+  border-radius: 12px;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(18, 61, 80, .16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(18, 61, 80, .16) 1px, transparent 1px),
+    #051a28;
+  background-size: 48px 48px;
+}
+
+.rfCandleChart svg {
+  width: 100%;
+  height: 100%;
+}
+
+.rfCandleGrid line {
+  stroke: #164358;
+  stroke-width: 1;
+}
+
+.rfCandleChart g.rise .wick,
+.rfCandleChart g.rise .body {
+  stroke: #29dfae;
+  fill: #1ab989;
+}
+
+.rfCandleChart g.fall .wick,
+.rfCandleChart g.fall .body {
+  stroke: #ff6a83;
+  fill: #db4965;
+}
+
+.rfCandleChart .wick {
+  stroke-width: 2;
+}
+
+.rfChartSignalMarker line {
+  stroke-width: 2;
+  stroke-dasharray: 9 7;
+}
+
+.rfChartSignalMarker.rise line,
+.rfChartSignalMarker.rise text {
+  stroke: #2be5b3;
+  fill: #2be5b3;
+}
+
+.rfChartSignalMarker.fall line,
+.rfChartSignalMarker.fall text {
+  stroke: #ff6b83;
+  fill: #ff6b83;
+}
+
+.rfChartSignalMarker text {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.rfCandleLegend {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid #1c4f64;
+  border-radius: 8px;
+  background: rgba(4, 22, 33, .88);
+  font-size: 9px;
+}
+
+.rfCandleLegend .rise {
+  color: #2be1ae;
+}
+
+.rfCandleLegend .fall {
+  color: #ff7087;
+}
+
+.rfCandleLegend strong {
+  margin-left: auto;
+}
+
+.rfCandleMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rfCandleMetrics > span {
+  border: 1px solid #194c62;
+  border-radius: 9px;
+  padding: 9px;
+  background: #061d2b;
+}
+
+@media (max-width: 900px) {
+  .rfSyntheticRows > button,
+  .rfCandleMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .rfCandleChart {
+    height: 310px;
+  }
+}
+
+@media (max-width: 560px) {
+  .rfSyntheticRows > button,
+  .rfCandleMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .rfCandleChart {
+    height: 260px;
+  }
+}
