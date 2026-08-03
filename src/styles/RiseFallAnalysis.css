@@ -2751,3 +2751,65 @@
   }
 }
 
+
+
+/* ================================================================
+   EdgePilot V80 â€” final smooth/safe mobile polish
+   ================================================================ */
+
+.rfV80SafetyStrip {
+  position: sticky;
+  top: 0;
+  z-index: 24;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 9px;
+}
+
+.rfV80SafetyStrip > div {
+  border: 1px solid #20546a;
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: rgba(5, 28, 42, .94);
+}
+
+.rfV80SafetyStrip small,
+.rfV80SafetyStrip strong {
+  display: block;
+}
+
+.rfV80SafetyStrip small {
+  color: #7fa7b5;
+  font-size: 8px;
+}
+
+.rfV80SafetyStrip strong {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .rfV80SafetyStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    top: 48px;
+  }
+
+  .rfMobileReady .rfTradeTableWrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .rfMobileReady .rfTradeTable {
+    min-width: 760px;
+  }
+
+  .rfMobileReady .rfManualPanel {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .rfMobileReady .rfManualLauncher {
+    bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+}
+

@@ -728,6 +728,8 @@ export default function RiseFallAnalysis() {
   const stopGenerationRef = useRef(0);
   const settlementRefreshRef = useRef(new Map());
   const burstDirectionRef = useRef("WAIT");
+  const burstRunsRef = useRef(0);
+  const nextAutoEntryAtRef = useRef(0);
 
   const connectingRef = useRef(false);
 
@@ -738,6 +740,10 @@ export default function RiseFallAnalysis() {
   useEffect(() => {
     executionRunsRef.current = executionRuns;
   }, [executionRuns]);
+
+  useEffect(() => {
+    burstRunsRef.current = burstRuns;
+  }, [burstRuns]);
 
   useEffect(() => {
     consecutiveLossesRef.current = consecutiveLosses;
@@ -1117,14 +1123,15 @@ export default function RiseFallAnalysis() {
 
   const burstEntryReady =
     burstMode &&
+    burstRunsRef.current < 5 &&
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
-    activeDirectionProbability >= 86 &&
-    activeConfidence >= 84 &&
-    activeOpportunity >= 80 &&
-    activeContinuation >= 72 &&
-    activeReversalRisk <= 24 &&
-    activeNoise <= 58 &&
+    activeDirectionProbability >= 90 &&
+    activeConfidence >= 87 &&
+    activeOpportunity >= 84 &&
+    activeContinuation >= 76 &&
+    activeReversalRisk <= 20 &&
+    activeNoise <= 50 &&
     active.risk === "LOW" &&
     preBuyStructure.passed >= 5;
 
@@ -1291,48 +1298,37 @@ export default function RiseFallAnalysis() {
       label: rise ? "RISE" : "FALL",
     };
 
-    const exceptionalOneTick =
-      allowOneTick &&
-      learnedEntryAllowed &&
-      probability >= 96 &&
-      confidence >= 94 &&
-      finalScore >= Math.max(92, Number(oneTickMinimumScore || 90)) &&
-      continuation >= 86 &&
-      reversal <= 10 &&
-      noise <= 28 &&
-      confirmations >= 10 &&
-      pressure >= 72 &&
-      analysis?.risk === "LOW" &&
-      analysis?.instantOneTick;
+    const exceptionalOneTick = false;
 
     const twoTickQualified =
-      probability >= 91 &&
-      confidence >= 89 &&
-      finalScore >= 86 &&
-      continuation >= 80 &&
-      reversal <= 16 &&
-      noise <= 40 &&
-      confirmations >= 8 &&
-      pressure >= 66 &&
+      probability >= 94 &&
+      confidence >= 92 &&
+      finalScore >= 89 &&
+      continuation >= 84 &&
+      reversal <= 13 &&
+      noise <= 34 &&
+      confirmations >= 9 &&
+      pressure >= 70 &&
       analysis?.risk === "LOW";
 
     const fiveTickQualified =
-      probability >= 87 &&
-      confidence >= 84 &&
-      finalScore >= 81 &&
-      continuation >= 74 &&
-      reversal <= 22 &&
-      noise <= 52 &&
+      probability >= 89 &&
+      confidence >= 86 &&
+      finalScore >= 83 &&
+      continuation >= 77 &&
+      reversal <= 20 &&
+      noise <= 48 &&
       confirmations >= 7 &&
-      analysis?.risk !== "HIGH";
+      pressure >= 62 &&
+      analysis?.risk === "LOW";
 
     const tenSecondQualified =
-      probability >= 83 &&
-      confidence >= 80 &&
-      finalScore >= 77 &&
-      continuation >= 68 &&
-      reversal <= 28 &&
-      noise <= 62 &&
+      probability >= 85 &&
+      confidence >= 82 &&
+      finalScore >= 79 &&
+      continuation >= 70 &&
+      reversal <= 26 &&
+      noise <= 58 &&
       confirmations >= 6 &&
       analysis?.risk !== "HIGH";
 
@@ -1366,16 +1362,6 @@ export default function RiseFallAnalysis() {
     }
 
     if (durationMode === "AUTO") {
-      if (exceptionalOneTick) {
-        return {
-          ...base,
-          duration: 1,
-          durationUnit: "t",
-          fastEntry: true,
-          displayDuration: "1 TICK · EXCEPTIONAL",
-        };
-      }
-
       if (twoTickQualified) {
         return {
           ...base,
@@ -1600,6 +1586,7 @@ export default function RiseFallAnalysis() {
     autoRunningRef.current = false;
     executionBusyRef.current = false;
     marketSwitchingRef.current = false;
+    nextAutoEntryAtRef.current = Number.POSITIVE_INFINITY;
     lastExecutedSignalRef.current = "";
     setAutoRunning(false);
     setExecutionMessage(message || "STOPPED MANUALLY");
@@ -1610,6 +1597,8 @@ export default function RiseFallAnalysis() {
       executionBusyRef.current ||
       !autoRunningRef.current ||
       executionRunsRef.current >= Math.max(1, Number(sessionRunTarget) || 100) ||
+      Date.now() < nextAutoEntryAtRef.current ||
+      burstRunsRef.current >= 5 ||
       hasOpenSessionTrade ||
       !signal ||
       signal === "WAIT" ||
@@ -1743,11 +1732,16 @@ export default function RiseFallAnalysis() {
       ].slice(0, 30));
 
       if (burstDirectionRef.current === signal) {
-        setBurstRuns((value) => value + 1);
+        const nextBurst = burstRunsRef.current + 1;
+        burstRunsRef.current = nextBurst;
+        setBurstRuns(nextBurst);
       } else {
         burstDirectionRef.current = signal;
+        burstRunsRef.current = 1;
         setBurstRuns(1);
       }
+
+      nextAutoEntryAtRef.current = Date.now() + 1200;
 
       if (nextRuns >= Math.max(1, Number(sessionRunTarget) || 100)) {
         stopAuto(`Session target completed: ${nextRuns} runs.`);
@@ -1934,10 +1928,11 @@ export default function RiseFallAnalysis() {
 
     const weakMarket =
       active.risk === "HIGH" ||
-      activeNoise > 68 ||
-      activeReversalRisk > 34 ||
-      activeConfidence < 72 ||
-      activeOpportunity < 70;
+      activeNoise > 60 ||
+      activeReversalRisk > 30 ||
+      activeConfidence < 76 ||
+      activeOpportunity < 74 ||
+      activeContinuation < 62;
 
     const cleanEntry =
       immediateEntryReady &&
@@ -2174,9 +2169,20 @@ export default function RiseFallAnalysis() {
         if (latestStatus === "WON") {
           consecutiveLossesRef.current = 0;
           setConsecutiveLosses(0);
+          nextAutoEntryAtRef.current = Date.now() + 1500;
+
+          if (burstRunsRef.current >= 5) {
+            burstRunsRef.current = 0;
+            setBurstRuns(0);
+            burstDirectionRef.current = "WAIT";
+            waitStartedAtRef.current = 0;
+          }
         } else if (latestStatus === "LOST") {
+          burstRunsRef.current = 0;
           setBurstRuns(0);
           burstDirectionRef.current = "WAIT";
+          nextAutoEntryAtRef.current = Date.now() + 8000;
+          waitStartedAtRef.current = 0;
           const nextLosses = consecutiveLossesRef.current + 1;
           consecutiveLossesRef.current = nextLosses;
           setConsecutiveLosses(nextLosses);
@@ -2202,8 +2208,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V79 · Adaptive AI + Manual Direct Trading"
-          subtitle="Adaptive auto execution plus direct manual Rise/Fall and digit-contract controls"
+          title="EdgePilot V80 · Smooth Safe Mobile Trader"
+          subtitle="2+ tick adaptive execution, loss cooldown, bounded bursts, market rotation and mobile manual trading"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -2416,7 +2422,7 @@ export default function RiseFallAnalysis() {
                 disabled={autoRunning}
                 onChange={(event) => setBurstMode(event.target.checked)}
               />
-              Strong-signal burst mode with fresh analysis before every run
+              Strong-signal burst mode · maximum 5 trades before a fresh reset
             </label>
 
             <label>
@@ -2426,7 +2432,7 @@ export default function RiseFallAnalysis() {
                 disabled={autoRunning}
                 onChange={(event) => setAllowOneTick(event.target.checked)}
               />
-              Allow exceptional 1-tick execution (OFF recommended)
+              Auto 1-tick disabled · manual digit contracts remain 1 tick
             </label>
 
             <label>
@@ -2817,7 +2823,7 @@ export default function RiseFallAnalysis() {
                   key={item.label}
                   className={item.passed ? "passed" : "failed"}
                 >
-                  <b>{item.passed ? "âœ“" : "Ã—"} {item.label}</b>
+                  <b>{item.passed ? "✓" : "×"} {item.label}</b>
                   <strong>{item.value}</strong>
                 </span>
               ))}
@@ -3356,7 +3362,7 @@ export default function RiseFallAnalysis() {
                   key={`${tick}-${index}`}
                   className={String(tick).toLowerCase()}
                 >
-                  {tick === "RISE" ? "â†‘" : tick === "FALL" ? "â†“" : "—"}
+                  {tick === "RISE" ? "↑" : tick === "FALL" ? "↓" : "—"}
                 </span>
               ))}
             </h2>
@@ -3501,7 +3507,7 @@ export default function RiseFallAnalysis() {
                 key={item.size}
                 className={String(item.direction).toLowerCase()}
               >
-                {item.size} {item.direction === "RISE" ? "â†‘" : item.direction === "FALL" ? "â†“" : "—"}
+                {item.size} {item.direction === "RISE" ? "↑" : item.direction === "FALL" ? "↓" : "—"}
               </span>
             ))}
           </div>
@@ -3584,7 +3590,7 @@ export default function RiseFallAnalysis() {
                   className={check.passed ? "passed" : "failed"}
                 >
                   <span>
-                    {check.passed ? "âœ“" : "Ã—"} {check.label}
+                    {check.passed ? "✓" : "×"} {check.label}
                   </span>
                   <strong>{check.detail}</strong>
                 </div>
