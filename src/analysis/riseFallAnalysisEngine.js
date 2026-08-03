@@ -1806,9 +1806,84 @@ export function analyzeRiseFall(
 
   const entryScore = clamp(baseEntryScore + boosterScore);
 
+  const smartConfidence = clamp(
+    entryScore * 0.42 +
+      weightedScores.microTrend * 0.12 +
+      weightedScores.pressure * 0.1 +
+      weightedScores.momentum * 0.09 +
+      weightedScores.ema * 0.08 +
+      weightedScores.continuation * 0.08 +
+      weightedScores.orderFlow * 0.05 +
+      weightedScores.ribbon * 0.03 +
+      weightedScores.stability * 0.03
+  );
+
+  const regimeAdjustment =
+    regime === "TREND"
+      ? -3
+      : regime === "TRANSITION"
+        ? 0
+        : 5;
+
+  const noiseAdjustment =
+    noise >= 82
+      ? 5
+      : noise >= 70
+        ? 3
+        : noise <= 48
+          ? -2
+          : 0;
+
+  const adaptiveVolatilityScore = clamp(
+    atr > 0
+      ? Math.min(100, (volatility / atr) * 45)
+      : 0
+  );
+
+  const volatilityAdjustment =
+    adaptiveVolatilityScore >= 82
+      ? 3
+      : adaptiveVolatilityScore <= 28
+        ? 2
+        : 0;
+
+  const prepareThreshold = clamp(
+    65 + regimeAdjustment + noiseAdjustment,
+    63,
+    75
+  );
+
+  const buyThreshold = clamp(
+    72 +
+      regimeAdjustment +
+      noiseAdjustment +
+      volatilityAdjustment,
+    70,
+    84
+  );
+
+  const strongThreshold = clamp(
+    buyThreshold + 8,
+    78,
+    90
+  );
+
+  const instantThreshold = clamp(
+    strongThreshold + 8,
+    86,
+    96
+  );
+
+  const adaptiveThresholds = {
+    prepare: prepareThreshold,
+    buy: buyThreshold,
+    strong: strongThreshold,
+    instant: instantThreshold,
+  };
+
   const tradeNow =
     direction !== "WAIT" &&
-    entryScore >= 78 &&
+    entryScore >= buyThreshold &&
     dominantVotes >= 7 &&
     dominantPressure >= 60 &&
     continuationReversal.continuation >= 52 &&
@@ -1831,13 +1906,13 @@ export function analyzeRiseFall(
 
   const strongTrade =
     tradeNow &&
-    entryScore >= 85 &&
+    entryScore >= strongThreshold &&
     dominantVotes >= 9 &&
     confirmationsPassed >= 8;
 
   const instantOneTick =
     strongTrade &&
-    entryScore >= 92 &&
+    entryScore >= instantThreshold &&
     dominantPressure >= 68 &&
     continuationReversal.continuation >= 62 &&
     (
@@ -1849,7 +1924,7 @@ export function analyzeRiseFall(
   const prepare =
     !tradeNow &&
     direction !== "WAIT" &&
-    entryScore >= 70 &&
+    entryScore >= prepareThreshold &&
     dominantVotes >= 6 &&
     (
       dominantPressure >= 55 ||
@@ -1917,7 +1992,7 @@ export function analyzeRiseFall(
 
   const fastScalpReady =
     tradeNow &&
-    entryScore >= 78 &&
+    entryScore >= buyThreshold &&
     dominantPressure >= 60 &&
     continuationReversal.continuation >= 52 &&
     (
@@ -1965,12 +2040,12 @@ export function analyzeRiseFall(
     .map((item) => item.label);
 
   const reason = tradeNow
-    ? `${aiDecision}: weighted AI score ${entryScore.toFixed(1)}/100.`
+    ? `${aiDecision}: AI score ${entryScore.toFixed(1)}, smart confidence ${smartConfidence.toFixed(1)}%.`
     : prepare
-      ? `${aiDecision}: score ${entryScore.toFixed(1)}/100; setup is still forming.`
+      ? `${aiDecision}: AI score ${entryScore.toFixed(1)}; buy threshold is ${buyThreshold.toFixed(0)}.`
       : direction === "WAIT"
         ? "WAIT: direction is mixed."
-        : `WAIT: weighted AI score ${entryScore.toFixed(1)}/100 is below 70.`;
+        : `WAIT: AI score ${entryScore.toFixed(1)} is below adaptive prepare threshold ${prepareThreshold.toFixed(0)}.`;
 
   return {
     signal,
@@ -2019,6 +2094,9 @@ export function analyzeRiseFall(
     expansion: compressionExpansionState.expansion,
     exhaustion,
     entryScore,
+    smartConfidence,
+    adaptiveThresholds,
+    adaptiveVolatilityScore,
     weightedScores,
     aiDecision,
     aiLevel,

@@ -310,7 +310,11 @@ export default function RiseFallAnalysis() {
   function tradeParameters(signal, analysis) {
     const rise = signal === "RISE";
     const finalScore = Number(analysis?.scores?.final || 0);
-    const confidence = Number(analysis?.confidence || 0);
+    const confidence = Number(
+      analysis?.smartConfidence ??
+        analysis?.confidence ??
+        0
+    );
 
     const dynamicMinimumConfidence =
       durationMode === "1T"
@@ -715,8 +719,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V65 · Rise/Fall Pro Analysis"
-          subtitle="Deep score-first entry: impulse and acceleration boost strong setups but do not block them"
+          title="EdgePilot V66 · Rise/Fall Pro Analysis"
+          subtitle="Professional AI with smart confidence and market-adaptive entry thresholds"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1483,6 +1487,38 @@ export default function RiseFallAnalysis() {
           </article>
         </section>
 
+        <section className="rfProfessionalSummary">
+          <article>
+            <small>SMART CONFIDENCE</small>
+            <strong>{pct(active.smartConfidence)}</strong>
+            <span>Built from weighted trend, pressure, momentum and order flow.</span>
+          </article>
+
+          <article>
+            <small>AI ENTRY SCORE</small>
+            <strong>{pct(active.entryScore)}</strong>
+            <span>{active.aiDecision || "WAIT"}</span>
+          </article>
+
+          <article>
+            <small>DYNAMIC BUY LEVEL</small>
+            <strong>
+              {Number(active.adaptiveThresholds?.buy || 72).toFixed(0)}
+            </strong>
+            <span>
+              {active.regime || "UNKNOWN"} regime · {pct(active.noiseRatio)} noise
+            </span>
+          </article>
+
+          <article>
+            <small>RISK</small>
+            <strong>{active.risk || "HIGH"}</strong>
+            <span>
+              Instant level {Number(active.adaptiveThresholds?.instant || 88).toFixed(0)}
+            </span>
+          </article>
+        </section>
+
         <section className="rfAiEntryTerminal">
           <div className="rfPanelHead">
             <div>
@@ -1524,6 +1560,7 @@ export default function RiseFallAnalysis() {
               ["Base entry score", active.baseEntryScore],
               ["Impulse booster", active.weightedScores?.impulseBoost],
               ["Acceleration booster", active.weightedScores?.accelerationBoost],
+              ["Smart confidence", active.smartConfidence],
               ["AI final score", active.entryScore],
             ].map(([label, value]) => (
               <div key={label}>
@@ -1544,17 +1581,48 @@ export default function RiseFallAnalysis() {
           </div>
 
           <div className="rfEntryThresholds">
-            <span className={active.entryScore >= 70 ? "passed" : ""}>
-              70+ PREPARE
+            <span
+              className={
+                active.entryScore >=
+                Number(active.adaptiveThresholds?.prepare || 65)
+                  ? "passed"
+                  : ""
+              }
+            >
+              {Number(active.adaptiveThresholds?.prepare || 65).toFixed(0)}+ PREPARE
             </span>
-            <span className={active.entryScore >= 78 ? "passed" : ""}>
-              78+ AUTO BUY
+
+            <span
+              className={
+                active.entryScore >=
+                Number(active.adaptiveThresholds?.buy || 72)
+                  ? "passed"
+                  : ""
+              }
+            >
+              {Number(active.adaptiveThresholds?.buy || 72).toFixed(0)}+ AUTO BUY
             </span>
-            <span className={active.entryScore >= 85 ? "passed" : ""}>
-              85+ STRONG BUY
+
+            <span
+              className={
+                active.entryScore >=
+                Number(active.adaptiveThresholds?.strong || 80)
+                  ? "passed"
+                  : ""
+              }
+            >
+              {Number(active.adaptiveThresholds?.strong || 80).toFixed(0)}+ STRONG BUY
             </span>
-            <span className={active.entryScore >= 92 ? "passed instant" : ""}>
-              92+ INSTANT 1 TICK
+
+            <span
+              className={
+                active.entryScore >=
+                Number(active.adaptiveThresholds?.instant || 88)
+                  ? "passed instant"
+                  : ""
+              }
+            >
+              {Number(active.adaptiveThresholds?.instant || 88).toFixed(0)}+ INSTANT 1 TICK
             </span>
           </div>
 
