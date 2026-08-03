@@ -338,6 +338,76 @@ function regimeState({
   return "TRANSITION";
 }
 
+function stochastic(values = [], period = 9) {
+  if (!values.length) return 50;
+
+  const recent = values.slice(-Math.min(period, values.length));
+  const low = Math.min(...recent);
+  const high = Math.max(...recent);
+  const current = Number(recent.at(-1));
+
+  if (high === low) return 50;
+  return clamp(((current - low) / (high - low)) * 100);
+}
+
+function rateOfChange(values = [], period = 5) {
+  if (values.length < 2) return 0;
+
+  const current = Number(values.at(-1));
+  const previous = Number(
+    values.at(-Math.min(period + 1, values.length))
+  );
+
+  if (!Number.isFinite(previous) || previous === 0) return 0;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function zScore(values = [], period = 20) {
+  const recent = values.slice(-Math.min(period, values.length));
+  if (recent.length < 3) return 0;
+
+  const average = mean(recent);
+  const deviation = stdDev(recent);
+
+  if (!deviation) return 0;
+  return (Number(recent.at(-1)) - average) / deviation;
+}
+
+function directionalStreak(values = []) {
+  if (values.length < 2) {
+    return { direction: "FLAT", length: 0 };
+  }
+
+  let direction = 0;
+  let length = 0;
+
+  for (let index = values.length - 1; index > 0; index -= 1) {
+    const change = Number(values[index]) - Number(values[index - 1]);
+    const sign = Math.sign(change);
+
+    if (!sign) continue;
+
+    if (!direction) {
+      direction = sign;
+      length = 1;
+      continue;
+    }
+
+    if (sign !== direction) break;
+    length += 1;
+  }
+
+  return {
+    direction:
+      direction > 0
+        ? "RISE"
+        : direction < 0
+          ? "FALL"
+          : "FLAT",
+    length,
+  };
+}
+
 function durationRecommendation({
   mode,
   confidence,
@@ -437,6 +507,10 @@ export function analyzeRiseFall(
   const rsiValue = rsi(values, 9);
   const macdValue = macd(values);
   const atr = atrLike(values, 9);
+  const stochasticValue = stochastic(values, 9);
+  const rocValue = rateOfChange(values, 5);
+  const zScoreValue = zScore(values, 20);
+  const streak = directionalStreak(values);
 
   const levels = supportResistance(values);
 
@@ -485,6 +559,26 @@ export function analyzeRiseFall(
     momentum.slow > 0
       ? 1
       : momentum.slow < 0
+        ? -1
+        : 0,
+    stochasticValue >= 58
+      ? 1
+      : stochasticValue <= 42
+        ? -1
+        : 0,
+    rocValue > 0
+      ? 1
+      : rocValue < 0
+        ? -1
+        : 0,
+    zScoreValue >= 0.25
+      ? 1
+      : zScoreValue <= -0.25
+        ? -1
+        : 0,
+    streak.direction === "RISE" && streak.length >= 2
+      ? 1
+      : streak.direction === "FALL" && streak.length >= 2
         ? -1
         : 0,
   ];
@@ -568,11 +662,70 @@ export function analyzeRiseFall(
 
   const probabilityFall = 100 - probabilityRise;
 
+  const confirmationChecks = [
+    {
+      id: "direction",
+      label: "Directional votes",
+      passed: dominantVotes >= 8,
+      detail: `${dominantVotes}/${voteSignals.length}`,
+    },
+    {
+      id: "confidence",
+      label: "Confidence",
+      passed: confidence >= 80,
+      detail: `${confidence.toFixed(1)}%`,
+    },
+    {
+      id: "consistency",
+      label: "Consistency",
+      passed: consistency >= 66,
+      detail: `${consistency.toFixed(1)}%`,
+    },
+    {
+      id: "regime",
+      label: "Non-ranging regime",
+      passed: regime !== "RANGE",
+      detail: regime,
+    },
+    {
+      id: "ema",
+      label: "EMA alignment",
+      passed:
+        direction === "RISE"
+          ? emaFast > emaSlow
+          : direction === "FALL"
+            ? emaFast < emaSlow
+            : false,
+      detail:
+        emaFast > emaSlow
+          ? "BULLISH"
+          : emaFast < emaSlow
+            ? "BEARISH"
+            : "FLAT",
+    },
+    {
+      id: "momentum",
+      label: "Momentum alignment",
+      passed:
+        direction === "RISE"
+          ? momentum.fast > 0 && momentum.medium > 0
+          : direction === "FALL"
+            ? momentum.fast < 0 && momentum.medium < 0
+            : false,
+      detail: `${momentum.fast.toFixed(5)} / ${momentum.medium.toFixed(5)}`,
+    },
+  ];
+
+  const confirmationsPassed = confirmationChecks.filter(
+    (item) => item.passed
+  ).length;
+
   const ready =
     direction !== "WAIT" &&
-    confidence >= 76 &&
-    dominantVotes >= 6 &&
-    consistency >= 62 &&
+    confirmationsPassed >= 6 &&
+    dominantVotes >= 8 &&
+    confidence >= 80 &&
+    consistency >= 66 &&
     regime !== "RANGE";
 
   const signal = ready ? direction : "WAIT";
@@ -593,13 +746,26 @@ export function analyzeRiseFall(
     regime,
   });
 
+  const setupGrade =
+    ready && confidence >= 90 && confirmationsPassed === confirmationChecks.length
+      ? "A"
+      : ready && confidence >= 85
+        ? "B"
+        : ready
+          ? "C"
+          : "WAIT";
+
+  const failedConfirmations = confirmationChecks
+    .filter((item) => !item.passed)
+    .map((item) => item.label);
+
   const reason = ready
-    ? `${direction} setup aligned across EMA, MACD, RSI, momentum and price direction.`
+    ? `BUY ${direction}: ${confirmationsPassed}/${confirmationChecks.length} confirmations aligned.`
     : regime === "RANGE"
-      ? "Market is ranging. Wait for stronger directional separation."
+      ? "NO TRADE: market is ranging. Wait for stronger directional separation."
       : direction === "WAIT"
-        ? "Direction is mixed. Continue collecting fresh prices."
-        : `${direction} is forming, but confirmations are not strong enough yet.`;
+        ? "NO TRADE: direction is mixed. Continue collecting fresh prices."
+        : `WAIT: ${direction} is forming, but missing ${failedConfirmations.join(", ") || "strong confirmation"}.`;
 
   return {
     signal,
@@ -626,7 +792,14 @@ export function analyzeRiseFall(
       rsi: rsiValue,
       macd: macdValue,
       atr,
+      stochastic: stochasticValue,
+      roc: rocValue,
+      zScore: zScoreValue,
     },
+    streak,
+    confirmationChecks,
+    confirmationsPassed,
+    setupGrade,
     supportResistance: levels,
     breakout,
     pullback,

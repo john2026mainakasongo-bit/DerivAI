@@ -466,3 +466,205 @@
     flex: 1;
   }
 }
+
+
+.rfToolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rfSoundToggle,
+.rfClearLog {
+  border: 1px solid #1c5a72;
+  background: #082538;
+  color: #9fc3d1;
+  border-radius: 10px;
+  padding: 10px 13px;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.rfSoundToggle.on {
+  border-color: #20dca7;
+  color: #2debb8;
+}
+
+.rfSoundToggle.off {
+  border-color: #725229;
+  color: #e5bd68;
+}
+
+.rfEntryBanner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  border: 2px solid #856b23;
+  border-radius: 14px;
+  padding: 17px 20px;
+  margin-bottom: 14px;
+  background: linear-gradient(100deg, #30290d, #102535);
+  box-shadow: 0 12px 32px #0004;
+}
+
+.rfEntryBanner.rise {
+  border-color: #20dda8;
+  background: linear-gradient(100deg, #083e32, #09283b);
+  box-shadow: 0 0 28px #20dda825;
+}
+
+.rfEntryBanner.fall {
+  border-color: #ff5974;
+  background: linear-gradient(100deg, #481724, #09283b);
+  box-shadow: 0 0 28px #ff597425;
+}
+
+.rfEntryBanner small {
+  display: block;
+  color: #7fa8ba;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.rfEntryBanner > div > strong {
+  display: block;
+  font-size: 31px;
+  margin: 3px 0;
+  color: #f0c35b;
+}
+
+.rfEntryBanner.rise > div > strong {
+  color: #20e3a3;
+}
+
+.rfEntryBanner.fall > div > strong {
+  color: #ff5974;
+}
+
+.rfEntryBanner > div > span {
+  color: #9ab8c5;
+  font-size: 12px;
+}
+
+.rfEntryBannerStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(105px, 1fr));
+  gap: 8px;
+}
+
+.rfEntryBannerStats span {
+  border: 1px solid #1a526a;
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: #061d2d;
+}
+
+.rfEntryBannerStats small {
+  font-size: 9px;
+}
+
+.rfEntryBannerStats strong {
+  display: block;
+  margin-top: 3px;
+}
+
+.rfConfirmationList {
+  display: grid;
+  gap: 8px;
+}
+
+.rfConfirmationList > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px;
+  border: 1px solid #184b62;
+  border-radius: 9px;
+}
+
+.rfConfirmationList .passed {
+  border-color: #167c64;
+  background: #08342c;
+}
+
+.rfConfirmationList .failed {
+  border-color: #683344;
+  background: #2d1620;
+}
+
+.rfConfirmationList .passed span {
+  color: #25e3ac;
+}
+
+.rfConfirmationList .failed span {
+  color: #ff7189;
+}
+
+.rfClearLog {
+  padding: 7px 11px;
+}
+
+.rfSignalLog {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.rfSignalLog > div {
+  display: grid;
+  grid-template-columns: 82px 1fr 72px 65px 70px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #174e68;
+  border-radius: 9px;
+  padding: 10px;
+}
+
+.rfSignalLog > div.rise {
+  border-color: #178466;
+}
+
+.rfSignalLog > div.fall {
+  border-color: #8a3548;
+}
+
+.rfSignalLog strong {
+  color: #dcebf1;
+}
+
+.rfSignalLog em {
+  color: #7fa8ba;
+  font-style: normal;
+  font-size: 10px;
+}
+
+.rfSignalLog b {
+  color: #2ce4b2;
+}
+
+.rfSignalLog p {
+  color: #7fa8ba;
+}
+
+@media (max-width: 850px) {
+  .rfToolbarActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rfEntryBanner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rfEntryBannerStats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .rfSignalLog > div {
+    grid-template-columns: 1fr 1fr;
+  }
+}

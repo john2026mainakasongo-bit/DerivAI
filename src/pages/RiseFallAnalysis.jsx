@@ -169,6 +169,10 @@ export default function RiseFallAnalysis() {
   const [feedMessage, setFeedMessage] = useState(
     "Connecting live feed…"
   );
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [signalLog, setSignalLog] = useState([]);
+  const previousSignalRef = useRef("WAIT");
+  const lastAlertAtRef = useRef(0);
 
   const connectingRef = useRef(false);
 
@@ -231,14 +235,95 @@ export default function RiseFallAnalysis() {
           analysis10.confidence
         ) / 2;
 
+
+  function playSignalTone(signal) {
+    if (!soundEnabled || typeof window === "undefined") return;
+
+    const AudioContextClass =
+      window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioContextClass) return;
+
+    const context = new AudioContextClass();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+
+    oscillator.type = signal === "RISE" ? "sine" : "triangle";
+    oscillator.frequency.value = signal === "RISE" ? 880 : 430;
+
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      0.18,
+      context.currentTime + 0.02
+    );
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      context.currentTime + 0.45
+    );
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.48);
+
+    oscillator.addEventListener("ended", () => {
+      context.close().catch(() => {});
+    });
+  }
+
+  useEffect(() => {
+    const currentSignal = active.signal;
+    const previousSignal = previousSignalRef.current;
+    const now = Date.now();
+
+    if (
+      currentSignal !== "WAIT" &&
+      currentSignal !== previousSignal &&
+      now - lastAlertAtRef.current > 3000
+    ) {
+      lastAlertAtRef.current = now;
+      playSignalTone(currentSignal);
+
+      setSignalLog((current) =>
+        [
+          {
+            id: `${now}-${currentSignal}`,
+            time: now,
+            signal: currentSignal,
+            mode,
+            confidence: active.confidence,
+            probability:
+              currentSignal === "RISE"
+                ? active.probabilityRise
+                : active.probabilityFall,
+            price: currentPrice,
+            grade: active.setupGrade,
+          },
+          ...current,
+        ].slice(0, 12)
+      );
+    }
+
+    previousSignalRef.current = currentSignal;
+  }, [
+    active.signal,
+    active.confidence,
+    active.probabilityRise,
+    active.probabilityFall,
+    active.setupGrade,
+    currentPrice,
+    mode,
+    soundEnabled,
+  ]);
+
   return (
     <div className="appShell">
       <Sidebar />
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V55 · Rise/Fall Pro Analysis"
-          subtitle="Standalone 15-second and 10-tick directional intelligence"
+          title="EdgePilot V56 · Rise/Fall Pro Analysis"
+          subtitle="Visible BUY/WAIT alerts, optional sound, confirmations and expanded indicators"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -253,7 +338,16 @@ export default function RiseFallAnalysis() {
             onChange={changeSymbol}
           />
 
-          <div className="rfModeSwitch">
+          <div className="rfToolbarActions">
+            <button
+              type="button"
+              className={`rfSoundToggle ${soundEnabled ? "on" : "off"}`}
+              onClick={() => setSoundEnabled((value) => !value)}
+            >
+              {soundEnabled ? "🔊 SOUND ON" : "🔇 SOUND OFF"}
+            </button>
+
+            <div className="rfModeSwitch">
             <button
               type="button"
               className={
@@ -273,6 +367,7 @@ export default function RiseFallAnalysis() {
             >
               10 TICKS
             </button>
+            </div>
           </div>
         </section>
 
@@ -287,6 +382,38 @@ export default function RiseFallAnalysis() {
               }`
             : feedMessage}
         </div>
+
+        <section
+          className={`rfEntryBanner ${signalClass(active.signal)}`}
+        >
+          <div>
+            <small>VISIBLE ENTRY ALERT</small>
+            <strong>
+              {active.ready
+                ? `BUY ${active.signal}`
+                : "NO TRADE — WAIT"}
+            </strong>
+            <span>{active.reason}</span>
+          </div>
+
+          <div className="rfEntryBannerStats">
+            <span>
+              <small>Grade</small>
+              <strong>{active.setupGrade || "WAIT"}</strong>
+            </span>
+            <span>
+              <small>Confirmations</small>
+              <strong>
+                {active.confirmationsPassed || 0}/
+                {active.confirmationChecks?.length || 6}
+              </strong>
+            </span>
+            <span>
+              <small>Duration</small>
+              <strong>{active.duration}</strong>
+            </span>
+          </div>
+        </section>
 
         <section
           className={`rfHero ${signalClass(
@@ -482,6 +609,37 @@ export default function RiseFallAnalysis() {
                     active.indicators?.atr,
                     7
                   )}
+                </strong>
+              </div>
+
+              <div>
+                <span>Stochastic</span>
+                <strong>
+                  {Number(
+                    active.indicators?.stochastic || 0
+                  ).toFixed(1)}
+                </strong>
+              </div>
+
+              <div>
+                <span>ROC</span>
+                <strong>
+                  {num(active.indicators?.roc, 5)}
+                </strong>
+              </div>
+
+              <div>
+                <span>Z-score</span>
+                <strong>
+                  {num(active.indicators?.zScore, 3)}
+                </strong>
+              </div>
+
+              <div>
+                <span>Streak</span>
+                <strong>
+                  {active.streak?.direction || "FLAT"}{" "}
+                  {active.streak?.length || 0}
                 </strong>
               </div>
 
@@ -719,6 +877,69 @@ export default function RiseFallAnalysis() {
                 <span>Recommended duration</span>
                 <strong>{active.duration}</strong>
               </div>
+            </div>
+          </article>
+        </section>
+
+        <section className="rfGrid">
+          <article className="rfPanel">
+            <div className="rfPanelHead">
+              <div>
+                <small>ENTRY CONFIRMATIONS</small>
+                <h2>Buy/Wait checklist</h2>
+              </div>
+              <span>
+                {active.confirmationsPassed || 0}/
+                {active.confirmationChecks?.length || 6}
+              </span>
+            </div>
+
+            <div className="rfConfirmationList">
+              {(active.confirmationChecks || []).map((check) => (
+                <div
+                  key={check.id}
+                  className={check.passed ? "passed" : "failed"}
+                >
+                  <span>
+                    {check.passed ? "✓" : "×"} {check.label}
+                  </span>
+                  <strong>{check.detail}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="rfPanel">
+            <div className="rfPanelHead">
+              <div>
+                <small>SESSION SIGNAL LOG</small>
+                <h2>Recent visible/audio alerts</h2>
+              </div>
+              <button
+                type="button"
+                className="rfClearLog"
+                onClick={() => setSignalLog([])}
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="rfSignalLog">
+              {signalLog.map((item) => (
+                <div key={item.id} className={signalClass(item.signal)}>
+                  <span>
+                    {new Date(item.time).toLocaleTimeString()}
+                  </span>
+                  <strong>BUY {item.signal}</strong>
+                  <em>{item.mode === "15s" ? "15 SEC" : "10 TICKS"}</em>
+                  <b>{pct(item.confidence)}</b>
+                  <small>Grade {item.grade}</small>
+                </div>
+              ))}
+
+              {!signalLog.length ? (
+                <p>No confirmed signal alerts in this session.</p>
+              ) : null}
             </div>
           </article>
         </section>
