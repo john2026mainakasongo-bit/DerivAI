@@ -68,7 +68,7 @@ export default class TurboAutoDigitBotEngine {
 
     this.state = {
       status: "STOPPED",
-      message: "Dynamic Digit AI is ready.",
+      message: "V51 Payout-Adjusted Digit AI is ready.",
       runs: 0,
       wins: 0,
       losses: 0,
@@ -117,7 +117,19 @@ export default class TurboAutoDigitBotEngine {
       stopLoss: Math.max(0, Number(settings.stopLoss || 0.35)),
       confirmationUpdates: Math.max(
         1,
-        Number(settings.confirmationUpdates || 1)
+        Number(settings.confirmationUpdates || 3)
+      ),
+      minimumPayoutEdgePct: Math.max(
+        3,
+        Number(settings.minimumPayoutEdgePct || 5)
+      ),
+      minimumProposalEvPct: Math.max(
+        1,
+        Number(settings.minimumProposalEvPct || 3)
+      ),
+      minimumStability: Math.max(
+        60,
+        Number(settings.minimumStability || 70)
       ),
       maximumSignalAgeMs: Math.max(
         1500,
@@ -190,7 +202,7 @@ export default class TurboAutoDigitBotEngine {
       status: "RUNNING",
       executionPhase: "SCANNING",
       message:
-        "Dynamic Digit AI is scanning OVER/UNDER, EVEN/ODD and DIFFERS. RISE/FALL is disabled.",
+        "V51 is scanning digit entries. Every candidate must pass the live Deriv payout, EV and stability gate before buy.",
     });
 
     void this.loop();
@@ -275,17 +287,21 @@ export default class TurboAutoDigitBotEngine {
     const real = this.accountType !== "demo";
     if (real) {
       return (
-        Number(signal.qualityScore || 0) >= 82 &&
-        Number(signal.sampleSize || 0) >= 100 &&
-        Number(signal.consistency || 0) >= 70 &&
-        Number(signal.voteCount || 0) >= 4
+        Number(signal.qualityScore || 0) >= 88 &&
+        Number(signal.sampleSize || 0) >= 120 &&
+        Number(signal.consistency || signal.stability || 0) >= 80 &&
+        Number(signal.voteCount || 0) >= 4 &&
+        Number(signal.probability || 0) > 0
       );
     }
 
     return (
-      Number(signal.qualityScore || 0) >= 70 &&
-      Number(signal.sampleSize || 0) >= 50 &&
-      Number(signal.voteCount || 0) >= 3
+      Number(signal.qualityScore || 0) >= 82 &&
+      Number(signal.sampleSize || 0) >= 70 &&
+      Number(signal.voteCount || 0) >= 4 &&
+      Number(signal.consistency || signal.stability || 0) >=
+        this.settings.minimumStability &&
+      Number(signal.probability || 0) > 0
     );
   }
 
@@ -402,6 +418,106 @@ export default class TurboAutoDigitBotEngine {
     }
   }
 
+
+  assessProposal(signal, quote) {
+    const askPrice = Number(quote?.askPrice || 0);
+    const payout = Number(quote?.payout || 0);
+    const predictedProbability = Number(signal?.probability || 0) / 100;
+    const stability = Number(
+      signal?.consistency ||
+      signal?.stability ||
+      0
+    );
+
+    if (
+      !Number.isFinite(askPrice) ||
+      askPrice <= 0 ||
+      !Number.isFinite(payout) ||
+      payout <= askPrice ||
+      !Number.isFinite(predictedProbability) ||
+      predictedProbability <= 0 ||
+      predictedProbability >= 1
+    ) {
+      return {
+        approved: false,
+        reason: "Proposal metrics are incomplete or invalid.",
+        askPrice,
+        payout,
+        predictedProbability: predictedProbability * 100,
+        breakEvenProbability: 100,
+        payoutEdgePct: -100,
+        expectedValuePct: -100,
+        stability,
+      };
+    }
+
+    const breakEvenProbability = askPrice / payout;
+    const payoutEdgePct =
+      (predictedProbability - breakEvenProbability) * 100;
+    const expectedProfit =
+      predictedProbability * payout - askPrice;
+    const expectedValuePct =
+      (expectedProfit / askPrice) * 100;
+
+    const real = this.accountType !== "demo";
+    const differs = String(signal?.mode || "").toUpperCase() === "DIFFERS";
+
+    const requiredEdge =
+      this.settings.minimumPayoutEdgePct +
+      (real ? 3 : 0) +
+      (differs ? 2 : 0);
+
+    const requiredEv =
+      this.settings.minimumProposalEvPct +
+      (real ? 4 : 0) +
+      (differs ? 2 : 0);
+
+    const requiredStability =
+      this.settings.minimumStability +
+      (real ? 10 : 0) +
+      (differs ? 8 : 0);
+
+    const approved =
+      payoutEdgePct >= requiredEdge &&
+      expectedValuePct >= requiredEv &&
+      stability >= requiredStability;
+
+    return {
+      approved,
+      reason: approved
+        ? `Proposal qualifies: model ${(
+            predictedProbability * 100
+          ).toFixed(1)}%, break-even ${(
+            breakEvenProbability * 100
+          ).toFixed(1)}%, EV ${expectedValuePct.toFixed(1)}%.`
+        : `Proposal rejected: model ${(
+            predictedProbability * 100
+          ).toFixed(1)}%, break-even ${(
+            breakEvenProbability * 100
+          ).toFixed(1)}%, edge ${payoutEdgePct.toFixed(
+            1
+          )}%/${requiredEdge.toFixed(
+            1
+          )}%, EV ${expectedValuePct.toFixed(
+            1
+          )}%/${requiredEv.toFixed(
+            1
+          )}%, stability ${stability.toFixed(
+            1
+          )}%/${requiredStability.toFixed(1)}%.`,
+      askPrice,
+      payout,
+      predictedProbability: predictedProbability * 100,
+      breakEvenProbability: breakEvenProbability * 100,
+      payoutEdgePct,
+      expectedValuePct,
+      stability,
+      requiredEdge,
+      requiredEv,
+      requiredStability,
+    };
+  }
+
   async execute(signal) {
     const contract = contractForCandidate(signal);
     if (!contract) return;
@@ -414,13 +530,13 @@ export default class TurboAutoDigitBotEngine {
 
     try {
       this.patch({
-        status: "BUYING",
-        executionPhase: "PROPOSAL",
+        status: "QUOTING",
+        executionPhase: "PROPOSAL_GATE",
         activeSetup: signal.setup,
-        message: `${signal.setup} confirmed. Requesting proposal and buy.`,
+        message: `${signal.setup} confirmed. Checking live payout before buy.`,
       });
 
-      const bought = await this.client.buyContract({
+      const quote = await this.client.quoteContract({
         symbol: this.symbol,
         contractType: contract.contractType,
         barrier: contract.barrier,
@@ -430,6 +546,59 @@ export default class TurboAutoDigitBotEngine {
         duration: 1,
         durationUnit: "t",
       });
+
+      const proposalGate = this.assessProposal(signal, quote);
+
+      if (!proposalGate.approved) {
+        this.blockedSetups.set(
+          signal.setup,
+          Date.now() + Math.max(5000, this.settings.sameSetupBlockMs / 2)
+        );
+
+        this.patch({
+          status: "SCANNING",
+          executionPhase: "PAYOUT_REJECTED",
+          activeSetup: "—",
+          activeContractId: "",
+          message: proposalGate.reason,
+          selectedConfidence: Number(signal.qualityScore || 0),
+          selectedQuality: Number(signal.qualityScore || 0),
+          selectedSource: signal.source || "—",
+          proposalBreakEven: proposalGate.breakEvenProbability,
+          proposalEdge: proposalGate.payoutEdgePct,
+          proposalEv: proposalGate.expectedValuePct,
+          proposalStability: proposalGate.stability,
+          debugSteps: [
+            {
+              time: Date.now(),
+              message: `${signal.setup}: ${proposalGate.reason}`,
+            },
+            ...this.state.debugSteps,
+          ].slice(0, 30),
+        });
+
+        this.lockedSetup = "";
+        this.confirmations = 0;
+        this.noSignalSince = Date.now();
+        await sleep(250);
+        return;
+      }
+
+      this.patch({
+        status: "BUYING",
+        executionPhase: "BUYING",
+        message:
+          `${signal.setup} payout gate passed: model ` +
+          `${proposalGate.predictedProbability.toFixed(1)}% vs break-even ` +
+          `${proposalGate.breakEvenProbability.toFixed(1)}%, EV ` +
+          `${proposalGate.expectedValuePct.toFixed(1)}%. Sending buy.`,
+        proposalBreakEven: proposalGate.breakEvenProbability,
+        proposalEdge: proposalGate.payoutEdgePct,
+        proposalEv: proposalGate.expectedValuePct,
+        proposalStability: proposalGate.stability,
+      });
+
+      const bought = await this.client.buyQuotedContract(quote);
 
       const contractId = String(bought?.contractId || "");
       if (!contractId) {
@@ -482,6 +651,16 @@ export default class TurboAutoDigitBotEngine {
             profit,
             stake,
             confidence: Number(signal.qualityScore || 0),
+            expectedValue: Number(proposalGate.expectedValuePct || 0),
+            consistency: Number(proposalGate.stability || 0),
+            probability: Number(proposalGate.predictedProbability || 0),
+            breakEvenProbability: Number(
+              proposalGate.breakEvenProbability || 0
+            ),
+            payoutEdge: Number(proposalGate.payoutEdgePct || 0),
+            askPrice: Number(proposalGate.askPrice || 0),
+            payout: Number(proposalGate.payout || 0),
+            contractId,
             symbol: this.symbol,
           },
           ...this.state.history,

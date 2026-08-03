@@ -776,8 +776,8 @@ class DerivTradingClient {
     });
   }
 
-  async buyContract(options) {
-    /* V19_4_ROBUST_BUY */
+
+  normalizeTradeOptions(options = {}) {
     const normalized = {
       ...options,
       symbol: String(options?.symbol || "").trim(),
@@ -802,8 +802,10 @@ class DerivTradingClient {
       delete normalized.barrier;
     }
 
-    const proposalResponse = await this.getProposal(normalized);
+    return normalized;
+  }
 
+  extractProposal(proposalResponse, normalized = {}) {
     const proposal =
       proposalResponse?.proposal ||
       proposalResponse?.data?.proposal ||
@@ -825,6 +827,21 @@ class DerivTradingClient {
         normalized.amount
     );
 
+    const payout = Number(
+      proposal?.payout ??
+        proposal?.maximum_payout ??
+        proposal?.return ??
+        proposalResponse?.payout ??
+        0
+    );
+
+    const spot = Number(
+      proposal?.spot ??
+        proposal?.current_spot ??
+        proposal?.entry_spot ??
+        0
+    );
+
     if (!proposalId) {
       const detail = errorMessage(
         proposalResponse,
@@ -840,6 +857,39 @@ class DerivTradingClient {
       throw new Error(
         `Proposal returned an invalid ask price for ${normalized.contractType}.`
       );
+    }
+
+    if (!Number.isFinite(payout) || payout <= askPrice) {
+      throw new Error(
+        `Proposal returned an invalid payout for ${normalized.contractType}.`
+      );
+    }
+
+    return {
+      proposal,
+      proposalId,
+      askPrice,
+      payout,
+      spot,
+      raw: proposalResponse,
+      request: normalized,
+    };
+  }
+
+  async quoteContract(options) {
+    const normalized = this.normalizeTradeOptions(options);
+    const proposalResponse = await this.getProposal(normalized);
+    return this.extractProposal(proposalResponse, normalized);
+  }
+
+  async buyQuotedContract(quote) {
+    this.ensureAuthenticated();
+
+    const proposalId = String(quote?.proposalId || "");
+    const askPrice = Number(quote?.askPrice);
+
+    if (!proposalId || !Number.isFinite(askPrice) || askPrice <= 0) {
+      throw new Error("A valid quoted proposal is required before buying.");
     }
 
     const buyResponse = await this.buyProposal(proposalId, askPrice);
@@ -864,20 +914,24 @@ class DerivTradingClient {
         "Deriv did not return a contract ID."
       );
 
-      throw new Error(
-        `Buy failed for ${normalized.contractType}: ${detail}`
-      );
+      throw new Error(`Buy failed: ${detail}`);
     }
 
     await this.subscribeOpenContract(contractId);
 
     return {
-      proposal,
+      proposal: quote.proposal,
+      quote,
       buy,
       contractId,
       raw: buyResponse,
-      request: normalized,
+      request: quote.request,
     };
+  }
+
+  async buyContract(options) {
+    const quote = await this.quoteContract(options);
+    return this.buyQuotedContract(quote);
   }
 
   async subscribeOpenContract(contractId) {

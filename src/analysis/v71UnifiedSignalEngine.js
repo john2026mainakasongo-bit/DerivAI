@@ -185,12 +185,14 @@ function qualityScore({
   const transitionQuality = clamp((transitionSamples / 18) * 100);
 
   return clamp(
-    54 +
-      edge * 2.4 +
-      consistency * 0.18 +
+    48 +
+      edge * 1.8 +
+      consistency * 0.22 +
       sampleQuality * 0.08 +
       transitionQuality * 0.08 +
-      barrierPriority
+      barrierPriority,
+    0,
+    96
   );
 }
 
@@ -243,7 +245,7 @@ function buildOverUnderCandidates(digits, minimumConfidence) {
         blended.transitionSamples >= 3 &&
         probability >= minimumProbability &&
         edge >= 1.5 &&
-        consistency >= 58 &&
+        consistency >= 70 &&
         score >= minimumConfidence;
 
       rows.push({
@@ -295,11 +297,12 @@ function buildParityCandidates(digits, minimumConfidence) {
       0
     );
     const edge = (probability - 0.5) * 100;
-    const score = clamp(56 + edge * 2.5 + Math.min(18, blended.transitionSamples));
+    const score = clamp(50 + edge * 1.9 + Math.min(14, blended.transitionSamples), 0, 96);
     const executable =
       digits.length >= 60 &&
       blended.transitionSamples >= 4 &&
-      probability >= 0.535 &&
+      probability >= 0.545 &&
+      clamp(65 + edge * 2) >= 70 &&
       score >= minimumConfidence;
 
     return {
@@ -339,15 +342,17 @@ function buildDiffersCandidates(digits, minimumConfidence) {
     const differsProbability = 1 - targetProbability;
     const edge = (differsProbability - 0.9) * 100;
     const score = clamp(
-      60 +
-        edge * 3.2 +
-        Math.min(16, blended.transitionSamples * 0.9)
+      52 +
+        edge * 2.2 +
+        Math.min(14, blended.transitionSamples * 0.75),
+      0,
+      96
     );
     const executable =
       digits.length >= 70 &&
       blended.transitionSamples >= 5 &&
-      targetProbability <= 0.085 &&
-      differsProbability >= 0.915 &&
+      targetProbability <= 0.075 &&
+      differsProbability >= 0.925 &&
       score >= minimumConfidence;
 
     return {
