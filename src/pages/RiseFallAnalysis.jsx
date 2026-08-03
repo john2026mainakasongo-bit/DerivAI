@@ -238,9 +238,11 @@ export default function RiseFallAnalysis() {
   const [signalLog, setSignalLog] = useState([]);
   const [autoRunning, setAutoRunning] = useState(false);
   const [stake, setStake] = useState(0.35);
-  const [maxRuns, setMaxRuns] = useState(5);
-  const [stopAfterLoss, setStopAfterLoss] = useState(true);
   const [allowReal, setAllowReal] = useState(false);
+  const [autoSwitchMarket, setAutoSwitchMarket] = useState(true);
+  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(8);
+  const [marketSwitches, setMarketSwitches] = useState(0);
+  const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [durationMode, setDurationMode] = useState("AUTO");
   const [allowOneTick, setAllowOneTick] = useState(true);
   const [oneTickMinimumScore, setOneTickMinimumScore] = useState(78);
@@ -260,6 +262,10 @@ export default function RiseFallAnalysis() {
   const autoRunningRef = useRef(false);
   const executionRunsRef = useRef(0);
   const learnedContractsRef = useRef(new Set());
+  const consecutiveLossesRef = useRef(0);
+  const waitStartedAtRef = useRef(Date.now());
+  const marketSwitchingRef = useRef(false);
+  const lastMarketSwitchAtRef = useRef(0);
 
   const connectingRef = useRef(false);
 
@@ -270,6 +276,10 @@ export default function RiseFallAnalysis() {
   useEffect(() => {
     executionRunsRef.current = executionRuns;
   }, [executionRuns]);
+
+  useEffect(() => {
+    consecutiveLossesRef.current = consecutiveLosses;
+  }, [consecutiveLosses]);
 
   useEffect(() => {
     if (
@@ -422,6 +432,101 @@ export default function RiseFallAnalysis() {
         ) / 2;
 
 
+  const marketSymbols = useMemo(
+    () =>
+      (Array.isArray(markets) ? markets : [])
+        .map((item) =>
+          String(
+            item?.symbol ??
+              item?.value ??
+              item?.id ??
+              ""
+          )
+        )
+        .filter(Boolean),
+    [markets]
+  );
+
+  const hasOpenSessionTrade = sessionTrades.some(
+    (trade) => String(trade.status || "OPEN").toUpperCase() === "OPEN"
+  );
+
+  const immediateEntryReady =
+    learnedEntryAllowed &&
+    active.signal !== "WAIT" &&
+    (
+      active.tradeNow ||
+      active.fastScalpReady ||
+      active.instantOneTick
+    );
+
+  function nextMarketSymbol() {
+    if (!marketSymbols.length) return "";
+
+    const currentIndex = marketSymbols.indexOf(symbol);
+
+    return marketSymbols[
+      currentIndex >= 0
+        ? (currentIndex + 1) % marketSymbols.length
+        : 0
+    ];
+  }
+
+  async function switchToNextMarket(reason = "WAIT timeout") {
+    if (
+      marketSwitchingRef.current ||
+      hasOpenSessionTrade ||
+      tradeBusy ||
+      typeof changeSymbol !== "function"
+    ) {
+      return;
+    }
+
+    const nextSymbol = nextMarketSymbol();
+
+    if (!nextSymbol || nextSymbol === symbol) return;
+
+    marketSwitchingRef.current = true;
+    lastMarketSwitchAtRef.current = Date.now();
+    waitStartedAtRef.current = Date.now();
+
+    setExecutionMessage(
+      `Switching volatility ${symbol || "market"} → ${nextSymbol} · ${reason}.`
+    );
+
+    try {
+      await Promise.resolve(changeSymbol(nextSymbol));
+      setMarketSwitches((value) => value + 1);
+      lastExecutedSignalRef.current = "";
+    } catch (error) {
+      setExecutionMessage(
+        error instanceof Error
+          ? error.message
+          : "Automatic market switch failed."
+      );
+    } finally {
+      window.setTimeout(() => {
+        marketSwitchingRef.current = false;
+      }, 1200);
+    }
+  }
+
+  function resetTransactions() {
+    setSessionTrades([]);
+    setExecutionRuns(0);
+    executionRunsRef.current = 0;
+    setConsecutiveLosses(0);
+    consecutiveLossesRef.current = 0;
+    learnedContractsRef.current = new Set();
+    lastExecutedSignalRef.current = "";
+    setExecutionMessage(
+      autoRunningRef.current
+        ? "Transaction view reset. Auto execution continues."
+        : "Transaction view and run counter reset."
+    );
+  }
+
+
 
   function contractIdOf(item = {}) {
     return String(
@@ -564,15 +669,15 @@ export default function RiseFallAnalysis() {
     if (
       executionBusyRef.current ||
       !autoRunningRef.current ||
-      !analysis?.tradeNow ||
+      hasOpenSessionTrade ||
       !signal ||
-      signal === "WAIT"
+      signal === "WAIT" ||
+      !(
+        analysis?.tradeNow ||
+        analysis?.fastScalpReady ||
+        analysis?.instantOneTick
+      )
     ) {
-      return;
-    }
-
-    if (executionRunsRef.current >= Math.max(1, Number(maxRuns) || 1)) {
-      stopAuto(`Maximum runs reached: ${maxRuns}.`);
       return;
     }
 
@@ -604,6 +709,7 @@ export default function RiseFallAnalysis() {
       symbol,
       Number(analysis?.scores?.final || 0).toFixed(0),
       Number(analysis?.confirmationsPassed || 0),
+      Math.floor(Date.now() / 1500),
     ].join(":");
 
     if (lastExecutedSignalRef.current === signature) return;
@@ -681,9 +787,6 @@ export default function RiseFallAnalysis() {
         }.`
       );
 
-      if (nextRuns >= Math.max(1, Number(maxRuns) || 1)) {
-        stopAuto(`Trade opened. Maximum runs reached: ${maxRuns}.`);
-      }
     } catch (error) {
       lastExecutedSignalRef.current = "";
       setExecutionMessage(
@@ -709,15 +812,14 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    executionRunsRef.current = 0;
-    setExecutionRuns(0);
     lastExecutedSignalRef.current = "";
+    waitStartedAtRef.current = Date.now();
     setAutoRunning(true);
     autoRunningRef.current = true;
     setExecutionMessage(
       allowOneTick
-        ? "Scanning. A very strong setup may execute as a 1-tick trade."
-        : "Scanning for a confirmed TRADE RISE or TRADE FALL entry."
+        ? "Running continuously. A valid entry executes immediately; weak markets switch automatically."
+        : "Running continuously until STOP. Confirmed entries execute immediately."
     );
   }
 
@@ -805,17 +907,24 @@ export default function RiseFallAnalysis() {
   useEffect(() => {
     if (
       !autoRunning ||
-      !active.tradeNow ||
-      !learnedEntryAllowed
+      !immediateEntryReady ||
+      hasOpenSessionTrade ||
+      consecutiveLosses >= 3
     ) {
       return;
     }
 
+    waitStartedAtRef.current = Date.now();
     void executeConfirmedSignal(active.signal, active);
   }, [
     autoRunning,
-    active.tradeNow,
+    immediateEntryReady,
+    hasOpenSessionTrade,
+    consecutiveLosses,
     active.signal,
+    active.tradeNow,
+    active.fastScalpReady,
+    active.instantOneTick,
     active.confirmationsPassed,
     active.scores?.final,
     active.opportunityScore,
@@ -824,6 +933,66 @@ export default function RiseFallAnalysis() {
     symbol,
     mode,
   ]);
+
+  useEffect(() => {
+    if (
+      !autoRunning ||
+      !autoSwitchMarket ||
+      hasOpenSessionTrade ||
+      tradeBusy ||
+      marketSymbols.length < 2 ||
+      consecutiveLosses >= 3
+    ) {
+      return;
+    }
+
+    const cleanEntry =
+      immediateEntryReady &&
+      !active.autoSkip &&
+      Number(active.opportunityScore || 0) >=
+        Number(learningProfile.learnedBuyThreshold || 72);
+
+    if (cleanEntry) {
+      waitStartedAtRef.current = Date.now();
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const waitedMs = now - waitStartedAtRef.current;
+      const switchDelay = Math.max(
+        4,
+        Number(switchAfterSeconds) || 8
+      ) * 1000;
+
+      if (
+        waitedMs >= switchDelay &&
+        now - lastMarketSwitchAtRef.current >= switchDelay
+      ) {
+        void switchToNextMarket(
+          active.skipReason ||
+            `No executable entry for ${Math.round(waitedMs / 1000)}s`
+        );
+      }
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [
+    autoRunning,
+    autoSwitchMarket,
+    hasOpenSessionTrade,
+    tradeBusy,
+    marketSymbols,
+    symbol,
+    immediateEntryReady,
+    active.autoSkip,
+    active.skipReason,
+    active.opportunityScore,
+    learningProfile.learnedBuyThreshold,
+    switchAfterSeconds,
+    consecutiveLosses,
+  ]);
+
 
   useEffect(() => {
     const contracts = Array.isArray(openContracts) ? openContracts : [];
@@ -920,7 +1089,7 @@ export default function RiseFallAnalysis() {
       });
     }
 
-    const latestClosed = contracts.find((contract) => {
+    const closedSessionContracts = contracts.filter((contract) => {
       const id = contractIdOf(contract);
 
       return (
@@ -934,21 +1103,48 @@ export default function RiseFallAnalysis() {
       );
     });
 
-    if (
-      latestClosed &&
-      contractStatus(latestClosed) === "LOST" &&
-      stopAfterLoss &&
-      autoRunningRef.current
-    ) {
-      stopAuto(
-        `Auto stopped after loss · ${profitOf(latestClosed).toFixed(2)}.`
+    const latestClosed = closedSessionContracts[0];
+
+    if (latestClosed) {
+      const latestId = contractIdOf(latestClosed);
+      const latestStatus = contractStatus(latestClosed);
+      const latestTrade = sessionTrades.find(
+        (trade) => String(trade.contractId || "") === latestId
       );
+
+      if (latestTrade && !latestTrade.lossStreakProcessed) {
+        setSessionTrades((current) =>
+          current.map((trade) =>
+            String(trade.contractId || "") === latestId
+              ? { ...trade, lossStreakProcessed: true }
+              : trade
+          )
+        );
+
+        lastExecutedSignalRef.current = "";
+        waitStartedAtRef.current = Date.now();
+
+        if (latestStatus === "WON") {
+          consecutiveLossesRef.current = 0;
+          setConsecutiveLosses(0);
+        } else if (latestStatus === "LOST") {
+          const nextLosses = consecutiveLossesRef.current + 1;
+          consecutiveLossesRef.current = nextLosses;
+          setConsecutiveLosses(nextLosses);
+
+          if (nextLosses >= 3 && autoRunningRef.current) {
+            stopAuto(
+              `Hard stop: ${nextLosses} consecutive losses. Press RESET TRANSACTIONS before starting again.`
+            );
+          }
+        }
+      }
     }
   }, [
     openContracts,
-    stopAfterLoss,
     symbol,
     durationMode,
+    sessionTrades,
   ]);
 
   return (
@@ -957,8 +1153,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V70 · Rise/Fall Pro Analysis"
-          subtitle="Adaptive Learning AI with setup memory, learned thresholds and loss-streak protection"
+          title="EdgePilot V71 · Rise/Fall Pro Analysis"
+          subtitle="Immediate execution, automatic volatility switching, unlimited runs and 3-loss hard stop"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1054,18 +1250,28 @@ export default function RiseFallAnalysis() {
               <p>{executionMessage || tradeError}</p>
             </div>
 
-            <button
-              type="button"
-              className={autoRunning ? "stop" : "start"}
-              disabled={tradeBusy}
-              onClick={toggleAutoExecution}
-            >
-              {tradeBusy
-                ? "SENDING..."
-                : autoRunning
-                  ? "STOP"
-                  : "START"}
-            </button>
+            <div className="rfAutoPanelButtons">
+              <button
+                type="button"
+                className="reset"
+                onClick={resetTransactions}
+              >
+                RESET TRANSACTIONS
+              </button>
+
+              <button
+                type="button"
+                className={autoRunning ? "stop" : "start"}
+                disabled={tradeBusy}
+                onClick={toggleAutoExecution}
+              >
+                {tradeBusy
+                  ? "SENDING..."
+                  : autoRunning
+                    ? "STOP"
+                    : "START"}
+              </button>
+            </div>
           </div>
 
           <div className="rfAutoControls">
@@ -1081,17 +1287,19 @@ export default function RiseFallAnalysis() {
               />
             </label>
 
-            <label>
-              <span>Maximum runs</span>
-              <input
-                type="number"
-                min="1"
-                max="50"
-                value={maxRuns}
-                disabled={autoRunning}
-                onChange={(event) => setMaxRuns(event.target.value)}
-              />
-            </label>
+            <div>
+              <span>Run mode</span>
+              <strong>UNLIMITED UNTIL STOP</strong>
+            </div>
+
+            <div>
+              <span>Auto market</span>
+              <strong>
+                {autoSwitchMarket
+                  ? `ON · ${switchAfterSeconds}s`
+                  : "OFF"}
+              </strong>
+            </div>
 
             <div>
               <span>Contract</span>
@@ -1108,7 +1316,7 @@ export default function RiseFallAnalysis() {
 
             <div>
               <span>Session runs</span>
-              <strong>{executionRuns}/{maxRuns}</strong>
+              <strong>{executionRuns} · CONTINUOUS</strong>
             </div>
 
             <label>
@@ -1154,11 +1362,32 @@ export default function RiseFallAnalysis() {
             <label>
               <input
                 type="checkbox"
-                checked={stopAfterLoss}
-                onChange={(event) => setStopAfterLoss(event.target.checked)}
+                checked={autoSwitchMarket}
+                onChange={(event) => setAutoSwitchMarket(event.target.checked)}
               />
-              Stop automatically after one loss
+              Change volatility automatically when entry stays blocked
             </label>
+
+            <label>
+              Switch after
+              <input
+                className="rfInlineNumber"
+                type="number"
+                min="4"
+                max="60"
+                value={switchAfterSeconds}
+                onChange={(event) => setSwitchAfterSeconds(event.target.value)}
+              />
+              seconds
+            </label>
+
+            <span>
+              Loss streak: <strong>{consecutiveLosses}/3</strong>
+            </span>
+
+            <span>
+              Market switches: <strong>{marketSwitches}</strong>
+            </span>
 
             <label className={selectedAccountType === "demo" ? "disabled" : ""}>
               <input
@@ -1757,8 +1986,8 @@ export default function RiseFallAnalysis() {
           <article>
             <small>LEARNING FILTER</small>
             <strong>
-              {learningProfile.lossStreak >= 3
-                ? "COOLDOWN"
+              {consecutiveLosses >= 3
+                ? "HARD STOP"
                 : learningProfile.setupRejected
                   ? "REJECT SETUP"
                   : learnedEntryAllowed

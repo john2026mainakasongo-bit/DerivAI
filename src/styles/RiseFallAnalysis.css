@@ -1780,3 +1780,34 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+.rfAutoPanelButtons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rfAutoPanelButtons .reset {
+  border: 1px solid #b48a2c;
+  background: #3a2b08;
+  color: #ffd167;
+}
+
+.rfInlineNumber {
+  width: 58px !important;
+  min-width: 58px;
+  margin: 0 6px;
+  padding: 5px 7px !important;
+}
+
+.rfAutoChecks {
+  flex-wrap: wrap;
+}
+
+.rfAutoChecks > span {
+  border: 1px solid #1d5167;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #061c2a;
+}
