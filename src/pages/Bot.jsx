@@ -144,7 +144,7 @@ export default function Bot() {
 
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [botState, setBotState] = useState(INITIAL_STATE);
-  const [botType, setBotType] = useState("OVER_UNDER");
+  const [botType, setBotType] = useState("SMART_AUTO");
   const [riseFallState, setRiseFallState] = useState({
     running: false,
     status: "STOPPED",
@@ -207,8 +207,8 @@ export default function Bot() {
   const riseFallAnalysis = unifiedSignals.riseFall;
   const allRankedCandidates = v66Analysis.candidates || [];
 
-  const isRiseFallBot = botType === "RISE_FALL";
-  const isDigitFamilyBot = !isRiseFallBot;
+  const isRiseFallBot = false;
+  const isDigitFamilyBot = true;
 
   const selectedModes =
     botType === "OVER_UNDER"
@@ -217,7 +217,7 @@ export default function Bot() {
         ? ["EVEN", "ODD"]
         : botType === "MATCH_DIFFERS"
           ? ["MATCH", "DIFFERS"]
-          : ["OVER", "UNDER", "EVEN", "ODD", "MATCH", "DIFFERS"];
+          : ["OVER", "UNDER", "EVEN", "ODD", "DIFFERS"];
 
   const rankedCandidates =
     isRiseFallBot
@@ -796,7 +796,7 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V74.1 · Smart Signal Status Engine"
+          title="EdgePilot V50 · Dynamic Digit AI V74.1 · Smart Signal Status Engine"
           subtitle="Clear live signal state, last-trade memory, entry-risk labels and fast fresh rescanning"
           connected={auth.authenticated || connected}
           connecting={!auth.authenticated && connecting}
@@ -846,7 +846,8 @@ export default function Bot() {
               title: "Smart Auto AI",
               subtitle: "Ranks every enabled contract family",
             },
-          ].map((item) => (
+          ].filter((item) => item.id !== "RISE_FALL")
+            .map((item) => (
             <button
               type="button"
               key={item.id}
@@ -990,7 +991,7 @@ export default function Bot() {
                 <select value={botType} disabled>
                   <option value="OVER_UNDER">OVER / UNDER ONLY</option>
                   <option value="EVEN_ODD">EVEN / ODD ONLY</option>
-                  <option value="RISE_FALL">RISE / FALL ONLY</option>
+                  
                   <option value="MATCH_DIFFERS">MATCHES / DIFFERS ONLY</option>
                   <option value="SMART_AUTO">SMART AUTO AI</option>
                 </select>
@@ -1307,7 +1308,7 @@ export default function Bot() {
               <span>
                 V72 isolates each contract family. Over/Under never receives
                 Even/Odd signals; Even/Odd never receives Over/Under signals;
-                Rise/Fall uses only CALL/PUT; Matches/Differs stays separate.
+                This build is digits-only: Over/Under, Even/Odd and Differs. Rise/Fall is disabled.
                 Smart Auto is the only mode allowed to compare families.
               </span>
             </div>

@@ -1,9 +1,22 @@
 const SAFE_AUTO_SETUPS = new Set([
-  "RISE",
-  "FALL",
   "EVEN",
   "ODD",
+  "OVER 1",
   "OVER 2",
+  "OVER 3",
+  "UNDER 1",
+  "UNDER 2",
+  "UNDER 3",
+  "DIFFERS 0",
+  "DIFFERS 1",
+  "DIFFERS 2",
+  "DIFFERS 3",
+  "DIFFERS 4",
+  "DIFFERS 5",
+  "DIFFERS 6",
+  "DIFFERS 7",
+  "DIFFERS 8",
+  "DIFFERS 9",
 ]);
 
 function clamp(value, min = 0, max = 100) {

@@ -23,11 +23,24 @@ const SUPPORTED_MODES = new Set([
 // walk-forward validator already used by the page. Every manual contract
 // remains available, but AUTO no longer jumps into every barrier/digit.
 const AUTO_SAFE_SETUPS = new Set([
-  "RISE",
-  "FALL",
   "EVEN",
   "ODD",
+  "OVER 1",
   "OVER 2",
+  "OVER 3",
+  "UNDER 1",
+  "UNDER 2",
+  "UNDER 3",
+  "DIFFERS 0",
+  "DIFFERS 1",
+  "DIFFERS 2",
+  "DIFFERS 3",
+  "DIFFERS 4",
+  "DIFFERS 5",
+  "DIFFERS 6",
+  "DIFFERS 7",
+  "DIFFERS 8",
+  "DIFFERS 9",
 ]);
 
 const MIN_DIGIT_SAMPLES = 60;
@@ -225,8 +238,8 @@ function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
         probability: profile.conservative,
         baseline: naturalBaseline,
         stability: 100 - profile.spread,
-        autoEligible: barrier === 2,
-        priority: barrier === 2 ? 50 : 20,
+        autoEligible: barrier >= 1 && barrier <= 7,
+        priority: Math.max(20, 58 - barrier * 5),
       })
     );
   }
@@ -263,8 +276,8 @@ function buildOverUnderCandidates(analysis, minConfidence, sampleReady) {
         stability: 100 - profile.spread,
         // UNDER barriers stay manual because the current walk-forward validator
         // only validates UNDER 2, which is a high-variance contract.
-        autoEligible: false,
-        priority: 20,
+        autoEligible: barrier >= 1 && barrier <= 7,
+        priority: Math.max(20, 55 - Math.abs(barrier - 3) * 4),
       })
     );
   }
@@ -337,8 +350,8 @@ function buildMatchDiffersCandidates(analysis, minConfidence, sampleReady) {
         probability: differsProbability,
         baseline: 90,
         stability: 100 - match.spread,
-        autoEligible: false,
-        priority: 5,
+        autoEligible: true,
+        priority: 45,
       })
     );
   }
