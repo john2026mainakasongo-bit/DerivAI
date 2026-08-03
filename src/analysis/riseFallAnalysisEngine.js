@@ -1438,6 +1438,186 @@ function entryWindow({
   };
 }
 
+
+function freshTickComposite({
+  acceleration,
+  impulse,
+  flowDelta,
+  rhythm,
+  persistence,
+  direction,
+}) {
+  const checks = [
+    direction === "RISE" ? acceleration >= 0 : acceleration <= 0,
+    impulse.direction === direction && impulse.score >= 45,
+    direction === "RISE" ? flowDelta.delta >= 6 : flowDelta.delta <= -6,
+    rhythm >= 45,
+    persistence >= 55,
+  ];
+
+  const passed = checks.filter(Boolean).length;
+
+  return {
+    passed,
+    total: checks.length,
+    ready: passed >= 3,
+    score: clamp((passed / checks.length) * 100),
+  };
+}
+
+function liquidityQuality({
+  liquiditySweep,
+  supportReaction,
+  resistanceReaction,
+  direction,
+}) {
+  const sweepScore =
+    liquiditySweep.state === "NONE"
+      ? 35
+      : liquiditySweep.state.includes(
+          direction === "RISE" ? "BULLISH" : "BEARISH"
+        )
+        ? liquiditySweep.score
+        : 0;
+
+  const levelReaction =
+    direction === "RISE"
+      ? supportReaction
+      : direction === "FALL"
+        ? resistanceReaction
+        : Math.max(supportReaction, resistanceReaction);
+
+  return clamp(sweepScore * 0.55 + levelReaction * 0.45);
+}
+
+function buildQuantumConsensus({
+  direction,
+  trend,
+  momentum,
+  emaAligned,
+  ribbon,
+  pressure,
+  flowDelta,
+  continuation,
+  microTrend,
+  sequence,
+  impulse,
+  stability,
+  noise,
+  breakout,
+  pullback,
+  rhythm,
+  persistence,
+  liquidityQualityScore,
+  compression,
+  expansion,
+}) {
+  const votes = [
+    ["Trend", microTrend.dominantDirection !== "WAIT" ? microTrend.dominantDirection : direction],
+    [
+      "Momentum",
+      momentum.fast > 0 && momentum.medium > 0
+        ? "RISE"
+        : momentum.fast < 0 && momentum.medium < 0
+          ? "FALL"
+          : "WAIT",
+    ],
+    ["EMA", emaAligned ? direction : "WAIT"],
+    [
+      "EMA Ribbon",
+      ribbon.state === "BULLISH"
+        ? "RISE"
+        : ribbon.state === "BEARISH"
+          ? "FALL"
+          : "WAIT",
+    ],
+    [
+      "Pressure",
+      pressure.buying >= 56
+        ? "RISE"
+        : pressure.selling >= 56
+          ? "FALL"
+          : "WAIT",
+    ],
+    [
+      "Order Flow",
+      flowDelta.delta >= 6
+        ? "RISE"
+        : flowDelta.delta <= -6
+          ? "FALL"
+          : "WAIT",
+    ],
+    ["Continuation", continuation >= 52 ? direction : "WAIT"],
+    ["Sequence", sequence.direction],
+    ["Impulse", impulse.score >= 45 ? impulse.direction : "WAIT"],
+    ["Stability", stability >= 52 ? direction : "WAIT"],
+    ["Noise", noise <= 72 ? direction : "WAIT"],
+    [
+      "Structure",
+      breakout.includes("BULLISH") || pullback.includes("BULLISH")
+        ? "RISE"
+        : breakout.includes("BEARISH") || pullback.includes("BEARISH")
+          ? "FALL"
+          : "WAIT",
+    ],
+    ["Rhythm", rhythm >= 45 ? direction : "WAIT"],
+    ["Persistence", persistence >= 55 ? direction : "WAIT"],
+    ["Liquidity", liquidityQualityScore >= 50 ? direction : "WAIT"],
+    ["Compression", compression >= 65 ? direction : "WAIT"],
+    ["Expansion", expansion >= 45 ? direction : "WAIT"],
+    ["Trend Age", trend.ticks >= 2 ? direction : "WAIT"],
+  ].map(([name, vote]) => ({ name, vote }));
+
+  const riseVotes = votes.filter((item) => item.vote === "RISE").length;
+  const fallVotes = votes.filter((item) => item.vote === "FALL").length;
+  const waitVotes = votes.length - riseVotes - fallVotes;
+
+  const consensusDirection =
+    riseVotes > fallVotes
+      ? "RISE"
+      : fallVotes > riseVotes
+        ? "FALL"
+        : "WAIT";
+
+  const dominantVotes = Math.max(riseVotes, fallVotes);
+
+  return {
+    votes,
+    riseVotes,
+    fallVotes,
+    waitVotes,
+    total: votes.length,
+    direction: consensusDirection,
+    score: clamp((dominantVotes / votes.length) * 100),
+  };
+}
+
+function quantumConfidence({
+  trendStrength,
+  momentumScore,
+  pressureScore,
+  continuation,
+  emaScore,
+  orderFlowScore,
+  microTrendScore,
+  impulseScore,
+  rhythm,
+  stability,
+}) {
+  return clamp(
+    trendStrength * 0.22 +
+      momentumScore * 0.15 +
+      pressureScore * 0.18 +
+      continuation * 0.12 +
+      emaScore * 0.10 +
+      orderFlowScore * 0.08 +
+      microTrendScore * 0.08 +
+      impulseScore * 0.07 +
+      rhythm * 0.05 +
+      stability * 0.05
+  );
+}
+
 function durationRecommendation({
   mode,
   confidence,
@@ -1831,6 +2011,22 @@ export function analyzeRiseFall(
     consistency,
   });
 
+  const freshTick = freshTickComposite({
+    acceleration,
+    impulse,
+    flowDelta,
+    rhythm,
+    persistence,
+    direction,
+  });
+
+  const liquidityQualityScore = liquidityQuality({
+    liquiditySweep: sweep,
+    supportReaction,
+    resistanceReaction,
+    direction,
+  });
+
   const confirmationChecks = [
     {
       id: "direction",
@@ -2027,17 +2223,18 @@ export function analyzeRiseFall(
 
   const entryScore = clamp(baseEntryScore + boosterScore);
 
-  const smartConfidence = clamp(
-    entryScore * 0.42 +
-      weightedScores.microTrend * 0.12 +
-      weightedScores.pressure * 0.1 +
-      weightedScores.momentum * 0.09 +
-      weightedScores.ema * 0.08 +
-      weightedScores.continuation * 0.08 +
-      weightedScores.orderFlow * 0.05 +
-      weightedScores.ribbon * 0.03 +
-      weightedScores.stability * 0.03
-  );
+  const smartConfidence = quantumConfidence({
+    trendStrength,
+    momentumScore: weightedScores.momentum,
+    pressureScore: weightedScores.pressure,
+    continuation: weightedScores.continuation,
+    emaScore: weightedScores.ema,
+    orderFlowScore: weightedScores.orderFlow,
+    microTrendScore: weightedScores.microTrend,
+    impulseScore: weightedScores.impulseBoost,
+    rhythm: weightedScores.rhythm,
+    stability: weightedScores.stability,
+  });
 
   const regimeAdjustment =
     regime === "TREND"
@@ -2047,7 +2244,7 @@ export function analyzeRiseFall(
         : 5;
 
   const noiseAdjustment =
-    noise >= 82
+    noise >= 86
       ? 5
       : noise >= 70
         ? 3
@@ -2102,8 +2299,9 @@ export function analyzeRiseFall(
     instant: instantThreshold,
   };
 
-  const consensus = buildConsensus({
+  const consensus = buildQuantumConsensus({
     direction,
+    trend,
     momentum,
     emaAligned,
     ribbon,
@@ -2117,13 +2315,23 @@ export function analyzeRiseFall(
     noise,
     breakout,
     pullback,
+    rhythm,
+    persistence,
+    liquidityQualityScore,
+    compression: compressionExpansionState.compression,
+    expansion: compressionExpansionState.expansion,
   });
 
   const opportunityScore = clamp(
-    entryScore * 0.52 +
+    entryScore * 0.38 +
       smartConfidence * 0.18 +
-      consensus.score * 0.2 +
-      Math.max(0, 100 - exhaustion) * 0.1
+      consensus.score * 0.16 +
+      Math.max(0, 100 - exhaustion) * 0.08 +
+      liquidityQualityScore * 0.07 +
+      compressionExpansionState.compression * 0.04 +
+      compressionExpansionState.expansion * 0.04 +
+      supportReaction * 0.025 +
+      resistanceReaction * 0.025
   );
 
   const tradeNow =
@@ -2136,8 +2344,8 @@ export function analyzeRiseFall(
     continuationReversal.continuation >= 52 &&
     (
       emaAligned ||
-      momentumAligned ||
-      ribbon.state !== "MIXED"
+      ribbon.state !== "MIXED" ||
+      smartConfidence >= buyThreshold + 4
     ) &&
     (
       microTrend.dominantDirection === direction ||
@@ -2160,15 +2368,14 @@ export function analyzeRiseFall(
 
   const instantOneTick =
     strongTrade &&
-    entryScore >= instantThreshold &&
-    consensus.score >= 83 &&
-    dominantPressure >= 68 &&
-    continuationReversal.continuation >= 62 &&
-    (
-      stability >= 62 ||
-      ribbon.state !== "MIXED" ||
-      sequence.score >= 75
-    );
+    opportunityScore >= instantThreshold &&
+    consensus.score >= 78 &&
+    freshTick.ready &&
+    dominantPressure >= 64 &&
+    continuationReversal.continuation >= 58 &&
+    persistence >= 55 &&
+    rhythm >= 42 &&
+    noise <= 74;
 
   const prepare =
     !tradeNow &&
@@ -2232,7 +2439,7 @@ export function analyzeRiseFall(
   const autoSkip =
     risk === "HIGH" ||
     quality === "REJECT" ||
-    noise >= 82 ||
+    noise >= 86 ||
     consensus.direction === "WAIT";
 
   const skipReason =
@@ -2391,6 +2598,8 @@ export function analyzeRiseFall(
     adaptiveVolatilityScore,
     consensus,
     opportunityScore,
+    freshTick,
+    liquidityQualityScore,
     quality,
     entryWindow: window,
     nextTicks,

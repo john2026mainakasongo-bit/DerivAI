@@ -333,7 +333,7 @@ export default function RiseFallAnalysis() {
         analysis?.instantOneTick ||
         (
           confidence >= dynamicMinimumConfidence &&
-          Number(analysis?.entryScore || 0) >= 78
+          Number(analysis?.opportunityScore || analysis?.entryScore || 0) >= 78
         )
       );
 
@@ -719,8 +719,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V68 · Rise/Fall Pro Analysis"
-          subtitle="Consensus Engine with opportunity meter, quality grade, next-tick projection and auto-skip"
+          title="EdgePilot V69 · Rise/Fall Pro Analysis"
+          subtitle="Quantum Consensus AI with 18 engines, adaptive confidence and smart 1-tick detection"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -1549,6 +1549,38 @@ export default function RiseFallAnalysis() {
             <strong>{active.risk || "HIGH"}</strong>
             <span>
               Instant level {Number(active.adaptiveThresholds?.instant || 88).toFixed(0)}
+            </span>
+          </article>
+        </section>
+
+        <section className="rfQuantumMetrics">
+          <article>
+            <small>ADAPTIVE CONFIDENCE</small>
+            <strong>{pct(active.smartConfidence)}</strong>
+            <span>Trend, momentum, pressure, EMA, order flow and rhythm.</span>
+          </article>
+
+          <article>
+            <small>FRESH TICK COMPOSITE</small>
+            <strong>
+              {active.freshTick?.passed || 0}/{active.freshTick?.total || 5}
+            </strong>
+            <span>
+              {active.freshTick?.ready ? "READY" : "FORMING"} · {pct(active.freshTick?.score)}
+            </span>
+          </article>
+
+          <article>
+            <small>LIQUIDITY QUALITY</small>
+            <strong>{pct(active.liquidityQualityScore)}</strong>
+            <span>Liquidity sweep and level reaction strength.</span>
+          </article>
+
+          <article>
+            <small>SMART 1-TICK</small>
+            <strong>{active.instantOneTick ? "READY" : "WAIT"}</strong>
+            <span>
+              Requires fresh-tick composite, consensus, rhythm and persistence.
             </span>
           </article>
         </section>
