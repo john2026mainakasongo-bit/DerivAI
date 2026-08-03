@@ -686,6 +686,161 @@ function noiseRatio(values = []) {
   return clamp((1 - direct / path) * 100);
 }
 
+
+function microWindowVote(values = [], size = 3) {
+  const sample = values.slice(-Math.min(size, values.length));
+
+  if (sample.length < 2) {
+    return {
+      size,
+      direction: "FLAT",
+      strength: 0,
+      move: 0,
+    };
+  }
+
+  const move = Number(sample.at(-1)) - Number(sample[0]);
+  const changes = sample
+    .slice(1)
+    .map((value, index) => Number(value) - Number(sample[index]));
+
+  const agreement = directionConsistency(sample);
+  const noise = Math.max(0.0000001, stdDev(changes));
+  const strength = clamp(
+    agreement * 0.55 +
+      Math.min(100, Math.abs(move) / noise * 18) * 0.45
+  );
+
+  return {
+    size,
+    direction:
+      move > 0
+        ? "RISE"
+        : move < 0
+          ? "FALL"
+          : "FLAT",
+    strength,
+    move,
+  };
+}
+
+function microTrendScanner(values = []) {
+  const sizes = [3, 5, 8, 13, 21, 34, 55];
+  const windows = sizes
+    .filter((size) => values.length >= Math.min(size, 3))
+    .map((size) => microWindowVote(values, size));
+
+  const riseVotes = windows.filter(
+    (item) => item.direction === "RISE"
+  ).length;
+
+  const fallVotes = windows.filter(
+    (item) => item.direction === "FALL"
+  ).length;
+
+  const dominantDirection =
+    riseVotes > fallVotes
+      ? "RISE"
+      : fallVotes > riseVotes
+        ? "FALL"
+        : "WAIT";
+
+  const dominantVotes = Math.max(riseVotes, fallVotes);
+  const averageStrength = mean(
+    windows
+      .filter((item) => item.direction === dominantDirection)
+      .map((item) => item.strength)
+  );
+
+  return {
+    windows,
+    riseVotes,
+    fallVotes,
+    dominantDirection,
+    dominantVotes,
+    averageStrength,
+  };
+}
+
+function tickVelocity(values = []) {
+  if (values.length < 3) return 0;
+
+  const recent = values.slice(-4);
+  const move = Number(recent.at(-1)) - Number(recent[0]);
+
+  return move / Math.max(1, recent.length - 1);
+}
+
+function tickAcceleration(values = []) {
+  if (values.length < 5) return 0;
+
+  const recent = values.slice(-5);
+  const changes = recent
+    .slice(1)
+    .map((value, index) => Number(value) - Number(recent[index]));
+
+  const firstHalf = mean(changes.slice(0, 2));
+  const secondHalf = mean(changes.slice(-2));
+
+  return secondHalf - firstHalf;
+}
+
+function compressionExpansion(values = []) {
+  if (values.length < 8) {
+    return {
+      compression: 50,
+      expansion: 50,
+    };
+  }
+
+  const changes = values
+    .slice(1)
+    .map((value, index) =>
+      Math.abs(Number(value) - Number(values[index]))
+    );
+
+  const fast = mean(changes.slice(-3));
+  const slow = mean(changes.slice(-8));
+
+  if (!slow) {
+    return {
+      compression: 50,
+      expansion: 50,
+    };
+  }
+
+  const ratio = fast / slow;
+
+  return {
+    compression: clamp((1 - ratio) * 100 + 50),
+    expansion: clamp(ratio * 50),
+  };
+}
+
+function exhaustionScore({
+  rsiValue,
+  stochasticValue,
+  zScoreValue,
+  trendTicks,
+  acceleration,
+}) {
+  const oscillatorExhaustion = Math.max(
+    Math.abs(rsiValue - 50) * 1.2,
+    Math.abs(stochasticValue - 50) * 1.05
+  );
+
+  const statisticalExhaustion = Math.abs(zScoreValue) * 17;
+  const ageExhaustion = trendTicks * 3;
+  const accelerationPenalty = acceleration === 0 ? 0 : Math.min(22, Math.abs(acceleration) * 8);
+
+  return clamp(
+    oscillatorExhaustion * 0.35 +
+      statisticalExhaustion * 0.25 +
+      ageExhaustion * 0.2 +
+      accelerationPenalty * 0.2
+  );
+}
+
 function durationRecommendation({
   mode,
   confidence,
@@ -795,6 +950,10 @@ export function analyzeRiseFall(
   const impulse = tickImpulse(values);
   const persistence = persistenceScore(values);
   const noise = noiseRatio(values);
+  const microTrend = microTrendScanner(values);
+  const velocity = tickVelocity(values);
+  const acceleration = tickAcceleration(values);
+  const compressionExpansionState = compressionExpansion(values);
 
   const levels = supportResistance(values);
 
@@ -1011,6 +1170,14 @@ export function analyzeRiseFall(
     momentumAligned,
   });
 
+  const exhaustion = exhaustionScore({
+    rsiValue,
+    stochasticValue,
+    zScoreValue,
+    trendTicks: trend.ticks,
+    acceleration,
+  });
+
   const confirmationChecks = [
     {
       id: "direction",
@@ -1092,6 +1259,26 @@ export function analyzeRiseFall(
       passed: noise <= 68,
       detail: `${noise.toFixed(1)}% noise`,
     },
+    {
+      id: "microtrend",
+      label: "Micro trend scanner",
+      passed:
+        microTrend.dominantDirection === direction &&
+        microTrend.dominantVotes >= 4,
+      detail:
+        `${microTrend.riseVotes}R / ${microTrend.fallVotes}F`,
+    },
+    {
+      id: "acceleration",
+      label: "Tick acceleration",
+      passed:
+        direction === "RISE"
+          ? acceleration >= 0
+          : direction === "FALL"
+            ? acceleration <= 0
+            : false,
+      detail: acceleration.toFixed(6),
+    },
   ];
 
   const confirmationsPassed = confirmationChecks.filter(
@@ -1126,13 +1313,16 @@ export function analyzeRiseFall(
   const fastScalpReady =
     direction !== "WAIT" &&
     dominantVotes >= 9 &&
-    confirmationsPassed >= 8 &&
-    confidence >= 72 &&
-    impulse.score >= 62 &&
-    persistence >= 68 &&
-    noise <= 58 &&
+    confirmationsPassed >= 9 &&
+    confidence >= 60 &&
+    impulse.score >= 58 &&
+    persistence >= 64 &&
+    noise <= 62 &&
+    microTrend.dominantDirection === direction &&
+    microTrend.dominantVotes >= 4 &&
     emaAligned &&
-    momentumAligned;
+    momentumAligned &&
+    exhaustion <= 72;
 
   const signal = tradeNow ? direction : "WAIT";
 
@@ -1185,9 +1375,21 @@ export function analyzeRiseFall(
       (100 - breakoutFakeProbability) * 0.1
   );
 
+  const entryScore = clamp(
+    confidence * 0.2 +
+      impulse.score * 0.16 +
+      persistence * 0.12 +
+      Math.max(0, 100 - noise) * 0.12 +
+      microTrend.averageStrength * 0.15 +
+      continuationReversal.continuation * 0.12 +
+      compressionExpansionState.expansion * 0.06 +
+      Math.max(0, 100 - exhaustion) * 0.07
+  );
+
   const finalScore = clamp(
-    qualityScore * 0.72 +
-      confirmationsPassed / confirmationChecks.length * 100 * 0.28
+    qualityScore * 0.52 +
+      confirmationsPassed / confirmationChecks.length * 100 * 0.23 +
+      entryScore * 0.25
   );
 
   const setupGrade = tradeNow
@@ -1250,6 +1452,13 @@ export function analyzeRiseFall(
     impulse,
     persistence,
     noiseRatio: noise,
+    microTrend,
+    velocity,
+    acceleration,
+    compression: compressionExpansionState.compression,
+    expansion: compressionExpansionState.expansion,
+    exhaustion,
+    entryScore,
     trend,
     bollinger: bands,
     pressure,

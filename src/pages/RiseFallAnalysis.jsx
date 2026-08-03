@@ -185,8 +185,8 @@ export default function RiseFallAnalysis() {
   const [allowReal, setAllowReal] = useState(false);
   const [durationMode, setDurationMode] = useState("AUTO");
   const [allowOneTick, setAllowOneTick] = useState(true);
-  const [oneTickMinimumScore, setOneTickMinimumScore] = useState(80);
-  const [oneTickMinimumConfidence, setOneTickMinimumConfidence] = useState(72);
+  const [oneTickMinimumScore, setOneTickMinimumScore] = useState(78);
+  const [oneTickMinimumConfidence, setOneTickMinimumConfidence] = useState(60);
   const [executionMessage, setExecutionMessage] = useState(
     "Auto execution is stopped."
   );
@@ -312,11 +312,21 @@ export default function RiseFallAnalysis() {
     const finalScore = Number(analysis?.scores?.final || 0);
     const confidence = Number(analysis?.confidence || 0);
 
+    const dynamicMinimumConfidence =
+      durationMode === "1T"
+        ? Number(oneTickMinimumConfidence || 60)
+        : durationMode === "10T"
+          ? 68
+          : durationMode === "15S"
+            ? 72
+            : Number(oneTickMinimumConfidence || 60);
+
     const oneTickQualified =
       allowOneTick &&
       analysis?.fastScalpReady &&
-      finalScore >= Number(oneTickMinimumScore || 80) &&
-      confidence >= Number(oneTickMinimumConfidence || 72);
+      finalScore >= Number(oneTickMinimumScore || 78) &&
+      confidence >= dynamicMinimumConfidence &&
+      Number(analysis?.entryScore || 0) >= 72;
 
     if (durationMode === "1T") {
       if (!oneTickQualified) {
@@ -700,8 +710,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V61 · Rise/Fall Pro Analysis"
-          subtitle="Responsive confidence, explicit 1-tick mode and fast microstructure entry analysis"
+          title="EdgePilot V62 · Rise/Fall Pro Analysis"
+          subtitle="Dynamic confidence, multi-window micro trend and AI fast-entry scoring"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -858,7 +868,7 @@ export default function RiseFallAnalysis() {
               <span>1-tick minimum score</span>
               <input
                 type="number"
-                min="80"
+                min="70"
                 max="100"
                 value={oneTickMinimumScore}
                 disabled={autoRunning || !allowOneTick}
@@ -872,7 +882,7 @@ export default function RiseFallAnalysis() {
               <span>1-tick minimum confidence</span>
               <input
                 type="number"
-                min="75"
+                min="55"
                 max="100"
                 value={oneTickMinimumConfidence}
                 disabled={autoRunning || !allowOneTick}
@@ -1466,6 +1476,85 @@ export default function RiseFallAnalysis() {
               </div>
             </div>
           </article>
+        </section>
+
+        <section className="rfAiEntryTerminal">
+          <div className="rfPanelHead">
+            <div>
+              <small>AI ENTRY ENGINE</small>
+              <h2>
+                {active.fastScalpReady
+                  ? `BUY ${active.rawDirection} NOW`
+                  : active.prepare
+                    ? `PREPARE ${active.rawDirection}`
+                    : "WAIT FOR ENTRY"}
+              </h2>
+            </div>
+
+            <span className={active.fastScalpReady ? "ready" : "wait"}>
+              {pct(active.entryScore)}
+            </span>
+          </div>
+
+          <div className="rfAiEntryGrid">
+            {[
+              ["Micro trend", active.microTrend?.averageStrength],
+              ["Impulse", active.impulse?.score],
+              ["Persistence", active.persistence],
+              ["Pressure", Math.max(
+                Number(active.pressure?.buying || 0),
+                Number(active.pressure?.selling || 0)
+              )],
+              ["Continuation", active.continuationProbability],
+              ["Expansion", active.expansion],
+              ["Noise", Math.max(0, 100 - Number(active.noiseRatio || 0))],
+              ["Exhaustion safety", Math.max(0, 100 - Number(active.exhaustion || 0))],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <span>{label}</span>
+                <strong>{Number(value || 0).toFixed(0)}</strong>
+                <i>
+                  <b
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, Number(value || 0))
+                      )}%`,
+                    }}
+                  />
+                </i>
+              </div>
+            ))}
+          </div>
+
+          <div className="rfMicroVotes">
+            {(active.microTrend?.windows || []).map((item) => (
+              <span
+                key={item.size}
+                className={String(item.direction).toLowerCase()}
+              >
+                {item.size} {item.direction === "RISE" ? "↑" : item.direction === "FALL" ? "↓" : "—"}
+              </span>
+            ))}
+          </div>
+
+          <div className="rfAiTelemetry">
+            <span>
+              Velocity <strong>{num(active.velocity, 6)}</strong>
+            </span>
+            <span>
+              Acceleration <strong>{num(active.acceleration, 6)}</strong>
+            </span>
+            <span>
+              Compression <strong>{pct(active.compression)}</strong>
+            </span>
+            <span>
+              Expansion <strong>{pct(active.expansion)}</strong>
+            </span>
+            <span>
+              Exhaustion <strong>{pct(active.exhaustion)}</strong>
+            </span>
+          </div>
         </section>
 
         <section className="rfMicroGrid">

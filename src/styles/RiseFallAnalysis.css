@@ -1181,3 +1181,134 @@
     width: 100%;
   }
 }
+
+
+.rfAiEntryTerminal {
+  margin: 14px 0;
+  padding: 17px;
+  border: 1px solid #205a72;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, #123f52, transparent 40%),
+    linear-gradient(145deg, #082638, #061a28);
+}
+
+.rfAiEntryTerminal .rfPanelHead > span {
+  min-width: 82px;
+  text-align: center;
+  border: 1px solid #7a6324;
+  border-radius: 999px;
+  padding: 9px 13px;
+  color: #edc45a;
+  font-weight: 900;
+}
+
+.rfAiEntryTerminal .rfPanelHead > span.ready {
+  border-color: #21ddaa;
+  color: #27e8b3;
+  box-shadow: 0 0 20px #21ddaa24;
+}
+
+.rfAiEntryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rfAiEntryGrid > div {
+  border: 1px solid #174d65;
+  border-radius: 10px;
+  padding: 11px;
+  background: #061d2d;
+}
+
+.rfAiEntryGrid span {
+  color: #7fa8ba;
+  font-size: 9px;
+}
+
+.rfAiEntryGrid strong {
+  display: block;
+  font-size: 21px;
+  margin: 4px 0 8px;
+}
+
+.rfAiEntryGrid i {
+  display: block;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #071824;
+}
+
+.rfAiEntryGrid i b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #26dfae;
+}
+
+.rfMicroVotes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.rfMicroVotes span {
+  border: 1px solid #1c5067;
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #92b2bf;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.rfMicroVotes span.rise {
+  border-color: #1b8b6b;
+  color: #25e5ae;
+}
+
+.rfMicroVotes span.fall {
+  border-color: #8b3548;
+  color: #ff6a82;
+}
+
+.rfAiTelemetry {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.rfAiTelemetry span {
+  border: 1px solid #17475e;
+  border-radius: 9px;
+  padding: 10px;
+  color: #7fa8ba;
+  font-size: 9px;
+}
+
+.rfAiTelemetry strong {
+  display: block;
+  color: #e0edf2;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+@media (max-width: 1000px) {
+  .rfAiEntryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .rfAiTelemetry {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .rfAiEntryGrid,
+  .rfAiTelemetry {
+    grid-template-columns: 1fr;
+  }
+}
