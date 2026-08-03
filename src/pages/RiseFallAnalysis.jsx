@@ -520,6 +520,99 @@ function ModeSummary({
   );
 }
 
+function MiniChart({
+  points = [],
+  signal = "WAIT",
+}) {
+  const values = (Array.isArray(points) ? points : [])
+    .map((item) =>
+      Number(
+        typeof item === "number"
+          ? item
+          : item?.quote ??
+              item?.price ??
+              item?.value ??
+              item?.close ??
+              item?.currentPrice ??
+              0
+      )
+    )
+    .filter(Number.isFinite)
+    .slice(-120);
+
+  if (values.length < 2) {
+    return (
+      <div className="rfMiniChartEmpty">
+        Waiting for enough live price pointsâ€¦
+      </div>
+    );
+  }
+
+  const width = 1000;
+  const height = 260;
+  const padding = 18;
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const range = Math.max(0.000001, maximum - minimum);
+
+  const coordinates = values.map((value, index) => {
+    const x =
+      padding +
+      index / Math.max(1, values.length - 1) *
+        (width - padding * 2);
+
+    const y =
+      padding +
+      (maximum - value) / range *
+        (height - padding * 2);
+
+    return `${x},${y}`;
+  });
+
+  const areaCoordinates = [
+    `${padding},${height - padding}`,
+    ...coordinates,
+    `${width - padding},${height - padding}`,
+  ].join(" ");
+
+  return (
+    <div className={`rfMiniChart ${signalClass(signal)}`}>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Recent Rise and Fall price action"
+      >
+        <g className="rfMiniChartGrid">
+          {[0.25, 0.5, 0.75].map((ratio) => (
+            <line
+              key={ratio}
+              x1={padding}
+              x2={width - padding}
+              y1={height * ratio}
+              y2={height * ratio}
+            />
+          ))}
+        </g>
+
+        <polygon
+          points={areaCoordinates}
+          className="rfMiniChartArea"
+        />
+
+        <polyline
+          points={coordinates.join(" ")}
+          className="rfMiniChartLine"
+        />
+      </svg>
+
+      <div className="rfMiniChartStatus">
+        <span>{signal}</span>
+        <strong>{values.at(-1).toFixed(6)}</strong>
+      </div>
+    </div>
+  );
+}
 export default function RiseFallAnalysis() {
   const {
     markets = [],
@@ -3414,4 +3507,5 @@ export default function RiseFallAnalysis() {
     </div>
   );
 }
+
 
