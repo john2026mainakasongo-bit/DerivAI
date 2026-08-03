@@ -160,9 +160,16 @@ export default function RiseFallAnalysis() {
     loadingMarket = false,
     prices = [],
     currentPrice = null,
+    selectedAccountType = "demo",
+    selectedAccountId = "",
+    openContracts = [],
+    transactions = [],
+    tradeBusy = false,
+    tradeError = "",
     connect,
     disconnect,
     changeSymbol,
+    placeTrade,
   } = useDerivTicks();
 
   const [mode, setMode] = useState("15s");
@@ -171,10 +178,32 @@ export default function RiseFallAnalysis() {
   );
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [signalLog, setSignalLog] = useState([]);
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [stake, setStake] = useState(0.35);
+  const [maxRuns, setMaxRuns] = useState(5);
+  const [stopAfterLoss, setStopAfterLoss] = useState(true);
+  const [allowReal, setAllowReal] = useState(false);
+  const [executionMessage, setExecutionMessage] = useState(
+    "Auto execution is stopped."
+  );
+  const [executionRuns, setExecutionRuns] = useState(0);
+  const [sessionTrades, setSessionTrades] = useState([]);
   const previousSignalRef = useRef("WAIT");
   const lastAlertAtRef = useRef(0);
+  const lastExecutedSignalRef = useRef("");
+  const executionBusyRef = useRef(false);
+  const autoRunningRef = useRef(false);
+  const executionRunsRef = useRef(0);
 
   const connectingRef = useRef(false);
+
+  useEffect(() => {
+    autoRunningRef.current = autoRunning;
+  }, [autoRunning]);
+
+  useEffect(() => {
+    executionRunsRef.current = executionRuns;
+  }, [executionRuns]);
 
   useEffect(() => {
     if (
@@ -235,6 +264,176 @@ export default function RiseFallAnalysis() {
           analysis10.confidence
         ) / 2;
 
+
+
+  function contractIdOf(item = {}) {
+    return String(
+      item?.contract_id ||
+        item?.id ||
+        item?.contractId ||
+        ""
+    );
+  }
+
+  function contractStatus(item = {}) {
+    const status = String(item?.status || "").toUpperCase();
+
+    if (
+      item?.is_sold ||
+      item?.is_expired ||
+      ["WON", "LOST", "SOLD", "EXPIRED"].includes(status)
+    ) {
+      return status || "CLOSED";
+    }
+
+    return status || "OPEN";
+  }
+
+  function profitOf(item = {}) {
+    const value = Number(
+      item?.profit ??
+        item?.profit_loss ??
+        item?.pnl ??
+        (
+          Number(item?.sell_price || 0) -
+          Number(item?.buy_price || 0)
+        )
+    );
+
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function tradeParameters(signal) {
+    const rise = signal === "RISE";
+
+    return {
+      contractType: rise ? "CALL" : "PUT",
+      label: rise ? "RISE" : "FALL",
+      duration: mode === "15s" ? 15 : 10,
+      durationUnit: mode === "15s" ? "s" : "t",
+    };
+  }
+
+  function stopAuto(message) {
+    autoRunningRef.current = false;
+    setAutoRunning(false);
+    setExecutionMessage(message);
+  }
+
+  async function executeConfirmedSignal(signal, analysis) {
+    if (
+      executionBusyRef.current ||
+      !autoRunningRef.current ||
+      !analysis?.tradeNow ||
+      !signal ||
+      signal === "WAIT"
+    ) {
+      return;
+    }
+
+    if (executionRunsRef.current >= Math.max(1, Number(maxRuns) || 1)) {
+      stopAuto(`Maximum runs reached: ${maxRuns}.`);
+      return;
+    }
+
+    if (!connected) {
+      setExecutionMessage("Waiting for Deriv feed connection.");
+      return;
+    }
+
+    if (!selectedAccountId) {
+      stopAuto("Choose a Demo or Real Deriv account first.");
+      return;
+    }
+
+    if (selectedAccountType !== "demo" && !allowReal) {
+      stopAuto(
+        "Real auto execution is locked. Enable Real execution explicitly or switch to Demo."
+      );
+      return;
+    }
+
+    if (typeof placeTrade !== "function") {
+      stopAuto("Trade execution function is unavailable.");
+      return;
+    }
+
+    const signature = [
+      signal,
+      mode,
+      symbol,
+      Number(analysis?.scores?.final || 0).toFixed(0),
+      Number(analysis?.confirmationsPassed || 0),
+    ].join(":");
+
+    if (lastExecutedSignalRef.current === signature) return;
+
+    executionBusyRef.current = true;
+    lastExecutedSignalRef.current = signature;
+
+    const parameters = tradeParameters(signal);
+    const safeStake = Math.max(0.35, Number(stake) || 0.35);
+
+    setExecutionMessage(
+      `Sending ${parameters.label} · ${
+        mode === "15s" ? "15 seconds" : "10 ticks"
+      } · stake ${safeStake.toFixed(2)}.`
+    );
+
+    try {
+      playSignalTone(signal);
+
+      const result = await placeTrade({
+        symbol,
+        contractType: parameters.contractType,
+        amount: safeStake,
+        basis: "stake",
+        duration: parameters.duration,
+        durationUnit: parameters.durationUnit,
+      });
+
+      const contractId = String(result?.contractId || "");
+      const nextRuns = executionRunsRef.current + 1;
+
+      executionRunsRef.current = nextRuns;
+      setExecutionRuns(nextRuns);
+
+      setSessionTrades((current) => [
+        {
+          id: contractId || `${Date.now()}-${signal}`,
+          contractId,
+          time: Date.now(),
+          signal,
+          mode,
+          stake: safeStake,
+          confidence: Number(analysis?.confidence || 0),
+          finalScore: Number(analysis?.scores?.final || 0),
+          status: "OPEN",
+          profit: 0,
+        },
+        ...current,
+      ].slice(0, 30));
+
+      setExecutionMessage(
+        `${parameters.label} trade opened${
+          contractId ? ` · Contract ${contractId}` : ""
+        }.`
+      );
+
+      if (nextRuns >= Math.max(1, Number(maxRuns) || 1)) {
+        stopAuto(`Trade opened. Maximum runs reached: ${maxRuns}.`);
+      }
+    } catch (error) {
+      lastExecutedSignalRef.current = "";
+      setExecutionMessage(
+        error instanceof Error
+          ? error.message
+          : "Trade execution failed."
+      );
+    } finally {
+      executionBusyRef.current = false;
+    }
+  }
 
   function playSignalTone(signal) {
     if (!soundEnabled || typeof window === "undefined") return;
@@ -316,14 +515,92 @@ export default function RiseFallAnalysis() {
     soundEnabled,
   ]);
 
+
+  useEffect(() => {
+    if (!autoRunning || !active.tradeNow) return;
+
+    void executeConfirmedSignal(active.signal, active);
+  }, [
+    autoRunning,
+    active.tradeNow,
+    active.signal,
+    active.confirmationsPassed,
+    active.scores?.final,
+    symbol,
+    mode,
+  ]);
+
+  useEffect(() => {
+    const contracts = Array.isArray(openContracts) ? openContracts : [];
+
+    if (!contracts.length) return;
+
+    setSessionTrades((current) =>
+      current.map((trade) => {
+        const match = contracts.find(
+          (contract) =>
+            contractIdOf(contract) === String(trade.contractId || "")
+        );
+
+        if (!match) return trade;
+
+        return {
+          ...trade,
+          status: contractStatus(match),
+          profit: profitOf(match),
+          currentSpot: Number(
+            match?.current_spot ??
+              match?.current_spot_display_value ??
+              0
+          ),
+          entrySpot: Number(
+            match?.entry_spot ??
+              match?.entry_tick ??
+              0
+          ),
+          exitSpot: Number(
+            match?.exit_tick ??
+              match?.exit_spot ??
+              0
+          ),
+        };
+      })
+    );
+
+    const latestClosed = contracts.find((contract) => {
+      const id = contractIdOf(contract);
+
+      return (
+        id &&
+        sessionTrades.some(
+          (trade) => String(trade.contractId || "") === id
+        ) &&
+        ["WON", "LOST", "SOLD", "EXPIRED"].includes(
+          contractStatus(contract)
+        )
+      );
+    });
+
+    if (
+      latestClosed &&
+      contractStatus(latestClosed) === "LOST" &&
+      stopAfterLoss &&
+      autoRunningRef.current
+    ) {
+      stopAuto(
+        `Auto stopped after loss · ${profitOf(latestClosed).toFixed(2)}.`
+      );
+    }
+  }, [openContracts, stopAfterLoss]);
+
   return (
     <div className="appShell">
       <Sidebar />
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V58 · Rise/Fall Pro Analysis"
-          subtitle="Professional Rise/Fall terminal with trend, pressure, reversal and quality scoring"
+          title="EdgePilot V59 · Rise/Fall Pro Analysis"
+          subtitle="START auto execution, confirmed sound alerts and live trade viewer"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -382,6 +659,116 @@ export default function RiseFallAnalysis() {
               }`
             : feedMessage}
         </div>
+
+
+        <section className={`rfAutoPanel ${autoRunning ? "running" : "stopped"}`}>
+          <div className="rfAutoPanelHead">
+            <div>
+              <small>RISE/FALL AUTO EXECUTION</small>
+              <h2>{autoRunning ? "RUNNING" : "STOPPED"}</h2>
+              <p>{executionMessage || tradeError}</p>
+            </div>
+
+            <button
+              type="button"
+              className={autoRunning ? "stop" : "start"}
+              disabled={tradeBusy}
+              onClick={() => {
+                if (autoRunning) {
+                  stopAuto("Auto execution stopped manually.");
+                  return;
+                }
+
+                if (selectedAccountType !== "demo" && !allowReal) {
+                  setExecutionMessage(
+                    "Enable Real execution explicitly or switch to Demo."
+                  );
+                  return;
+                }
+
+                executionRunsRef.current = 0;
+                setExecutionRuns(0);
+                lastExecutedSignalRef.current = "";
+                setAutoRunning(true);
+                autoRunningRef.current = true;
+                setExecutionMessage(
+                  "Scanning for a confirmed TRADE RISE or TRADE FALL entry."
+                );
+              }}
+            >
+              {tradeBusy
+                ? "SENDING..."
+                : autoRunning
+                  ? "STOP"
+                  : "START"}
+            </button>
+          </div>
+
+          <div className="rfAutoControls">
+            <label>
+              <span>Stake</span>
+              <input
+                type="number"
+                min="0.35"
+                step="0.01"
+                value={stake}
+                disabled={autoRunning}
+                onChange={(event) => setStake(event.target.value)}
+              />
+            </label>
+
+            <label>
+              <span>Maximum runs</span>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={maxRuns}
+                disabled={autoRunning}
+                onChange={(event) => setMaxRuns(event.target.value)}
+              />
+            </label>
+
+            <div>
+              <span>Contract</span>
+              <strong>
+                {mode === "15s"
+                  ? "RISE/FALL · 15 SECONDS"
+                  : "RISE/FALL · 10 TICKS"}
+              </strong>
+            </div>
+
+            <div>
+              <span>Session runs</span>
+              <strong>{executionRuns}/{maxRuns}</strong>
+            </div>
+          </div>
+
+          <div className="rfAutoChecks">
+            <label>
+              <input
+                type="checkbox"
+                checked={stopAfterLoss}
+                onChange={(event) => setStopAfterLoss(event.target.checked)}
+              />
+              Stop automatically after one loss
+            </label>
+
+            <label className={selectedAccountType === "demo" ? "disabled" : ""}>
+              <input
+                type="checkbox"
+                checked={allowReal}
+                disabled={selectedAccountType === "demo" || autoRunning}
+                onChange={(event) => setAllowReal(event.target.checked)}
+              />
+              I understand and enable Real-account execution
+            </label>
+
+            <span>
+              Account: <strong>{String(selectedAccountType).toUpperCase()}</strong>
+            </span>
+          </div>
+        </section>
 
         <section
           className={`rfEntryBanner ${signalClass(active.signal)}`}
@@ -1162,6 +1549,111 @@ export default function RiseFallAnalysis() {
               </div>
             ))}
           </div>
+        </section>
+
+
+        <section className="rfTradeViewer">
+          <div className="rfPanelHead">
+            <div>
+              <small>TRADE VIEWER</small>
+              <h2>Open and recent Rise/Fall trades</h2>
+            </div>
+
+            <span>
+              {sessionTrades.length} session trade
+              {sessionTrades.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          <div className="rfTradeTableWrap">
+            <table className="rfTradeTable">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Contract</th>
+                  <th>Duration</th>
+                  <th>Stake</th>
+                  <th>Status</th>
+                  <th>Confidence</th>
+                  <th>Score</th>
+                  <th>P/L</th>
+                  <th>ID</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {sessionTrades.map((trade) => (
+                  <tr key={trade.id}>
+                    <td>
+                      {new Date(trade.time).toLocaleTimeString()}
+                    </td>
+                    <td className={signalClass(trade.signal)}>
+                      {trade.signal}
+                    </td>
+                    <td>
+                      {trade.mode === "15s"
+                        ? "15 sec"
+                        : "10 ticks"}
+                    </td>
+                    <td>{Number(trade.stake || 0).toFixed(2)}</td>
+                    <td>{trade.status || "OPEN"}</td>
+                    <td>{pct(trade.confidence)}</td>
+                    <td>{Number(trade.finalScore || 0).toFixed(0)}</td>
+                    <td
+                      className={
+                        Number(trade.profit || 0) > 0
+                          ? "profit"
+                          : Number(trade.profit || 0) < 0
+                            ? "loss"
+                            : ""
+                      }
+                    >
+                      {Number(trade.profit || 0).toFixed(2)}
+                    </td>
+                    <td>{trade.contractId || "—"}</td>
+                  </tr>
+                ))}
+
+                {!sessionTrades.length ? (
+                  <tr>
+                    <td colSpan="9" className="empty">
+                      Press START. Confirmed trades will appear here.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          <details className="rfRawTrades">
+            <summary>
+              View Deriv open-contract and transaction feed
+            </summary>
+
+            <div>
+              <article>
+                <h3>Open contract feed</h3>
+                <pre>
+                  {JSON.stringify(
+                    (Array.isArray(openContracts) ? openContracts : []).slice(0, 5),
+                    null,
+                    2
+                  )}
+                </pre>
+              </article>
+
+              <article>
+                <h3>Recent transactions</h3>
+                <pre>
+                  {JSON.stringify(
+                    (Array.isArray(transactions) ? transactions : []).slice(0, 10),
+                    null,
+                    2
+                  )}
+                </pre>
+              </article>
+            </div>
+          </details>
         </section>
 
         <div className="rfSafety">

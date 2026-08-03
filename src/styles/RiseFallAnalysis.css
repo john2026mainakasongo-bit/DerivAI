@@ -851,3 +851,229 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+.rfAutoPanel,
+.rfTradeViewer {
+  margin-bottom: 14px;
+  padding: 17px;
+  border: 1px solid #20536a;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #08283b, #061c2b);
+}
+
+.rfAutoPanel.running {
+  border-color: #1edfac;
+  box-shadow: 0 0 26px #1edfac20;
+}
+
+.rfAutoPanelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.rfAutoPanelHead small {
+  color: #2de5b5;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.rfAutoPanelHead h2 {
+  margin: 3px 0;
+  font-size: 27px;
+}
+
+.rfAutoPanelHead p {
+  margin: 0;
+  color: #8aaab8;
+  font-size: 11px;
+}
+
+.rfAutoPanelHead button {
+  min-width: 125px;
+  min-height: 48px;
+  border: 0;
+  border-radius: 12px;
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.rfAutoPanelHead button.start {
+  background: #0783ff;
+}
+
+.rfAutoPanelHead button.stop {
+  background: #e64161;
+}
+
+.rfAutoPanelHead button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.rfAutoControls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.rfAutoControls label,
+.rfAutoControls > div {
+  border: 1px solid #174b62;
+  border-radius: 10px;
+  padding: 10px;
+  background: #061d2d;
+}
+
+.rfAutoControls span {
+  display: block;
+  color: #7fa8ba;
+  font-size: 10px;
+  margin-bottom: 5px;
+}
+
+.rfAutoControls input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #1b536c;
+  border-radius: 8px;
+  padding: 9px;
+  color: #fff;
+  background: #071a28;
+  font-weight: 800;
+}
+
+.rfAutoChecks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin-top: 13px;
+  color: #9db9c5;
+  font-size: 11px;
+}
+
+.rfAutoChecks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rfAutoChecks label.disabled {
+  opacity: .5;
+}
+
+.rfTradeViewer {
+  margin-top: 14px;
+}
+
+.rfTradeTableWrap {
+  overflow: auto;
+}
+
+.rfTradeTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 940px;
+}
+
+.rfTradeTable th,
+.rfTradeTable td {
+  padding: 10px;
+  border-bottom: 1px solid #17445a;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.rfTradeTable th {
+  color: #31dbb0;
+  font-size: 9px;
+  letter-spacing: .06em;
+}
+
+.rfTradeTable td.rise {
+  color: #21e1aa;
+  font-weight: 900;
+}
+
+.rfTradeTable td.fall {
+  color: #ff617a;
+  font-weight: 900;
+}
+
+.rfTradeTable td.profit {
+  color: #21e1aa;
+  font-weight: 900;
+}
+
+.rfTradeTable td.loss {
+  color: #ff617a;
+  font-weight: 900;
+}
+
+.rfTradeTable td.empty {
+  text-align: center;
+  padding: 24px;
+  color: #789dab;
+}
+
+.rfRawTrades {
+  margin-top: 13px;
+  border: 1px solid #184b62;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.rfRawTrades summary {
+  cursor: pointer;
+  color: #9ab8c4;
+  font-weight: 800;
+}
+
+.rfRawTrades > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.rfRawTrades article {
+  min-width: 0;
+}
+
+.rfRawTrades pre {
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  background: #041520;
+  color: #a8c4cf;
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .rfAutoControls {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .rfRawTrades > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .rfAutoPanelHead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rfAutoControls {
+    grid-template-columns: 1fr;
+  }
+}
