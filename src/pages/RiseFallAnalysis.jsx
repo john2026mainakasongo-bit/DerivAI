@@ -183,6 +183,9 @@ export default function RiseFallAnalysis() {
   const [maxRuns, setMaxRuns] = useState(5);
   const [stopAfterLoss, setStopAfterLoss] = useState(true);
   const [allowReal, setAllowReal] = useState(false);
+  const [allowOneTick, setAllowOneTick] = useState(true);
+  const [oneTickMinimumScore, setOneTickMinimumScore] = useState(88);
+  const [oneTickMinimumConfidence, setOneTickMinimumConfidence] = useState(82);
   const [executionMessage, setExecutionMessage] = useState(
     "Auto execution is stopped."
   );
@@ -303,14 +306,45 @@ export default function RiseFallAnalysis() {
     return Number.isFinite(value) ? value : 0;
   }
 
-  function tradeParameters(signal) {
+  function tradeParameters(signal, analysis) {
     const rise = signal === "RISE";
+    const finalScore = Number(analysis?.scores?.final || 0);
+    const confidence = Number(analysis?.confidence || 0);
+    const confirmationsPassed = Number(
+      analysis?.confirmationsPassed || 0
+    );
+    const confirmationTotal = Math.max(
+      1,
+      Number(analysis?.confirmationChecks?.length || 8)
+    );
+
+    const qualifiesForOneTick =
+      allowOneTick &&
+      finalScore >= Number(oneTickMinimumScore || 88) &&
+      confidence >= Number(oneTickMinimumConfidence || 82) &&
+      confirmationsPassed >= confirmationTotal &&
+      analysis?.regime === "TREND" &&
+      analysis?.tradeNow;
+
+    if (qualifiesForOneTick) {
+      return {
+        contractType: rise ? "CALL" : "PUT",
+        label: rise ? "RISE" : "FALL",
+        duration: 1,
+        durationUnit: "t",
+        fastEntry: true,
+        displayDuration: "1 TICK",
+      };
+    }
 
     return {
       contractType: rise ? "CALL" : "PUT",
       label: rise ? "RISE" : "FALL",
       duration: mode === "15s" ? 15 : 10,
       durationUnit: mode === "15s" ? "s" : "t",
+      fastEntry: false,
+      displayDuration:
+        mode === "15s" ? "15 SECONDS" : "10 TICKS",
     };
   }
 
@@ -371,13 +405,11 @@ export default function RiseFallAnalysis() {
     executionBusyRef.current = true;
     lastExecutedSignalRef.current = signature;
 
-    const parameters = tradeParameters(signal);
+    const parameters = tradeParameters(signal, analysis);
     const safeStake = Math.max(0.35, Number(stake) || 0.35);
 
     setExecutionMessage(
-      `Sending ${parameters.label} · ${
-        mode === "15s" ? "15 seconds" : "10 ticks"
-      } · stake ${safeStake.toFixed(2)}.`
+      `Sending ${parameters.label} · ${parameters.displayDuration} · stake ${safeStake.toFixed(2)}.`
     );
 
     try {
@@ -405,6 +437,10 @@ export default function RiseFallAnalysis() {
           time: Date.now(),
           signal,
           mode,
+          duration: parameters.duration,
+          durationUnit: parameters.durationUnit,
+          displayDuration: parameters.displayDuration,
+          fastEntry: parameters.fastEntry,
           stake: safeStake,
           confidence: Number(analysis?.confidence || 0),
           finalScore: Number(analysis?.scores?.final || 0),
@@ -433,6 +469,31 @@ export default function RiseFallAnalysis() {
     } finally {
       executionBusyRef.current = false;
     }
+  }
+
+  function toggleAutoExecution() {
+    if (autoRunning) {
+      stopAuto("Auto execution stopped manually.");
+      return;
+    }
+
+    if (selectedAccountType !== "demo" && !allowReal) {
+      setExecutionMessage(
+        "Enable Real execution explicitly or switch to Demo."
+      );
+      return;
+    }
+
+    executionRunsRef.current = 0;
+    setExecutionRuns(0);
+    lastExecutedSignalRef.current = "";
+    setAutoRunning(true);
+    autoRunningRef.current = true;
+    setExecutionMessage(
+      allowOneTick
+        ? "Scanning. A very strong setup may execute as a 1-tick trade."
+        : "Scanning for a confirmed TRADE RISE or TRADE FALL entry."
+    );
   }
 
   function playSignalTone(signal) {
@@ -599,8 +660,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V59 · Rise/Fall Pro Analysis"
-          subtitle="START auto execution, confirmed sound alerts and live trade viewer"
+          title="EdgePilot V60 · Rise/Fall Pro Analysis"
+          subtitle="Side START control with adaptive 1-tick execution for strongest entries"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -616,6 +677,21 @@ export default function RiseFallAnalysis() {
           />
 
           <div className="rfToolbarActions">
+            <button
+              type="button"
+              className={`rfSideStartButton ${
+                autoRunning ? "running" : "stopped"
+              }`}
+              disabled={tradeBusy}
+              onClick={toggleAutoExecution}
+            >
+              {tradeBusy
+                ? "SENDING..."
+                : autoRunning
+                  ? "■ STOP"
+                  : "▶ START"}
+            </button>
+
             <button
               type="button"
               className={`rfSoundToggle ${soundEnabled ? "on" : "off"}`}
@@ -673,28 +749,7 @@ export default function RiseFallAnalysis() {
               type="button"
               className={autoRunning ? "stop" : "start"}
               disabled={tradeBusy}
-              onClick={() => {
-                if (autoRunning) {
-                  stopAuto("Auto execution stopped manually.");
-                  return;
-                }
-
-                if (selectedAccountType !== "demo" && !allowReal) {
-                  setExecutionMessage(
-                    "Enable Real execution explicitly or switch to Demo."
-                  );
-                  return;
-                }
-
-                executionRunsRef.current = 0;
-                setExecutionRuns(0);
-                lastExecutedSignalRef.current = "";
-                setAutoRunning(true);
-                autoRunningRef.current = true;
-                setExecutionMessage(
-                  "Scanning for a confirmed TRADE RISE or TRADE FALL entry."
-                );
-              }}
+              onClick={toggleAutoExecution}
             >
               {tradeBusy
                 ? "SENDING..."
@@ -742,9 +797,47 @@ export default function RiseFallAnalysis() {
               <span>Session runs</span>
               <strong>{executionRuns}/{maxRuns}</strong>
             </div>
+
+            <label>
+              <span>1-tick minimum score</span>
+              <input
+                type="number"
+                min="80"
+                max="100"
+                value={oneTickMinimumScore}
+                disabled={autoRunning || !allowOneTick}
+                onChange={(event) =>
+                  setOneTickMinimumScore(event.target.value)
+                }
+              />
+            </label>
+
+            <label>
+              <span>1-tick minimum confidence</span>
+              <input
+                type="number"
+                min="75"
+                max="100"
+                value={oneTickMinimumConfidence}
+                disabled={autoRunning || !allowOneTick}
+                onChange={(event) =>
+                  setOneTickMinimumConfidence(event.target.value)
+                }
+              />
+            </label>
           </div>
 
           <div className="rfAutoChecks">
+            <label>
+              <input
+                type="checkbox"
+                checked={allowOneTick}
+                disabled={autoRunning}
+                onChange={(event) => setAllowOneTick(event.target.checked)}
+              />
+              Allow 1-tick execution only for strongest entries
+            </label>
+
             <label>
               <input
                 type="checkbox"
@@ -1591,9 +1684,10 @@ export default function RiseFallAnalysis() {
                       {trade.signal}
                     </td>
                     <td>
-                      {trade.mode === "15s"
-                        ? "15 sec"
-                        : "10 ticks"}
+                      {trade.displayDuration ||
+                        (trade.mode === "15s"
+                          ? "15 sec"
+                          : "10 ticks")}
                     </td>
                     <td>{Number(trade.stake || 0).toFixed(2)}</td>
                     <td>{trade.status || "OPEN"}</td>

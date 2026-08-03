@@ -1077,3 +1077,41 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+.rfSideStartButton {
+  min-width: 112px;
+  border: 1px solid #1681d9;
+  border-radius: 10px;
+  padding: 10px 15px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.rfSideStartButton.stopped {
+  background: #087fff;
+  box-shadow: 0 0 18px #087fff28;
+}
+
+.rfSideStartButton.running {
+  border-color: #e64161;
+  background: #e64161;
+  box-shadow: 0 0 18px #e6416128;
+}
+
+.rfSideStartButton:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.rfAutoPanel.running .rfAutoControls label:nth-last-child(-n + 2) {
+  border-color: #3d6a56;
+}
+
+@media (max-width: 720px) {
+  .rfSideStartButton {
+    width: 100%;
+  }
+}
