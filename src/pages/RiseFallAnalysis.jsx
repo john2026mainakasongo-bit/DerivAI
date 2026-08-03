@@ -696,6 +696,13 @@ export default function RiseFallAnalysis() {
   const [burstMode, setBurstMode] = useState(true);
   const [burstRuns, setBurstRuns] = useState(0);
   const [sessionTrades, setSessionTrades] = useState([]);
+  const [manualPanelOpen, setManualPanelOpen] = useState(false);
+  const [manualStake, setManualStake] = useState(0.35);
+  const [manualDuration, setManualDuration] = useState("2T");
+  const [manualBarrier, setManualBarrier] = useState(1);
+  const [manualStatus, setManualStatus] = useState(
+    "Ready for a direct manual contract."
+  );
   const [learningHistory, setLearningHistory] = useState(
     safeReadLearningHistory
   );
@@ -1480,6 +1487,114 @@ export default function RiseFallAnalysis() {
     };
   }
 
+  async function placeManualContract(contractType, barrier) {
+    if (tradeBusy) {
+      setManualStatus("Wait for the current order request to finish.");
+      return;
+    }
+
+    if (hasOpenSessionTrade) {
+      setManualStatus(
+        "A contract is already open. Wait for it to settle first."
+      );
+      return;
+    }
+
+    if (
+      selectedAccountType === "real" &&
+      !allowReal
+    ) {
+      setManualStatus(
+        "Enable Real-account execution before buying on the Real account."
+      );
+      return;
+    }
+
+    const amount = Math.max(
+      0.35,
+      Number(manualStake || stake || 0.35)
+    );
+
+    const isDigitContract = contractType.startsWith("DIGIT");
+    let duration = 2;
+    let durationUnit = "t";
+    let displayDuration = "2 TICKS";
+
+    if (isDigitContract) {
+      duration = 1;
+      durationUnit = "t";
+      displayDuration = "1 TICK";
+    } else if (manualDuration === "5T") {
+      duration = 5;
+      displayDuration = "5 TICKS";
+    } else if (manualDuration === "10S") {
+      duration = 10;
+      durationUnit = "s";
+      displayDuration = "10 SECONDS";
+    } else if (manualDuration === "15S") {
+      duration = 15;
+      durationUnit = "s";
+      displayDuration = "15 SECONDS";
+    }
+
+    const signal =
+      contractType === "CALL"
+        ? "RISE"
+        : contractType === "PUT"
+          ? "FALL"
+          : contractType;
+
+    try {
+      setManualStatus(`Sending ${signal} contract…`);
+
+      const response = await placeTrade({
+        contractType,
+        amount,
+        basis: "stake",
+        duration,
+        durationUnit,
+        barrier:
+          barrier === undefined || barrier === null
+            ? undefined
+            : String(barrier),
+      });
+
+      const contractId =
+        response?.buy?.contract_id ||
+        response?.contract_id ||
+        response?.proposal_open_contract?.contract_id ||
+        Date.now();
+
+      setSessionTrades((current) => [
+        {
+          id: `manual-${contractId}`,
+          contractId,
+          signal,
+          mode: "manual",
+          displayDuration,
+          stake: amount,
+          status: "OPEN",
+          confidence: 0,
+          finalScore: 0,
+          profit: 0,
+          time: Date.now(),
+          manual: true,
+        },
+        ...current,
+      ].slice(0, 100));
+
+      setManualStatus(
+        `${signal} bought directly · ${displayDuration} · ${amount.toFixed(2)}`
+      );
+    } catch (error) {
+      setManualStatus(
+        error instanceof Error
+          ? error.message
+          : "Manual trade failed."
+      );
+    }
+  }
+
   function stopAuto(message) {
     stopGenerationRef.current += 1;
     autoRunningRef.current = false;
@@ -2087,8 +2202,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V78 · Adaptive Duration Mobile AI"
-          subtitle="Safer 2+ tick execution, adaptive seconds, weak-market switching, mobile layout and full STOP control"
+          title="EdgePilot V79 · Adaptive AI + Manual Direct Trading"
+          subtitle="Adaptive auto execution plus direct manual Rise/Fall and digit-contract controls"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -3888,6 +4003,188 @@ export default function RiseFallAnalysis() {
             </div>
           </details>
         </section>
+
+
+        <button
+          type="button"
+          className="rfManualLauncher"
+          onClick={() => setManualPanelOpen((open) => !open)}
+          aria-expanded={manualPanelOpen}
+        >
+          {manualPanelOpen ? "CLOSE MANUAL" : "MANUAL BUY"}
+        </button>
+
+        {manualPanelOpen ? (
+          <aside className="rfManualPanel">
+            <div className="rfManualHead">
+              <div>
+                <small>DIRECT EXECUTION</small>
+                <h2>Manual Trading</h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setManualPanelOpen(false)}
+                aria-label="Close manual trading panel"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="rfManualInputs">
+              <label>
+                Stake
+                <input
+                  type="number"
+                  min="0.35"
+                  step="0.01"
+                  value={manualStake}
+                  onChange={(event) =>
+                    setManualStake(event.target.value)
+                  }
+                />
+              </label>
+
+              <label>
+                Rise/Fall duration
+                <select
+                  value={manualDuration}
+                  onChange={(event) =>
+                    setManualDuration(event.target.value)
+                  }
+                >
+                  <option value="2T">2 TICKS</option>
+                  <option value="5T">5 TICKS</option>
+                  <option value="10S">10 SECONDS</option>
+                  <option value="15S">15 SECONDS</option>
+                </select>
+              </label>
+
+              <label>
+                Digit barrier
+                <select
+                  value={manualBarrier}
+                  onChange={(event) =>
+                    setManualBarrier(Number(event.target.value))
+                  }
+                >
+                  {Array.from({ length: 10 }, (_, digit) => (
+                    <option key={digit} value={digit}>
+                      {digit}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="rfManualRiseFall">
+              <button
+                type="button"
+                className="rise"
+                disabled={tradeBusy || hasOpenSessionTrade}
+                onClick={() => placeManualContract("CALL")}
+              >
+                BUY RISE
+              </button>
+
+              <button
+                type="button"
+                className="fall"
+                disabled={tradeBusy || hasOpenSessionTrade}
+                onClick={() => placeManualContract("PUT")}
+              >
+                BUY FALL
+              </button>
+            </div>
+
+            <div className="rfManualDigitGrid">
+              <button
+                type="button"
+                disabled={tradeBusy || hasOpenSessionTrade}
+                onClick={() => placeManualContract("DIGITEVEN")}
+              >
+                EVEN
+              </button>
+
+              <button
+                type="button"
+                disabled={tradeBusy || hasOpenSessionTrade}
+                onClick={() => placeManualContract("DIGITODD")}
+              >
+                ODD
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  tradeBusy ||
+                  hasOpenSessionTrade ||
+                  manualBarrier >= 9
+                }
+                onClick={() =>
+                  placeManualContract(
+                    "DIGITOVER",
+                    manualBarrier
+                  )
+                }
+              >
+                OVER {manualBarrier}
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  tradeBusy ||
+                  hasOpenSessionTrade ||
+                  manualBarrier <= 0
+                }
+                onClick={() =>
+                  placeManualContract(
+                    "DIGITUNDER",
+                    manualBarrier
+                  )
+                }
+              >
+                UNDER {manualBarrier}
+              </button>
+
+              <button
+                type="button"
+                disabled={tradeBusy || hasOpenSessionTrade}
+                onClick={() =>
+                  placeManualContract(
+                    "DIGITMATCH",
+                    manualBarrier
+                  )
+                }
+              >
+                MATCH {manualBarrier}
+              </button>
+
+              <button
+                type="button"
+                disabled={tradeBusy || hasOpenSessionTrade}
+                onClick={() =>
+                  placeManualContract(
+                    "DIGITDIFF",
+                    manualBarrier
+                  )
+                }
+              >
+                DIFFER {manualBarrier}
+              </button>
+            </div>
+
+            <p className="rfManualNote">
+              Digit contracts execute at 1 tick. Rise/Fall uses
+              the duration selected above.
+            </p>
+
+            <div className="rfManualStatus">
+              {manualStatus}
+            </div>
+          </aside>
+        ) : null}
 
         <div className="rfSafety">
           Analysis only. A high confidence score does not guarantee

@@ -2563,3 +2563,191 @@
   }
 }
 
+
+
+/* ================================================================
+   EdgePilot V79 â€” Manual direct trading panel
+   ================================================================ */
+
+.rfManualLauncher {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 80;
+  min-width: 150px;
+  min-height: 46px;
+  border: 1px solid #2ee1b0;
+  border-radius: 999px;
+  color: #041b18;
+  font-weight: 950;
+  background: #2ee1b0;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, .35);
+}
+
+.rfManualPanel {
+  position: fixed;
+  right: 18px;
+  bottom: 76px;
+  z-index: 79;
+  width: min(390px, calc(100vw - 24px));
+  max-height: calc(100dvh - 110px);
+  overflow-y: auto;
+  border: 1px solid #1f6077;
+  border-radius: 15px;
+  padding: 14px;
+  color: #f4fbff;
+  background:
+    radial-gradient(circle at top right, rgba(46, 225, 176, .12), transparent 38%),
+    #061b29;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .55);
+}
+
+.rfManualHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rfManualHead small {
+  color: #2ee1b0;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.rfManualHead h2 {
+  margin: 3px 0 0;
+}
+
+.rfManualHead > button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #275a6e;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 22px;
+  background: #09283a;
+}
+
+.rfManualInputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.rfManualInputs label:last-child {
+  grid-column: 1 / -1;
+}
+
+.rfManualInputs label {
+  display: grid;
+  gap: 5px;
+  color: #8fb1bd;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.rfManualInputs input,
+.rfManualInputs select {
+  min-width: 0;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #24556a;
+  border-radius: 9px;
+  padding: 9px 10px;
+  color: #fff;
+  background: #061f2e;
+}
+
+.rfManualRiseFall,
+.rfManualDigitGrid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rfManualRiseFall {
+  grid-template-columns: 1fr 1fr;
+}
+
+.rfManualDigitGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rfManualRiseFall button,
+.rfManualDigitGrid button {
+  min-height: 46px;
+  border: 1px solid #245b70;
+  border-radius: 10px;
+  color: #f5fbff;
+  font-weight: 950;
+  background: #0a2b3d;
+}
+
+.rfManualRiseFall button.rise {
+  border-color: #2bdcaf;
+  color: #041d18;
+  background: #2bdcaf;
+}
+
+.rfManualRiseFall button.fall {
+  border-color: #ff6f88;
+  color: #fff;
+  background: #c93d59;
+}
+
+.rfManualPanel button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.rfManualNote {
+  margin: 11px 0 0;
+  color: #85a7b3;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.rfManualStatus {
+  margin-top: 10px;
+  border: 1px solid #24556a;
+  border-radius: 9px;
+  padding: 10px;
+  color: #d9f7ee;
+  font-size: 10px;
+  background: rgba(4, 24, 36, .72);
+}
+
+@media (max-width: 700px) {
+  .rfManualLauncher {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+  }
+
+  .rfManualPanel {
+    right: 8px;
+    bottom: 66px;
+    left: 8px;
+    width: auto;
+    max-height: calc(100dvh - 84px);
+    border-radius: 14px;
+  }
+
+  .rfManualInputs {
+    grid-template-columns: 1fr;
+  }
+
+  .rfManualInputs label:last-child {
+    grid-column: auto;
+  }
+
+  .rfManualRiseFall button,
+  .rfManualDigitGrid button {
+    min-height: 52px;
+    font-size: 14px;
+  }
+}
+
