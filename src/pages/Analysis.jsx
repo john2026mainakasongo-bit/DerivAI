@@ -5,9 +5,7 @@ import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
 import useDerivTicks from "../hooks/useDerivTicks";
-import {
-  analyzeUnifiedSignals,
-} from "../analysis/v71UnifiedSignalEngine";
+import { analyzeUnifiedSignals } from "../analysis/v71UnifiedSignalEngine";
 import "../styles/Analysis.css";
 
 function percent(value) {
@@ -20,48 +18,70 @@ function money(value) {
   return Number.isFinite(number) ? number.toFixed(3) : "—";
 }
 
-function riskClass(risk) {
-  if (risk === "GOOD ENTRY") return "good";
-  if (risk === "RISKY") return "risky";
-  return "blocked";
-}
+function tradeFromCandidate(candidate) {
+  if (!candidate) return null;
 
-function digitTrade(signal = "") {
-  const text = String(signal || "").toUpperCase();
+  const mode = String(candidate.mode || "").toUpperCase();
 
-  if (text === "EVEN") {
-    return { label: text, contractType: "DIGITEVEN", barrier: undefined };
+  if (mode === "OVER") {
+    return {
+      label: candidate.setup,
+      contractType: "DIGITOVER",
+      barrier: String(candidate.prediction),
+    };
   }
 
-  if (text === "ODD") {
-    return { label: text, contractType: "DIGITODD", barrier: undefined };
+  if (mode === "UNDER") {
+    return {
+      label: candidate.setup,
+      contractType: "DIGITUNDER",
+      barrier: String(candidate.prediction),
+    };
   }
 
-  const over = text.match(/^OVER\s+([0-9])$/);
-  if (over) return { label: text, contractType: "DIGITOVER", barrier: over[1] };
+  if (mode === "EVEN") {
+    return {
+      label: "EVEN",
+      contractType: "DIGITEVEN",
+    };
+  }
 
-  const under = text.match(/^UNDER\s+([0-9])$/);
-  if (under) return { label: text, contractType: "DIGITUNDER", barrier: under[1] };
+  if (mode === "ODD") {
+    return {
+      label: "ODD",
+      contractType: "DIGITODD",
+    };
+  }
 
-  const match = text.match(/^MATCH\s+([0-9])$/);
-  if (match) return { label: text, contractType: "DIGITMATCH", barrier: match[1] };
-
-  const differs = text.match(/^DIFFERS\s+([0-9])$/);
-  if (differs) return { label: text, contractType: "DIGITDIFF", barrier: differs[1] };
+  if (mode === "DIFFERS") {
+    return {
+      label: candidate.setup,
+      contractType: "DIGITDIFF",
+      barrier: String(candidate.prediction),
+    };
+  }
 
   return null;
 }
 
-function SetupCard({ candidate }) {
+function candidateTone(candidate) {
+  if (candidate?.executable) return "good";
+  if (Number(candidate?.qualityScore || 0) >= 80) return "risky";
+  return "blocked";
+}
+
+function CandidateCard({ candidate }) {
+  const tone = candidateTone(candidate);
+
   return (
-    <div className={`v67SetupCard ${riskClass(candidate.risk)}`}>
+    <article className={`v67SetupCard ${tone}`}>
       <div>
-        <small>{candidate.mode}</small>
-        <strong>{candidate.setup}</strong>
+        <small>{candidate.mode || "DIGIT"}</small>
+        <strong>{candidate.setup || "WAIT"}</strong>
       </div>
 
-      <span className={`v67Risk ${riskClass(candidate.risk)}`}>
-        {candidate.risk}
+      <span className={`v67Risk ${tone}`}>
+        {candidate.executable ? "READY" : "WAIT"}
       </span>
 
       <div className="v67SetupMetrics">
@@ -70,61 +90,63 @@ function SetupCard({ candidate }) {
           <strong>{percent(candidate.probability)}</strong>
         </span>
         <span>
-          <small>EV</small>
-          <strong>
-            {candidate.expectedValue >= 0 ? "+" : ""}
-            {percent(candidate.expectedValue)}
-          </strong>
+          <small>Quality</small>
+          <strong>{percent(candidate.qualityScore)}</strong>
         </span>
         <span>
           <small>Stability</small>
           <strong>{percent(candidate.stability)}</strong>
         </span>
         <span>
-          <small>Confidence</small>
-          <strong>{percent(candidate.confidence)}</strong>
+          <small>History LB</small>
+          <strong>{percent(candidate.historicalLowerBound)}</strong>
         </span>
       </div>
 
-      <p>{candidate.triggerText}</p>
-    </div>
+      <p>{candidate.reason || "Collecting calibrated evidence."}</p>
+    </article>
   );
 }
 
 export default function Analysis() {
   const {
-    markets,
-    market,
-    symbol,
-    connected,
-    loadingMarket,
-    statusDetail,
-    prices,
-    currentPrice,
-    lastDigit,
-    digitHistory,
-    selectedAccountType,
-    tradeBusy,
-    tradeError,
+    markets = [],
+    market = null,
+    symbol = "",
+    connected = false,
+    loadingMarket = false,
+    statusDetail = "",
+    prices = [],
+    currentPrice = null,
+    lastDigit = null,
+    digitHistory = [],
+    selectedAccountType = "demo",
+    tradeBusy = false,
+    tradeError = "",
     connect,
     disconnect,
     changeSymbol,
     placeTrade,
   } = useDerivTicks();
 
-  const [tab, setTab] = useState("DIGITS");
   const [stake, setStake] = useState(0.35);
-  const [duration, setDuration] = useState(1);
   const [tradeMessage, setTradeMessage] = useState("");
   const [feedMessage, setFeedMessage] = useState("Connecting Deriv feed...");
   const connectBusyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    let retryTimer;
+    let retryTimer = null;
 
-    async function ensureLiveFeed() {
-      if (cancelled || connected || connectBusyRef.current) return;
+    async function ensureFeed() {
+      if (
+        cancelled ||
+        connected ||
+        connectBusyRef.current ||
+        typeof connect !== "function"
+      ) {
+        return;
+      }
 
       connectBusyRef.current = true;
       setFeedMessage("Connecting authenticated Deriv feed...");
@@ -147,7 +169,7 @@ export default function Analysis() {
         connectBusyRef.current = false;
 
         if (!cancelled && !connected) {
-          retryTimer = window.setTimeout(ensureLiveFeed, 2500);
+          retryTimer = window.setTimeout(ensureFeed, 3000);
         }
       }
     }
@@ -155,7 +177,7 @@ export default function Analysis() {
     if (connected) {
       setFeedMessage("Deriv live feed connected.");
     } else {
-      void ensureLiveFeed();
+      void ensureFeed();
     }
 
     return () => {
@@ -164,34 +186,57 @@ export default function Analysis() {
     };
   }, [connected, connect]);
 
-  const unifiedSignals = useMemo(
-    () =>
-      analyzeUnifiedSignals({
-        digitHistory,
-        prices,
+  const unified = useMemo(() => {
+    try {
+      return analyzeUnifiedSignals({
+        digitHistory: Array.isArray(digitHistory) ? digitHistory : [],
+        prices: Array.isArray(prices) ? prices : [],
         currentPrice,
-        allowHighRisk: false,
-        minimumConfidence: 78,
-      }),
-    [digitHistory, prices, currentPrice]
-  );
+        minimumConfidence: 90,
+      });
+    } catch (error) {
+      console.error("[V53] Analysis engine error", error);
 
-  const digitAnalysis = unifiedSignals.digit;
-  const riseFall = unifiedSignals.riseFall;
+      return {
+        digit: {
+          candidates: [],
+          best: null,
+          executable: false,
+          sampleSize: Array.isArray(digitHistory)
+            ? digitHistory.length
+            : 0,
+          currentDigit: lastDigit,
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Analysis engine failed safely.",
+        },
+      };
+    }
+  }, [digitHistory, prices, currentPrice, lastDigit]);
 
-  const bestDigit = digitAnalysis.best;
-  const bestTrade = digitTrade(bestDigit?.setup);
+  const digitAnalysis = unified?.digit || {};
+  const candidates = Array.isArray(digitAnalysis.candidates)
+    ? digitAnalysis.candidates
+    : [];
+  const best = digitAnalysis.best || null;
+  const bestTrade = tradeFromCandidate(best);
 
-  const digitDistribution = useMemo(() => {
-    const counts = Array.from({ length: 10 }, () => 0);
-    digitHistory.forEach((value) => {
+  const distribution = useMemo(() => {
+    const counts = Array(10).fill(0);
+    const safeDigits = Array.isArray(digitHistory) ? digitHistory : [];
+
+    safeDigits.forEach((value) => {
       const digit = Number(value);
       if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
         counts[digit] += 1;
       }
     });
 
-    const total = Math.max(1, counts.reduce((sum, value) => sum + value, 0));
+    const total = Math.max(
+      1,
+      counts.reduce((sum, value) => sum + value, 0)
+    );
 
     return counts.map((count, digit) => ({
       digit,
@@ -200,79 +245,25 @@ export default function Analysis() {
     }));
   }, [digitHistory]);
 
-  const marketMode = useMemo(() => {
-    const standard = digitAnalysis.standard.slice(0, 8);
-    if (!standard.length || digitAnalysis.sampleSize < 25) return "COLLECTING";
-
-    const averageStability =
-      standard.reduce((sum, item) => sum + Number(item.stability || 0), 0) /
-      standard.length;
-
-    const executableCount = standard.filter((item) => item.executable).length;
-
-    if (averageStability >= 78 && executableCount >= 2) return "CLEAN";
-    if (averageStability >= 62) return "RANGING";
-    return "CHAOTIC";
-  }, [digitAnalysis]);
-
-  const ownerAi = useMemo(() => {
-    if (!connected) {
-      return {
-        action: "CONNECTING",
-        detail: "Reconnecting the authenticated Deriv feed.",
-        waitSeconds: 0,
-      };
-    }
-
-    if (digitAnalysis.sampleSize < 40) {
-      return {
-        action: "WAIT",
-        detail: `Collecting evidence: ${digitAnalysis.sampleSize}/40 ticks.`,
-        waitSeconds: Math.max(1, Math.ceil((40 - digitAnalysis.sampleSize) / 4)),
-      };
-    }
-
-    if (bestDigit?.risk === "GOOD ENTRY") {
-      return {
-        action: `ENTER ${bestDigit.setup}`,
-        detail: bestDigit.triggerText,
-        waitSeconds: 0,
-      };
-    }
-
-    return {
-      action: "AVOID TRADING",
-      detail:
-        marketMode === "CHAOTIC"
-          ? "Market is unstable. Wait for stronger stability and positive EV."
-          : "No contract currently passes the GOOD ENTRY gate.",
-      waitSeconds: marketMode === "CHAOTIC" ? 12 : 6,
-    };
-  }, [
-    connected,
-    digitAnalysis.sampleSize,
-    bestDigit,
-    marketMode,
-  ]);
-
-  async function ensureConnected() {
-    if (connected) return;
-
-    await connect();
-    await new Promise((resolve) => setTimeout(resolve, 900));
-  }
-
-  async function runDigitTrade() {
+  async function runBestTrade() {
     setTradeMessage("");
-    await ensureConnected();
+
+    if (!connected && typeof connect === "function") {
+      await connect();
+    }
 
     if (selectedAccountType !== "demo") {
-      setTradeMessage("Analysis execution is Demo-only.");
+      setTradeMessage("Analysis execution remains Demo-only.");
       return;
     }
 
-    if (!bestTrade || bestDigit?.risk !== "GOOD ENTRY") {
-      setTradeMessage("No GOOD ENTRY digit setup is ready.");
+    if (!best?.executable || !bestTrade) {
+      setTradeMessage("No calibrated digit entry is ready.");
+      return;
+    }
+
+    if (typeof placeTrade !== "function") {
+      setTradeMessage("Trade function is unavailable.");
       return;
     }
 
@@ -283,47 +274,19 @@ export default function Analysis() {
         barrier: bestTrade.barrier,
         amount: Math.max(0.35, Number(stake) || 0.35),
         basis: "stake",
-        duration: Math.max(1, Math.min(10, Number(duration) || 1)),
+        duration: 1,
         durationUnit: "t",
       });
 
       setTradeMessage(
-        `${bestTrade.label} sent. Contract ${result?.contractId || "opened"}.`
+        `${bestTrade.label} sent. Contract ${
+          result?.contractId || "opened"
+        }.`
       );
     } catch (error) {
-      setTradeMessage(error instanceof Error ? error.message : "Trade failed.");
-    }
-  }
-
-  async function runRiseFallTrade() {
-    setTradeMessage("");
-    await ensureConnected();
-
-    if (selectedAccountType !== "demo") {
-      setTradeMessage("Rise/Fall analysis execution is Demo-only.");
-      return;
-    }
-
-    if (riseFall.risk !== "GOOD ENTRY" || riseFall.signal === "WAIT") {
-      setTradeMessage("No GOOD ENTRY Rise/Fall setup is ready.");
-      return;
-    }
-
-    try {
-      const result = await placeTrade({
-        symbol,
-        contractType: riseFall.signal === "RISE" ? "CALL" : "PUT",
-        amount: Math.max(0.35, Number(stake) || 0.35),
-        basis: "stake",
-        duration: Math.max(1, Math.min(10, Number(duration) || riseFall.duration || 5)),
-        durationUnit: "t",
-      });
-
       setTradeMessage(
-        `${riseFall.signal} sent. Contract ${result?.contractId || "opened"}.`
+        error instanceof Error ? error.message : "Trade failed."
       );
-    } catch (error) {
-      setTradeMessage(error instanceof Error ? error.message : "Trade failed.");
     }
   }
 
@@ -333,8 +296,8 @@ export default function Analysis() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V73 · Stable Unified Analysis"
-          subtitle="Shared socket and idempotent subscriptions across Analysis and Auto Bot"
+          title="EdgePilot V53 · Calibrated Digit Analysis"
+          subtitle="Adaptive transitions, historical lower bounds and digits-only signals"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -343,7 +306,7 @@ export default function Analysis() {
 
         <section className="analysisToolbar">
           <MarketSelector
-            markets={markets}
+            markets={Array.isArray(markets) ? markets : []}
             value={symbol}
             disabled={loadingMarket}
             onChange={changeSymbol}
@@ -352,7 +315,7 @@ export default function Analysis() {
           <div className="analysisFeedSummary">
             <span className={connected ? "liveDot" : "liveDot offline"} />
             <strong>{connected ? "LIVE" : "OFFLINE"}</strong>
-            <span>{market?.label || "Deriv market"}</span>
+            <span>{market?.label || symbol || "Deriv market"}</span>
           </div>
         </section>
 
@@ -370,242 +333,134 @@ export default function Analysis() {
           <div className="analysisNotice error">{statusDetail}</div>
         ) : null}
 
-        <div className="v67Tabs">
-          <button
-            className={tab === "DIGITS" ? "active" : ""}
-            onClick={() => setTab("DIGITS")}
-          >
-            Digit Analysis
-          </button>
-          <button
-            className={tab === "RISE_FALL" ? "active" : ""}
-            onClick={() => setTab("RISE_FALL")}
-          >
-            Rise / Fall AI
-          </button>
-        </div>
+        <section className="analysisHero">
+          <div>
+            <small>BEST CALIBRATED DIGIT SETUP</small>
+            <h2>{best?.setup || "WAIT"}</h2>
+            <p>
+              {best?.reason ||
+                digitAnalysis.reason ||
+                "Collecting calibrated digit evidence."}
+            </p>
+          </div>
 
-        {tab === "DIGITS" ? (
-          <>
-            <section className="analysisHero">
+          <div className="analysisHeroMetrics">
+            <div>
+              <small>Status</small>
+              <strong>{best?.executable ? "READY" : "WAIT"}</strong>
+            </div>
+            <div>
+              <small>Probability</small>
+              <strong>{percent(best?.probability)}</strong>
+            </div>
+            <div>
+              <small>Samples</small>
+              <strong>{digitAnalysis.sampleSize || 0}</strong>
+            </div>
+            <div>
+              <small>Last digit</small>
+              <strong>{lastDigit ?? "—"}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="v68DashboardGrid">
+          <article className="analysisPanel v68Heatmap">
+            <div className="analysisPanelHeader">
               <div>
-                <small>BEST CURRENT DIGIT SETUP</small>
-                <h2>{bestDigit?.setup || "WAIT"}</h2>
-                <p>{bestDigit?.triggerText || "Collecting live digit evidence."}</p>
+                <small>DIGIT HEATMAP</small>
+                <h3>Live distribution 0–9</h3>
               </div>
+              <span>{digitAnalysis.sampleSize || 0} ticks</span>
+            </div>
 
-              <div className="analysisHeroMetrics">
-                <div>
-                  <small>Risk</small>
-                  <strong>{bestDigit?.risk || "DO NOT TRADE"}</strong>
+            <div className="v68HeatRows">
+              {distribution.map((item) => (
+                <div key={item.digit}>
+                  <strong>{item.digit}</strong>
+                  <span>
+                    <i
+                      style={{
+                        width: `${Math.max(2, item.percent)}%`,
+                      }}
+                    />
+                  </span>
+                  <small>{item.percent.toFixed(1)}%</small>
                 </div>
-                <div>
-                  <small>Confidence</small>
-                  <strong>{percent(bestDigit?.confidence)}</strong>
-                </div>
-                <div>
-                  <small>Samples</small>
-                  <strong>{digitAnalysis.sampleSize}</strong>
-                </div>
-                <div>
-                  <small>Last digit</small>
-                  <strong>{lastDigit ?? "—"}</strong>
-                </div>
-              </div>
-            </section>
-
-            <section className="v68DashboardGrid">
-              <article className="analysisPanel v68Heatmap">
-                <div className="analysisPanelHeader">
-                  <div>
-                    <small>DIGIT HEATMAP</small>
-                    <h3>Live distribution 0–9</h3>
-                  </div>
-                  <span>{digitAnalysis.sampleSize} ticks</span>
-                </div>
-
-                <div className="v68HeatRows">
-                  {digitDistribution.map((item) => (
-                    <div key={item.digit}>
-                      <strong>{item.digit}</strong>
-                      <span>
-                        <i style={{ width: `${Math.max(2, item.percent)}%` }} />
-                      </span>
-                      <small>{item.percent.toFixed(1)}%</small>
-                    </div>
-                  ))}
-                </div>
-              </article>
-
-              <article className="analysisPanel">
-                <div className="analysisPanelHeader">
-                  <div>
-                    <small>LIVE DIGIT FLOW</small>
-                    <h3>Most recent digits</h3>
-                  </div>
-                </div>
-
-                <div className="v68DigitFlow">
-                  {digitHistory.slice(-30).map((digit, index) => (
-                    <span key={`${digit}-${index}`}>{digit}</span>
-                  ))}
-                  {!digitHistory.length ? <em>Waiting for live ticks…</em> : null}
-                </div>
-
-                <div className="v68ModeRow">
-                  <div>
-                    <small>MARKET MODE</small>
-                    <strong>{marketMode}</strong>
-                  </div>
-                  <div>
-                    <small>OWNER AI</small>
-                    <strong>{ownerAi.action}</strong>
-                  </div>
-                </div>
-
-                <div className="v68OwnerMessage">
-                  <p>{ownerAi.detail}</p>
-                  {ownerAi.waitSeconds > 0 ? (
-                    <span>Recheck in about {ownerAi.waitSeconds}s</span>
-                  ) : null}
-                </div>
-              </article>
-            </section>
-
-            <section className="v67SetupGrid">
-              {digitAnalysis.standard.slice(0, 12).map((candidate) => (
-                <SetupCard candidate={candidate} key={candidate.setup} />
               ))}
-            </section>
-          </>
-        ) : (
-          <>
-            <section className="analysisHero">
-              <div>
-                <small>RISE / FALL ANALYSIS</small>
-                <h2>{riseFall.signal}</h2>
-                <p>{riseFall.instruction}</p>
-              </div>
+            </div>
+          </article>
 
-              <div className="analysisHeroMetrics">
-                <div>
-                  <small>Risk</small>
-                  <strong>{riseFall.risk}</strong>
-                </div>
-                <div>
-                  <small>Confidence</small>
-                  <strong>{percent(riseFall.confidence)}</strong>
-                </div>
-                <div>
-                  <small>Trend</small>
-                  <strong>{riseFall.trend}</strong>
-                </div>
-                <div>
-                  <small>Price</small>
-                  <strong>{money(currentPrice)}</strong>
-                </div>
+          <article className="analysisPanel">
+            <div className="analysisPanelHeader">
+              <div>
+                <small>LIVE DIGIT FLOW</small>
+                <h3>Most recent digits</h3>
               </div>
-            </section>
+            </div>
 
-            <section className="v70RiseSummary">
+            <div className="v68DigitFlow">
+              {(Array.isArray(digitHistory) ? digitHistory : [])
+                .slice(-30)
+                .map((digit, index) => (
+                  <span key={`${digit}-${index}`}>{digit}</span>
+                ))}
+
+              {!digitHistory?.length ? (
+                <em>Waiting for live ticks…</em>
+              ) : null}
+            </div>
+
+            <div className="analysisMetricGrid">
               <div>
-                <small>DIRECTION</small>
-                <strong>{riseFall.signal}</strong>
+                <small>Price</small>
+                <strong>{money(currentPrice)}</strong>
               </div>
               <div>
-                <small>ENTRY QUALITY</small>
-                <strong className={riskClass(riseFall.risk)}>
-                  {riseFall.risk}
+                <small>Market</small>
+                <strong>{market?.short || market?.label || "—"}</strong>
+              </div>
+              <div>
+                <small>Executable setups</small>
+                <strong>
+                  {candidates.filter((candidate) => candidate.executable).length}
                 </strong>
               </div>
               <div>
-                <small>CONFIDENCE</small>
-                <strong>{percent(riseFall.confidence)}</strong>
+                <small>Engine</small>
+                <strong>V52 CALIBRATED</strong>
               </div>
-              <div>
-                <small>TREND</small>
-                <strong>{riseFall.trend}</strong>
-              </div>
-              <div>
-                <small>ENTRY LEVEL</small>
-                <strong>{money(riseFall.entryPrice)}</strong>
-              </div>
-            </section>
+            </div>
+          </article>
+        </section>
 
-            <section className="analysisGrid">
-              <article className="analysisPanel">
-                <div className="analysisPanelHeader">
-                  <div>
-                    <small>TREND ENGINE</small>
-                    <h3>Current direction</h3>
-                  </div>
-                  <span className={`v67Risk ${riskClass(riseFall.risk)}`}>
-                    {riseFall.risk}
-                  </span>
-                </div>
+        <section className="v67SetupGrid">
+          {candidates.slice(0, 18).map((candidate) => (
+            <CandidateCard
+              candidate={candidate}
+              key={candidate.setup}
+            />
+          ))}
 
-                <div className="analysisMetricGrid">
-                  <div>
-                    <small>Signal</small>
-                    <strong>{riseFall.signal}</strong>
-                  </div>
-                  <div>
-                    <small>Momentum</small>
-                    <strong>{money(riseFall.momentum)}</strong>
-                  </div>
-                  <div>
-                    <small>Support</small>
-                    <strong>{money(riseFall.support)}</strong>
-                  </div>
-                  <div>
-                    <small>Resistance</small>
-                    <strong>{money(riseFall.resistance)}</strong>
-                  </div>
-                  <div>
-                    <small>Entry level</small>
-                    <strong>{money(riseFall.entryPrice)}</strong>
-                  </div>
-                  <div>
-                    <small>Duration</small>
-                    <strong>{riseFall.duration || 5} ticks</strong>
-                  </div>
-                </div>
-              </article>
+          {!candidates.length ? (
+            <article className="analysisPanel">
+              <p>
+                No candidates were returned. The page stayed active and
+                reported the problem instead of rendering blank.
+              </p>
+            </article>
+          ) : null}
+        </section>
 
-              <article className="analysisPanel">
-                <div className="analysisPanelHeader">
-                  <div>
-                    <small>ENTRY TIMING</small>
-                    <h3>{riseFall.signal === "WAIT" ? "Wait for alignment" : "Conditional entry"}</h3>
-                  </div>
-                </div>
-
-                <div className="v67EntryInstruction">
-                  <strong>{riseFall.signal}</strong>
-                  <p>{riseFall.instruction}</p>
-                  <span>
-                    GOOD ENTRY is shown only when trend, momentum and price position agree.
-                  </span>
-                </div>
-              </article>
-            </section>
-          </>
-        )}
-
-        <section className="analysisPanel analysisRunPanel v67RunPanel">
+        <section className="analysisPanel">
           <div className="analysisPanelHeader">
             <div>
               <small>DEMO EXECUTION</small>
-              <h3>Run selected setup</h3>
+              <h3>Run the calibrated setup manually</h3>
             </div>
-            <span>
-              {tab === "DIGITS"
-                ? bestDigit?.risk || "WAIT"
-                : riseFall.risk}
-            </span>
           </div>
 
-          <div className="analysisRunFields">
+          <div className="analysisTradeControls">
             <label>
               <span>Stake</span>
               <input
@@ -617,46 +472,29 @@ export default function Analysis() {
               />
             </label>
 
-            <label>
-              <span>Duration (ticks)</span>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={duration}
-                onChange={(event) => setDuration(event.target.value)}
-              />
-            </label>
-          </div>
-
-          <div className="analysisRunActions">
             <button
-              className="analysisRunButton"
+              type="button"
+              onClick={runBestTrade}
               disabled={
                 tradeBusy ||
-                (tab === "DIGITS"
-                  ? bestDigit?.risk !== "GOOD ENTRY"
-                  : riseFall.risk !== "GOOD ENTRY")
-              }
-              onClick={
-                tab === "DIGITS"
-                  ? runDigitTrade
-                  : runRiseFallTrade
+                !best?.executable ||
+                !bestTrade ||
+                selectedAccountType !== "demo"
               }
             >
               {tradeBusy
-                ? "Opening trade..."
-                : tab === "DIGITS"
-                  ? `Run ${bestDigit?.setup || "Best Digit Trade"}`
-                  : `Run ${riseFall.signal}`}
+                ? "Sending..."
+                : bestTrade
+                  ? `Trade ${bestTrade.label}`
+                  : "No entry"}
             </button>
           </div>
 
-          <div className="analysisNotice">
+          <p>
             {tradeMessage ||
               tradeError ||
-              "Only GOOD ENTRY setups can be executed from this page. No strategy guarantees a win."}
-          </div>
+              "Rise/Fall is disabled. This page uses calibrated digit contracts only."}
+          </p>
         </section>
       </main>
     </div>
