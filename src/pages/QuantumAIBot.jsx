@@ -64,9 +64,9 @@ export default function QuantumAIBot() {
   const [message, setMessage] = useState("Quantum AI is ready.");
   const [settings, setSettings] = useState({
     stake: 0.35,
-    minConfidence: 84,
-    maxNoise: 56,
-    maxReversalRisk: 50,
+    minConfidence: 72,
+    maxNoise: 66,
+    maxReversalRisk: 60,
     maxOpenTrades: 2,
     marketSwitchSeconds: 12,
     minimumTradeGapSeconds: 3,
@@ -380,6 +380,45 @@ export default function QuantumAIBot() {
           <article><span>Consistency</span><strong>{analysis.consistency.toFixed(0)}%</strong></article>
           <article><span>Reversal risk</span><strong>{analysis.reversalRisk.toFixed(0)}%</strong></article>
           <article><span>Price</span><strong>{currentPrice ?? "—"}</strong></article>
+        </section>
+
+        <section className="quantumToolsPanel">
+          <header>
+            <div>
+              <small>VISIBLE ANALYSIS TOOLS</small>
+              <h3>What Quantum AI is reading now</h3>
+            </div>
+            <strong>{analysis.entryMode || "WAIT"} LANE</strong>
+          </header>
+
+          <div className="quantumToolGrid">
+            {[
+              ["RSI 14", analysis.metrics?.rsi?.toFixed?.(1) ?? "—"],
+              ["EMA 6", analysis.metrics?.fastEma?.toFixed?.(5) ?? "—"],
+              ["EMA 14", analysis.metrics?.mediumEma?.toFixed?.(5) ?? "—"],
+              ["EMA 30", analysis.metrics?.slowEma?.toFixed?.(5) ?? "—"],
+              ["Fast slope", analysis.metrics?.fastSlope?.toFixed?.(6) ?? "—"],
+              ["Medium slope", analysis.metrics?.mediumSlope?.toFixed?.(6) ?? "—"],
+              ["Slow slope", analysis.metrics?.slowSlope?.toFixed?.(6) ?? "—"],
+              ["Impulse", `${Number(analysis.metrics?.impulse || 0).toFixed(0)}%`],
+              ["Trend strength", `${Number(analysis.metrics?.trendStrength || 0).toFixed(0)}%`],
+              ["Vote consensus", `${Number(analysis.metrics?.voteConsensus || 0).toFixed(0)}%`],
+              ["RISE votes", Number(analysis.votes?.rise || 0).toFixed(2)],
+              ["FALL votes", Number(analysis.votes?.fall || 0).toFixed(2)],
+            ].map(([label, value]) => (
+              <article key={label}><span>{label}</span><strong>{value}</strong></article>
+            ))}
+          </div>
+
+          <div className="quantumGateGrid">
+            {(analysis.checks || []).map((check) => (
+              <article key={check.label} className={check.passed ? "passed" : "failed"}>
+                <span>{check.label}</span>
+                <strong>{check.passed ? "PASS" : "WAIT"}</strong>
+                <b>{check.value}</b>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className="quantumMessage">

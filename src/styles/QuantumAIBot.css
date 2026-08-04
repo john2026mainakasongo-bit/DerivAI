@@ -226,3 +226,30 @@ html:has(.quantumShell),
     min-height: 47px !important;
   }
 }
+
+/* V5 — visible analysis tools and entry-gate telemetry */
+.quantumToolsPanel {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #1d6379;
+  border-radius: 12px;
+  background: #062235;
+}
+.quantumToolsPanel header { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.quantumToolsPanel header small { color:#2fe4bd; font-size:9px; font-weight:900; letter-spacing:.08em; }
+.quantumToolsPanel header h3 { margin:3px 0 0; color:#fff; font-size:15px; }
+.quantumToolsPanel header > strong { color:#ffd45e; font-size:11px; }
+.quantumToolGrid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:6px; margin-top:8px; }
+.quantumToolGrid article,.quantumGateGrid article { min-width:0; padding:8px; border:1px solid #174c63; border-radius:8px; background:#041a28; }
+.quantumToolGrid span,.quantumGateGrid span { display:block; color:#7daabd; font-size:8px; }
+.quantumToolGrid strong { display:block; margin-top:4px; color:#fff; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.quantumGateGrid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; margin-top:7px; }
+.quantumGateGrid strong,.quantumGateGrid b { display:block; margin-top:3px; }
+.quantumGateGrid strong { font-size:10px; }
+.quantumGateGrid b { color:#9fc2d0; font-size:9px; }
+.quantumGateGrid article.passed { border-color:#1aaa83; background:#07382e; }
+.quantumGateGrid article.passed strong { color:#37e5b5; }
+.quantumGateGrid article.failed { border-color:#8b5f1e; background:#2b250d; }
+.quantumGateGrid article.failed strong { color:#ffd160; }
+@media(max-width:900px){.quantumToolGrid{grid-template-columns:repeat(3,minmax(0,1fr))}.quantumGateGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:520px){.quantumToolGrid,.quantumGateGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -197,13 +197,26 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
   const minConfidence = clamp(options.minConfidence || 82, 55, 98);
   const maxNoise = clamp(options.maxNoise || 58, 20, 90);
   const maxReversalRisk = clamp(options.maxReversalRisk || 52, 15, 90);
-  const ready =
+  const fastMediumAgree = Math.sign(fastSlope) === Math.sign(mediumSlope);
+  const strictReady =
     confidence >= minConfidence &&
     noise <= maxNoise &&
     reversalRisk <= maxReversalRisk &&
     voteConsensus >= 0.64 &&
     consistencyData.score >= 0.34 &&
     !slopeConflict;
+
+  // Fast lane keeps the bot responsive without buying on a single indicator.
+  // It still requires aligned fast/medium trend, majority votes and acceptable risk.
+  const fastReady =
+    confidence >= Math.max(62, minConfidence - 10) &&
+    noise <= Math.min(78, maxNoise + 10) &&
+    reversalRisk <= Math.min(72, maxReversalRisk + 10) &&
+    voteConsensus >= 0.58 &&
+    consistencyData.score >= 0.24 &&
+    fastMediumAgree;
+
+  const ready = strictReady || fastReady;
 
   const regime =
     noise >= 72
@@ -222,7 +235,7 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
   });
 
   const reason = ready
-    ? `${direction} confirmed by ${winningVotes.toFixed(1)} weighted votes; trend and tick flow agree.`
+    ? `${strictReady ? "STRONG" : "FAST"} ${direction} entry: ${winningVotes.toFixed(1)} weighted votes, ${(voteConsensus * 100).toFixed(0)}% consensus.`
     : slopeConflict
     ? "WAIT: fast, medium and slow trends disagree."
     : noise > maxNoise
@@ -253,6 +266,17 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
     volatility,
     consistency: consistencyData.score * 100,
     reversalRisk,
+    entryMode: strictReady ? "STRONG" : fastReady ? "FAST" : "WAIT",
+    thresholds: { minConfidence, maxNoise, maxReversalRisk },
+    checks: [
+      { label: "Confidence", passed: confidence >= Math.max(62, minConfidence - 10), value: `${confidence.toFixed(1)}%` },
+      { label: "Noise", passed: noise <= Math.min(78, maxNoise + 10), value: `${noise.toFixed(0)}%` },
+      { label: "Reversal", passed: reversalRisk <= Math.min(72, maxReversalRisk + 10), value: `${reversalRisk.toFixed(0)}%` },
+      { label: "Vote consensus", passed: voteConsensus >= 0.58, value: `${(voteConsensus * 100).toFixed(0)}%` },
+      { label: "Tick consistency", passed: consistencyData.score >= 0.24, value: `${(consistencyData.score * 100).toFixed(0)}%` },
+      { label: "Fast/medium trend", passed: fastMediumAgree, value: fastMediumAgree ? "AGREE" : "CONFLICT" },
+      { label: "Full timeframe", passed: !slopeConflict, value: slopeConflict ? "MIXED" : "AGREE" },
+    ],
     votes: { rise: riseVotes, fall: fallVotes },
     metrics: {
       rsi: currentRsi,
