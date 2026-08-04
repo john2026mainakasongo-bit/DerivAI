@@ -314,3 +314,163 @@
     padding: 7px;
   }
 }
+
+
+/* V78 layout corrections */
+.ouTopStrip {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(300px, 1fr) auto;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 56px;
+  margin: 8px 0 10px;
+  overflow: visible;
+}
+
+.ouTopStrip > * {
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.ouAccountCard {
+  min-height: 56px;
+  overflow: hidden;
+}
+
+.ouTopActions {
+  min-height: 56px;
+  align-items: center;
+}
+
+.ouExecution {
+  position: relative;
+  z-index: 2;
+  margin-top: 0;
+  overflow: visible;
+}
+
+.ouControlGrid {
+  align-items: end;
+}
+
+.ouQuickTradeButtons {
+  min-width: 220px;
+}
+
+.ouQuickTradeButtons button {
+  min-height: 42px;
+  height: 42px;
+  line-height: 1.1;
+}
+
+.ouQuickTradeButtons strong {
+  white-space: nowrap;
+}
+
+.ouManualHint {
+  margin: -2px 0 8px;
+  padding: 7px 10px;
+  border: 1px solid #16475e;
+  border-radius: 8px;
+  background: #041827;
+  color: #8db0c2;
+  font-size: 11px;
+}
+
+.ouHero {
+  min-height: 132px;
+}
+
+.ouHeroDecision {
+  min-width: 0;
+}
+
+.ouHeroStats {
+  min-width: 0;
+}
+
+.ouSignalGrid article,
+.ouCandidateGrid article {
+  overflow: hidden;
+}
+
+.ouSignalGrid strong,
+.ouCandidateGrid strong {
+  line-height: 1.2;
+}
+
+.ouRecommendedActions {
+  display: none !important;
+}
+
+@media (max-width: 1100px) {
+  .ouTopStrip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ouTopActions {
+    grid-column: 1 / -1;
+  }
+
+  .ouExecution {
+    grid-template-columns: 1fr;
+  }
+
+  .ouControlGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ouQuickTradeButtons {
+    grid-column: span 2;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .ouTopStrip {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .ouTopActions {
+    grid-column: auto;
+  }
+
+  .ouAccountCard {
+    min-height: 50px;
+  }
+
+  .ouExecution {
+    margin-top: 0;
+  }
+
+  .ouControlGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ouQuickTradeButtons {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .ouQuickTradeButtons button {
+    min-height: 46px;
+    height: 46px;
+  }
+
+  .ouManualHint {
+    margin-top: 0;
+    font-size: 10px;
+  }
+
+  .ouHero {
+    min-height: auto;
+  }
+
+  .ouHeroStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -446,8 +446,8 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V77 · Over/Under Quick Trader"
-          subtitle="Dedicated OVER and UNDER buttons, fast row-pressure analysis and compact mobile trading"
+          title="EdgePilot V78 · Over/Under Layout Fix"
+          subtitle="Clean non-overlapping layout, compact quick buttons and direct selected-duration manual trading"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -519,7 +519,7 @@ export default function OverUnderAnalysis() {
                 }}
               >
                 <span>BUY</span>
-                <strong>OVER {manualBarrier}</strong>
+                <strong>OVER {manualBarrier} · {durationTicks}T</strong>
               </button>
 
               <button
@@ -532,7 +532,7 @@ export default function OverUnderAnalysis() {
                 }}
               >
                 <span>BUY</span>
-                <strong>UNDER {manualBarrier}</strong>
+                <strong>UNDER {manualBarrier} · {durationTicks}T</strong>
               </button>
             </div>
             <label><span>Auto switch</span><select value={autoSwitch ? "ON" : "OFF"} onChange={(event) => setAutoSwitch(event.target.value === "ON")}><option>ON</option><option>OFF</option></select></label>
@@ -543,6 +543,11 @@ export default function OverUnderAnalysis() {
             <label className="ouRealToggle"><span>Real execution</span><input type="checkbox" checked={allowReal} disabled={currentType === "demo"} onChange={(event) => setAllowReal(event.target.checked)} /></label>
           </div>
         </section>
+
+        <div className="ouManualHint">
+          Manual OVER/UNDER executes immediately using the selected barrier,
+          stake and duration ({durationTicks} tick{Number(durationTicks) === 1 ? "" : "s"}).
+        </div>
 
         <section className={`ouHero ${analysis.tradeNow ? "ready" : analysis.prepare ? "prepare" : ""}`}>
           <div className="ouHeroDecision">
@@ -556,59 +561,6 @@ export default function OverUnderAnalysis() {
             <span><small>Quality</small><strong>{pct(analysis.quality)}</strong></span>
             <span><small>Risk</small><strong>{analysis.risk}</strong></span>
           </div>
-        </section>
-
-        <section className="ouRecommendedActions">
-          <div>
-            <small>QUICK MANUAL ENTRY</small>
-            <strong>
-              Selected barrier: {manualBarrier}
-            </strong>
-          </div>
-
-          <button
-            type="button"
-            className={
-              analysis.best.side === "OVER"
-                ? "recommended"
-                : ""
-            }
-            disabled={tradeBusy || hasOpenTrade}
-            onClick={() => {
-              setManualSide("OVER");
-              void sendTrade("OVER", manualBarrier, "QUICK OVER");
-            }}
-          >
-            OVER {manualBarrier}
-            <span>
-              Wins on {Array.from(
-                { length: Math.max(0, 9 - manualBarrier) },
-                (_, index) => manualBarrier + index + 1
-              ).join(" · ") || "—"}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className={
-              analysis.best.side === "UNDER"
-                ? "recommended"
-                : ""
-            }
-            disabled={tradeBusy || hasOpenTrade}
-            onClick={() => {
-              setManualSide("UNDER");
-              void sendTrade("UNDER", manualBarrier, "QUICK UNDER");
-            }}
-          >
-            UNDER {manualBarrier}
-            <span>
-              Wins on {Array.from(
-                { length: Math.max(0, manualBarrier) },
-                (_, index) => index
-              ).join(" · ") || "—"}
-            </span>
-          </button>
         </section>
 
         <section className="ouSignalGrid">
