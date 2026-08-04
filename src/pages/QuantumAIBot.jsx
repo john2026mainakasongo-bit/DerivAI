@@ -112,17 +112,17 @@ export default function QuantumAIBot() {
     maxNoise: 68,
     maxReversalRisk: 60,
     maxOpenTrades: 2,
-    marketSwitchSeconds: 8,
+    marketSwitchSeconds: 7,
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
     oneLossCooldownSeconds: 20,
     repeatLossBlockSeconds: 90,
     marketLossBlockSeconds: 60,
-    entryDeadlineSeconds: 60,
-    deadlineminConfidence: 64,
-    deadlinemaxNoise: 68,
-    deadlineMaxReversal: 64,
+    entryDeadlineSeconds: 45,
+    deadlineMinConfidence: 54,
+    deadlineMaxNoise: 82,
+    deadlineMaxReversal: 72,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -147,6 +147,7 @@ export default function QuantumAIBot() {
       previousSymbolRef.current = symbol;
       marketWarmupStartedRef.current = Date.now();
       scanStartedAtRef.current = Date.now();
+      entryDeadlineStartedRef.current = Date.now();
       setMessage(`Warming ${market?.label || symbol} before scoring all five AI models...`);
     }
   }, [symbol, market?.label]);
@@ -160,8 +161,8 @@ export default function QuantumAIBot() {
       String(symbol || "").includes("1HZ") ||
       String(market?.label || "").includes("(1s)");
 
-    const minimumSamples = oneSecondMarket ? 45 : 70;
-    const minimumSeconds = oneSecondMarket ? 8 : 18;
+    const minimumSamples = oneSecondMarket ? 25 : 40;
+    const minimumSeconds = oneSecondMarket ? 5 : 10;
 
     /*
      * V15: release warmup as soon as either enough live ticks OR enough
@@ -171,7 +172,7 @@ export default function QuantumAIBot() {
      */
     const ready =
       sampleCount >= minimumSamples ||
-      elapsedSeconds >= minimumSeconds;
+      (sampleCount >= 12 && elapsedSeconds >= minimumSeconds);
 
     return {
       ready,
@@ -221,14 +222,22 @@ export default function QuantumAIBot() {
     const consistency = Number(analysis.consistency || 0);
     const voteConsensus = Number(analysis.metrics?.voteConsensus || 0);
 
+    const oneModelFallback =
+      agreement === 1 &&
+      confidence >= 58 &&
+      consistency >= 22 &&
+      voteConsensus >= 66 &&
+      noise <= 78 &&
+      reversal <= 68;
+
     const safetyPassed =
       candidate !== "WAIT" &&
-      agreement >= 2 &&
-      confidence >= Number(settings.deadlineMinConfidence || 62) &&
-      noise <= Number(settings.deadlineMaxNoise || 72) &&
-      reversal <= Number(settings.deadlineMaxReversal || 64) &&
-      consistency >= 18 &&
-      voteConsensus >= 58;
+      (agreement >= 2 || oneModelFallback) &&
+      confidence >= Number(settings.deadlineMinConfidence || 54) &&
+      noise <= Number(settings.deadlineMaxNoise || 82) &&
+      reversal <= Number(settings.deadlineMaxReversal || 72) &&
+      consistency >= 12 &&
+      voteConsensus >= 52;
 
     const ready =
       running &&
@@ -246,9 +255,9 @@ export default function QuantumAIBot() {
       reversal,
       consistency,
       voteConsensus,
-      duration: 10,
+      duration: 8,
       durationUnit: "s",
-      displayDuration: "10 SECONDS",
+      displayDuration: "8 SECONDS",
       reason: ready
         ? `One-minute lane selected ${candidate} at ${confidence.toFixed(1)}%.`
         : elapsedSeconds >= Number(settings.entryDeadlineSeconds || 60)
@@ -1078,6 +1087,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 

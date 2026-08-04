@@ -1,4 +1,4 @@
-import { analyzeQuantumRiseFall } from "./quantumRiseFallEngine";
+﻿import { analyzeQuantumRiseFall } from "./quantumRiseFallEngine";
 
 const clamp = (value, min = 0, max = 100) =>
   Math.max(min, Math.min(max, Number(value) || 0));
@@ -455,34 +455,50 @@ export function analyzeQuantumFiveAI(prices = [], options = {}) {
   );
 
   const hardSafetyGate =
-    noise <= 68 &&
-    reversal <= 60 &&
-    consistency >= 18 &&
-    voteConsensus >= 56;
+    noise <= 76 &&
+    reversal <= 68 &&
+    consistency >= 12 &&
+    voteConsensus >= 50;
+
+  const opportunityGate =
+    agreement >= 2 &&
+    totalScore >= 58 &&
+    noise <= 82 &&
+    reversal <= 72 &&
+    consistency >= 10 &&
+    voteConsensus >= 48;
 
   const ready =
-    agreement >= 3 &&
-    totalScore >= 72 &&
-    hardSafetyGate;
+    (agreement >= 3 &&
+      totalScore >= 66 &&
+      hardSafetyGate) ||
+    opportunityGate;
 
-  const durationPlan = chooseDuration({
-    score: totalScore,
-    agreement,
-    noise,
-    reversal,
-    consistency,
-  });
+  const durationPlan =
+    agreement === 2 && totalScore >= 58
+      ? {
+          duration: 8,
+          durationUnit: "s",
+          displayDuration: "8 SECONDS",
+        }
+      : chooseDuration({
+          score: totalScore,
+          agreement,
+          noise,
+          reversal,
+          consistency,
+        });
 
   const checks = [
     ...(base.checks || []),
     {
       label: "Five-layer agreement",
-      passed: agreement >= 3,
+      passed: agreement >= 2,
       value: `${agreement}/5`,
     },
     {
       label: "AI total score",
-      passed: totalScore >= 72,
+      passed: totalScore >= 58,
       value: `${totalScore.toFixed(1)}/100`,
     },
     {
@@ -501,9 +517,17 @@ export function analyzeQuantumFiveAI(prices = [], options = {}) {
     duration: durationPlan.duration,
     durationUnit: durationPlan.durationUnit,
     displayDuration: durationPlan.displayDuration,
-    entryMode: ready ? "SCORE-AI" : "WAIT",
+    entryMode: ready
+      ? agreement >= 3 && totalScore >= 66
+        ? "SCORE-AI"
+        : "OPPORTUNITY"
+      : "WAIT",
     reason: ready
-      ? `${agreement}/5 AI layers confirm ${candidate}. Total score ${totalScore.toFixed(1)}/100.`
+      ? `${agreement}/5 AI layers confirm ${candidate}. ${
+          agreement >= 3 && totalScore >= 66
+            ? "Score lane"
+            : "Opportunity lane"
+        } selected at ${totalScore.toFixed(1)}/100.`
       : `WAIT: ${agreement}/5 layers agree, score ${totalScore.toFixed(1)}/100, safety ${hardSafetyGate ? "PASS" : "BLOCK"}.`,
     checks,
     fiveAI: {
@@ -531,3 +555,4 @@ export function analyzeQuantumFiveAI(prices = [], options = {}) {
     },
   };
 }
+
