@@ -1,4 +1,4 @@
-﻿import {
+import {
   BrowserRouter,
   Navigate,
   Route,
@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Analysis from "./pages/Analysis";
 import RiseFallAnalysis from "./pages/RiseFallAnalysis";
 import OverUnderAnalysis from "./pages/OverUnderAnalysis";
+import TargetTenBot from "./pages/TargetTenBot";
 import Bot from "./pages/Bot";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
@@ -33,6 +34,7 @@ export default function App() {
           element={<RiseFallAnalysis />}
         />
         <Route path="/over-under-analysis" element={<OverUnderAnalysis />} />
+        <Route path="/target-10-bot" element={<TargetTenBot />} />
 
         <Route path="/bot" element={<Bot />} />
         <Route path="/settings" element={<Settings />} />

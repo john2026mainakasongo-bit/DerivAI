@@ -1,4 +1,4 @@
-﻿import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 
 const links = [
   { to: "/dashboard", label: "Dashboard", icon: "⌂" },
@@ -10,6 +10,7 @@ const links = [
   },
   { to: "/over-under-analysis", label: "Over/Under", icon: "â†•" },
   { to: "/bot", label: "Auto Bot", icon: "⚡" },
+  { to: "/target-10-bot", label: "Target 10", icon: "◎" },
   { to: "/settings", label: "Settings", icon: "⚙" },
 ];
 

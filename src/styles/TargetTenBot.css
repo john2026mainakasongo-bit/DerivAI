@@ -1,0 +1,351 @@
+* { box-sizing: border-box; }
+
+.targetTenPage {
+  min-width: 0;
+  padding-bottom: 14px;
+}
+
+.targetTenPage input,
+.targetTenPage select,
+.targetTenPage button {
+  font: inherit;
+  touch-action: manipulation;
+}
+
+.targetTenPage input,
+.targetTenPage select {
+  font-size: 16px;
+}
+
+.targetTopbar,
+.targetProgress,
+.targetControls,
+.targetDecision,
+.targetSignalGrid article,
+.targetMessage,
+.targetTrades {
+  background: #061f31;
+  border: 1px solid #17485f;
+  border-radius: 12px;
+}
+
+.targetTopbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(320px, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  margin: 9px 0;
+}
+
+.targetAccount {
+  display: grid;
+  grid-template-columns: auto minmax(140px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid #176c7a;
+  border-radius: 10px;
+  background: #041827;
+}
+
+.targetAccount.real { border-color: #d79b2c; }
+.targetAccount.demo { border-color: #18aa88; }
+
+.targetAccount span,
+.targetControls span,
+.targetProgress small,
+.targetDecision small,
+.targetSignalGrid small,
+.targetTrades small {
+  color: #3ed8b0;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.targetAccount select,
+.targetControls input,
+.targetControls select {
+  min-width: 0;
+  height: 36px;
+  color: white;
+  background: #031521;
+  border: 1px solid #175069;
+  border-radius: 8px;
+  padding: 0 9px;
+}
+
+.targetAccount strong {
+  color: white;
+  white-space: nowrap;
+}
+
+.targetStart,
+.targetStop {
+  min-width: 105px;
+  border: 0;
+  border-radius: 10px;
+  color: white;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.targetStart { background: #0fa47e; }
+.targetStop { background: #c83c59; }
+
+.targetProgress {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  padding: 10px;
+  margin-bottom: 9px;
+  overflow: hidden;
+}
+
+.targetProgress > div {
+  padding: 7px;
+  border: 1px solid #15455b;
+  border-radius: 8px;
+  background: #041827;
+}
+
+.targetProgress strong {
+  display: block;
+  margin-top: 4px;
+  color: white;
+  font-size: 16px;
+}
+
+.targetProgress > span {
+  grid-column: 1 / -1;
+  height: 7px;
+  background: #10394f;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.targetProgress > span i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #1fbf99, #35e3b8);
+}
+
+.positive { color: #38d7aa !important; }
+.negative { color: #ff6882 !important; }
+
+.targetControls {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(90px, 1fr));
+  gap: 7px;
+  padding: 9px;
+  margin-bottom: 9px;
+}
+
+.targetControls label,
+.targetControls > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  justify-content: center;
+}
+
+.targetControls > div {
+  min-height: 52px;
+  padding: 7px;
+  border-radius: 8px;
+  border: 1px solid #15455b;
+  background: #041827;
+}
+
+.targetControls strong {
+  color: white;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.targetDecision {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 9px;
+  border-color: #a67a23;
+}
+
+.targetDecision.ready {
+  border-color: #22c99f;
+  box-shadow: inset 0 0 0 1px rgba(34, 201, 159, .2);
+}
+
+.targetDecision h1 {
+  margin: 4px 0;
+  color: white;
+  font-size: clamp(24px, 3vw, 38px);
+}
+
+.targetDecision p {
+  margin: 0;
+  color: #86a8ba;
+  font-size: 12px;
+}
+
+.targetMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.targetMetrics span {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #174b63;
+  background: #041827;
+}
+
+.targetMetrics strong {
+  display: block;
+  margin-top: 5px;
+  color: white;
+}
+
+.targetSignalGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 7px;
+  margin-bottom: 9px;
+}
+
+.targetSignalGrid article {
+  min-width: 0;
+  min-height: 72px;
+  padding: 9px;
+}
+
+.targetSignalGrid strong {
+  display: block;
+  margin-top: 7px;
+  color: white;
+  overflow-wrap: anywhere;
+}
+
+.targetMessage {
+  padding: 8px 10px;
+  margin-bottom: 9px;
+  color: #a7c2cf;
+  font-size: 11px;
+}
+
+.targetTrades {
+  padding: 10px;
+}
+
+.targetTradesHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.targetTradesHead h2 {
+  margin: 3px 0;
+  color: white;
+  font-size: 18px;
+}
+
+.targetTradesHead > strong {
+  color: white;
+}
+
+.targetTradeTable {
+  overflow-x: auto;
+}
+
+.targetTradeTable > div {
+  min-width: 760px;
+  display: grid;
+  grid-template-columns: 1fr .8fr 1fr 1fr .7fr .8fr .7fr;
+  gap: 8px;
+  padding: 7px 4px;
+  border-bottom: 1px solid #123c50;
+  color: #cce2ec;
+  font-size: 11px;
+}
+
+.targetTradeTable .head {
+  color: #35d4ad;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.targetTradeTable p {
+  color: #8cabbc;
+  padding: 10px 3px;
+}
+
+.targetDisclaimer {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #35290a;
+  color: #d6b95c;
+  font-size: 10px;
+}
+
+@media (max-width: 1100px) {
+  .targetTopbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .targetTopbar > button {
+    grid-column: 1 / -1;
+    min-height: 40px;
+  }
+
+  .targetControls {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .targetSignalGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .targetTenPage {
+    padding: 6px 7px 14px !important;
+    overflow-x: hidden;
+  }
+
+  .targetTopbar,
+  .targetDecision {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .targetAccount {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .targetAccount strong {
+    grid-column: 1 / -1;
+  }
+
+  .targetProgress {
+    grid-template-columns: repeat(2, 1fr);
+    padding: 7px;
+  }
+
+  .targetControls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 7px;
+  }
+
+  .targetMetrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .targetSignalGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
