@@ -175,7 +175,7 @@ export default function HigherHighBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "Higher High AI PRO V7 is ready."
+    "Higher High AI PRO V8 is ready."
   );
 
   const [settings, setSettings] = useState({
@@ -207,6 +207,11 @@ export default function HigherHighBot() {
     learningEnabled: true,
     learningRate: 0.04,
     learningMinimumTrades: 8,
+    assumedWinProfit: 0.31,
+    assumedLossAmount: 0.35,
+    minimumProbabilityEdge: 5,
+    minimumExpectedValue: 0.015,
+    probabilityCalibrationStrength: 0.35,
     recoveryEnabled: true,
     recoveryConfidenceBonus: 6,
     recoveryProbabilityMinimum: 60,
@@ -315,6 +320,53 @@ export default function HigherHighBot() {
     ]
   );
 
+  const breakEvenProbability =
+    Number(settings.assumedLossAmount) /
+    Math.max(
+      0.0001,
+      Number(settings.assumedLossAmount) +
+        Number(settings.assumedWinProfit)
+    );
+
+  const historicalWinRate =
+    learningModel.trades > 0
+      ? learningModel.wins / learningModel.trades
+      : 0.5;
+
+  const calibrationStrength =
+    learningModel.trades >=
+    Number(settings.learningMinimumTrades)
+      ? Math.max(
+          0,
+          Math.min(
+            0.75,
+            Number(settings.probabilityCalibrationStrength)
+          )
+        )
+      : 0;
+
+  const calibratedProbability =
+    (
+      Number(analysis.probability || 0) / 100
+    ) *
+      (1 - calibrationStrength) +
+    historicalWinRate * calibrationStrength;
+
+  const probabilityEdge =
+    calibratedProbability - breakEvenProbability;
+
+  const expectedValue =
+    calibratedProbability *
+      Number(settings.assumedWinProfit) -
+    (1 - calibratedProbability) *
+      Number(settings.assumedLossAmount);
+
+  const probabilityGuardPass =
+    probabilityEdge * 100 >=
+      Number(settings.minimumProbabilityEdge) &&
+    expectedValue >=
+      Number(settings.minimumExpectedValue);
+
   const requiredHoldTicks = recovery.active
     ? Number(settings.recoveryConfirmationTicks)
     : Number(settings.confirmationTicks);
@@ -365,6 +417,7 @@ export default function HigherHighBot() {
     entrySignalReady &&
     recoveryQualified &&
     finalCandidateMatches &&
+    probabilityGuardPass &&
     readyStreak >= requiredHoldTicks;
 
   useEffect(() => {
@@ -375,6 +428,10 @@ export default function HigherHighBot() {
       label: market?.label || symbol,
       score: Number(analysis.confidence || 0),
       probability: Number(analysis.probability || 0),
+      calibratedProbability:
+        calibratedProbability * 100,
+      expectedValue,
+      probabilityEdge: probabilityEdge * 100,
       votes: Number(analysis.metrics?.votePasses || 0),
       hardRiskBlock: Boolean(analysis.metrics?.hardRiskBlock),
       momentum3: Number(analysis.metrics?.momentum3 || 0),
@@ -402,6 +459,9 @@ export default function HigherHighBot() {
     market?.label,
     analysis.confidence,
     analysis.probability,
+    calibratedProbability,
+    expectedValue,
+    probabilityEdge,
     analysis.metrics?.votePasses,
     analysis.metrics?.hardRiskBlock,
     analysis.metrics?.momentum3,
@@ -441,6 +501,10 @@ export default function HigherHighBot() {
     requiredHoldTicks,
     fallbackWindow,
     elapsedScanSeconds,
+    calibratedProbability,
+    probabilityEdge,
+    expectedValue,
+    breakEvenProbability,
   ]);
 
   useEffect(() => {
@@ -760,7 +824,7 @@ export default function HigherHighBot() {
         scanStartedAtRef.current = Date.now();
         setReadyStreak(0);
         setMessage(
-          `No V7 hard two-minute cycle setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
+          `No V8 probability guard setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
         );
         void changeSymbol(next.id);
       }
@@ -832,6 +896,10 @@ export default function HigherHighBot() {
             item.momentum3 > 0 &&
             item.momentum5 > 0 &&
             item.structure &&
+            Number(item.expectedValue || 0) >=
+              Number(settings.minimumExpectedValue) &&
+            Number(item.probabilityEdge || 0) >=
+              Number(settings.minimumProbabilityEdge) &&
             now - Number(item.updatedAt || 0) <= 45000
         )
         .sort(
@@ -897,6 +965,8 @@ export default function HigherHighBot() {
     settings.fallbackVoteScore,
     settings.fallbackProbability,
     settings.fallbackMinimumVotes,
+    settings.minimumExpectedValue,
+    settings.minimumProbabilityEdge,
     symbol,
     changeSymbol,
   ]);
@@ -950,7 +1020,7 @@ export default function HigherHighBot() {
     void (async () => {
       try {
         setMessage(
-          `${recovery.active ? "Recovery" : fallbackWindow && !analysis.ready ? "Two-minute fallback" : "Normal"} signal held ${readyStreak}/${requiredHoldTicks} ticks. Buying HIGHER at ${analysis.confidence}% score and ${analysis.probability}% probability.`
+          `${recovery.active ? "Recovery" : fallbackWindow && !analysis.ready ? "Two-minute fallback" : "Normal"} signal held ${readyStreak}/${requiredHoldTicks} ticks. Calibrated probability ${(calibratedProbability * 100).toFixed(1)}%, edge ${(probabilityEdge * 100).toFixed(1)}%, EV ${expectedValue.toFixed(3)}.`
         );
 
         const response = await placeTrade({
@@ -1030,6 +1100,14 @@ export default function HigherHighBot() {
             patternScore: Number(metrics.patternScore || 0),
             transitionScore: Number(metrics.transitionScore || 0),
             learnedWeights: { ...learningModel.weights },
+            rawProbability: Number(analysis.probability || 0),
+            calibratedProbability:
+              calibratedProbability * 100,
+            breakEvenProbability:
+              breakEvenProbability * 100,
+            probabilityEdge:
+              probabilityEdge * 100,
+            expectedValue,
           },
         };
 
@@ -1130,8 +1208,8 @@ export default function HigherHighBot() {
 
       <main className="mainContent hhPage">
         <Topbar
-          title="Higher High AI PRO V7"
-          subtitle="Hard 2-minute cycle · adaptive learning · best-safe setup · CALL execution"
+          title="Higher High AI PRO V8"
+          subtitle="Probability guard · expected value · hard 2-minute cycle · CALL execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1145,10 +1223,10 @@ export default function HigherHighBot() {
         >
           <div>
             <small>STRICT CONFIRMATION BOT</small>
-            <h1>Higher High AI PRO V7</h1>
+            <h1>Higher High AI PRO V8</h1>
             <p>
-              Scans several markets for a hard two-minute cycle, learns from settled
-              entries and stops if the final live candidate cannot confirm.
+              Uses calibrated probability, break-even margin and expected value before
+              buying. The hard two-minute cycle and adaptive learning remain active.
             </p>
           </div>
 
@@ -1305,6 +1383,46 @@ export default function HigherHighBot() {
             </article>
 
             <article>
+              <span>Calibrated P</span>
+              <strong>
+                {(calibratedProbability * 100).toFixed(1)}%
+              </strong>
+            </article>
+
+            <article>
+              <span>Break-even P</span>
+              <strong>
+                {(breakEvenProbability * 100).toFixed(1)}%
+              </strong>
+            </article>
+
+            <article>
+              <span>Probability edge</span>
+              <strong
+                className={
+                  probabilityEdge >= 0
+                    ? "positive"
+                    : "negative"
+                }
+              >
+                {(probabilityEdge * 100).toFixed(1)}%
+              </strong>
+            </article>
+
+            <article>
+              <span>Expected value</span>
+              <strong
+                className={
+                  expectedValue >= 0
+                    ? "positive"
+                    : "negative"
+                }
+              >
+                {expectedValue.toFixed(3)}
+              </strong>
+            </article>
+
+            <article>
               <span>Learning</span>
               <strong>
                 {settings.learningEnabled
@@ -1368,6 +1486,11 @@ export default function HigherHighBot() {
             ["Final confirm sec", "finalConfirmationSeconds", 1],
             ["Learning rate", "learningRate", 0.01],
             ["Learn after", "learningMinimumTrades", 1],
+            ["Win profit", "assumedWinProfit", 0.01],
+            ["Loss amount", "assumedLossAmount", 0.01],
+            ["Min P edge %", "minimumProbabilityEdge", 1],
+            ["Min EV", "minimumExpectedValue", 0.005],
+            ["P calibration", "probabilityCalibrationStrength", 0.05],
           ].map(([label, key, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -1528,6 +1651,43 @@ export default function HigherHighBot() {
           </article>
         </section>
 
+        <section className="hhProbabilityGuard">
+          <article>
+            <span>Raw probability</span>
+            <strong>{Number(analysis.probability || 0).toFixed(1)}%</strong>
+          </article>
+          <article>
+            <span>Calibrated probability</span>
+            <strong>{(calibratedProbability * 100).toFixed(1)}%</strong>
+          </article>
+          <article>
+            <span>Break-even</span>
+            <strong>{(breakEvenProbability * 100).toFixed(1)}%</strong>
+          </article>
+          <article>
+            <span>Required edge</span>
+            <strong>{Number(settings.minimumProbabilityEdge).toFixed(1)}%</strong>
+          </article>
+          <article>
+            <span>Current edge</span>
+            <strong className={probabilityEdge >= 0 ? "positive" : "negative"}>
+              {(probabilityEdge * 100).toFixed(1)}%
+            </strong>
+          </article>
+          <article>
+            <span>Expected value</span>
+            <strong className={expectedValue >= 0 ? "positive" : "negative"}>
+              {expectedValue.toFixed(3)}
+            </strong>
+          </article>
+          <article>
+            <span>Guard</span>
+            <strong className={probabilityGuardPass ? "positive" : "negative"}>
+              {probabilityGuardPass ? "PASS" : "BLOCK"}
+            </strong>
+          </article>
+        </section>
+
         <section className="hhLearning">
           <article>
             <span>Trend weight</span>
@@ -1653,7 +1813,8 @@ export default function HigherHighBot() {
                             ? "2-MIN FALLBACK · "
                             : ""}
                           C {item.confidence}% · P{" "}
-                          {item.probability}% · TF{" "}
+                          {item.probability}% · CP{" "}
+                          {number(snapshot.calibratedProbability, 1)}% · TF{" "}
                           {snapshot.timeframeAgreement || 0}/3
                         </small>
                       </div>
@@ -1673,7 +1834,8 @@ export default function HigherHighBot() {
                             0
                           )}
                           % · Spike{" "}
-                          {number(snapshot.spikeRatio, 2)}
+                          {number(snapshot.spikeRatio, 2)} · EV{" "}
+                          {number(snapshot.expectedValue, 3)}
                         </small>
                         {item.lossCause ? (
                           <small className="hhLossCause">
