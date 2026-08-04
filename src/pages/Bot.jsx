@@ -23,6 +23,7 @@ import { analyzeSyntheticIntelligence } from "../analysis/syntheticIntelligenceE
 
 import DerivBotEngine from "../bot/DerivBotEngine";
 import "../styles/Bot.css";
+import "../styles/V102BotTargetFix.css";
 
 const INITIAL_SETTINGS = {
   maxRuns: 56,
@@ -201,6 +202,7 @@ export default function Bot() {
   const engineRef = useRef(null);
   const marketSwitchingRef = useRef(false);
   const marketScanStartedRef = useRef(Date.now());
+  const latestTickCountRef = useRef(0);
 
   const [marketSwitchState, setMarketSwitchState] = useState({
     remaining: 0,
@@ -247,6 +249,16 @@ export default function Bot() {
   const selectedId = accountId(
     auth.selectedAccount
   );
+
+  useEffect(() => {
+    latestTickCountRef.current = Array.isArray(prices) ? prices.length : 0;
+  }, [prices]);
+
+  useEffect(() => {
+    if (auth.authenticated && !connected && typeof connect === "function") {
+      Promise.resolve(connect()).catch(() => {});
+    }
+  }, [auth.authenticated, connected, connect]);
 
   const isDemo =
     auth.selectedAccountType === "demo";
@@ -616,30 +628,75 @@ export default function Bot() {
       return;
     }
 
-    if (!connected) {
-      await connect();
-    }
-
-    if (!isDemo) {
-      const confirmed = window.confirm(
-        `REAL TRADING WARNING\n\n` +
-          `Account: ${selectedId || "selected real account"}\n` +
-          `Stake: ${Number(settings.stake || 0).toFixed(2)} ${
-            auth.selectedAccount?.currency || "USD"
-          }\n` +
-          `Maximum scan: ${settings.maxScanTicks} ticks\n` +
-          `Contract duration: ${settings.duration} ${
-            settings.durationUnit === "s" ? "seconds" : "ticks"
-          }\n\n` +
-          `Trades placed here will be sent to the connected Deriv real account. Continue?`
-      );
-
-      if (!confirmed) {
-        return;
+    try {
+      if (!connected) {
+        await connect();
       }
+
+      const startedAt = Date.now();
+      while (
+        latestTickCountRef.current < 20 &&
+        Date.now() - startedAt < 8000
+      ) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+
+      if (!isDemo) {
+        const confirmed = window.confirm(
+          `REAL TRADING WARNING\n\n` +
+            `Account: ${selectedId || "selected real account"}\n` +
+            `Stake: ${Number(settings.stake || 0).toFixed(2)} ${
+              auth.selectedAccount?.currency || "USD"
+            }\n` +
+            `Contract: ${contractModeLabel(
+              settings.contractMode,
+              settings.prediction
+            )}\n` +
+            `Duration: ${settings.duration} ${
+              settings.durationUnit === "s" ? "seconds" : "ticks"
+            }\n\n` +
+            `Trades will be sent to the connected Deriv real account. Continue?`
+        );
+
+        if (!confirmed) return;
+      }
+
+      await engineRef.current?.start();
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : "Unable to start the bot."
+      );
+    }
+  }
+
+  async function manualTrade(setup) {
+    if (!auth.authenticated) {
+      auth.login();
+      return;
     }
 
-    await engineRef.current?.start();
+    try {
+      if (!connected) {
+        await connect();
+      }
+
+      if (!isDemo) {
+        const confirmed = window.confirm(
+          `PLACE ONE REAL MANUAL TRADE?\n\n` +
+            `Setup: ${setup}\n` +
+            `Stake: ${Number(settings.stake || 0).toFixed(2)} ${
+              auth.selectedAccount?.currency || "USD"
+            }`
+        );
+        if (!confirmed) return;
+      }
+
+      await engineRef.current?.testOneTrade(setup);
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : "Manual trade failed."
+      );
+    }
   }
 
   async function testOneTrade() {
@@ -698,8 +755,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V49 · Fast Digit Row Engine"
-          subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
+          title="EdgePilot V102 · Fast AI + Manual Trader"
+          subtitle="Auto-connect feed · fast scanner warm-up · manual and automatic execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1046,6 +1103,68 @@ export default function Bot() {
             </div>
 
             
+
+
+            <section className="v102ManualPanel">
+              <div>
+                <small>MANUAL EXECUTION</small>
+                <h3>Direct trade</h3>
+                <p>
+                  Uses the stake and duration selected above. Manual entry does
+                  not wait for the auto scanner.
+                </p>
+              </div>
+
+              <div className="v102ManualButtons">
+                <button
+                  type="button"
+                  className="v102Buy"
+                  disabled={running || paused || botState.status === "TESTING"}
+                  onClick={() =>
+                    manualTrade(
+                      settings.durationUnit === "s"
+                        ? "RISE"
+                        : `OVER ${Math.max(0, Math.min(8, Number(settings.prediction || 2)))}`
+                    )
+                  }
+                >
+                  BUY {settings.durationUnit === "s" ? "RISE" : `OVER ${Math.max(0, Math.min(8, Number(settings.prediction || 2)))}`}
+                </button>
+
+                <button
+                  type="button"
+                  className="v102Sell"
+                  disabled={running || paused || botState.status === "TESTING"}
+                  onClick={() =>
+                    manualTrade(
+                      settings.durationUnit === "s"
+                        ? "FALL"
+                        : `UNDER ${Math.max(1, Math.min(9, Number(settings.prediction || 2)))}`
+                    )
+                  }
+                >
+                  BUY {settings.durationUnit === "s" ? "FALL" : `UNDER ${Math.max(1, Math.min(9, Number(settings.prediction || 2)))}`}
+                </button>
+
+                <button
+                  type="button"
+                  className="v102Neutral"
+                  disabled={running || paused || botState.status === "TESTING"}
+                  onClick={() => manualTrade("EVEN")}
+                >
+                  BUY EVEN
+                </button>
+
+                <button
+                  type="button"
+                  className="v102Neutral"
+                  disabled={running || paused || botState.status === "TESTING"}
+                  onClick={() => manualTrade("ODD")}
+                >
+                  BUY ODD
+                </button>
+              </div>
+            </section>
 
             <div className="botMessage">
               {botState.message}

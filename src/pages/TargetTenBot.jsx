@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
-import DerivAccountSelector from "../components/DerivAccountSelector";
 import DerivVolatilitySelector, { DERIV_VOLATILITY_MARKETS } from "../components/DerivVolatilitySelector";
 import "../components/DerivSelectors.css";
 import useDerivTicks from "../hooks/useDerivTicks";
@@ -12,6 +11,7 @@ import {
   nextTargetStage,
 } from "../analysis/targetTenStrategyEngine";
 import "../styles/TargetTenBot.css";
+import "../styles/V102BotTargetFix.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
 
@@ -95,6 +95,8 @@ export default function TargetTenBot() {
   const [sessionProfit, setSessionProfit] = useState(0);
   const [message, setMessage] = useState("Target 10 bot is stopped.");
   const [trades, setTrades] = useState([]);
+  const [manualSide, setManualSide] = useState("OVER");
+  const [manualBarrier, setManualBarrier] = useState(1);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -358,23 +360,95 @@ export default function TargetTenBot() {
     }
   }, [running, balance, stageTarget, currency]);
 
-  function toggleRun() {
+  async function placeManualTrade(side = manualSide) {
+    if (busyRef.current || tradeBusy || hasOpenTrade) {
+      setMessage("Wait for the current trade to settle.");
+      return;
+    }
+
+    if (!connected) {
+      await connect();
+    }
+
+    if (!accountId) {
+      setMessage("Select an account from the top account menu.");
+      return;
+    }
+
+    if (accountType === "real") {
+      const confirmed = window.confirm(
+        `PLACE ONE REAL MANUAL TRADE?\n\n` +
+          `${side} ${manualBarrier}\n` +
+          `Stake: ${Math.max(0.35, Number(stake) || 0.35).toFixed(2)} ${currency}`
+      );
+      if (!confirmed) return;
+    }
+
+    busyRef.current = true;
+
+    try {
+      const result = await placeTrade({
+        symbol,
+        contractType: side === "OVER" ? "DIGITOVER" : "DIGITUNDER",
+        amount: Math.max(0.35, Number(stake) || 0.35),
+        basis: "stake",
+        duration: Math.max(1, Number(duration) || 1),
+        durationUnit: "t",
+        barrier: String(manualBarrier),
+      });
+
+      const contractId = String(result?.contractId || "");
+      setRuns((value) => value + 1);
+      setTrades((current) => [
+        {
+          id: contractId || String(Date.now()),
+          contractId,
+          time: Date.now(),
+          symbol,
+          accountType,
+          contract: `${side} ${manualBarrier}`,
+          stake: Math.max(0.35, Number(stake) || 0.35),
+          status: "OPEN",
+          profit: 0,
+        },
+        ...current,
+      ].slice(0, 30));
+
+      lastEntryRef.current = Date.now();
+      waitStartedRef.current = Date.now();
+      setMessage(`MANUAL ${side} ${manualBarrier} opened.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Manual trade failed.");
+    } finally {
+      busyRef.current = false;
+    }
+  }
+
+  async function toggleRun() {
     if (running) {
       stopBot("Stopped manually.");
       return;
     }
 
     if (!accountId) {
-      setMessage("Select a Demo or Real account first.");
+      setMessage("Select a Demo or Real account from the top account menu.");
       return;
     }
 
-    waitStartedRef.current = Date.now();
-    runningRef.current = true;
-    setRunning(true);
-    setMessage(
-      `${accountType.toUpperCase()} mode started. Demo and Real use the same strategy.`
-    );
+    try {
+      if (!connected) {
+        await connect();
+      }
+
+      waitStartedRef.current = Date.now();
+      runningRef.current = true;
+      setRunning(true);
+      setMessage(
+        `${accountType.toUpperCase()} mode started. Loading live ticks and scanning immediately.`
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to start bot.");
+    }
   }
 
   return (
@@ -383,7 +457,7 @@ export default function TargetTenBot() {
 
       <main className="mainContent targetTenPage">
         <Topbar
-          title="EdgePilot V81 · Target 10 Bot"
+          title="EdgePilot V102 · Target 10 Auto + Manual"
           subtitle="Separate staged-growth bot · same strategy for Demo and Real · no martingale"
           connected={connected}
           connecting={loadingMarket}
@@ -398,14 +472,6 @@ export default function TargetTenBot() {
             onChange={changeSymbol}
           />
 
-          <DerivAccountSelector
-            accounts={accounts}
-            selectedAccountId={accountId}
-            selectedAccount={selectedAccount}
-            currency={currency}
-            onChange={(nextId) => void switchAccount(nextId)}
-          />
-
           <button
             type="button"
             className={running ? "targetStop" : "targetStart"}
@@ -417,10 +483,6 @@ export default function TargetTenBot() {
         </section>
 
         <section className="targetProgress">
-          <div>
-            <small>CURRENT BALANCE</small>
-            <strong>{balance.toFixed(2)} {currency}</strong>
-          </div>
           <div>
             <small>NEXT STAGE</small>
             <strong>{stageTarget.toFixed(2)} {currency}</strong>
@@ -498,6 +560,47 @@ export default function TargetTenBot() {
           <div><span>Protection</span><strong>STOP AFTER 1 LOSS</strong></div>
         </section>
 
+
+        <section className="v102TargetManual">
+          <div>
+            <small>MANUAL EXECUTION</small>
+            <h2>Direct Over/Under trade</h2>
+            <p>Uses the stake and duration selected above.</p>
+          </div>
+
+          <label>
+            <span>Side</span>
+            <select
+              value={manualSide}
+              onChange={(event) => setManualSide(event.target.value)}
+            >
+              <option value="OVER">OVER</option>
+              <option value="UNDER">UNDER</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Barrier</span>
+            <select
+              value={manualBarrier}
+              onChange={(event) => setManualBarrier(Number(event.target.value))}
+            >
+              {[1, 2, 3, 4, 5, 6, 7].map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className={manualSide === "OVER" ? "v102Buy" : "v102Sell"}
+            disabled={tradeBusy || hasOpenTrade}
+            onClick={() => void placeManualTrade(manualSide)}
+          >
+            {tradeBusy ? "SENDING…" : `BUY ${manualSide} ${manualBarrier}`}
+          </button>
+        </section>
+
         <section className={`targetDecision ${decision.qualified ? "ready" : ""}`}>
           <div>
             <small>LIVE DECISION</small>
@@ -520,7 +623,7 @@ export default function TargetTenBot() {
         <section className="targetSignalGrid">
           <article><small>CURRENT DIGIT</small><strong>{decision.currentDigit}</strong></article>
           <article><small>CONTRACT</small><strong>{decision.best.side} {decision.best.barrier}</strong></article>
-          <article><small>WINNING DIGITS</small><strong>{decision.winningDigits.join(" · ") || "—"}</strong></article>
+          <article><small>WINNING DIGITS</small><strong>{Array.isArray(decision.winningDigits) ? decision.winningDigits.join(" · ") || "—" : "—"}</strong></article>
           <article><small>ACCOUNT MODE</small><strong>{accountType.toUpperCase()}</strong></article>
           <article><small>MARTINGALE</small><strong>OFF</strong></article>
           <article><small>STATUS</small><strong>{running ? "RUNNING" : "STOPPED"}</strong></article>
