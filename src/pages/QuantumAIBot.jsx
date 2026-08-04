@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
@@ -47,6 +47,16 @@ function settled(contract) {
       contract?.is_settleable === false ||
       ["won", "lost", "sold", "expired", "settled"].includes(status)
   );
+}
+
+function recoveryStakeAmount(baseStake, recoveryAttempts) {
+  const base = Math.max(0.35, Number(baseStake || 0.35));
+  const attempts = Math.max(
+    0,
+    Math.min(2, Number(recoveryAttempts || 0))
+  );
+
+  return Number((base * 2 ** attempts).toFixed(2));
 }
 
 function contractProfit(contract) {
@@ -343,7 +353,7 @@ export default function QuantumAIBot() {
     maxNoise: 66,
     maxReversalRisk: 60,
     maxOpenTrades: 2,
-    marketSwitchSeconds: 7,
+    marketSwitchSeconds: 5,
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
@@ -357,15 +367,15 @@ export default function QuantumAIBot() {
     maxRecoveryAttempts: 2,
     recoveryConfidenceBonus: 6,
     recoveryCooldownSeconds: 30,
-    recoveryStakeMultiplier: 1,
-    scanCycleSeconds: 60,
-    fastLaneSeconds: 20,
-    balancedLaneSeconds: 40,
+    recoveryStakeMultiplier: 2,
+    scanCycleSeconds: 30,
+    fastLaneSeconds: 12,
+    balancedLaneSeconds: 24,
     fastConfidence: 68,
     balancedConfidence: 70,
     selectiveConfidence: 72,
-    entryQueueTicks: 2,
-    minimumVoteConsensus: 56,
+    entryQueueTicks: 1,
+    minimumVoteConsensus: 52,
     maximumFastNoise: 72,
     maximumFastReversal: 68,
     starvationStartSeconds: 35,
@@ -778,7 +788,7 @@ export default function QuantumAIBot() {
       ready,
       reason,
       candidate,
-      lastLossDirection: last?.result === "LOST" ? last.direction : "â€”",
+      lastLossDirection: last?.result === "LOST" ? last.direction : "—",
       sameDirectionLossStreak,
       marketLossStreak,
       sessionLossStreak,
@@ -1326,28 +1336,21 @@ export default function QuantumAIBot() {
 
         const tradeRequest = Promise.resolve(
           placeTrade({
-            contractType: direction === "RISE" ? "CALL" : "PUT",
-            amount: Math.max(
-              0.35,
-              Number(settings.stake || 0.35) *
-                clampNumber(
-                  recovery.active
-                    ? Number(
-                        settings.recoveryStakeMultiplier ||
-                          1
-                      )
-                    : 1,
-                  0.5,
-                  1.15
+            contractType:
+              direction === "RISE" ? "CALL" : "PUT",
+            amount: recovery.active
+              ? recoveryStakeAmount(
+                  settings.stake,
+                  recovery.attempts
                 )
-            ),
+              : Math.max(
+                  0.35,
+                  Number(settings.stake || 0.35)
+                ),
             basis: "stake",
-            duration: analysis.duration,
-          durationUnit: analysis.durationUnit || "s",
-          displayDuration:
-            analysis.displayDuration ||
-            `${analysis.duration}${analysis.durationUnit === "t" ? " ticks" : "s"}`,
-            durationUnit: "s",
+            duration: Number(analysis.duration || 5),
+            durationUnit:
+              analysis.durationUnit === "t" ? "t" : "s",
             symbol,
           })
         );
@@ -1385,7 +1388,19 @@ export default function QuantumAIBot() {
           displayDuration:
             analysis.displayDuration ||
             `${analysis.duration}${analysis.durationUnit === "t" ? " ticks" : "s"}`,
-          stake: Number(settings.stake || 0.35),
+          stake: recovery.active
+            ? recoveryStakeAmount(
+                settings.stake,
+                recovery.attempts
+              )
+            : Number(settings.stake || 0.35),
+          baseStake: Number(settings.stake || 0.35),
+          recoveryMultiplier: recovery.active
+            ? 2 ** Math.min(
+                2,
+                Number(recovery.attempts || 0)
+              )
+            : 1,
           entryPrice: currentPrice,
           entrySnapshot: {
             decision: analysis.decision,
@@ -1483,7 +1498,7 @@ export default function QuantumAIBot() {
     setEntryQueue({ key: "", ticks: 0 });
     setRunning(true);
     setMessage(
-      "V13 fast scanner started: 7-second market rotation, 60-second ranking cycle and two-tick entry queue."
+      "V14 scanner started: 5-second market rotation, 30-second ranking cycle and one-tick qualified entry queue."
     );
   }
 
@@ -1507,13 +1522,16 @@ export default function QuantumAIBot() {
       "Session reset. Learned market memory has been preserved."
     );
   }
-return (
+
+
+
+  return (
     <div className="appShell quantumShell">
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
           title="MetaBinary Quantum AI V14"
-          subtitle="Adaptive confidence Â· top-market ranking Â· starvation recovery"
+          subtitle="Adaptive confidence · top-market ranking · starvation recovery"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1531,7 +1549,7 @@ return (
             </p>
           </div>
           <div className="quantumHeroStatus">
-            <span>{running ? "Ã¢â€”Â LIVE" : "Ã¢â€”â€¹ IDLE"}</span>
+            <span>{running ? "● LIVE" : "○ IDLE"}</span>
             <strong>{running ? (analysis.ready ? "ENTRY READY" : "SCANNING") : "STOPPED"}</strong>
           </div>
         </section>
@@ -1621,8 +1639,8 @@ return (
                   <strong>{item.label}</strong>
                   <b>{Number(item.score || 0).toFixed(1)}</b>
                   <small>
-                    C {Number(item.confidence || 0).toFixed(1)} Â·
-                    V {Number(item.votes || 0).toFixed(0)} Â·
+                    C {Number(item.confidence || 0).toFixed(1)} ·
+                    V {Number(item.votes || 0).toFixed(0)} ·
                     N {Number(item.noise || 0).toFixed(0)}
                   </small>
                 </article>
@@ -1708,7 +1726,7 @@ return (
               <span>Learned confidence</span>
               <strong>{learnedConfidence.toFixed(1)}%</strong>
             </article>
-            <article><span>Candidate</span><strong>{analysis.candidate || "Ã¢â‚¬â€"}</strong></article>
+            <article><span>Candidate</span><strong>{analysis.candidate || "—"}</strong></article>
             <article>
               <span>Smart duration</span>
               <strong>
@@ -1733,7 +1751,7 @@ return (
             ["Recovery attempts", "maxRecoveryAttempts", 0, 2, 1],
             ["Recovery +conf", "recoveryConfidenceBonus", 0, 20, 1],
             ["Recovery cooldown", "recoveryCooldownSeconds", 5, 180, 1],
-            ["Recovery stake x", "recoveryStakeMultiplier", 0.5, 1.15, 0.05],
+            ["Recovery stake x", "recoveryStakeMultiplier", 1, 2, 0.25],
             ["Learn after", "learningMinimumTrades", 1, 50, 1],
             ["Learning cap", "learningMaxAdjustment", 0, 12, 1],
             ["Scan cycle sec", "scanCycleSeconds", 30, 180, 5],
@@ -1776,7 +1794,7 @@ return (
           <article><span>Volatility</span><strong>{analysis.volatility.toFixed(0)}%</strong></article>
           <article><span>Consistency</span><strong>{analysis.consistency.toFixed(0)}%</strong></article>
           <article><span>Reversal risk</span><strong>{analysis.reversalRisk.toFixed(0)}%</strong></article>
-          <article><span>Price</span><strong>{currentPrice ?? "Ã¢â‚¬â€"}</strong></article>
+          <article><span>Price</span><strong>{currentPrice ?? "—"}</strong></article>
         </section>
 
         <section className="quantumToolsPanel">
@@ -1790,13 +1808,13 @@ return (
 
           <div className="quantumToolGrid">
             {[
-              ["RSI 14", analysis.metrics?.rsi?.toFixed?.(1) ?? "Ã¢â‚¬â€"],
-              ["EMA 6", analysis.metrics?.fastEma?.toFixed?.(5) ?? "Ã¢â‚¬â€"],
-              ["EMA 14", analysis.metrics?.mediumEma?.toFixed?.(5) ?? "Ã¢â‚¬â€"],
-              ["EMA 30", analysis.metrics?.slowEma?.toFixed?.(5) ?? "Ã¢â‚¬â€"],
-              ["Fast slope", analysis.metrics?.fastSlope?.toFixed?.(6) ?? "Ã¢â‚¬â€"],
-              ["Medium slope", analysis.metrics?.mediumSlope?.toFixed?.(6) ?? "Ã¢â‚¬â€"],
-              ["Slow slope", analysis.metrics?.slowSlope?.toFixed?.(6) ?? "Ã¢â‚¬â€"],
+              ["RSI 14", analysis.metrics?.rsi?.toFixed?.(1) ?? "—"],
+              ["EMA 6", analysis.metrics?.fastEma?.toFixed?.(5) ?? "—"],
+              ["EMA 14", analysis.metrics?.mediumEma?.toFixed?.(5) ?? "—"],
+              ["EMA 30", analysis.metrics?.slowEma?.toFixed?.(5) ?? "—"],
+              ["Fast slope", analysis.metrics?.fastSlope?.toFixed?.(6) ?? "—"],
+              ["Medium slope", analysis.metrics?.mediumSlope?.toFixed?.(6) ?? "—"],
+              ["Slow slope", analysis.metrics?.slowSlope?.toFixed?.(6) ?? "—"],
               ["Impulse", `${Number(analysis.metrics?.impulse || 0).toFixed(0)}%`],
               ["Trend strength", `${Number(analysis.metrics?.trendStrength || 0).toFixed(0)}%`],
               ["Vote consensus", `${Number(analysis.metrics?.voteConsensus || 0).toFixed(0)}%`],
@@ -1847,7 +1865,7 @@ return (
             <article>
               <span>Market + side</span>
               <strong>
-                {symbol || "â€”"} Â· {currentCandidate}
+                {symbol || "—"} · {currentCandidate}
               </strong>
             </article>
             <article>
@@ -1885,6 +1903,30 @@ return (
                 {recovery.previousLoss?.cause?.code ||
                   currentLearning.lastCause?.code ||
                   "NONE"}
+              </strong>
+            </article>
+            <article>
+              <span>Next stake</span>
+              <strong>
+                {recovery.active
+                  ? `${recoveryStakeAmount(
+                      settings.stake,
+                      recovery.attempts
+                    ).toFixed(2)} USD`
+                  : `${Number(
+                      settings.stake || 0.35
+                    ).toFixed(2)} USD`}
+              </strong>
+            </article>
+            <article>
+              <span>Recovery multiplier</span>
+              <strong>
+                {recovery.active
+                  ? `X${2 ** Math.min(
+                      2,
+                      Number(recovery.attempts || 0)
+                    )}`
+                  : "BASE"}
               </strong>
             </article>
           </div>
@@ -1989,7 +2031,7 @@ return (
                     {trade.recoveryTrade
                       ? `RECOVERY ${trade.recoveryAttempt}`
                       : "NORMAL"}{" "}
-                    Â· {trade.direction}
+                    · {trade.direction}
                   </span>
                 </div>
                 <div>
@@ -2005,15 +2047,15 @@ return (
                     {Number(
                       trade.entrySnapshot?.voteConsensus || 0
                     ).toFixed(0)}
-                    % Â· N{" "}
+                    % · N{" "}
                     {Number(
                       trade.entrySnapshot?.noiseScore || 0
                     ).toFixed(0)}
-                    % Â· R{" "}
+                    % · R{" "}
                     {Number(
                       trade.entrySnapshot?.reversalRisk || 0
                     ).toFixed(0)}
-                    % Â· G{" "}
+                    % · G{" "}
                     {Number(
                       trade.entrySnapshot?.adaptiveGate || 0
                     ).toFixed(0)}
@@ -2055,7 +2097,6 @@ return (
     </div>
   );
 }
-
 
 
 
