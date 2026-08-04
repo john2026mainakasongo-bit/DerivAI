@@ -438,13 +438,55 @@ export function analyzeHigherHigh(prices = [], options = {}) {
     )
   );
 
+  const learnedWeights =
+    options.learningWeights &&
+    typeof options.learningWeights === "object"
+      ? options.learningWeights
+      : {};
+
+  const weightTrend = clamp(
+    Number(learnedWeights.trend ?? 1),
+    0.72,
+    1.28
+  );
+  const weightMomentum = clamp(
+    Number(learnedWeights.momentum ?? 1),
+    0.72,
+    1.28
+  );
+  const weightVolatility = clamp(
+    Number(learnedWeights.volatility ?? 1),
+    0.72,
+    1.28
+  );
+  const weightPattern = clamp(
+    Number(learnedWeights.pattern ?? 1),
+    0.72,
+    1.28
+  );
+  const weightTransition = clamp(
+    Number(learnedWeights.transition ?? 1),
+    0.72,
+    1.28
+  );
+
+  const weightedTotal =
+    0.28 * weightTrend +
+    0.24 * weightMomentum +
+    0.16 * weightVolatility +
+    0.20 * weightPattern +
+    0.12 * weightTransition;
+
   const confidence = Math.round(
     clamp(
-      trendScore * 0.28 +
-        momentumScore * 0.24 +
-        volatilityScore * 0.16 +
-        patternScore * 0.20 +
-        transitionScore * 0.12 -
+      (
+        trendScore * 0.28 * weightTrend +
+        momentumScore * 0.24 * weightMomentum +
+        volatilityScore * 0.16 * weightVolatility +
+        patternScore * 0.20 * weightPattern +
+        transitionScore * 0.12 * weightTransition
+      ) /
+        Math.max(weightedTotal, Number.EPSILON) -
         riskPenalty,
       0,
       100
@@ -588,6 +630,13 @@ export function analyzeHigherHigh(prices = [], options = {}) {
       minimumVoteScore,
       minimumProbability,
       hardRiskBlock,
+      learningWeights: {
+        trend: weightTrend,
+        momentum: weightMomentum,
+        volatility: weightVolatility,
+        pattern: weightPattern,
+        transition: weightTransition,
+      },
     },
   };
 }

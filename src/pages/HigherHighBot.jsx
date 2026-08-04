@@ -175,7 +175,7 @@ export default function HigherHighBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "Higher High AI PRO V6 is ready."
+    "Higher High AI PRO V7 is ready."
   );
 
   const [settings, setSettings] = useState({
@@ -203,6 +203,10 @@ export default function HigherHighBot() {
     fallbackProbability: 51,
     fallbackMinimumVotes: 2,
     maximumMarketsPerCycle: 6,
+    finalConfirmationSeconds: 12,
+    learningEnabled: true,
+    learningRate: 0.04,
+    learningMinimumTrades: 8,
     recoveryEnabled: true,
     recoveryConfidenceBonus: 6,
     recoveryProbabilityMinimum: 60,
@@ -227,6 +231,48 @@ export default function HigherHighBot() {
     visited: [],
     candidates: {},
     deadlineStopped: false,
+    finalCandidate: null,
+    finalCandidateStartedAt: 0,
+  });
+
+  const [learningModel, setLearningModel] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(
+        "higherHighV7LearningModel"
+      );
+
+      if (saved) {
+        const parsed = JSON.parse(saved);
+
+        return {
+          trades: Number(parsed.trades || 0),
+          wins: Number(parsed.wins || 0),
+          losses: Number(parsed.losses || 0),
+          weights: {
+            trend: Number(parsed.weights?.trend || 1),
+            momentum: Number(parsed.weights?.momentum || 1),
+            volatility: Number(parsed.weights?.volatility || 1),
+            pattern: Number(parsed.weights?.pattern || 1),
+            transition: Number(parsed.weights?.transition || 1),
+          },
+        };
+      }
+    } catch {
+      // Ignore invalid stored data.
+    }
+
+    return {
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      weights: {
+        trend: 1,
+        momentum: 1,
+        volatility: 1,
+        pattern: 1,
+        transition: 1,
+      },
+    };
   });
 
   const buyingRef = useRef(false);
@@ -236,12 +282,37 @@ export default function HigherHighBot() {
   const blockedMarketsRef = useRef(new Map());
   const deadlineHandledRef = useRef(false);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "higherHighV7LearningModel",
+        JSON.stringify(learningModel)
+      );
+    } catch {
+      // Storage may be unavailable in private browsing.
+    }
+  }, [learningModel]);
+
   const connecting =
     status === "CONNECTING" || loadingMarket;
 
   const analysis = useMemo(
-    () => analyzeHigherHigh(prices, settings),
-    [prices, settings]
+    () =>
+      analyzeHigherHigh(prices, {
+        ...settings,
+        learningWeights:
+          settings.learningEnabled &&
+          learningModel.trades >=
+            Number(settings.learningMinimumTrades)
+            ? learningModel.weights
+            : null,
+      }),
+    [
+      prices,
+      settings,
+      learningModel.trades,
+      learningModel.weights,
+    ]
   );
 
   const requiredHoldTicks = recovery.active
@@ -286,9 +357,14 @@ export default function HigherHighBot() {
     analysis.ready ||
     (fallbackWindow && fallbackSafe);
 
+  const finalCandidateMatches =
+    !scanCycle.finalCandidate ||
+    scanCycle.finalCandidate.symbol === symbol;
+
   const confirmedReady =
     entrySignalReady &&
     recoveryQualified &&
+    finalCandidateMatches &&
     readyStreak >= requiredHoldTicks;
 
   useEffect(() => {
@@ -415,6 +491,56 @@ export default function HigherHighBot() {
         settledAt: Date.now(),
       });
 
+      if (settings.learningEnabled) {
+        const snapshot = original.entrySnapshot || {};
+        const won = result === "WON";
+        const direction = won ? 1 : -1;
+        const rate = Math.max(
+          0.005,
+          Math.min(0.12, Number(settings.learningRate))
+        );
+
+        const normalize = (value) =>
+          Math.max(0, Math.min(1, Number(value || 0) / 100));
+
+        const contributions = {
+          trend: normalize(snapshot.trendScore),
+          momentum: normalize(snapshot.momentumScore),
+          volatility: normalize(snapshot.volatilityScore),
+          pattern: normalize(snapshot.patternScore),
+          transition: normalize(snapshot.transitionScore),
+        };
+
+        setLearningModel((current) => {
+          const nextWeights = { ...current.weights };
+
+          Object.entries(contributions).forEach(
+            ([key, contribution]) => {
+              const adjustment =
+                direction *
+                rate *
+                Math.max(0.15, contribution);
+
+              nextWeights[key] = Math.max(
+                0.72,
+                Math.min(
+                  1.28,
+                  Number(nextWeights[key] || 1) +
+                    adjustment
+                )
+              );
+            }
+          );
+
+          return {
+            trades: current.trades + 1,
+            wins: current.wins + (won ? 1 : 0),
+            losses: current.losses + (won ? 0 : 1),
+            weights: nextWeights,
+          };
+        });
+      }
+
       if (result === "LOST") {
         const lossCause = classifyLoss(original);
         updates[updates.length - 1].lossCause = lossCause;
@@ -502,6 +628,8 @@ export default function HigherHighBot() {
     settings.maximumRecoveryAttempts,
     recovery.active,
     recovery.attempts,
+    settings.learningEnabled,
+    settings.learningRate,
   ]);
 
   useEffect(() => {
@@ -556,7 +684,8 @@ export default function HigherHighBot() {
       !running ||
       !forceMarketSwitch ||
       activeTrades.length ||
-      markets.length < 2
+      markets.length < 2 ||
+      scanCycle.finalCandidate
     ) {
       return;
     }
@@ -631,7 +760,7 @@ export default function HigherHighBot() {
         scanStartedAtRef.current = Date.now();
         setReadyStreak(0);
         setMessage(
-          `No V6 two-minute scan setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
+          `No V7 hard two-minute cycle setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
         );
         void changeSymbol(next.id);
       }
@@ -650,45 +779,92 @@ export default function HigherHighBot() {
     settings.maximumMarketsPerCycle,
     settings.fallbackStartSeconds,
     scanCycle.visited.length,
+    scanCycle.finalCandidate,
     elapsedScanSeconds,
     changeSymbol,
   ]);
 
   useEffect(() => {
-    if (!running || deadlineHandledRef.current) return;
+    if (!running) return;
 
     const timer = window.setInterval(() => {
+      const now = Date.now();
       const elapsed =
-        (Date.now() - Number(scanCycle.startedAt || Date.now())) / 1000;
+        (now - Number(scanCycle.startedAt || now)) / 1000;
 
-      if (elapsed < Number(settings.maximumWaitSeconds)) return;
+      const finalCandidate = scanCycle.finalCandidate;
+      const finalElapsed = finalCandidate
+        ? (now -
+            Number(scanCycle.finalCandidateStartedAt || now)) /
+          1000
+        : 0;
 
-      deadlineHandledRef.current = true;
+      if (
+        finalCandidate &&
+        finalElapsed >=
+          Number(settings.finalConfirmationSeconds)
+      ) {
+        setRunning(false);
+        setReadyStreak(0);
+        setScanCycle((current) => ({
+          ...current,
+          deadlineStopped: true,
+        }));
+        setMessage(
+          `Final candidate ${finalCandidate.label} failed live confirmation within ${settings.finalConfirmationSeconds}s. Bot stopped safely.`
+        );
+        return;
+      }
 
-      const candidates = Object.values(scanCycle.candidates || {})
+      if (
+        elapsed < Number(settings.maximumWaitSeconds) ||
+        finalCandidate
+      ) {
+        return;
+      }
+
+      const candidates = Object.values(
+        scanCycle.candidates || {}
+      )
         .filter(
           (item) =>
             !item.hardRiskBlock &&
             item.momentum3 > 0 &&
             item.momentum5 > 0 &&
-            item.structure
+            item.structure &&
+            now - Number(item.updatedAt || 0) <= 45000
         )
         .sort(
           (a, b) =>
-            (b.score + b.probability + b.votes * 4) -
-            (a.score + a.probability + a.votes * 4)
+            b.score +
+              b.probability +
+              b.votes * 4 -
+            (a.score +
+              a.probability +
+              a.votes * 4)
         );
 
       const best = candidates[0];
 
       if (
         best &&
-        best.score >= Number(settings.fallbackVoteScore) &&
-        best.probability >= Number(settings.fallbackProbability) &&
-        best.votes >= Number(settings.fallbackMinimumVotes)
+        best.score >=
+          Number(settings.fallbackVoteScore) &&
+        best.probability >=
+          Number(settings.fallbackProbability) &&
+        best.votes >=
+          Number(settings.fallbackMinimumVotes)
       ) {
+        deadlineHandledRef.current = true;
+
+        setScanCycle((current) => ({
+          ...current,
+          finalCandidate: best,
+          finalCandidateStartedAt: Date.now(),
+        }));
+
         setMessage(
-          `Two-minute limit reached. Returning to best safe candidate ${best.label} (${best.score}% score, ${best.probability}% probability).`
+          `Two-minute deadline reached. Final live confirmation on ${best.label}: ${best.score}% score, ${best.probability}% probability.`
         );
 
         if (best.symbol !== symbol) {
@@ -696,34 +872,28 @@ export default function HigherHighBot() {
           setReadyStreak(0);
           void changeSymbol(best.symbol);
         }
-
-        // Let the normal fallback gate confirm on the selected live market.
-        deadlineHandledRef.current = false;
-        setScanCycle((current) => ({
-          ...current,
-          startedAt:
-            Date.now() -
-            Number(settings.fallbackStartSeconds) * 1000,
-        }));
       } else {
         setRunning(false);
+        setReadyStreak(0);
         setScanCycle((current) => ({
           ...current,
           deadlineStopped: true,
         }));
         setMessage(
-          "Two-minute limit reached, but no market passed the safety floor. Bot stopped instead of forcing a risky trade."
+          "Two-minute deadline reached. No recent market passed the safety floor, so the bot stopped without forcing a trade."
         );
       }
-    }, 500);
+    }, 400);
 
     return () => window.clearInterval(timer);
   }, [
     running,
     scanCycle.startedAt,
     scanCycle.candidates,
+    scanCycle.finalCandidate,
+    scanCycle.finalCandidateStartedAt,
     settings.maximumWaitSeconds,
-    settings.fallbackStartSeconds,
+    settings.finalConfirmationSeconds,
     settings.fallbackVoteScore,
     settings.fallbackProbability,
     settings.fallbackMinimumVotes,
@@ -854,6 +1024,12 @@ export default function HigherHighBot() {
               metrics.momentum12 || 0
             ),
             spikeRatio: Number(metrics.spikeRatio || 0),
+            trendScore: Number(metrics.trendScore || 0),
+            momentumScore: Number(metrics.momentumScore || 0),
+            volatilityScore: Number(metrics.volatilityScore || 0),
+            patternScore: Number(metrics.patternScore || 0),
+            transitionScore: Number(metrics.transitionScore || 0),
+            learnedWeights: { ...learningModel.weights },
           },
         };
 
@@ -865,6 +1041,8 @@ export default function HigherHighBot() {
           visited: [symbol],
           candidates: {},
           deadlineStopped: false,
+          finalCandidate: null,
+          finalCandidateStartedAt: 0,
         });
         deadlineHandledRef.current = false;
         setStats((current) => ({
@@ -927,6 +1105,8 @@ export default function HigherHighBot() {
       visited: symbol ? [symbol] : [],
       candidates: {},
       deadlineStopped: false,
+      finalCandidate: null,
+      finalCandidateStartedAt: 0,
     });
     setReadyStreak(0);
     setRunning(true);
@@ -950,8 +1130,8 @@ export default function HigherHighBot() {
 
       <main className="mainContent hhPage">
         <Topbar
-          title="Higher High AI PRO V6"
-          subtitle="Two-minute market scan · best-safe setup · AI voting · CALL execution"
+          title="Higher High AI PRO V7"
+          subtitle="Hard 2-minute cycle · adaptive learning · best-safe setup · CALL execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -965,10 +1145,10 @@ export default function HigherHighBot() {
         >
           <div>
             <small>STRICT CONFIRMATION BOT</small>
-            <h1>Higher High AI PRO V6</h1>
+            <h1>Higher High AI PRO V7</h1>
             <p>
-              Scans several markets inside a two-minute session window, remembers the
-              strongest safe candidate and never forces a trade through a hard risk block.
+              Scans several markets for a hard two-minute cycle, learns from settled
+              entries and stops if the final live candidate cannot confirm.
             </p>
           </div>
 
@@ -1107,7 +1287,11 @@ export default function HigherHighBot() {
             <article>
               <span>Entry mode</span>
               <strong>
-                {fallbackWindow ? "FALLBACK SAFE" : "NORMAL"}
+                {scanCycle.finalCandidate
+                  ? "FINAL CONFIRM"
+                  : fallbackWindow
+                  ? "FALLBACK SAFE"
+                  : "NORMAL"}
               </strong>
             </article>
 
@@ -1117,6 +1301,28 @@ export default function HigherHighBot() {
                 {recovery.active
                   ? `ACTIVE ${recovery.attempts}/${settings.maximumRecoveryAttempts}`
                   : "OFF"}
+              </strong>
+            </article>
+
+            <article>
+              <span>Learning</span>
+              <strong>
+                {settings.learningEnabled
+                  ? `${learningModel.trades} trades`
+                  : "OFF"}
+              </strong>
+            </article>
+
+            <article>
+              <span>Model rate</span>
+              <strong>
+                {learningModel.trades
+                  ? `${(
+                      (learningModel.wins /
+                        learningModel.trades) *
+                      100
+                    ).toFixed(1)}%`
+                  : "0.0%"}
               </strong>
             </article>
 
@@ -1159,6 +1365,9 @@ export default function HigherHighBot() {
             ["Fallback prob", "fallbackProbability", 1],
             ["Fallback votes", "fallbackMinimumVotes", 1],
             ["Markets/cycle", "maximumMarketsPerCycle", 1],
+            ["Final confirm sec", "finalConfirmationSeconds", 1],
+            ["Learning rate", "learningRate", 0.01],
+            ["Learn after", "learningMinimumTrades", 1],
           ].map(([label, key, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -1316,6 +1525,29 @@ export default function HigherHighBot() {
           <article>
             <span>Votes passed</span>
             <strong>{metrics.votePasses || 0}/5</strong>
+          </article>
+        </section>
+
+        <section className="hhLearning">
+          <article>
+            <span>Trend weight</span>
+            <strong>{Number(learningModel.weights.trend).toFixed(2)}</strong>
+          </article>
+          <article>
+            <span>Momentum weight</span>
+            <strong>{Number(learningModel.weights.momentum).toFixed(2)}</strong>
+          </article>
+          <article>
+            <span>Volatility weight</span>
+            <strong>{Number(learningModel.weights.volatility).toFixed(2)}</strong>
+          </article>
+          <article>
+            <span>Pattern weight</span>
+            <strong>{Number(learningModel.weights.pattern).toFixed(2)}</strong>
+          </article>
+          <article>
+            <span>Transition weight</span>
+            <strong>{Number(learningModel.weights.transition).toFixed(2)}</strong>
           </article>
         </section>
 
