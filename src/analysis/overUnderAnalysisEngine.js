@@ -143,7 +143,9 @@ export function analyzeOverUnder(prices = []) {
           ? 5
           : 0;
 
-      const baseline = naturalProbability(barrier, side);
+      const baseline = (String(side || "").toUpperCase() === "OVER"
+    ? ((9 - Math.max(0, Math.min(9, Number(barrier) || 0))) / 10) * 100
+    : (Math.max(0, Math.min(9, Number(barrier) || 0)) / 10) * 100);
       const probabilityEdge = probability - baseline;
       const transitionEdge = transitionScore - baseline;
 
