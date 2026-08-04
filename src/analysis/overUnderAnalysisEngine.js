@@ -143,14 +143,26 @@ export function analyzeOverUnder(prices = []) {
           ? 5
           : 0;
 
+      const baseline = naturalProbability(barrier, side);
+      const probabilityEdge = probability - baseline;
+      const transitionEdge = transitionScore - baseline;
+
+      // Raw probability always favors OVER 1 / UNDER 7.
+      // Score only the observed edge above the contract's natural baseline.
       const score = clamp(
-        probability * 0.48 +
-        transition * 0.24 +
-        (100 - exactRisk) * 0.18 +
-        safeBarrierBonus +
-        rowBonus -
-        Math.max(0, entropyScore - 92) * 0.5
+        50 +
+          probabilityEdge * 2.8 +
+          transitionEdge * 0.9 -
+          exactRisk * 0.35 -
+          Math.max(0, entropyScore - 88) * 1.4
       );
+
+      const autoEligible =
+        barrier >= 2 &&
+        barrier <= 6 &&
+        probabilityEdge >= 2.5 &&
+        transitionEdge >= 1.5 &&
+        exactRisk <= 14;
 
       candidates.push({
         side,

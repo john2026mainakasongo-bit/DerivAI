@@ -256,7 +256,7 @@ export default function OverUnderAnalysis() {
 
     setV89FreshTicks(0);
     waitRef.current = Date.now();
-    nextEntryAtRef.current = Date.now() + 1200;
+    nextEntryAtRef.current = Date.now() + 5000;
     setMessage("Settlement received. Full OVER/UNDER re-scan started.");
   }, [trades]);
 
@@ -268,9 +268,10 @@ export default function OverUnderAnalysis() {
     const ranked = rawCandidates
       .filter((candidate) =>
         candidate &&
+        candidate.autoEligible !== false &&
         ["OVER", "UNDER"].includes(String(candidate.side || "").toUpperCase()) &&
-        Number(candidate.barrier) >= 1 &&
-        Number(candidate.barrier) <= 7
+        Number(candidate.barrier) >= 2 &&
+        Number(candidate.barrier) <= 6
       )
       .map((candidate) => {
         const key = `${String(candidate.side).toUpperCase()} ${Number(candidate.barrier)}`;
@@ -299,15 +300,16 @@ export default function OverUnderAnalysis() {
             ? Math.max(-8, Math.min(8, (learnedWinRate - 50) * 0.16))
             : 0;
 
-        const repeatPenalty =
-          v89LastContractRef.current === key ? 10 : 0;
+        const repeatPenalty = v89LastContractRef.current === key ? 24 : 0;
+
+        const edge = Number(candidate.probabilityEdge || 0);
+        const transitionEdge = Number(candidate.transitionEdge || 0);
 
         const finalScore =
-          transition * 0.30 +
-          probability * 0.25 +
-          (100 - exactRisk) * 0.15 +
-          baseScore * 0.20 +
-          (50 + historicalWeight * 6.25) * 0.10 -
+          baseScore * 0.45 +
+          Math.max(0, edge) * 3.2 +
+          Math.max(0, transitionEdge) * 1.1 +
+          Math.min(6, historicalWeight) -
           repeatPenalty;
 
         return {
@@ -333,12 +335,13 @@ export default function OverUnderAnalysis() {
     };
 
     const qualified =
-      Number(analysis.total || 0) >= 60 &&
-      Number(best.finalScore || 0) >= 69 &&
-      Number(best.probability || 0) >= 68 &&
-      Number(best.transitionScore || 0) >= 48 &&
-      Number(best.exactRisk || 100) <= 18 &&
-      v89FreshTicks >= 2;
+      Number(analysis.total || 0) >= 120 &&
+      Number(best.finalScore || 0) >= 67 &&
+      Number(best.probabilityEdge || 0) >= 2.5 &&
+      Number(best.transitionEdge || 0) >= 1.5 &&
+      Number(best.exactRisk || 100) <= 14 &&
+      best.key !== v89LastContractRef.current &&
+      v89FreshTicks >= 5;
 
     return {
       ...analysis,
@@ -353,7 +356,7 @@ export default function OverUnderAnalysis() {
       reason: qualified
         ? `${best.key} leads all current contracts with score ${best.finalScore.toFixed(1)}.`
         : v89FreshTicks < 2
-          ? "Waiting for two fresh ticks after settlement."
+          ? "Waiting for five fresh ticks after settlement."
           : "Ranking every OVER and UNDER barrier before the next entry.",
     };
   }, [analysis, v89StrategyMemory, v89FreshTicks]);
@@ -509,8 +512,8 @@ export default function OverUnderAnalysis() {
       return;
     }
 
-    if (lossRef.current >= 3) {
-      stopAuto("Hard stop: 3 consecutive losses.");
+    if (lossRef.current >= 2) {
+      stopAuto("Hard stop: 2 consecutive losses.");
       return;
     }
 
@@ -550,7 +553,7 @@ export default function OverUnderAnalysis() {
       lastContractRef.current = `${side}-${barrier}`;
       v89LastContractRef.current = `${String(side).toUpperCase()} ${Number(barrier)}`;
       setMessage(`${source}: ${side} ${barrier} opened. Next trade requires a fresh full scan.`);
-      nextEntryAtRef.current = Date.now() + 1500;
+      nextEntryAtRef.current = Date.now() + 5000;
       waitRef.current = Date.now();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Trade failed.");
@@ -693,7 +696,7 @@ export default function OverUnderAnalysis() {
       setFreshTicksAfterSettlement(0);
       lossRef.current = 0;
       setLosses(0);
-      nextEntryAtRef.current = Date.now() + 1200;
+      nextEntryAtRef.current = Date.now() + 5000;
       waitRef.current = Date.now();
       setMessage("WIN settled. Re-scanning every OVER and UNDER setup.");
     } else if (result === "LOST") {
@@ -724,8 +727,10 @@ export default function OverUnderAnalysis() {
       nextEntryAtRef.current = Date.now() + 2500;
       waitRef.current = Date.now();
 
-      if (next >= 3 && runningRef.current) {
-        stopAuto("Hard stop: 3 consecutive losses.");
+      if (next >= 2 && runningRef.current) {
+        stopAuto("Hard stop: 2 consecutive losses.");
+      } else if (runningRef.current && autoSwitch) {
+        void switchMarket("Loss settled; testing a different volatility market.");
       }
     }
   }, [openContracts]);
@@ -736,8 +741,8 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V89 · Adaptive Compact Pro"
-          subtitle="Full OVER/UNDER ranking · fresh scan after every settlement · compact no-page-scroll workspace"
+          title="EdgePilot V91 · EV-Balanced Scanner"
+          subtitle="Baseline-corrected OVER/UNDER ranking · five fresh ticks after settlement · loss market rotation"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -807,7 +812,7 @@ export default function OverUnderAnalysis() {
             <label><span>Auto switch</span><select value={autoSwitch ? "ON" : "OFF"} onChange={(event) => setAutoSwitch(event.target.value === "ON")}><option>ON</option><option>OFF</option></select></label>
             <label><span>Switch after</span><input type="number" inputMode="numeric" min="5" max="60" value={switchAfterSeconds} onChange={(event) => setSwitchAfterSeconds(event.target.value)} /></label>
             <div><span>Runs</span><strong>{runs}</strong></div>
-            <div><span>Loss streak</span><strong>{losses}/3</strong></div>
+            <div><span>Loss streak</span><strong>{losses}/2</strong></div>
             <div><span>Markets</span><strong>{switches + 1}</strong></div>
             <label className="ouRealToggle"><span>Real execution</span><input type="checkbox" checked={allowReal} disabled={currentType === "demo"} onChange={(event) => setAllowReal(event.target.checked)} /></label>
           </div>
@@ -904,9 +909,10 @@ export default function OverUnderAnalysis() {
                 <strong>{candidate.key}</strong>
                 <span>{Number(candidate.finalScore || 0).toFixed(1)}</span>
                 <small>
-                  P {Number(candidate.probability || 0).toFixed(0)} ·
-                  T {Number(candidate.transitionScore || 0).toFixed(0)} ·
-                  R {Number(candidate.exactRisk || 0).toFixed(0)}
+                  P ${Number(candidate.probability || 0).toFixed(0)} ·
+                  EDGE ${Number(candidate.probabilityEdge || 0).toFixed(1)} ·
+                  T-EDGE ${Number(candidate.transitionEdge || 0).toFixed(1)} ·
+                  R ${Number(candidate.exactRisk || 0).toFixed(0)}
                 </small>
               </div>
             ))}
@@ -916,7 +922,7 @@ export default function OverUnderAnalysis() {
               <small>ADAPTIVE MEMORY</small>
               <h2>Last 5 settled runs</h2>
             </div>
-            <strong>{settledRuns.length}/5 learned</strong>
+            <strong>{Object.values(v89StrategyMemory).reduce((sum, item) => sum + Number(item.wins || 0) + Number(item.losses || 0), 0)} learned</strong>
           </div>
           <div className="ouAdaptiveRuns">
             {settledRuns.map((run, index) => (
