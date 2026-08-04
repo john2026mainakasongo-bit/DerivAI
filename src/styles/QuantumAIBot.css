@@ -325,27 +325,115 @@ html:has(.quantumShell),
   }
 }
 
-/* V12 Five-AI Trading chart */
-.quantumTradingChart{margin-top:10px;padding:12px;border:1px solid #175b73;border-radius:12px;background:#061f31}
-.quantumTradingChart>header,.quantumTradingChart>footer{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.quantumChartControls{display:flex;gap:6px}.quantumChartControls button{min-height:34px;padding:0 10px;border:1px solid #1c566d;border-radius:8px;background:#041925;color:#9bc1d1}.quantumChartControls button.active{border-color:#2ddfb4;color:#2ddfb4}
-.quantumFiveAI{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin-top:9px}.quantumFiveAI article{padding:8px;border:1px solid #184b61;border-radius:8px;background:#041925}.quantumFiveAI article.rise{border-color:#199a78}.quantumFiveAI article.fall{border-color:#a54157}.quantumFiveAI article strong,.quantumFiveAI article b,.quantumFiveAI article small{display:block;margin-top:3px}
-.quantumChartCanvas{height:290px;margin-top:9px;border:1px solid #153f52;border-radius:9px;overflow:hidden;background:#03141f}.quantumChartCanvas svg{width:100%;height:100%}.quantumChartGrid{stroke:#12364a;stroke-width:1}.quantumCandle line,.quantumCandle rect{stroke-width:1.2}.quantumCandle.rise line,.quantumCandle.rise rect{stroke:#25d7a9;fill:#25d7a9}.quantumCandle.fall line,.quantumCandle.fall rect{stroke:#ef5872;fill:#ef5872}.quantumTradingChart>footer{margin-top:8px}
-@media(max-width:900px){.quantumFiveAI{grid-template-columns:repeat(2,minmax(0,1fr))}.quantumTradingChart>header,.quantumTradingChart>footer{align-items:flex-start;flex-direction:column}}
 
-/* V17 score-engine tools */
-.quantumToolGrid {
-  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+/* QUANTUM AI V12 — learning, diagnosis and two-step recovery */
+.quantumLearningPanel {
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid #21617a;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumLearningPanel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumLearningPanel small,
+.quantumLearningPanel span {
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.quantumLearningPanel h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumLearningPanel header > strong {
+  color: #3de1b5;
+  font-size: 11px;
+}
+
+.quantumLearningGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.quantumLearningGrid article {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumLearningGrid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.quantumLearningPanel p {
+  margin: 8px 0 0;
+  color: #e6c765;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.quantumHistoryTable .quantumAuditRow {
+  grid-template-columns:
+    minmax(130px, 1.1fr)
+    minmax(90px, .65fr)
+    minmax(175px, 1.2fr)
+    minmax(90px, .65fr)
+    minmax(220px, 1.45fr) !important;
+  align-items: start;
+  gap: 8px;
+}
+
+.quantumAuditRow > div {
+  min-width: 0;
+}
+
+.quantumAuditRow span,
+.quantumAuditRow strong,
+.quantumAuditRow b {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.quantumAuditRow span {
+  margin-top: 3px;
+  color: #85adbd;
+  font-size: 8px;
 }
 
 @media (max-width: 1100px) {
-  .quantumToolGrid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  .quantumLearningGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .quantumHistoryTable {
+    overflow-x: auto;
+  }
+
+  .quantumHistoryTable .quantumAuditRow {
+    min-width: 850px;
   }
 }
 
 @media (max-width: 760px) {
-  .quantumToolGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  .quantumLearningGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
