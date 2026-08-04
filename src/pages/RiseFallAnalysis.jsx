@@ -188,13 +188,13 @@ function buildCandles(points = [], mode = "10T") {
     .map((item, index) => normalizedTick(item, Date.now() + index))
     .filter(Boolean);
 
-  if (!prices.length) return [];
+  if (!ticks.length) return [];
 
   if (mode.endsWith("T")) {
     const tickCount = Math.max(1, Number(mode.replace("T", "")) || 10);
     const candles = [];
 
-    for (let index = 0; index < prices.length; index += tickCount) {
+    for (let index = 0; index < ticks.length; index += tickCount) {
       const group = ticks.slice(index, index + tickCount);
       if (!group.length) continue;
 
@@ -894,6 +894,9 @@ export default function RiseFallAnalysis() {
     refreshContract,
   } = useDerivTicks();
 
+  // V108.5: recovery logic uses the live price history as ticks.
+  const ticks = Array.isArray(prices) ? prices : [];
+
   const [mode, setMode] = useState("15s");
   const [feedMessage, setFeedMessage] = useState(
     "Connecting live feedâ€¦"
@@ -1395,7 +1398,7 @@ export default function RiseFallAnalysis() {
     if (!recoveryRequired || !autoRunning) return;
 
     const latestRaw =
-      (Array.isArray(prices) && prices.length ? prices.at(-1) : null) ??
+      (Array.isArray(ticks) && ticks.length ? ticks.at(-1) : null) ??
       (Array.isArray(prices) && prices.length ? prices.at(-1) : null);
 
     if (latestRaw == null) return;
@@ -1447,7 +1450,7 @@ export default function RiseFallAnalysis() {
   }, [
     recoveryRequired,
     autoRunning,
-    prices,
+    ticks,
     prices,
     symbol,
   ]);
