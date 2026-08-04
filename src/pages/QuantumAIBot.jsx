@@ -478,6 +478,261 @@ function marketDirectionProbability(
   };
 }
 
+
+function marketDna(analysis = {}, prices = []) {
+  const metrics = analysis.metrics || {};
+  const tail = Array.isArray(prices)
+    ? prices.slice(-24).map(Number).filter(Number.isFinite)
+    : [];
+
+  const changes = tail.slice(1).map(
+    (value, index) => value - tail[index]
+  );
+
+  const absolute = changes.map(Math.abs);
+  const averageMove = absolute.length
+    ? absolute.reduce((sum, value) => sum + value, 0) /
+      absolute.length
+    : 0;
+
+  const recentMove = absolute.slice(-5);
+  const recentAverage = recentMove.length
+    ? recentMove.reduce((sum, value) => sum + value, 0) /
+      recentMove.length
+    : 0;
+
+  const expansion =
+    averageMove > 0 && recentAverage > averageMove * 1.35;
+
+  const compression =
+    averageMove > 0 && recentAverage < averageMove * 0.65;
+
+  const positiveChanges = changes.filter(
+    (value) => value > 0
+  ).length;
+
+  const negativeChanges = changes.filter(
+    (value) => value < 0
+  ).length;
+
+  const directionalBias =
+    changes.length > 0
+      ? ((positiveChanges - negativeChanges) /
+          changes.length) *
+        100
+      : 0;
+
+  const noise = clampNumber(
+    Number(analysis.noiseScore || 0),
+    0,
+    100
+  );
+
+  const reversal = clampNumber(
+    Number(analysis.reversalRisk || 0),
+    0,
+    100
+  );
+
+  const transition = clampNumber(
+    Number(metrics.transition || 0),
+    0,
+    100
+  );
+
+  const trendStrength = clampNumber(
+    Number(metrics.trendStrength || 0),
+    0,
+    100
+  );
+
+  const state = expansion
+    ? "EXPANSION"
+    : compression
+    ? "COMPRESSION"
+    : "NORMAL";
+
+  const expectedMove =
+    transition >= 64 &&
+    trendStrength >= 60 &&
+    reversal <= 45
+      ? "CONTINUATION"
+      : reversal >= 64
+      ? "REVERSAL RISK"
+      : noise >= 72
+      ? "RANDOM / WAIT"
+      : "MIXED";
+
+  return {
+    state,
+    expectedMove,
+    expansion,
+    compression,
+    directionalBias,
+    averageMove,
+    recentAverage,
+    trend: String(analysis.trend || "UNKNOWN"),
+    momentum: String(analysis.momentum || "UNKNOWN"),
+    regime: String(analysis.regime || "UNKNOWN"),
+    noise,
+    reversal,
+    transition,
+    trendStrength,
+    entropy: clampNumber(
+      Number(metrics.entropy || 0),
+      0,
+      100
+    ),
+    cycle:
+      Number(metrics.cycle7 || metrics.cycle || 0),
+  };
+}
+
+function aiCommittee({
+  analysis,
+  finalConfidence,
+  quality,
+  dna,
+  patternProbability,
+  historicalProbability,
+  hardRiskBlock,
+}) {
+  const metrics = analysis.metrics || {};
+  const direction =
+    analysis.candidate || analysis.decision || "WAIT";
+
+  const vote = (name, probability, passed, reason) => ({
+    name,
+    probability: clampNumber(probability, 0, 99),
+    decision: passed ? direction : "WAIT",
+    passed,
+    reason,
+  });
+
+  const agents = [
+    vote(
+      "Trend AI",
+      Number(metrics.trendStrength || 0),
+      Number(metrics.trendStrength || 0) >= 58,
+      "Trend strength and direction structure."
+    ),
+    vote(
+      "Momentum AI",
+      Number(metrics.voteConsensus || 0),
+      Number(metrics.voteConsensus || 0) >= 58,
+      "Fast and full-timeframe momentum agreement."
+    ),
+    vote(
+      "Transition AI",
+      Number(metrics.transition || 0),
+      Number(metrics.transition || 0) >= 57,
+      "Probability that the current move continues."
+    ),
+    vote(
+      "Pattern AI",
+      patternProbability * 100,
+      patternProbability >= 0.56,
+      "Similarity-weighted historical setup result."
+    ),
+    vote(
+      "History AI",
+      historicalProbability * 100,
+      historicalProbability >= 0.54,
+      "Market and direction historical performance."
+    ),
+    vote(
+      "Volatility AI",
+      100 - dna.noise,
+      dna.noise <= 70,
+      "Noise, compression and expansion safety."
+    ),
+    vote(
+      "Risk AI",
+      100 - dna.reversal,
+      !hardRiskBlock && dna.reversal <= 68,
+      "Reversal and extreme-risk protection."
+    ),
+  ];
+
+  const passed = agents.filter((item) => item.passed).length;
+  const averageProbability =
+    agents.reduce(
+      (sum, item) => sum + item.probability,
+      0
+    ) / Math.max(1, agents.length);
+
+  const masterProbability = clampNumber(
+    averageProbability * 0.35 +
+      finalConfidence * 0.35 +
+      quality * 0.30,
+    5,
+    96
+  );
+
+  return {
+    agents,
+    passed,
+    total: agents.length,
+    direction,
+    masterProbability,
+    ready:
+      passed >= 5 &&
+      masterProbability >= 62 &&
+      !hardRiskBlock,
+  };
+}
+
+function replayRecommendation(trade, result) {
+  const snapshot = trade?.entrySnapshot || {};
+  const cause =
+    trade?.outcomeCause?.code ||
+    classifyTradeOutcome(trade, result).code;
+
+  const recommendations = [];
+
+  if (Number(snapshot.noiseScore || 0) > 65) {
+    recommendations.push("Require lower noise before entry.");
+  }
+
+  if (Number(snapshot.reversalRisk || 0) > 55) {
+    recommendations.push("Wait for reversal risk to reduce.");
+  }
+
+  if (Number(snapshot.transition || 0) < 60) {
+    recommendations.push("Require stronger continuation probability.");
+  }
+
+  if (Number(snapshot.voteConsensus || 0) < 65) {
+    recommendations.push("Require stronger AI vote consensus.");
+  }
+
+  if (Number(snapshot.qualityScore || 0) < 66) {
+    recommendations.push("Raise the weighted quality gate for this setup.");
+  }
+
+  if (cause === "EXPIRY_VARIANCE") {
+    recommendations.push(
+      "Try a longer expiry only after a fresh confirmation."
+    );
+  }
+
+  if (cause === "WEAK_TRANSITION") {
+    recommendations.push(
+      "Reject the setup until transition is above 62%."
+    );
+  }
+
+  if (!recommendations.length) {
+    recommendations.push(
+      result === "WON"
+        ? "Keep this setup profile as a positive reference."
+        : "Treat the result as short-term variance and require a fresh setup."
+    );
+  }
+
+  return recommendations.slice(0, 4);
+}
+
 export default function QuantumAIBot() {
   const {
     markets,
@@ -555,6 +810,12 @@ export default function QuantumAIBot() {
     hardNoiseLimit: 86,
     hardReversalLimit: 82,
     smartRecoveryOppositeBonus: 4,
+    minimumCommitteeVotes: 5,
+    minimumMasterProbability: 62,
+    assumedWinProfit: 0.31,
+    assumedLossAmount: 0.35,
+    minimumExpectedValue: 0.01,
+    dnaFreshTicks: 24,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -800,6 +1061,62 @@ export default function QuantumAIBot() {
       ? oppositeCandidate
       : currentCandidate;
 
+  const currentMarketDna = useMemo(
+    () => marketDna(analysis, prices),
+    [analysis, prices]
+  );
+
+  const committee = useMemo(
+    () =>
+      aiCommittee({
+        analysis,
+        finalConfidence:
+          finalLearnedConfidence,
+        quality: liveQualityScore,
+        dna: currentMarketDna,
+        patternProbability:
+          similarHistory.probability,
+        historicalProbability:
+          historicalDirection.probability,
+        hardRiskBlock,
+      }),
+    [
+      analysis,
+      finalLearnedConfidence,
+      liveQualityScore,
+      currentMarketDna,
+      similarHistory.probability,
+      historicalDirection.probability,
+      hardRiskBlock,
+    ]
+  );
+
+  const breakEvenProbability =
+    Number(settings.assumedLossAmount) /
+    Math.max(
+      0.0001,
+      Number(settings.assumedLossAmount) +
+        Number(settings.assumedWinProfit)
+    );
+
+  const masterProbability =
+    committee.masterProbability / 100;
+
+  const expectedValue =
+    masterProbability *
+      Number(settings.assumedWinProfit) -
+    (1 - masterProbability) *
+      Number(settings.assumedLossAmount);
+
+  const probabilityPass =
+    committee.passed >=
+      Number(settings.minimumCommitteeVotes) &&
+    committee.masterProbability >=
+      Number(settings.minimumMasterProbability) &&
+    expectedValue >=
+      Number(settings.minimumExpectedValue);
+
+
 
   const recoveryRequiredConfidence =
     !recovery.active
@@ -861,7 +1178,9 @@ export default function QuantumAIBot() {
       allowedNoise &&
     Number(analysis.reversalRisk || 100) <=
       allowedReversal &&
-    !hardRiskBlock;
+    !hardRiskBlock &&
+    committee.ready &&
+    probabilityPass;
 
   const queueDirection = recovery.active
     ? smartRecoveryDirection
@@ -899,6 +1218,8 @@ export default function QuantumAIBot() {
     queueKey,
     currentPrice,
     settings.entryQueueTicks,
+    committee.ready,
+    probabilityPass,
   ]);
 
   const entryQueuePass =
@@ -1187,7 +1508,9 @@ export default function QuantumAIBot() {
         rawConfidence: analysis.confidence,
         decision: analysis.decision,
         score:
-          liveQualityScore +
+          liveQualityScore * 0.45 +
+          committee.masterProbability * 0.35 +
+          finalLearnedConfidence * 0.20 +
           patternAdjustment +
           historicalAdjustment,
         updatedAt: Date.now(),
@@ -1204,6 +1527,7 @@ export default function QuantumAIBot() {
     liveQualityScore,
     patternAdjustment,
     historicalAdjustment,
+    committee.masterProbability,
   ]);
 
   useEffect(() => {
@@ -1247,11 +1571,20 @@ export default function QuantumAIBot() {
       const outcomeCause =
         classifyTradeOutcome(original, result);
 
+      const replay = replayRecommendation(
+        {
+          ...original,
+          outcomeCause,
+        },
+        result
+      );
+
       updates.push({
         ...original,
         result,
         profit,
         outcomeCause,
+        replay,
         settledAt: Date.now(),
       });
 
@@ -1315,6 +1648,17 @@ export default function QuantumAIBot() {
                   null,
                 qualityScore: Number(
                   original.entrySnapshot?.qualityScore ||
+                    0
+                ),
+                marketDna:
+                  original.entrySnapshot?.marketDna ||
+                  null,
+                masterProbability: Number(
+                  original.entrySnapshot?.masterProbability ||
+                    0
+                ),
+                committeeVotes: Number(
+                  original.entrySnapshot?.committeeVotes ||
                     0
                 ),
                 settledAt: Date.now(),
@@ -1432,6 +1776,12 @@ export default function QuantumAIBot() {
     historicalDirection.probability,
     patternAdjustment,
     historicalAdjustment,
+    currentMarketDna,
+    committee.passed,
+    committee.total,
+    committee.masterProbability,
+    expectedValue,
+    breakEvenProbability,
   ]);
 
   useEffect(() => {
@@ -1754,6 +2104,16 @@ export default function QuantumAIBot() {
             qualityScore: liveQualityScore,
             finalConfidence:
               finalLearnedConfidence,
+            marketDna: currentMarketDna,
+            committeeVotes:
+              committee.passed,
+            committeeTotal:
+              committee.total,
+            masterProbability:
+              committee.masterProbability,
+            expectedValue,
+            breakEvenProbability:
+              breakEvenProbability * 100,
           },
           openedAt: Date.now(),
         };
@@ -1847,8 +2207,8 @@ export default function QuantumAIBot() {
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
-          title="MetaBinary Quantum AI V16"
-          subtitle="Pattern similarity · historical probability · smart recovery"
+          title="MetaBinary Quantum AI V17"
+          subtitle="Market DNA · AI committee · replay learning · probability engine"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1858,11 +2218,11 @@ export default function QuantumAIBot() {
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
             <small>METABINARY SYNTHETIC INTELLIGENCE</small>
-            <h1>MetaBinary Quantum AI V16</h1>
+            <h1>MetaBinary Quantum AI V17</h1>
             <p>
-              Compares each live setup with settled history, calculates
-              market-direction probability and uses a fresh confirmed
-              setup for each capped recovery attempt.
+              Builds a live Market DNA profile, lets specialist AI agents vote,
+              estimates win probability and expected value, then replays
+              every settled trade to improve future entry rules.
             </p>
           </div>
           <div className="quantumHeroStatus">
@@ -1888,6 +2248,116 @@ export default function QuantumAIBot() {
           <button className="quantumStart" onClick={startBot} disabled={running}>RUN AI</button>
           <button className="quantumStop" onClick={stopBot} disabled={!running}>STOP</button>
           <button className="quantumReset" onClick={resetSession} disabled={running || activeTrades.length > 0}>RESET</button>
+        </section>
+
+        <section className="quantumV17Intelligence">
+          <header>
+            <div>
+              <small>V17 MARKET INTELLIGENCE</small>
+              <h3>Market DNA + Master AI</h3>
+            </div>
+            <strong
+              className={
+                committee.ready && probabilityPass
+                  ? "positive"
+                  : "negative"
+              }
+            >
+              {committee.ready && probabilityPass
+                ? "ENTRY QUALIFIED"
+                : "SCANNING"}
+            </strong>
+          </header>
+
+          <div className="quantumDnaGrid">
+            <article>
+              <span>Market state</span>
+              <strong>{currentMarketDna.state}</strong>
+            </article>
+            <article>
+              <span>Expected move</span>
+              <strong>{currentMarketDna.expectedMove}</strong>
+            </article>
+            <article>
+              <span>Regime</span>
+              <strong>{currentMarketDna.regime}</strong>
+            </article>
+            <article>
+              <span>Trend</span>
+              <strong>{currentMarketDna.trend}</strong>
+            </article>
+            <article>
+              <span>Momentum</span>
+              <strong>{currentMarketDna.momentum}</strong>
+            </article>
+            <article>
+              <span>Directional bias</span>
+              <strong>
+                {currentMarketDna.directionalBias.toFixed(1)}
+              </strong>
+            </article>
+            <article>
+              <span>Transition</span>
+              <strong>
+                {currentMarketDna.transition.toFixed(0)}%
+              </strong>
+            </article>
+            <article>
+              <span>Reversal</span>
+              <strong>
+                {currentMarketDna.reversal.toFixed(0)}%
+              </strong>
+            </article>
+          </div>
+
+          <div className="quantumProbabilityGrid">
+            <article>
+              <span>Master probability</span>
+              <strong>
+                {committee.masterProbability.toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Committee votes</span>
+              <strong>
+                {committee.passed}/{committee.total}
+              </strong>
+            </article>
+            <article>
+              <span>Break-even</span>
+              <strong>
+                {(breakEvenProbability * 100).toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Expected value</span>
+              <strong
+                className={
+                  expectedValue >= 0
+                    ? "positive"
+                    : "negative"
+                }
+              >
+                {expectedValue.toFixed(3)}
+              </strong>
+            </article>
+          </div>
+
+          <div className="quantumCommittee">
+            {committee.agents.map((agent) => (
+              <article
+                key={agent.name}
+                className={
+                  agent.passed ? "pass" : "wait"
+                }
+              >
+                <span>{agent.name}</span>
+                <strong>{agent.decision}</strong>
+                <b>{agent.probability.toFixed(0)}%</b>
+                <small>{agent.reason}</small>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className="quantumV16Brain">
@@ -2040,7 +2510,7 @@ export default function QuantumAIBot() {
         <section className={`quantumFastScanner ${scanPhase.toLowerCase()}`}>
           <header>
             <div>
-              <small>V16 SELF-LEARNING ENTRY MANAGER</small>
+              <small>V17 MARKET INTELLIGENCE MANAGER</small>
               <h3>{scanPhase} LANE</h3>
             </div>
             <strong>
@@ -2159,6 +2629,11 @@ export default function QuantumAIBot() {
             ["Quality gate", "weightedQualityMinimum", 40, 90, 1],
             ["Hard noise", "hardNoiseLimit", 60, 100, 1],
             ["Hard reversal", "hardReversalLimit", 60, 100, 1],
+            ["Committee votes", "minimumCommitteeVotes", 3, 7, 1],
+            ["Master probability", "minimumMasterProbability", 50, 90, 1],
+            ["Win profit", "assumedWinProfit", 0.01, 10, 0.01],
+            ["Loss amount", "assumedLossAmount", 0.01, 10, 0.01],
+            ["Minimum EV", "minimumExpectedValue", -1, 2, 0.01],
             ["Min vote", "minimumVoteConsensus", 40, 90, 1],
           ].map(([label, key, min, max, step]) => (
             <label key={key}>
@@ -2469,6 +2944,20 @@ export default function QuantumAIBot() {
                     {trade.outcomeCause?.label ||
                       "Trade settled."}
                   </span>
+                  {Array.isArray(trade.replay) &&
+                  trade.replay.length ? (
+                    <ul className="quantumReplay">
+                      {trade.replay.map(
+                        (item, index) => (
+                          <li
+                            key={`${trade.contractId}-replay-${index}`}
+                          >
+                            {item}
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  ) : null}
                 </div>
               </article>
             ))}
