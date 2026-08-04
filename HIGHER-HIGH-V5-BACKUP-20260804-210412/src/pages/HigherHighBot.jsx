@@ -175,28 +175,26 @@ export default function HigherHighBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "Higher High AI PRO V5 is ready."
+    "Higher High AI PRO V4 is ready."
   );
 
   const [settings, setSettings] = useState({
     stake: 0.35,
-    minimumConfidence: 78,
-    minimumEfficiency: 0.22,
-    maximumEntropy: 0.92,
-    minimumTransition: 0.50,
+    minimumConfidence: 84,
+    minimumEfficiency: 0.28,
+    maximumEntropy: 0.86,
+    minimumTransition: 0.56,
     maximumSpikeRatio: 1.55,
-    minimumTicks: 120,
+    minimumTicks: 180,
     confirmationTicks: 3,
     duration: 10,
     durationUnit: "t",
     cooldownSeconds: 25,
-    marketSwitchSeconds: 90,
+    marketSwitchSeconds: 55,
     lossMarketBlockSeconds: 120,
     takeProfit: 3,
     stopLoss: 1.5,
     maxConsecutiveLosses: 2,
-    minimumVoteScore: 78,
-    minimumProbability: 54,
     recoveryEnabled: true,
     recoveryConfidenceBonus: 6,
     recoveryProbabilityMinimum: 60,
@@ -534,7 +532,7 @@ export default function HigherHighBot() {
         scanStartedAtRef.current = Date.now();
         setReadyStreak(0);
         setMessage(
-          `No V5 voting setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
+          `No V4 recovery setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
         );
         void changeSymbol(next.id);
       }
@@ -737,7 +735,7 @@ export default function HigherHighBot() {
     setReadyStreak(0);
     setRunning(true);
     setMessage(
-      "V5 voting. Normal entries require strict confirmation; recovery requires a fresh market, higher confidence and four confirmed ticks."
+      "V4 scanning. Normal entries require strict confirmation; recovery requires a fresh market, higher confidence and four confirmed ticks."
     );
   }
 
@@ -756,8 +754,8 @@ export default function HigherHighBot() {
 
       <main className="mainContent hhPage">
         <Topbar
-          title="Higher High AI PRO V5"
-          subtitle="5-agent AI voting · loss diagnosis · safe recovery · CALL execution"
+          title="Higher High AI PRO V4"
+          subtitle="Loss diagnosis · fresh-market recovery · strict HH/HL · CALL execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -771,10 +769,10 @@ export default function HigherHighBot() {
         >
           <div>
             <small>STRICT CONFIRMATION BOT</small>
-            <h1>Higher High AI PRO V5</h1>
+            <h1>Higher High AI PRO V4</h1>
             <p>
-              Trend, Momentum, Volatility, Pattern and Risk agents vote together.
-              Loss diagnosis and one controlled recovery remain active.
+              Diagnoses every loss, blocks the losing market and allows one
+              fresh-market recovery only after stronger independent confirmation.
             </p>
           </div>
 
@@ -876,9 +874,9 @@ export default function HigherHighBot() {
             </article>
 
             <article>
-              <span>Vote gate</span>
+              <span>Required</span>
               <strong>
-                {settings.minimumVoteScore}%
+                {analysis.adaptiveThreshold}%
               </strong>
             </article>
 
@@ -940,8 +938,6 @@ export default function HigherHighBot() {
             ["Recovery hold", "recoveryConfirmationTicks", 1],
             ["Recovery cooldown", "recoveryCooldownSeconds", 1],
             ["Recovery stake x", "recoveryStakeMultiplier", 0.05],
-            ["Vote score", "minimumVoteScore", 1],
-            ["Min probability", "minimumProbability", 1],
           ].map(([label, key, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -1069,36 +1065,6 @@ export default function HigherHighBot() {
             <strong>
               {metrics.ticksCollected || 0}
             </strong>
-          </article>
-
-          <article>
-            <span>Trend AI</span>
-            <strong>{metrics.trendScore || 0}%</strong>
-          </article>
-
-          <article>
-            <span>Momentum AI</span>
-            <strong>{metrics.momentumScore || 0}%</strong>
-          </article>
-
-          <article>
-            <span>Volatility AI</span>
-            <strong>{metrics.volatilityScore || 0}%</strong>
-          </article>
-
-          <article>
-            <span>Pattern AI</span>
-            <strong>{metrics.patternScore || 0}%</strong>
-          </article>
-
-          <article>
-            <span>Risk penalty</span>
-            <strong>{metrics.riskPenalty || 0}</strong>
-          </article>
-
-          <article>
-            <span>Votes passed</span>
-            <strong>{metrics.votePasses || 0}/5</strong>
           </article>
         </section>
 

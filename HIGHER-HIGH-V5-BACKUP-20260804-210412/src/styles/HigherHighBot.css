@@ -67,29 +67,3 @@
 .hhHistoryV3 article {
   align-items: start;
 }
-
-
-/* HIGHER HIGH AI PRO V5 — AI voting telemetry */
-.hhAdaptiveStrip {
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-}
-
-.hhChecks article strong {
-  font-size: 12px;
-}
-
-.hhChecks article b {
-  color: #8eb5c6;
-}
-
-@media (max-width: 1100px) {
-  .hhAdaptiveStrip {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .hhAdaptiveStrip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}

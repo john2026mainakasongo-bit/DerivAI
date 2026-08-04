@@ -375,167 +375,141 @@ export function analyzeHigherHigh(prices = [], options = {}) {
   const structureBullish =
     higherLow && (higherHigh || cleanBreakout);
 
-  const trendScore = Math.round(
-    clamp(
-      (emaAligned ? 38 : 0) +
-        (slopesAligned ? 30 : 0) +
-        (higherLow ? 17 : 0) +
-        (higherHigh || cleanBreakout ? 15 : 0),
-      0,
-      100
-    )
-  );
-
-  const momentumScore = Math.round(
-    clamp(
-      micro.upRatio * 25 +
-        short.upRatio * 20 +
-        mediumWindow.upRatio * 15 +
-        (momentum3 > 0 ? 12 : 0) +
-        (momentum5 > 0 ? 12 : 0) +
-        (momentum12 > 0 ? 10 : 0) +
-        (acceleration >= 0 ? 6 : 0),
-      0,
-      100
-    )
-  );
-
-  const volatilityScore = Math.round(
-    clamp(
-      (1 - Math.min(1, entropy18)) * 35 +
-        (1 - Math.min(1, entropy36)) * 25 +
-        Math.min(1, efficiency12 / 0.45) * 20 +
-        Math.min(1, efficiency28 / 0.35) * 15 +
-        (noSpike ? 5 : 0),
-      0,
-      100
-    )
-  );
-
-  const patternScore = Math.round(
-    clamp(
-      (structureBullish ? 35 : 0) +
-        (pullbackConfirmed ? 35 : 0) +
-        (cleanBreakout ? 15 : 0) +
-        (continuation ? 15 : 0),
-      0,
-      100
-    )
-  );
-
-  const transitionScore = Math.round(
-    clamp(transition * 100, 0, 100)
-  );
-
-  const riskPenalty = Math.round(
-    clamp(
-      (spikeRatio > 1.4 ? (spikeRatio - 1.4) * 28 : 0) +
-        (entropy18 > 0.94 ? (entropy18 - 0.94) * 180 : 0) +
-        (efficiency28 < 0.12 ? (0.12 - efficiency28) * 120 : 0) +
-        (timeframeAgreement === 0 ? 18 : 0),
-      0,
-      45
-    )
-  );
+  const checks = [
+    {
+      label: "HH / breakout",
+      passed: higherHigh || cleanBreakout,
+      weight: 9,
+    },
+    {
+      label: "Higher Low",
+      passed: higherLow,
+      weight: 10,
+    },
+    {
+      label: "EMA 9>21>50",
+      passed: emaAligned,
+      weight: 13,
+    },
+    {
+      label: "3-window slope",
+      passed: slopesAligned,
+      weight: 11,
+    },
+    {
+      label: "Momentum 3/5/12",
+      passed: momentumAligned,
+      weight: 13,
+    },
+    {
+      label: "Acceleration",
+      passed: acceleration >= 0,
+      weight: 5,
+    },
+    {
+      label: "Timeframe 3/3",
+      passed: timeframeAgreement === 3,
+      weight: 11,
+    },
+    {
+      label: "Pullback / break",
+      passed: pullbackConfirmed,
+      weight: 10,
+    },
+    {
+      label: "Transition ≥ gate",
+      passed: transitionGood,
+      weight: 7,
+    },
+    {
+      label: "Efficiency",
+      passed: efficiencyGood,
+      weight: 6,
+    },
+    {
+      label: "Low entropy",
+      passed: entropyGood,
+      weight: 3,
+    },
+    {
+      label: "No spike",
+      passed: noSpike,
+      weight: 2,
+    },
+  ];
 
   const confidence = Math.round(
-    clamp(
-      trendScore * 0.28 +
-        momentumScore * 0.24 +
-        volatilityScore * 0.16 +
-        patternScore * 0.20 +
-        transitionScore * 0.12 -
-        riskPenalty,
-      0,
-      100
+    checks.reduce(
+      (sum, check) => sum + (check.passed ? check.weight : 0),
+      0
     )
   );
 
   const probability = Math.round(
     clamp(
-      transition * 38 +
+      transition * 45 +
         micro.upRatio * 20 +
-        short.upRatio * 16 +
+        short.upRatio * 15 +
         mediumWindow.upRatio * 10 +
-        efficiency12 * 8 +
-        efficiency28 * 8,
+        efficiency12 * 10,
       0,
       1
     ) * 100
   );
 
-  const minimumVoteScore = clamp(
-    Number(options.minimumVoteScore ?? 78),
-    68,
-    92
-  );
-
-  const minimumProbability = clamp(
-    Number(options.minimumProbability ?? 54),
-    50,
-    72
-  );
-
-  const hardRiskBlock =
-    spikeRatio > maximumSpikeRatio ||
-    entropy18 > 0.97 ||
-    entropy36 > 0.98 ||
-    efficiency12 < 0.03 ||
-    timeframeAgreement === 0;
-
-  const votePasses = [
-    trendScore >= 70,
-    momentumScore >= 66,
-    volatilityScore >= 38,
-    patternScore >= 60,
-    transitionScore >= minimumProbability,
-  ].filter(Boolean).length;
+  const hardGate =
+    structureBullish &&
+    emaAligned &&
+    slopesAligned &&
+    momentumAligned &&
+    timeframeAgreement === 3 &&
+    pullbackConfirmed &&
+    transitionGood &&
+    efficiencyGood &&
+    entropyGood &&
+    noSpike;
 
   const ready =
-    !hardRiskBlock &&
-    confidence >= minimumVoteScore &&
-    probability >= minimumProbability &&
-    votePasses >= 3 &&
-    (structureBullish || cleanBreakout) &&
-    momentum3 > 0 &&
-    momentum5 > 0;
+    hardGate &&
+    confidence >= minimumConfidence;
 
-  const checks = [
-    { label: "Trend AI", passed: trendScore >= 70, weight: trendScore },
-    { label: "Momentum AI", passed: momentumScore >= 66, weight: momentumScore },
-    { label: "Volatility AI", passed: volatilityScore >= 38, weight: volatilityScore },
-    { label: "Pattern AI", passed: patternScore >= 60, weight: patternScore },
-    { label: "Transition AI", passed: transitionScore >= minimumProbability, weight: transitionScore },
-    { label: "Risk AI", passed: !hardRiskBlock, weight: Math.max(0, 100 - riskPenalty) },
-  ];
+  let reason =
+    "Strict V3 gate is waiting for full confirmation.";
 
-  let reason = "AI voting engine is waiting for a qualified majority.";
-
-  if (hardRiskBlock) {
-    reason = "Risk AI blocked the setup because noise, spike or efficiency is unsafe.";
-  } else if (confidence < minimumVoteScore) {
-    reason = `Vote score ${confidence}% is below ${minimumVoteScore}%.`;
-  } else if (probability < minimumProbability) {
-    reason = `Probability ${probability}% is below ${minimumProbability}%.`;
-  } else if (votePasses < 3) {
-    reason = `Only ${votePasses}/5 analysis agents agree; at least 3 are required.`;
-  } else if (!(structureBullish || cleanBreakout)) {
-    reason = "Structure AI has not confirmed HH/HL or breakout.";
-  } else if (!(momentum3 > 0 && momentum5 > 0)) {
-    reason = "Micro momentum is not positive enough for entry.";
+  if (!structureBullish) {
+    reason = "Higher High / Higher Low structure is incomplete.";
+  } else if (!emaAligned) {
+    reason = "EMA 9, 21 and 50 are not fully bullish.";
+  } else if (!slopesAligned) {
+    reason = "Micro, short and medium slopes do not agree.";
+  } else if (!momentumAligned) {
+    reason = "Momentum 3, 5 and 12 must all be positive.";
+  } else if (timeframeAgreement !== 3) {
+    reason = `Timeframe agreement is ${timeframeAgreement}/3; V3 requires 3/3.`;
+  } else if (!pullbackConfirmed) {
+    reason = "Waiting for controlled pullback continuation or clean breakout.";
+  } else if (!transitionGood) {
+    reason = `Continuation probability ${(transition * 100).toFixed(0)}% is below ${(minimumTransition * 100).toFixed(0)}%.`;
+  } else if (!efficiencyGood) {
+    reason = "Trend efficiency is too low for a low-risk entry.";
+  } else if (!entropyGood) {
+    reason = "Market direction is too random for V3.";
+  } else if (!noSpike) {
+    reason = "Recent move is a spike; entry blocked.";
+  } else if (confidence < minimumConfidence) {
+    reason = `Confidence ${confidence}% is below ${minimumConfidence}%.`;
   } else {
-    reason = "AI voting majority passed. Hold signal for confirmation ticks.";
+    reason = "All strict gates passed. Hold signal for confirmation ticks.";
   }
 
   const regime =
-    hardRiskBlock
-      ? "RISK BLOCK"
-      : ready
-      ? "VOTE QUALIFIED"
-      : confidence >= minimumVoteScore - 6
-      ? "WATCH"
+    hardGate
+      ? "QUALIFIED TREND"
+      : entropy36 > 0.92 || efficiency28 < 0.18
+      ? "CHOPPY"
+      : emaAligned
+      ? "BULLISH WATCH"
       : "MIXED";
-
 
   return {
     ready,
@@ -578,15 +552,6 @@ export function analyzeHigherHigh(prices = [], options = {}) {
       slope50,
       minimumTransition,
       maximumSpikeRatio,
-      trendScore,
-      momentumScore,
-      volatilityScore,
-      patternScore,
-      transitionScore,
-      riskPenalty,
-      votePasses,
-      minimumVoteScore,
-      minimumProbability,
     },
   };
 }
