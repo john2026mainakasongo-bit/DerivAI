@@ -98,6 +98,15 @@ export default function OverUnderAnalysis() {
   const [allowReal, setAllowReal] = useState(false);
   const [manualSide, setManualSide] = useState("OVER");
   const [manualBarrier, setManualBarrier] = useState(1);
+  const [v89StrategyMemory, setV89StrategyMemory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("edgepilot-v89-ou-memory") || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [v89ProcessedSettlements, setV89ProcessedSettlements] = useState(() => new Set());
+  const [v89FreshTicks, setV89FreshTicks] = useState(99);
   const [strategyStats, setStrategyStats] = useState({});
   const [settledRuns, setSettledRuns] = useState([]);
   const [freshTicksAfterSettlement, setFreshTicksAfterSettlement] = useState(99);
@@ -110,6 +119,8 @@ export default function OverUnderAnalysis() {
   const lastSwitchRef = useRef(0);
   const processedRef = useRef(new Set());
   const nextEntryAtRef = useRef(0);
+  const v89LastContractRef = useRef("");
+  const v89LastPriceCountRef = useRef(0);
   const lastContractRef = useRef("");
   const lastPriceCountRef = useRef(0);
 
@@ -172,6 +183,183 @@ export default function OverUnderAnalysis() {
 
   useEffect(() => {
     const count = Array.isArray(prices) ? prices.length : 0;
+    if (count > v89LastPriceCountRef.current) {
+      setV89FreshTicks((value) => Math.min(99, value + 1));
+    }
+    v89LastPriceCountRef.current = count;
+  }, [prices]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "edgepilot-v89-ou-memory",
+        JSON.stringify(v89StrategyMemory)
+      );
+    } catch {
+      // Storage is optional; live analysis continues without it.
+    }
+  }, [v89StrategyMemory]);
+
+  useEffect(() => {
+    const settled = (Array.isArray(trades) ? trades : []).filter((trade) => {
+      const status = String(trade?.status || "").toUpperCase();
+      return ["WON", "LOST", "SOLD", "EXPIRED"].includes(status);
+    });
+
+    const freshSettlements = settled.filter((trade) => {
+      const id = String(
+        trade?.contractId ||
+        trade?.contract_id ||
+        trade?.id ||
+        `${trade?.time}-${trade?.contract}`
+      );
+      return id && !v89ProcessedSettlements.has(id);
+    });
+
+    if (!freshSettlements.length) return;
+
+    setV89StrategyMemory((current) => {
+      const next = { ...current };
+
+      for (const trade of freshSettlements) {
+        const contract = String(trade?.contract || "").toUpperCase().trim();
+        if (!/^(OVER|UNDER)\s+[1-7]$/.test(contract)) continue;
+
+        const status = String(trade?.status || "").toUpperCase();
+        const old = next[contract] || { wins: 0, losses: 0, profit: 0 };
+        const profit = Number(trade?.profit || trade?.pnl || 0);
+
+        next[contract] = {
+          wins: old.wins + (status === "WON" || profit > 0 ? 1 : 0),
+          losses: old.losses + (status === "LOST" || profit < 0 ? 1 : 0),
+          profit: Number(old.profit || 0) + profit,
+        };
+      }
+
+      return next;
+    });
+
+    setV89ProcessedSettlements((current) => {
+      const next = new Set(current);
+      for (const trade of freshSettlements) {
+        next.add(
+          String(
+            trade?.contractId ||
+            trade?.contract_id ||
+            trade?.id ||
+            `${trade?.time}-${trade?.contract}`
+          )
+        );
+      }
+      return next;
+    });
+
+    setV89FreshTicks(0);
+    waitRef.current = Date.now();
+    nextEntryAtRef.current = Date.now() + 1200;
+    setMessage("Settlement received. Full OVER/UNDER re-scan started.");
+  }, [trades]);
+
+  const v89AdaptiveAnalysis = useMemo(() => {
+    const rawCandidates = Array.isArray(analysis.candidates)
+      ? analysis.candidates
+      : [analysis.best].filter(Boolean);
+
+    const ranked = rawCandidates
+      .filter((candidate) =>
+        candidate &&
+        ["OVER", "UNDER"].includes(String(candidate.side || "").toUpperCase()) &&
+        Number(candidate.barrier) >= 1 &&
+        Number(candidate.barrier) <= 7
+      )
+      .map((candidate) => {
+        const key = `${String(candidate.side).toUpperCase()} ${Number(candidate.barrier)}`;
+        const memory = v89StrategyMemory[key] || {
+          wins: 0,
+          losses: 0,
+          profit: 0,
+        };
+
+        const learnedRuns = Number(memory.wins || 0) + Number(memory.losses || 0);
+        const learnedWinRate = learnedRuns
+          ? (Number(memory.wins || 0) / learnedRuns) * 100
+          : 50;
+
+        const transition = Number(
+          candidate.transitionScore ??
+          candidate.transition ??
+          0
+        );
+        const probability = Number(candidate.probability || 0);
+        const exactRisk = Number(candidate.exactRisk || 100);
+        const baseScore = Number(candidate.score || 0);
+
+        const historicalWeight =
+          learnedRuns >= 5
+            ? Math.max(-8, Math.min(8, (learnedWinRate - 50) * 0.16))
+            : 0;
+
+        const repeatPenalty =
+          v89LastContractRef.current === key ? 10 : 0;
+
+        const finalScore =
+          transition * 0.30 +
+          probability * 0.25 +
+          (100 - exactRisk) * 0.15 +
+          baseScore * 0.20 +
+          (50 + historicalWeight * 6.25) * 0.10 -
+          repeatPenalty;
+
+        return {
+          ...candidate,
+          key,
+          transitionScore: transition,
+          finalScore,
+          learnedRuns,
+          learnedWinRate,
+          learnedProfit: Number(memory.profit || 0),
+        };
+      })
+      .sort((left, right) => right.finalScore - left.finalScore);
+
+    const best = ranked[0] || analysis.best || {
+      side: "WAIT",
+      barrier: 1,
+      probability: 0,
+      transitionScore: 0,
+      exactRisk: 100,
+      score: 0,
+      finalScore: 0,
+    };
+
+    const qualified =
+      Number(analysis.total || 0) >= 60 &&
+      Number(best.finalScore || 0) >= 69 &&
+      Number(best.probability || 0) >= 68 &&
+      Number(best.transitionScore || 0) >= 48 &&
+      Number(best.exactRisk || 100) <= 18 &&
+      v89FreshTicks >= 2;
+
+    return {
+      ...analysis,
+      candidates: ranked,
+      best,
+      tradeNow: qualified,
+      decision: qualified
+        ? `BUY ${best.side} ${best.barrier}`
+        : v89FreshTicks < 2
+          ? "FRESH RESCAN"
+          : "SCANNING OVER + UNDER",
+      reason: qualified
+        ? `${best.key} leads all current contracts with score ${best.finalScore.toFixed(1)}.`
+        : v89FreshTicks < 2
+          ? "Waiting for two fresh ticks after settlement."
+          : "Ranking every OVER and UNDER barrier before the next entry.",
+    };
+  }, [analysis, v89StrategyMemory, v89FreshTicks]);
+
+  useEffect(() => {
+    const count = Array.isArray(prices) ? prices.length : 0;
     if (count > lastPriceCountRef.current) {
       setFreshTicksAfterSettlement((value) => Math.min(99, value + 1));
     }
@@ -228,11 +416,11 @@ export default function OverUnderAnalysis() {
   }, [analysis, strategyStats, freshTicksAfterSettlement]);
 
   useEffect(() => {
-    if (adaptiveAnalysis.best.side !== "WAIT") {
-      setManualSide(adaptiveAnalysis.best.side);
-      setManualBarrier(adaptiveAnalysis.best.barrier);
+    if (v89AdaptiveAnalysis.best.side !== "WAIT") {
+      setManualSide(v89AdaptiveAnalysis.best.side);
+      setManualBarrier(v89AdaptiveAnalysis.best.barrier);
     }
-  }, [adaptiveAnalysis.best.side, adaptiveAnalysis.best.barrier]);
+  }, [v89AdaptiveAnalysis.best.side, v89AdaptiveAnalysis.best.barrier]);
 
   const marketSymbols = DERIV_VOLATILITY_MARKETS.map((item) => item.id);
 
@@ -352,7 +540,7 @@ export default function OverUnderAnalysis() {
           duration: `${durationTicks} TICK`,
           stake: Math.max(0.35, Number(stake) || 0.35),
           confidence: analysis.confidence,
-          score: adaptiveAnalysis.best.adaptiveScore ?? adaptiveAnalysis.best.score,
+          score: v89AdaptiveAnalysis.best.finalScore ?? v89AdaptiveAnalysis.best.score,
           status: "OPEN",
           profit: 0,
         },
@@ -360,7 +548,8 @@ export default function OverUnderAnalysis() {
       ].slice(0, 40));
 
       lastContractRef.current = `${side}-${barrier}`;
-      setMessage(`${source}: ${side} ${barrier} opened. Fresh scan will run after settlement.`);
+      v89LastContractRef.current = `${String(side).toUpperCase()} ${Number(barrier)}`;
+      setMessage(`${source}: ${side} ${barrier} opened. Next trade requires a fresh full scan.`);
       nextEntryAtRef.current = Date.now() + 1500;
       waitRef.current = Date.now();
     } catch (error) {
@@ -373,10 +562,10 @@ export default function OverUnderAnalysis() {
   async function executeAutoTrade() {
     if (
       !runningRef.current ||
-      !adaptiveAnalysis.tradeNow ||
-      adaptiveAnalysis.best.side === "WAIT"
+      !v89AdaptiveAnalysis.tradeNow ||
+      v89AdaptiveAnalysis.best.side === "WAIT"
     ) return;
-    await sendTrade(adaptiveAnalysis.best.side, adaptiveAnalysis.best.barrier, "AUTO");
+    await sendTrade(v89AdaptiveAnalysis.best.side, v89AdaptiveAnalysis.best.barrier, "AUTO");
   }
 
   function toggleAuto() {
@@ -397,15 +586,15 @@ export default function OverUnderAnalysis() {
   }
 
   useEffect(() => {
-    if (autoRunning && adaptiveAnalysis.tradeNow && !hasOpenTrade && losses < 3) {
+    if (autoRunning && v89AdaptiveAnalysis.tradeNow && !hasOpenTrade && losses < 3) {
       void executeAutoTrade();
     }
   }, [
     autoRunning,
-    adaptiveAnalysis.tradeNow,
-    adaptiveAnalysis.best.side,
-    adaptiveAnalysis.best.barrier,
-    adaptiveAnalysis.best.adaptiveScore ?? adaptiveAnalysis.best.score,
+    v89AdaptiveAnalysis.tradeNow,
+    v89AdaptiveAnalysis.best.side,
+    v89AdaptiveAnalysis.best.barrier,
+    v89AdaptiveAnalysis.best.finalScore ?? v89AdaptiveAnalysis.best.score,
     hasOpenTrade,
     losses,
     symbol,
@@ -421,7 +610,7 @@ export default function OverUnderAnalysis() {
       losses >= 3
     ) return;
 
-    if (adaptiveAnalysis.tradeNow) {
+    if (v89AdaptiveAnalysis.tradeNow) {
       waitRef.current = Date.now();
       return;
     }
@@ -434,7 +623,7 @@ export default function OverUnderAnalysis() {
         now - waitRef.current >= delay &&
         now - lastSwitchRef.current >= delay
       ) {
-        void switchMarket(adaptiveAnalysis.reason);
+        void switchMarket(v89AdaptiveAnalysis.reason);
       }
     }, 500);
 
@@ -446,8 +635,8 @@ export default function OverUnderAnalysis() {
     tradeBusy,
     marketSymbols,
     symbol,
-    adaptiveAnalysis.tradeNow,
-    adaptiveAnalysis.reason,
+    v89AdaptiveAnalysis.tradeNow,
+    v89AdaptiveAnalysis.reason,
     switchAfterSeconds,
     losses,
   ]);
@@ -547,8 +736,8 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V88 · Adaptive Over/Under Scanner"
-          subtitle="Scans OVER and UNDER barriers, changes contract after every settlement and adapts from recent runs"
+          title="EdgePilot V89 · Adaptive Compact Pro"
+          subtitle="Full OVER/UNDER ranking · fresh scan after every settlement · compact no-page-scroll workspace"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -629,11 +818,11 @@ export default function OverUnderAnalysis() {
           stake and duration ({durationTicks} tick{Number(durationTicks) === 1 ? "" : "s"}).
         </div>
 
-        <section className={`ouHero ${adaptiveAnalysis.tradeNow ? "ready" : analysis.prepare ? "prepare" : ""}`}>
+        <section className={`ouHero ${v89AdaptiveAnalysis.tradeNow ? "ready" : analysis.prepare ? "prepare" : ""}`}>
           <div className="ouHeroDecision">
             <small>NEXT ENTRY</small>
-            <h1>{adaptiveAnalysis.decision}</h1>
-            <p>{adaptiveAnalysis.reason}</p>
+            <h1>{v89AdaptiveAnalysis.decision}</h1>
+            <p>{v89AdaptiveAnalysis.reason}</p>
           </div>
           <div className="ouHeroStats">
             <span><small>Grade</small><strong>{analysis.grade}</strong></span>
@@ -653,11 +842,11 @@ export default function OverUnderAnalysis() {
         </section>
 
         <section className="ouCandidateGrid">
-          <article><small>CONTRACT</small><strong>{adaptiveAnalysis.best.side} {adaptiveAnalysis.best.barrier}</strong><span>Best ranked setup.</span></article>
-          <article><small>PROBABILITY</small><strong>{pct(adaptiveAnalysis.best.probability)}</strong><span>Observed distribution.</span></article>
-          <article><small>EXACT RISK</small><strong>{pct(adaptiveAnalysis.best.exactRisk)}</strong><span>Barrier landing risk.</span></article>
-          <article><small>TRANSITION</small><strong>{pct(adaptiveAnalysis.best.transitionScore)}</strong><span>Recent continuation support.</span></article>
-          <article><small>ENTRY SCORE</small><strong>{pct(adaptiveAnalysis.best.adaptiveScore ?? adaptiveAnalysis.best.score)}</strong><span>Weighted opportunity.</span></article>
+          <article><small>CONTRACT</small><strong>{v89AdaptiveAnalysis.best.side} {v89AdaptiveAnalysis.best.barrier}</strong><span>Best ranked setup.</span></article>
+          <article><small>PROBABILITY</small><strong>{pct(v89AdaptiveAnalysis.best.probability)}</strong><span>Observed distribution.</span></article>
+          <article><small>EXACT RISK</small><strong>{pct(v89AdaptiveAnalysis.best.exactRisk)}</strong><span>Barrier landing risk.</span></article>
+          <article><small>TRANSITION</small><strong>{pct(v89AdaptiveAnalysis.best.transitionScore)}</strong><span>Recent continuation support.</span></article>
+          <article><small>ENTRY SCORE</small><strong>{pct(v89AdaptiveAnalysis.best.finalScore ?? v89AdaptiveAnalysis.best.score)}</strong><span>Weighted opportunity.</span></article>
           <article><small>ENTROPY</small><strong>{pct(analysis.entropy)}</strong><span>Higher means more random.</span></article>
         </section>
 
@@ -687,7 +876,7 @@ export default function OverUnderAnalysis() {
           <div className="ouPanelHead"><div><small>BARRIER COMPARISON</small><h2>Over and Under probability</h2></div></div>
           <div className="ouBarrierTable">
             <div className="head"><span>Barrier</span><span>Over</span><span>Under</span><span>Exact risk</span></div>
-            {analysis.rows.map((row) => <button type="button" key={row.barrier} className={row.barrier === adaptiveAnalysis.best.barrier ? "selected" : ""} onClick={() => setManualBarrier(row.barrier)}><strong>{row.barrier}</strong><span>{pct(row.over)}</span><span>{pct(row.under)}</span><span>{pct(row.exact)}</span></button>)}
+            {analysis.rows.map((row) => <button type="button" key={row.barrier} className={row.barrier === v89AdaptiveAnalysis.best.barrier ? "selected" : ""} onClick={() => setManualBarrier(row.barrier)}><strong>{row.barrier}</strong><span>{pct(row.over)}</span><span>{pct(row.under)}</span><span>{pct(row.exact)}</span></button>)}
           </div>
         </section>
 
@@ -703,27 +892,57 @@ export default function OverUnderAnalysis() {
         <section className="ouPanel ouAdaptivePanel">
           <div className="ouPanelHead">
             <div>
+              <small>ALL CONTRACT RANKING</small>
+              <h2>OVER and UNDER candidates</h2>
+            </div>
+            <strong>{v89AdaptiveAnalysis.candidates.length} scanned</strong>
+          </div>
+
+          <div className="ouV89Ranking">
+            {v89AdaptiveAnalysis.candidates.slice(0, 8).map((candidate) => (
+              <div key={candidate.key} className={candidate.key === v89AdaptiveAnalysis.best.key ? "best" : ""}>
+                <strong>{candidate.key}</strong>
+                <span>{Number(candidate.finalScore || 0).toFixed(1)}</span>
+                <small>
+                  P {Number(candidate.probability || 0).toFixed(0)} ·
+                  T {Number(candidate.transitionScore || 0).toFixed(0)} ·
+                  R {Number(candidate.exactRisk || 0).toFixed(0)}
+                </small>
+              </div>
+            ))}
+          </div>
+          <div className="ouPanelHead">
+            <div>
               <small>ADAPTIVE MEMORY</small>
               <h2>Last 5 settled runs</h2>
             </div>
             <strong>{settledRuns.length}/5 learned</strong>
           </div>
-
           <div className="ouAdaptiveRuns">
             {settledRuns.map((run, index) => (
               <div key={`${run.contract}-${index}`}>
-                <b className={run.result.toLowerCase()}>{run.result}</b>
+                <b className={run.result.toLowerCase()}>
+                  {run.result}
+                </b>
+
                 <strong>{run.contract || "—"}</strong>
                 <span>{run.market}</span>
               </div>
             ))}
+
             {!settledRuns.length ? (
-              <p>Warm-up uses the live Deriv tick history already loaded before START.</p>
+              <p>
+                Warm-up uses the live Deriv tick history already loaded
+                before START.
+              </p>
             ) : null}
           </div>
         </section>
 
-        <div className="ouDisclaimer">Analysis is probabilistic. Test on Demo before enabling Real execution.</div>
+        <div className="ouDisclaimer">
+          Analysis is probabilistic. Test on Demo before enabling Real
+          execution.
+        </div>
       </main>
     </div>
   );

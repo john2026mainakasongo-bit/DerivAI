@@ -538,3 +538,178 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* V89 COMPACT PRO */
+.ouV89Summary {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px;
+  margin: 7px 0;
+  border: 1px solid #174b63;
+  border-radius: 10px;
+  background: rgba(4, 24, 39, .96);
+  backdrop-filter: blur(8px);
+}
+
+.ouV89Summary > div {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #123f54;
+  border-radius: 8px;
+  background: #031724;
+}
+
+.ouV89Summary small {
+  display: block;
+  color: #3ed8b0;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .05em;
+}
+
+.ouV89Summary strong {
+  display: block;
+  margin-top: 3px;
+  color: #fff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.ouV89Workspace {
+  min-height: 0;
+  max-height: calc(100vh - 315px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.ouV89Workspace::-webkit-scrollbar {
+  width: 7px;
+}
+
+.ouV89Workspace::-webkit-scrollbar-thumb {
+  background: #1a536c;
+  border-radius: 99px;
+}
+
+.ouV89Ranking {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ouV89Ranking > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 6px;
+  padding: 7px;
+  border: 1px solid #15455b;
+  border-radius: 8px;
+  background: #031724;
+}
+
+.ouV89Ranking > div.best {
+  border-color: #2ad9ae;
+  box-shadow: inset 0 0 0 1px rgba(42, 217, 174, .25);
+}
+
+.ouV89Ranking strong {
+  color: #fff;
+  font-size: 11px;
+}
+
+.ouV89Ranking span {
+  color: #3ed8b0;
+  font-weight: 900;
+}
+
+.ouV89Ranking small {
+  grid-column: 1 / -1;
+  color: #7ea2b4;
+  font-size: 8px;
+}
+
+.ouTradePanel,
+.ouAdaptivePanel {
+  margin-top: 7px !important;
+}
+
+.ouTradeTable,
+.ouTradeViewer,
+[class*="TradeTable"] {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.ouSignalGrid {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+}
+
+.ouSignalGrid article {
+  min-height: 58px !important;
+  padding: 7px !important;
+}
+
+.ouPanel {
+  padding: 8px !important;
+}
+
+.ouPanelHead {
+  margin-bottom: 6px !important;
+}
+
+.ouPanelHead h2 {
+  margin: 2px 0 !important;
+  font-size: 15px !important;
+}
+
+@media (min-width: 901px) {
+  .overUnderPage,
+  .ouPage {
+    height: 100vh;
+    overflow: hidden !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .ouV89Summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ouV89Workspace {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .ouV89Ranking {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .ouV89Summary {
+    position: relative;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 5px;
+  }
+
+  .ouV89Summary > div {
+    padding: 6px;
+  }
+
+  .ouSignalGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .ouV89Ranking {
+    grid-template-columns: 1fr;
+  }
+}
