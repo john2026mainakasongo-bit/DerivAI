@@ -93,3 +93,20 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* HIGHER HIGH AI PRO V6 — two-minute scan manager */
+.hhDecisionGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.hhDecisionGrid article:nth-child(7) strong,
+.hhDecisionGrid article:nth-child(8) strong {
+  color: #f2cf62;
+}
+
+@media (max-width: 760px) {
+  .hhDecisionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

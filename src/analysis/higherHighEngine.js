@@ -587,6 +587,7 @@ export function analyzeHigherHigh(prices = [], options = {}) {
       votePasses,
       minimumVoteScore,
       minimumProbability,
+      hardRiskBlock,
     },
   };
 }
