@@ -464,7 +464,7 @@ function CandleChart({
 
   const emaPoints = (series) =>
     series
-      .map((value, index) => \`\${x(index)},\${y(value)}\`)
+      .map((value, index) => `${x(index)},${y(value)}`)
       .join(" ");
 
   const current = displayed.at(-1);
@@ -487,7 +487,7 @@ function CandleChart({
       : null;
 
   return (
-    <div className={\`rfTvChart \${signalClass(signal)}\`}>
+    <div className={`rfTvChart ${signalClass(signal)}`}>
       <div className="rfTvToolbar">
         <div>
           <strong>{chartTimeLabel(hovered?.time)}</strong>
@@ -530,7 +530,7 @@ function CandleChart({
 
       <div className="rfTvCanvas">
         <svg
-          viewBox={\`0 0 \${width} \${height}\`}
+          viewBox={`0 0 ${width} ${height}`}
           preserveAspectRatio="none"
           onMouseLeave={() => setHoverIndex(-1)}
           onMouseMove={(event) => {
@@ -627,10 +627,10 @@ function CandleChart({
 
             return (
               <g
-                key={\`\${candle.time}-\${index}\`}
-                className={\`rfTvCandle \${
+                key={`${candle.time}-${index}`}
+                className={`rfTvCandle ${
                   rising ? "rise" : "fall"
-                } \${live ? "live" : ""}\`}
+                } ${live ? "live" : ""}`}
               >
                 <line
                   x1={candleX}
