@@ -908,6 +908,7 @@ export default function RiseFallAnalysis() {
     symbol = "",
     connected = false,
     loadingMarket = false,
+    ticks = [],
     prices = [],
     currentPrice = null,
     selectedAccountType = "demo",
@@ -967,6 +968,10 @@ export default function RiseFallAnalysis() {
   const [marketSnapshots, setMarketSnapshots] = useState(() =>
     readStoredMap(RF_MARKET_SNAPSHOT_KEY)
   );
+  const [freshScanRequired, setFreshScanRequired] = useState(false);
+  const [freshTicksAfterSettlement, setFreshTicksAfterSettlement] = useState(0);
+  const [freshSignalConfirmations, setFreshSignalConfirmations] = useState(0);
+  const [freshSignalDirection, setFreshSignalDirection] = useState("WAIT");
   const previousSignalRef = useRef("WAIT");
   const lastResultSoundRef = useRef("");
   const lastAlertAtRef = useRef(0);
@@ -986,6 +991,8 @@ export default function RiseFallAnalysis() {
   const burstDirectionRef = useRef("WAIT");
   const burstRunsRef = useRef(0);
   const nextAutoEntryAtRef = useRef(0);
+  const freshTickKeyRef = useRef("");
+  const settlementResetAtRef = useRef(0);
 
   const connectingRef = useRef(false);
 
@@ -1191,6 +1198,99 @@ export default function RiseFallAnalysis() {
     () => analyzeRiseFallMultiTimeframe(combinedPriceHistory),
     [combinedPriceHistory]
   );
+
+  const requiredFreshTicks = useMemo(() => {
+    const duration = Number(multiTimeframe.recommendedDuration || 5);
+    const unit = multiTimeframe.recommendedDurationUnit;
+
+    if (unit === "s") return 14;
+    return Math.max(8, Math.min(18, duration + 7));
+  }, [
+    multiTimeframe.recommendedDuration,
+    multiTimeframe.recommendedDurationUnit,
+  ]);
+
+  useEffect(() => {
+    if (!freshScanRequired || !ticks.length) return;
+
+    const latest = ticks.at(-1);
+    const rawEpoch = Number(latest?.epoch || 0);
+    const epochMs =
+      rawEpoch > 0 && rawEpoch < 1e12
+        ? rawEpoch * 1000
+        : rawEpoch;
+
+    if (
+      settlementResetAtRef.current &&
+      epochMs &&
+      epochMs < settlementResetAtRef.current
+    ) {
+      return;
+    }
+
+    const key = `${symbol}:${latest?.epoch || ""}:${latest?.quote || ""}`;
+
+    if (!key || freshTickKeyRef.current === key) return;
+
+    freshTickKeyRef.current = key;
+    setFreshTicksAfterSettlement((value) => value + 1);
+  }, [freshScanRequired, ticks, symbol]);
+
+  useEffect(() => {
+    if (!freshScanRequired) {
+      setFreshSignalConfirmations(0);
+      setFreshSignalDirection("WAIT");
+      return;
+    }
+
+    const direction = multiTimeframe.direction;
+
+    if (
+      direction === "WAIT" ||
+      !multiTimeframe.qualified ||
+      multiTimeframe.agreement < 66
+    ) {
+      setFreshSignalConfirmations(0);
+      setFreshSignalDirection("WAIT");
+      return;
+    }
+
+    if (direction === freshSignalDirection) {
+      setFreshSignalConfirmations((value) => value + 1);
+      return;
+    }
+
+    setFreshSignalDirection(direction);
+    setFreshSignalConfirmations(1);
+  }, [
+    freshScanRequired,
+    freshSignalDirection,
+    multiTimeframe.direction,
+    multiTimeframe.qualified,
+    multiTimeframe.agreement,
+  ]);
+
+  useEffect(() => {
+    if (
+      !freshScanRequired ||
+      freshTicksAfterSettlement < requiredFreshTicks ||
+      freshSignalConfirmations < 3
+    ) {
+      return;
+    }
+
+    setFreshScanRequired(false);
+    nextAutoEntryAtRef.current = Date.now() + 500;
+    setExecutionMessage(
+      `Fresh analysis confirmed: ${freshSignalDirection} · ${freshTicksAfterSettlement} new ticks · ${freshSignalConfirmations} confirmations.`
+    );
+  }, [
+    freshScanRequired,
+    freshTicksAfterSettlement,
+    freshSignalConfirmations,
+    freshSignalDirection,
+    requiredFreshTicks,
+  ]);
 
   const syntheticScore = useMemo(
     () =>
@@ -1449,7 +1549,7 @@ export default function RiseFallAnalysis() {
 
   const burstEntryReady =
     burstMode &&
-    burstRunsRef.current < 3 &&
+    burstRunsRef.current < 2 &&
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
     activeDirectionProbability >= 78 &&
@@ -1462,6 +1562,7 @@ export default function RiseFallAnalysis() {
     preBuyStructure.passed >= 4;
 
   const immediateEntryReady =
+    !freshScanRequired &&
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
     (
@@ -1538,6 +1639,10 @@ export default function RiseFallAnalysis() {
     burstDirectionRef.current = "WAIT";
     learnedContractsRef.current = new Set();
     lastExecutedSignalRef.current = "";
+    setFreshScanRequired(false);
+    setFreshTicksAfterSettlement(0);
+    setFreshSignalConfirmations(0);
+    setFreshSignalDirection("WAIT");
     setExecutionMessage(
       autoRunningRef.current
         ? "Transaction view reset. Auto execution continues."
@@ -1991,10 +2096,11 @@ export default function RiseFallAnalysis() {
   async function executeConfirmedSignal(signal, analysis) {
     if (
       executionBusyRef.current ||
+      freshScanRequired ||
       !autoRunningRef.current ||
       executionRunsRef.current >= Math.max(1, Number(sessionRunTarget) || 100) ||
       Date.now() < nextAutoEntryAtRef.current ||
-      burstRunsRef.current >= 3 ||
+      burstRunsRef.current >= 2 ||
       hasOpenSessionTrade ||
       !signal ||
       signal === "WAIT" ||
@@ -2140,7 +2246,7 @@ export default function RiseFallAnalysis() {
         setBurstRuns(1);
       }
 
-      nextAutoEntryAtRef.current = Date.now() + 650;
+      nextAutoEntryAtRef.current = Number.POSITIVE_INFINITY;
 
       if (nextRuns >= Math.max(1, Number(sessionRunTarget) || 100)) {
         stopAuto(`Session target completed: ${nextRuns} runs.`);
@@ -2662,6 +2768,20 @@ export default function RiseFallAnalysis() {
         lastExecutedSignalRef.current = "";
         waitStartedAtRef.current = Date.now();
 
+        // Every completed contract invalidates the previous signal.
+        // A new trade cannot open until fresh ticks and a fresh MTF direction
+        // have been confirmed after this settlement.
+        settlementResetAtRef.current = Date.now();
+        freshTickKeyRef.current = "";
+        setFreshTicksAfterSettlement(0);
+        setFreshSignalConfirmations(0);
+        setFreshSignalDirection("WAIT");
+        setFreshScanRequired(true);
+        nextAutoEntryAtRef.current = Number.POSITIVE_INFINITY;
+        burstRunsRef.current = 0;
+        setBurstRuns(0);
+        burstDirectionRef.current = "WAIT";
+
         const resultSoundKey = `${latestId}:${latestStatus}`;
         if (lastResultSoundRef.current !== resultSoundKey) {
           lastResultSoundRef.current = resultSoundKey;
@@ -2673,26 +2793,35 @@ export default function RiseFallAnalysis() {
           setConsecutiveLosses(0);
           nextAutoEntryAtRef.current = Date.now() + 1500;
 
-          if (burstRunsRef.current >= 3) {
+          if (burstRunsRef.current >= 2) {
             burstRunsRef.current = 0;
             setBurstRuns(0);
             burstDirectionRef.current = "WAIT";
             waitStartedAtRef.current = 0;
           }
         } else if (latestStatus === "LOST") {
-          burstRunsRef.current = 0;
-          setBurstRuns(0);
-          burstDirectionRef.current = "WAIT";
-          nextAutoEntryAtRef.current = Date.now() + 8000;
           waitStartedAtRef.current = 0;
+          setExecutionMessage(
+            `LOSS settled. Previous signal cleared. Switching market and rebuilding analysis from fresh ticks.`
+          );
           const nextLosses = consecutiveLossesRef.current + 1;
           consecutiveLossesRef.current = nextLosses;
           setConsecutiveLosses(nextLosses);
 
-          if (nextLosses >= 3 && autoRunningRef.current) {
+          if (nextLosses >= 2 && autoRunningRef.current) {
             stopAuto(
               `Hard stop: ${nextLosses} consecutive losses. Press RESET TRANSACTIONS before starting again.`
             );
+          } else if (
+            autoRunningRef.current &&
+            autoSwitchMarket &&
+            !marketSwitchingRef.current
+          ) {
+            window.setTimeout(() => {
+              if (autoRunningRef.current) {
+                void switchToNextMarket("Fresh market required after a loss");
+              }
+            }, 350);
           }
         }
       }
@@ -2702,6 +2831,8 @@ export default function RiseFallAnalysis() {
     symbol,
     durationMode,
     sessionTrades,
+    requiredFreshTicks,
+    autoSwitchMarket,
   ]);
 
   return (
@@ -2951,7 +3082,7 @@ export default function RiseFallAnalysis() {
                 disabled={autoRunning}
                 onChange={(event) => setBurstMode(event.target.checked)}
               />
-              Strong-signal burst mode · maximum 3 trades before a fresh reset
+              Strong-signal continuation · maximum 2 trades, with a fresh scan after every settlement
             </label>
 
             <label>
@@ -3094,9 +3225,29 @@ export default function RiseFallAnalysis() {
                 {sessionTrades.filter((trade) => trade.status === "LOST").length}
               </strong>
             </div>
+            <div>
+              <small>Fresh ticks</small>
+              <strong>
+                {freshScanRequired
+                  ? `${freshTicksAfterSettlement}/${requiredFreshTicks}`
+                  : "READY"}
+              </strong>
+            </div>
+            <div>
+              <small>Fresh signal</small>
+              <strong>
+                {freshScanRequired
+                  ? `${freshSignalDirection} ${freshSignalConfirmations}/3`
+                  : "CONFIRMED"}
+              </strong>
+            </div>
           </div>
 
-          <p>{multiTimeframe.reason}</p>
+          <p>
+            {freshScanRequired
+              ? "Previous trade signal is invalid. Rebuilding all timeframes from fresh post-settlement ticks."
+              : multiTimeframe.reason}
+          </p>
         </section>
 
         <section

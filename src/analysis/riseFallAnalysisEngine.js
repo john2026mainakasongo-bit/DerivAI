@@ -2687,14 +2687,62 @@ export function analyzeRiseFall(
 export function analyzeRiseFallMultiTimeframe(prices = []) {
   const source = Array.isArray(prices) ? prices : [];
 
+  const tickFrames = Array.from({ length: 10 }, (_, index) => {
+    const ticks = index + 1;
+    const size = Math.max(12, ticks * 7);
+
+    return {
+      key: `${ticks}T`,
+      label: `${ticks} tick${ticks === 1 ? "" : "s"}`,
+      size,
+      mode: "10ticks",
+      weight: 1 + ticks * 0.045,
+      duration: {
+        duration: ticks,
+        durationUnit: "t",
+        displayDuration: `${ticks} TICK${ticks === 1 ? "" : "S"}`,
+      },
+    };
+  });
+
   const definitions = [
-    { key: "1T", label: "1 tick", size: 12, mode: "10ticks", weight: 1.00, duration: { duration: 1, durationUnit: "t", displayDuration: "1 TICK" } },
-    { key: "2T", label: "2 ticks", size: 18, mode: "10ticks", weight: 1.10, duration: { duration: 2, durationUnit: "t", displayDuration: "2 TICKS" } },
-    { key: "5T", label: "5 ticks", size: 30, mode: "10ticks", weight: 1.25, duration: { duration: 5, durationUnit: "t", displayDuration: "5 TICKS" } },
-    { key: "10T", label: "10 ticks", size: 55, mode: "10ticks", weight: 1.35, duration: { duration: 10, durationUnit: "t", displayDuration: "10 TICKS" } },
-    { key: "15S", label: "15 seconds", size: 80, mode: "15s", weight: 1.45, duration: { duration: 15, durationUnit: "s", displayDuration: "15 SECONDS" } },
-    { key: "30S", label: "30 seconds", size: 120, mode: "15s", weight: 1.20, duration: { duration: 30, durationUnit: "s", displayDuration: "30 SECONDS" } },
-    { key: "1M", label: "1 minute", size: 180, mode: "15s", weight: 1.00, duration: { duration: 60, durationUnit: "s", displayDuration: "1 MINUTE" } },
+    ...tickFrames,
+    {
+      key: "15S",
+      label: "15 seconds",
+      size: 80,
+      mode: "15s",
+      weight: 1.45,
+      duration: {
+        duration: 15,
+        durationUnit: "s",
+        displayDuration: "15 SECONDS",
+      },
+    },
+    {
+      key: "30S",
+      label: "30 seconds",
+      size: 120,
+      mode: "15s",
+      weight: 1.20,
+      duration: {
+        duration: 30,
+        durationUnit: "s",
+        displayDuration: "30 SECONDS",
+      },
+    },
+    {
+      key: "1M",
+      label: "1 minute",
+      size: 180,
+      mode: "15s",
+      weight: 1.00,
+      duration: {
+        duration: 60,
+        durationUnit: "s",
+        displayDuration: "1 MINUTE",
+      },
+    },
   ];
 
   const frames = definitions.map((definition) => {
@@ -2763,28 +2811,38 @@ export function analyzeRiseFallMultiTimeframe(prices = []) {
   const noise = weightedAverage("noise");
   const lowRiskFrames = aligned.filter((frame) => frame.risk !== "HIGH").length;
 
+  const qualifiedFrames = aligned
+    .filter(
+      (frame) =>
+        frame.confidence >= 72 &&
+        frame.score >= 70 &&
+        frame.probability >= 74 &&
+        frame.risk !== "HIGH"
+    )
+    .map((frame) => ({
+      ...frame,
+      executionQuality:
+        frame.confidence * 0.34 +
+        frame.score * 0.29 +
+        frame.probability * 0.25 +
+        (100 - frame.noise) * 0.12,
+    }))
+    .sort((a, b) => b.executionQuality - a.executionQuality);
+
+  const exceptionalMicro =
+    agreement >= 86 &&
+    confidence >= 89 &&
+    score >= 87 &&
+    probability >= 91 &&
+    noise <= 32;
+
   const durationFrame =
-    aligned
-      .filter(
-        (frame) =>
-          frame.confidence >= 72 &&
-          frame.score >= 70 &&
-          frame.probability >= 74 &&
-          frame.risk !== "HIGH"
-      )
-      .sort((a, b) => {
-        const qualityA =
-          a.confidence * 0.35 +
-          a.score * 0.30 +
-          a.probability * 0.25 +
-          (100 - a.noise) * 0.10;
-        const qualityB =
-          b.confidence * 0.35 +
-          b.score * 0.30 +
-          b.probability * 0.25 +
-          (100 - b.noise) * 0.10;
-        return qualityB - qualityA;
-      })[0] || null;
+    qualifiedFrames.find(
+      (frame) =>
+        exceptionalMicro ||
+        frame.durationUnit !== "t" ||
+        Number(frame.duration) >= 2
+    ) || qualifiedFrames[0] || null;
 
   const qualified =
     direction !== "WAIT" &&

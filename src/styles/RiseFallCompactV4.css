@@ -54,7 +54,7 @@
 }
 
 .rfTimeframeStrip {
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(13, minmax(54px, 1fr));
   margin-top: 8px;
 }
 
@@ -227,6 +227,43 @@
 
   .rfAutoGrid,
   .rfAutoChecks {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+
+/* V5 fresh-settlement monitor */
+.rfTimeframeStrip {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.rfTimeframeStrip article {
+  min-width: 54px;
+}
+
+.rfLiveTradeMonitor {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .rfTimeframeStrip {
+    grid-template-columns: repeat(13, 58px) !important;
+    overflow-x: auto;
+    padding-bottom: 3px;
+  }
+
+  .rfLiveTradeMonitor {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .rfTimeframeStrip {
+    grid-template-columns: repeat(13, 54px) !important;
+  }
+
+  .rfLiveTradeMonitor {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
