@@ -199,6 +199,226 @@ function contractProfit(contract) {
 
 const QUANTUM_LEARNING_KEY = "quantumAiV12MarketLearning";
 
+const QUANTUM_ADAPTIVE_BRAIN_KEY =
+  "quantumAiV16AdaptiveBrain";
+
+function defaultAdaptiveBrain() {
+  return {
+    totalTrades: 0,
+    wins: 0,
+    losses: 0,
+    weights: {
+      trend: 1,
+      momentum: 1,
+      continuation: 1,
+      consistency: 1,
+      risk: 1,
+    },
+    regimes: {
+      TREND: { trades: 0, wins: 0 },
+      MIXED: { trades: 0, wins: 0 },
+      RANGE: { trades: 0, wins: 0 },
+      VOLATILE: { trades: 0, wins: 0 },
+    },
+  };
+}
+
+function readAdaptiveBrain() {
+  try {
+    const saved = window.localStorage.getItem(
+      QUANTUM_ADAPTIVE_BRAIN_KEY
+    );
+
+    if (!saved) return defaultAdaptiveBrain();
+
+    const parsed = JSON.parse(saved);
+    const fallback = defaultAdaptiveBrain();
+
+    return {
+      totalTrades: Number(parsed?.totalTrades || 0),
+      wins: Number(parsed?.wins || 0),
+      losses: Number(parsed?.losses || 0),
+      weights: {
+        trend: Number(
+          parsed?.weights?.trend ??
+            fallback.weights.trend
+        ),
+        momentum: Number(
+          parsed?.weights?.momentum ??
+            fallback.weights.momentum
+        ),
+        continuation: Number(
+          parsed?.weights?.continuation ??
+            fallback.weights.continuation
+        ),
+        consistency: Number(
+          parsed?.weights?.consistency ??
+            fallback.weights.consistency
+        ),
+        risk: Number(
+          parsed?.weights?.risk ??
+            fallback.weights.risk
+        ),
+      },
+      regimes: {
+        ...fallback.regimes,
+        ...(parsed?.regimes || {}),
+      },
+    };
+  } catch {
+    return defaultAdaptiveBrain();
+  }
+}
+
+function boundedWeight(value) {
+  return clampNumber(value, 0.75, 1.25);
+}
+
+function updateAdaptiveBrain(
+  current,
+  trade,
+  result,
+  learningRate
+) {
+  const snapshot = trade?.entrySnapshot || {};
+  const won = result === "WON";
+  const direction = won ? 1 : -1;
+  const rate = clampNumber(
+    learningRate,
+    0.005,
+    0.08
+  );
+
+  const contribution = {
+    trend: clampNumber(
+      Number(snapshot.trendStrength || 0) / 100,
+      0,
+      1
+    ),
+    momentum: clampNumber(
+      Number(snapshot.impulse || 0) / 100,
+      0,
+      1
+    ),
+    continuation: clampNumber(
+      Number(snapshot.transition || 0) / 100,
+      0,
+      1
+    ),
+    consistency: clampNumber(
+      Number(snapshot.consistency || 0) / 100,
+      0,
+      1
+    ),
+    risk: clampNumber(
+      1 -
+        (
+          Number(snapshot.noiseScore || 0) +
+          Number(snapshot.reversalRisk || 0)
+        ) /
+          200,
+      0,
+      1
+    ),
+  };
+
+  const weights = { ...current.weights };
+
+  Object.entries(contribution).forEach(
+    ([key, value]) => {
+      const adjustment =
+        direction *
+        rate *
+        Math.max(0.15, Number(value || 0));
+
+      weights[key] = boundedWeight(
+        Number(weights[key] || 1) + adjustment
+      );
+    }
+  );
+
+  const regime = String(
+    snapshot.smartRegime ||
+      snapshot.regime ||
+      "MIXED"
+  ).toUpperCase();
+
+  const previousRegime =
+    current.regimes?.[regime] || {
+      trades: 0,
+      wins: 0,
+    };
+
+  return {
+    totalTrades:
+      Number(current.totalTrades || 0) + 1,
+    wins:
+      Number(current.wins || 0) +
+      (won ? 1 : 0),
+    losses:
+      Number(current.losses || 0) +
+      (won ? 0 : 1),
+    weights,
+    regimes: {
+      ...(current.regimes || {}),
+      [regime]: {
+        trades:
+          Number(previousRegime.trades || 0) + 1,
+        wins:
+          Number(previousRegime.wins || 0) +
+          (won ? 1 : 0),
+      },
+    },
+  };
+}
+
+function adaptiveBrainAdjustment(
+  brain,
+  analysis
+) {
+  const weights = brain?.weights || {};
+  const metrics = analysis?.metrics || {};
+
+  const trend =
+    Number(metrics.trendStrength || 0) / 100;
+  const momentum =
+    Number(metrics.impulse || 0) / 100;
+  const continuation =
+    Number(metrics.transition || 0) / 100;
+  const consistency =
+    Number(analysis?.consistency || 0) / 100;
+  const riskQuality =
+    1 -
+    (
+      Number(analysis?.noiseScore || 0) +
+      Number(analysis?.reversalRisk || 0)
+    ) /
+      200;
+
+  const weighted =
+    trend * Number(weights.trend || 1) * 0.24 +
+    momentum *
+      Number(weights.momentum || 1) *
+      0.18 +
+    continuation *
+      Number(weights.continuation || 1) *
+      0.24 +
+    consistency *
+      Number(weights.consistency || 1) *
+      0.18 +
+    riskQuality *
+      Number(weights.risk || 1) *
+      0.16;
+
+  return clampNumber(
+    (weighted - 0.5) * 10,
+    -4,
+    4
+  );
+}
+
+
+
 function clampNumber(value, minimum, maximum) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return minimum;
@@ -641,12 +861,18 @@ export default function QuantumAIBot() {
     preferBestMarket: true,
     minimumTrendStrength: 58,
     minimumTransition: 55,
+    adaptiveBrainEnabled: true,
+    adaptiveBrainMinimumTrades: 5,
+    adaptiveLearningRate: 0.025,
+    adaptiveMaximumAdjustment: 4,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
   const [marketScores, setMarketScores] = useState({});
   const [learningModel, setLearningModel] =
     useState(readLearningModel);
+  const [adaptiveBrain, setAdaptiveBrain] =
+    useState(readAdaptiveBrain);
   const [recovery, setRecovery] = useState({
     active: false,
     attempts: 0,
@@ -680,6 +906,17 @@ export default function QuantumAIBot() {
       // Browser storage may be unavailable in private mode.
     }
   }, [learningModel]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        QUANTUM_ADAPTIVE_BRAIN_KEY,
+        JSON.stringify(adaptiveBrain)
+      );
+    } catch {
+      // Browser storage may be unavailable in private mode.
+    }
+  }, [adaptiveBrain]);
 
   useEffect(() => {
     if (!running) {
@@ -831,6 +1068,28 @@ export default function QuantumAIBot() {
   );
 
 
+  const brainAdjustment =
+    settings.adaptiveBrainEnabled &&
+    adaptiveBrain.totalTrades >=
+      Number(settings.adaptiveBrainMinimumTrades)
+      ? clampNumber(
+          adaptiveBrainAdjustment(
+            adaptiveBrain,
+            analysis
+          ),
+          -Math.abs(
+            Number(
+              settings.adaptiveMaximumAdjustment
+            )
+          ),
+          Math.abs(
+            Number(
+              settings.adaptiveMaximumAdjustment
+            )
+          )
+        )
+      : 0;
+
   const dynamicRequiredConfidence = recovery.active
     ? recoveryRequiredConfidence
     : Math.max(
@@ -840,7 +1099,8 @@ export default function QuantumAIBot() {
           phaseConfidence
         ) -
           starvationAdjustment -
-          patternAdjustment
+          patternAdjustment -
+          brainAdjustment
       );
 
   const fastVoteConsensus = Number(
@@ -1249,6 +1509,17 @@ export default function QuantumAIBot() {
       const outcomeCause =
         classifyTradeOutcome(original, result);
 
+      if (settings.adaptiveBrainEnabled) {
+        setAdaptiveBrain((current) =>
+          updateAdaptiveBrain(
+            current,
+            original,
+            result,
+            settings.adaptiveLearningRate
+          )
+        );
+      }
+
       if (
         settings.soundsEnabled &&
         !lastSoundedContractRef.current.has(id)
@@ -1429,6 +1700,8 @@ export default function QuantumAIBot() {
     settings.maxRecoveryAttempts,
     settings.marketLossBlockSeconds,
     settings.soundsEnabled,
+    settings.adaptiveBrainEnabled,
+    settings.adaptiveLearningRate,
     recovery.active,
     recovery.attempts,
     patternKey,
@@ -1740,6 +2013,10 @@ export default function QuantumAIBot() {
             smartRegime: smartDecision.regime,
             smartCode: smartDecision.code,
             smartSummary: smartDecision.summary,
+            brainAdjustment,
+            adaptiveWeights: {
+              ...adaptiveBrain.weights,
+            },
           },
           openedAt: Date.now(),
         };
@@ -1760,7 +2037,7 @@ export default function QuantumAIBot() {
         }
 
         setMessage(
-          `Trade ${contractId} opened · ${smartDecision.code} · ${smartDecision.regime}.`
+          `Trade ${contractId} opened · ${smartDecision.code} · ${smartDecision.regime} · brain ${brainAdjustment >= 0 ? "+" : ""}${brainAdjustment.toFixed(1)}.`
         );
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to open trade.");
@@ -1789,6 +2066,8 @@ export default function QuantumAIBot() {
     recovery.active,
     recovery.attempts,
     smartDecision,
+    brainAdjustment,
+    adaptiveBrain.weights,
   ]);
 
   async function startBot() {
@@ -1848,8 +2127,8 @@ export default function QuantumAIBot() {
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
-          title="MetaBinary Quantum AI V15"
-          subtitle="Smart market reader · explainable decisions · win/loss sounds"
+          title="MetaBinary Quantum AI V16"
+          subtitle="Adaptive weights · regime memory · explainable decisions · sounds"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1859,7 +2138,7 @@ export default function QuantumAIBot() {
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
             <small>METABINARY SYNTHETIC INTELLIGENCE</small>
-            <h1>MetaBinary Quantum AI V15</h1>
+            <h1>MetaBinary Quantum AI V16</h1>
             <p>
               Ranks markets continuously, adapts the confidence gate,
               explains settled outcomes and recovers from trade
@@ -1905,7 +2184,7 @@ export default function QuantumAIBot() {
         <section className="quantumAdaptivePanel">
           <header>
             <div>
-              <small>V15 SMART MARKET BRAIN</small>
+              <small>V16 ADAPTIVE LEARNING BRAIN</small>
               <h3>Market regime + best-market decision</h3>
             </div>
             <strong>
@@ -2101,6 +2380,9 @@ export default function QuantumAIBot() {
             ["Pattern penalty", "patternMismatchPenalty", 0, 10, 1],
             ["Trend strength", "minimumTrendStrength", 30, 90, 1],
             ["Min transition", "minimumTransition", 30, 90, 1],
+            ["Brain learn after", "adaptiveBrainMinimumTrades", 2, 50, 1],
+            ["Brain rate", "adaptiveLearningRate", 0.005, 0.08, 0.005],
+            ["Brain max adj", "adaptiveMaximumAdjustment", 0, 8, 0.5],
           ].map(([label, key, min, max, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -2280,6 +2562,121 @@ export default function QuantumAIBot() {
           ) : null}
         </section>
 
+        <section className="quantumBrainPanel">
+          <header>
+            <div>
+              <small>V16 ADAPTIVE WEIGHTS</small>
+              <h3>What the bot is learning</h3>
+            </div>
+            <strong>
+              {adaptiveBrain.totalTrades} TRAINING TRADES
+            </strong>
+          </header>
+
+          <div className="quantumBrainGrid">
+            <article>
+              <span>Trend weight</span>
+              <strong>
+                {Number(
+                  adaptiveBrain.weights.trend
+                ).toFixed(3)}
+              </strong>
+            </article>
+            <article>
+              <span>Momentum weight</span>
+              <strong>
+                {Number(
+                  adaptiveBrain.weights.momentum
+                ).toFixed(3)}
+              </strong>
+            </article>
+            <article>
+              <span>Continuation weight</span>
+              <strong>
+                {Number(
+                  adaptiveBrain.weights.continuation
+                ).toFixed(3)}
+              </strong>
+            </article>
+            <article>
+              <span>Consistency weight</span>
+              <strong>
+                {Number(
+                  adaptiveBrain.weights.consistency
+                ).toFixed(3)}
+              </strong>
+            </article>
+            <article>
+              <span>Risk-quality weight</span>
+              <strong>
+                {Number(
+                  adaptiveBrain.weights.risk
+                ).toFixed(3)}
+              </strong>
+            </article>
+            <article>
+              <span>Brain adjustment</span>
+              <strong
+                className={
+                  brainAdjustment >= 0
+                    ? "positive"
+                    : "negative"
+                }
+              >
+                {brainAdjustment >= 0 ? "+" : ""}
+                {brainAdjustment.toFixed(2)}
+              </strong>
+            </article>
+            <article>
+              <span>Model win rate</span>
+              <strong>
+                {adaptiveBrain.totalTrades
+                  ? `${(
+                      (adaptiveBrain.wins /
+                        adaptiveBrain.totalTrades) *
+                      100
+                    ).toFixed(1)}%`
+                  : "0.0%"}
+              </strong>
+            </article>
+            <article>
+              <span>Learning status</span>
+              <strong>
+                {settings.adaptiveBrainEnabled
+                  ? adaptiveBrain.totalTrades >=
+                    Number(
+                      settings.adaptiveBrainMinimumTrades
+                    )
+                    ? "ACTIVE"
+                    : "COLLECTING"
+                  : "OFF"}
+              </strong>
+            </article>
+          </div>
+
+          <div className="quantumRegimeMemory">
+            {Object.entries(
+              adaptiveBrain.regimes || {}
+            ).map(([regime, row]) => (
+              <article key={regime}>
+                <span>{regime}</span>
+                <strong>
+                  {Number(row.trades || 0)} trades
+                </strong>
+                <b>
+                  {Number(row.trades || 0)
+                    ? `${(
+                        (Number(row.wins || 0) /
+                          Number(row.trades || 1)) *
+                        100
+                      ).toFixed(1)}%`
+                    : "0.0%"}
+                </b>
+              </article>
+            ))}
+          </div>
+        </section>
+
         <section className={`quantumSmartDecision ${smartDecision.ready ? "ready" : "wait"}`}>
           <header>
             <div>
@@ -2422,7 +2819,10 @@ export default function QuantumAIBot() {
                     {Number(
                       trade.entrySnapshot?.adaptiveGate || 0
                     ).toFixed(0)}
-                    %
+                    % · B{" "}
+                    {Number(
+                      trade.entrySnapshot?.brainAdjustment || 0
+                    ).toFixed(1)}
                   </strong>
                 </div>
                 <div>
@@ -2457,7 +2857,7 @@ export default function QuantumAIBot() {
         </section>
 
         <p className="quantumRiskNote">
-          V15 reads market regimes, explains decisions, plays win/loss sounds and diagnoses outcomes,
+          V16 learns adaptive signal weights, remembers regime performance, plays win/loss sounds and diagnoses outcomes,
           but past performance cannot guarantee future wins.
           Test on Demo before Real execution.
         </p>

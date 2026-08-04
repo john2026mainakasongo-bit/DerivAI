@@ -767,3 +767,106 @@ html:has(.quantumShell),
     grid-template-columns: 1fr;
   }
 }
+
+
+/* QUANTUM AI V16 — adaptive learning brain */
+.quantumBrainPanel {
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid #5d4aa0;
+  border-radius: 12px;
+  background: #091d34;
+}
+
+.quantumBrainPanel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumBrainPanel small {
+  color: #b897ff;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.quantumBrainPanel h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumBrainPanel header > strong {
+  color: #c9b3ff;
+  font-size: 10px;
+}
+
+.quantumBrainGrid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.quantumBrainGrid article,
+.quantumRegimeMemory article {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #394f78;
+  border-radius: 8px;
+  background: #071827;
+}
+
+.quantumBrainGrid span,
+.quantumRegimeMemory span {
+  display: block;
+  color: #8ca9bc;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumBrainGrid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.quantumRegimeMemory {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.quantumRegimeMemory article {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 6px;
+}
+
+.quantumRegimeMemory strong {
+  color: #fff;
+  font-size: 9px;
+}
+
+.quantumRegimeMemory b {
+  grid-column: 1 / -1;
+  color: #42dfb5;
+  font-size: 11px;
+}
+
+@media (max-width: 1100px) {
+  .quantumBrainGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumBrainGrid,
+  .quantumRegimeMemory {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
