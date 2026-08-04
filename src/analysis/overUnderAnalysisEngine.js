@@ -152,6 +152,28 @@ function streakPenalty(digits, barrier, side) {
   return Math.min(10, Math.max(0, streak - 2) * 2.5);
 }
 
+function winningDigitsFor(barrier, side) {
+  if (side === "OVER") {
+    return Array.from(
+      { length: Math.max(0, 9 - Number(barrier)) },
+      (_, index) => Number(barrier) + index + 1
+    );
+  }
+
+  return Array.from(
+    { length: Math.max(0, Number(barrier)) },
+    (_, index) => index
+  );
+}
+
+function avoidDigitsFor(barrier, side) {
+  const winning = new Set(winningDigitsFor(barrier, side));
+
+  return Array.from({ length: 10 }, (_, digit) => digit).filter(
+    (digit) => !winning.has(digit)
+  );
+}
+
 function buildCandidate(digits, counts, entropyScore, barrier, side) {
   const total = digits.length;
   const baseline = naturalProbability(barrier, side);
@@ -240,6 +262,9 @@ function buildCandidate(digits, counts, entropyScore, barrier, side) {
   return {
     side,
     barrier,
+    contract: `${side} ${barrier}`,
+    winningDigits: winningDigitsFor(barrier, side),
+    avoidDigits: avoidDigitsFor(barrier, side),
     probability: conservativeProbability,
     observedProbability: fullProbability,
     baselineProbability: baseline,
@@ -368,6 +393,13 @@ export function analyzeOverUnder(prices = []) {
     entropy: entropyScore,
     candidates,
     best,
+    contract: `${best.side} ${best.barrier}`,
+    winningDigits: Array.isArray(best.winningDigits)
+      ? best.winningDigits
+      : winningDigitsFor(best.barrier, best.side),
+    avoidDigits: Array.isArray(best.avoidDigits)
+      ? best.avoidDigits
+      : avoidDigitsFor(best.barrier, best.side),
     confidence,
     quality,
     risk,
@@ -386,6 +418,8 @@ export function analyzeOverUnder(prices = []) {
           : prepare
             ? "C"
             : "WAIT",
+    waitDigits: [0, 1, 2],
+    triggerDigits: [0, 1, 2],
     reason: tradeNow
       ? `${best.side} ${best.barrier} qualified · edge ${best.probabilityEdge.toFixed(1)} · score ${best.score.toFixed(1)}.`
       : prepare
