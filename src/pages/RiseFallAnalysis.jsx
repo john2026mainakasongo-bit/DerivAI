@@ -1019,22 +1019,11 @@ export default function RiseFallAnalysis() {
       enabled = false;
     }
 
-    // A selected authenticated Real account is ready for execution.
-    // Keep the permission scoped to the current browser session/account.
-    enabled = true;
-
-    try {
-      window.sessionStorage.setItem(
-        realPermissionKey(selectedAccountId),
-        "enabled"
-      );
-    } catch {
-      // In-memory permission remains enabled.
-    }
-
-    setAllowReal(true);
+    setAllowReal(enabled);
     setRealExecutionStatus(
-      `Real execution enabled for ${selectedAccountId || "selected account"}.`
+      enabled
+        ? `Real execution enabled for ${selectedAccountId || "selected account"}.`
+        : "Real execution is locked. Tick the confirmation before START or manual BUY."
     );
   }, [selectedAccountType, selectedAccountId]);
 
@@ -1822,7 +1811,7 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    if (false) {
+    if (selectedAccountType !== "demo" && !allowReal) {
       setManualStatus(
         "Real execution is locked. Tick the Real-account confirmation first."
       );
@@ -1967,7 +1956,7 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    if (false) {
+    if (selectedAccountType !== "demo" && !allowReal) {
       stopAuto(
         "Real auto execution is locked. Enable Real execution explicitly or switch to Demo."
       );
@@ -2121,16 +2110,16 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    if (false) {
+    if (selectedAccountType !== "demo" && !allowReal) {
       setExecutionMessage(
         "Real execution is locked. Tick the Real-account confirmation before START."
       );
       return;
     }
 
-    if (consecutiveLossesRef.current >= 3) {
+    if (consecutiveLossesRef.current >= 2) {
       setExecutionMessage(
-        "Reset transactions before restarting after 3 consecutive losses."
+        "Reset transactions before restarting after 2 consecutive losses."
       );
       return;
     }
@@ -2308,7 +2297,7 @@ export default function RiseFallAnalysis() {
       !autoRunning ||
       !immediateEntryReady ||
       hasOpenSessionTrade ||
-      consecutiveLosses >= 3 ||
+      consecutiveLosses >= 2 ||
       executionRuns >= Math.max(1, Number(sessionRunTarget) || 100)
     ) {
       return;
@@ -2344,7 +2333,7 @@ export default function RiseFallAnalysis() {
       hasOpenSessionTrade ||
       tradeBusy ||
       marketSymbols.length < 2 ||
-      consecutiveLosses >= 3
+      consecutiveLosses >= 2
     ) {
       return;
     }
@@ -2672,7 +2661,8 @@ export default function RiseFallAnalysis() {
               }`}
               disabled={
                 tradeBusy ||
-                !selectedAccountId
+                !selectedAccountId ||
+                (selectedAccountType !== "demo" && !allowReal)
               }
               onClick={toggleAutoExecution}
             >
@@ -2770,7 +2760,8 @@ export default function RiseFallAnalysis() {
                 className={autoRunning ? "stop" : "start"}
                 disabled={
                   tradeBusy ||
-                  !selectedAccountId
+                  !selectedAccountId ||
+                  (selectedAccountType !== "demo" && !allowReal)
                 }
                 onClick={toggleAutoExecution}
               >
@@ -2938,9 +2929,11 @@ export default function RiseFallAnalysis() {
             >
               <input
                 type="checkbox"
-                checked={selectedAccountType !== "demo" ? true : allowReal}
-                disabled
-                onChange={() => {}}
+                checked={allowReal}
+                disabled={selectedAccountType === "demo" || autoRunning}
+                onChange={(event) =>
+                  updateRealExecutionPermission(event.target.checked)
+                }
               />
               {selectedAccountType === "demo"
                 ? "Demo execution enabled"
@@ -3683,7 +3676,7 @@ export default function RiseFallAnalysis() {
           <article>
             <small>LEARNING FILTER</small>
             <strong>
-              {consecutiveLosses >= 3
+              {consecutiveLosses >= 2
                 ? "HARD STOP"
                 : learningProfile.setupRejected
                   ? "REJECT SETUP"

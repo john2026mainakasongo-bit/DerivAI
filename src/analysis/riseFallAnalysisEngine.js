@@ -2266,18 +2266,18 @@ export function analyzeRiseFall(
         : 0;
 
   const prepareThreshold = clamp(
-    58 + regimeAdjustment + noiseAdjustment,
-    56,
-    66
+    62 + regimeAdjustment + noiseAdjustment,
+    60,
+    72
   );
 
   const buyThreshold = clamp(
-    64 +
+    68 +
       regimeAdjustment +
       noiseAdjustment +
       volatilityAdjustment,
-    62,
-    74
+    66,
+    80
   );
 
   const strongThreshold = clamp(
@@ -2337,11 +2337,11 @@ export function analyzeRiseFall(
   const tradeNow =
     direction !== "WAIT" &&
     consensus.direction === direction &&
-    consensus.score >= 50 &&
+    consensus.score >= 54 &&
     entryScore >= buyThreshold &&
-    dominantVotes >= 5 &&
-    dominantPressure >= 55 &&
-    continuationReversal.continuation >= 47 &&
+    dominantVotes >= 6 &&
+    dominantPressure >= 57 &&
+    continuationReversal.continuation >= 50 &&
     (
       emaAligned ||
       ribbon.state !== "MIXED" ||
@@ -2381,7 +2381,7 @@ export function analyzeRiseFall(
     !tradeNow &&
     direction !== "WAIT" &&
     entryScore >= prepareThreshold &&
-    dominantVotes >= 5 &&
+    dominantVotes >= 6 &&
     (
       dominantPressure >= 55 ||
       continuationReversal.continuation >= 50 ||

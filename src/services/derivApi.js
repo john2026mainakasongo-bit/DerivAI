@@ -1,4 +1,4 @@
-﻿const PUBLIC_SOCKET_URLS = [
+const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -134,6 +134,8 @@ class DerivTradingClient {
     this.pingTimer = null;
     this.manualClose = false;
     this.connectPromise = null;
+    this.socketAuthenticated = false;
+    this.lastAuthConnectionError = "";
 
     this.auth = {
       accessToken: "",
@@ -389,6 +391,7 @@ class DerivTradingClient {
 
     this.pending.clear();
     this.socket = null;
+    this.socketAuthenticated = false;
     this.subscriptionId = "";
     this.contractSubscriptionIds.clear();
   }
@@ -396,43 +399,68 @@ class DerivTradingClient {
   async getAuthenticatedSocketUrl() {
     if (!this.authenticated) return "";
 
-    const response = await fetch(
-      `${API_BASE_URL}/trading/v1/options/accounts/${encodeURIComponent(
-        this.auth.accountId
-      )}/otp`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.auth.accessToken}`,
-          "Deriv-App-ID": this.auth.appId,
-          Accept: "application/json",
-        },
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/trading/v1/options/accounts/${encodeURIComponent(
+            this.auth.accountId
+          )}/otp`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${this.auth.accessToken}`,
+              "Deriv-App-ID": this.auth.appId,
+              Accept: "application/json",
+            },
+            signal: controller.signal,
+          }
+        );
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            errorMessage(
+              payload,
+              `Unable to obtain authenticated Deriv WebSocket (${response.status}).`
+            )
+          );
+        }
+
+        const url = String(payload?.data?.url || payload?.url || "");
+
+        if (!url) {
+          throw new Error(
+            "Deriv did not return an authenticated WebSocket URL."
+          );
+        }
+
+        this.lastAuthConnectionError = "";
+        return url;
+      } catch (error) {
+        lastError = error;
+        this.lastAuthConnectionError =
+          error instanceof Error ? error.message : "Authenticated connection failed.";
+
+        if (attempt < 2) {
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+        }
+      } finally {
+        window.clearTimeout(timeout);
       }
-    );
-
-    const payload = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(
-        errorMessage(
-          payload,
-          `Unable to obtain authenticated Deriv WebSocket (${response.status}).`
-        )
-      );
     }
 
-    const url = String(payload?.data?.url || payload?.url || "");
-
-    if (!url) {
-      throw new Error(
-        "Deriv did not return an authenticated WebSocket URL."
-      );
-    }
-
-    return url;
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Unable to obtain an authenticated Deriv connection.");
   }
 
-  async openUrl(url) {
+  async openUrl(url, authenticatedSocket = false) {
     await new Promise((resolve, reject) => {
       const socket = new WebSocket(url);
       this.socket = socket;
@@ -460,6 +488,8 @@ class DerivTradingClient {
 
         socket.onmessage = (event) =>
           this.handleMessage(event);
+
+        this.socketAuthenticated = Boolean(authenticatedSocket);
 
         this.pingTimer = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
@@ -499,9 +529,12 @@ class DerivTradingClient {
     });
   }
 
-  async connect() {
+  async connect({ allowPublicFallback = true } = {}) {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      return;
+      return {
+        authenticated: this.socketAuthenticated,
+        fallback: !this.socketAuthenticated,
+      };
     }
 
     if (this.connectPromise) {
@@ -513,19 +546,52 @@ class DerivTradingClient {
 
     this.connectPromise = (async () => {
       let lastError = null;
-      const urls = [];
+      const candidates = [];
 
       if (this.authenticated) {
-        urls.push(await this.getAuthenticatedSocketUrl());
-      } else {
-        urls.push(...PUBLIC_SOCKET_URLS);
+        try {
+          const authenticatedUrl = await this.getAuthenticatedSocketUrl();
+          candidates.push({
+            url: authenticatedUrl,
+            authenticated: true,
+          });
+        } catch (error) {
+          lastError = error;
+
+          if (!allowPublicFallback) {
+            throw error;
+          }
+        }
       }
 
-      for (const url of urls) {
+      if (!this.authenticated || allowPublicFallback) {
+        PUBLIC_SOCKET_URLS.forEach((url) =>
+          candidates.push({
+            url,
+            authenticated: false,
+          })
+        );
+      }
+
+      for (const candidate of candidates) {
         try {
-          await this.openUrl(url);
-          this.emitStatus("CONNECTED");
-          return;
+          await this.openUrl(candidate.url, candidate.authenticated);
+
+          const detail =
+            candidate.authenticated
+              ? ""
+              : this.authenticated
+                ? `Public analysis feed connected. Trading connection unavailable: ${
+                    this.lastAuthConnectionError || "authenticated feed failed"
+                  }`
+                : "";
+
+          this.emitStatus("CONNECTED", detail);
+
+          return {
+            authenticated: candidate.authenticated,
+            fallback: !candidate.authenticated,
+          };
         } catch (error) {
           lastError = error;
           this.clearConnectionState();
@@ -542,15 +608,41 @@ class DerivTradingClient {
     })();
 
     try {
-      await this.connectPromise;
+      return await this.connectPromise;
     } finally {
       this.connectPromise = null;
     }
   }
 
-  async reconnect() {
+  async reconnect(options = {}) {
     this.disconnect({ preserveAccount: true });
-    await this.connect();
+    return this.connect(options);
+  }
+
+  async ensureTradingConnection() {
+    if (!this.authenticated) {
+      throw new Error(
+        "Choose a logged-in Demo or Real account before trading."
+      );
+    }
+
+    if (
+      this.socket?.readyState === WebSocket.OPEN &&
+      this.socketAuthenticated
+    ) {
+      return true;
+    }
+
+    await this.reconnect({ allowPublicFallback: false });
+
+    if (!this.socketAuthenticated) {
+      throw new Error(
+        this.lastAuthConnectionError ||
+          "Authenticated Deriv trading connection is unavailable."
+      );
+    }
+
+    return true;
   }
 
   async getVolatilityMarkets() {
@@ -714,9 +806,14 @@ class DerivTradingClient {
       );
     }
 
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+    if (
+      !this.socket ||
+      this.socket.readyState !== WebSocket.OPEN ||
+      !this.socketAuthenticated
+    ) {
       throw new Error(
-        "Connect the authenticated Deriv feed before trading."
+        this.lastAuthConnectionError ||
+          "Connect the authenticated Deriv feed before trading."
       );
     }
   }
