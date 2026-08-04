@@ -8,6 +8,11 @@ import "../styles/OverUnderAnalysis.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
 
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 function contractIdOf(item = {}) {
   return String(item?.contract_id || item?.id || item?.contractId || "");
 }
@@ -27,36 +32,35 @@ function contractStatus(item = {}) {
 }
 
 function profitOf(item = {}) {
-  const value = Number(
+  return safeNumber(
     item?.profit ??
       item?.profit_loss ??
       item?.pnl ??
-      (Number(item?.sell_price || 0) - Number(item?.buy_price || 0))
+      (safeNumber(item?.sell_price) - safeNumber(item?.buy_price))
   );
-
-  return Number.isFinite(value) ? value : 0;
 }
 
-function safeAnalysis(value) {
+function normalizeAnalysis(value) {
   const best = value?.best || {};
+  const counts = Array.isArray(value?.counts)
+    ? value.counts.slice(0, 10)
+    : [];
+
+  while (counts.length < 10) counts.push(0);
 
   return {
-    total: Number(value?.total || 0),
-    digits: Array.isArray(value?.digits) ? value.digits : [],
+    total: safeNumber(value?.total),
     recentDigits: Array.isArray(value?.recentDigits)
-      ? value.recentDigits
+      ? value.recentDigits.filter((digit) => Number.isFinite(Number(digit)))
       : [],
-    counts: Array.isArray(value?.counts)
-      ? value.counts
-      : Array.from({ length: 10 }, () => 0),
-    latestDigit: Number(value?.latestDigit || 0),
-    entropy: Number(value?.entropy || 0),
+    counts,
+    latestDigit: safeNumber(value?.latestDigit),
+    rows: Array.isArray(value?.rows) ? value.rows : [],
     candidates: Array.isArray(value?.candidates)
       ? value.candidates
       : [],
-    rows: Array.isArray(value?.rows) ? value.rows : [],
-    confidence: Number(value?.confidence || 0),
-    quality: Number(value?.quality || 0),
+    confidence: safeNumber(value?.confidence),
+    quality: safeNumber(value?.quality),
     risk: String(value?.risk || "HIGH"),
     tradeNow: Boolean(value?.tradeNow),
     prepare: Boolean(value?.prepare),
@@ -68,14 +72,13 @@ function safeAnalysis(value) {
     ),
     best: {
       side: String(best?.side || "WAIT"),
-      barrier: Number(best?.barrier ?? 2),
-      probability: Number(best?.probability || 0),
-      exactRisk: Number(best?.exactRisk || 100),
-      transitionScore: Number(best?.transitionScore || 0),
-      score: Number(best?.score || 0),
-      probabilityEdge: Number(best?.probabilityEdge || 0),
-      transitionEdge: Number(best?.transitionEdge || 0),
-      consistency: Number(best?.consistency || 0),
+      barrier: Math.max(1, Math.min(7, safeNumber(best?.barrier, 2))),
+      probability: safeNumber(best?.probability),
+      probabilityEdge: safeNumber(best?.probabilityEdge),
+      transitionEdge: safeNumber(best?.transitionEdge),
+      consistency: safeNumber(best?.consistency),
+      exactRisk: safeNumber(best?.exactRisk, 100),
+      score: safeNumber(best?.score),
     },
   };
 }
@@ -100,32 +103,34 @@ export default function OverUnderAnalysis() {
   } = useDerivTicks();
 
   const [autoRunning, setAutoRunning] = useState(false);
-  const [stake, setStake] = useState(0.35);
-  const [durationTicks, setDurationTicks] = useState(1);
+  const [stake, setStake] = useState("0.35");
+  const [durationTicks, setDurationTicks] = useState("1");
+  const [manualSide, setManualSide] = useState("OVER");
+  const [manualBarrier, setManualBarrier] = useState("2");
   const [autoSwitch, setAutoSwitch] = useState(true);
-  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(5);
+  const [switchAfterSeconds, setSwitchAfterSeconds] = useState("5");
+  const [allowReal, setAllowReal] = useState(false);
+
   const [runs, setRuns] = useState(0);
-  const [switches, setSwitches] = useState(0);
   const [losses, setLosses] = useState(0);
+  const [switches, setSwitches] = useState(0);
   const [trades, setTrades] = useState([]);
   const [message, setMessage] = useState("Auto execution is stopped.");
-  const [allowReal, setAllowReal] = useState(false);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
-  const lossRef = useRef(0);
-  const waitRef = useRef(Date.now());
-  const switchRef = useRef(false);
-  const lastSwitchRef = useRef(0);
-  const processedRef = useRef(new Set());
+  const lossesRef = useRef(0);
   const nextEntryAtRef = useRef(0);
+  const waitStartedAtRef = useRef(Date.now());
+  const switchingRef = useRef(false);
+  const processedContractsRef = useRef(new Set());
 
   useEffect(() => {
     runningRef.current = autoRunning;
   }, [autoRunning]);
 
   useEffect(() => {
-    lossRef.current = losses;
+    lossesRef.current = losses;
   }, [losses]);
 
   useEffect(() => {
@@ -135,23 +140,22 @@ export default function OverUnderAnalysis() {
   }, [connected, connect]);
 
   const analysis = useMemo(
-    () => safeAnalysis(analyzeOverUnder(prices)),
+    () => normalizeAnalysis(analyzeOverUnder(prices)),
     [prices]
   );
 
   const marketSymbols = useMemo(
     () =>
       (Array.isArray(markets) ? markets : [])
-        .map((item) =>
-          String(item?.symbol ?? item?.value ?? item?.id ?? "")
-        )
+        .map((item) => String(item?.symbol ?? item?.value ?? item?.id ?? ""))
         .filter(Boolean),
     [markets]
   );
 
-  const hasOpenTrade = trades.some(
-    (trade) => trade.status === "OPEN"
-  );
+  const hasOpenTrade = trades.some((trade) => trade.status === "OPEN");
+
+  const selectedStake = Math.max(0.35, safeNumber(stake, 0.35));
+  const selectedDuration = Math.max(1, safeNumber(durationTicks, 1));
 
   function stopAuto(text) {
     runningRef.current = false;
@@ -159,34 +163,33 @@ export default function OverUnderAnalysis() {
     setMessage(text);
   }
 
-  function resetTransactions() {
-    setTrades([]);
+  function resetSession() {
     setRuns(0);
     setLosses(0);
-    lossRef.current = 0;
-    processedRef.current = new Set();
-    setMessage(
-      runningRef.current
-        ? "Transactions reset. Scanner continues."
-        : "Transactions reset."
-    );
+    setSwitches(0);
+    setTrades([]);
+    lossesRef.current = 0;
+    processedContractsRef.current = new Set();
+    nextEntryAtRef.current = 0;
+    waitStartedAtRef.current = Date.now();
+    setMessage(autoRunning ? "Session reset. Scanner continues." : "Session reset.");
   }
 
-  function nextMarket() {
+  function canTradeReal() {
+    return selectedAccountType === "demo" || allowReal;
+  }
+
+  function nextMarketSymbol() {
     if (!marketSymbols.length) return "";
-
-    const current = marketSymbols.indexOf(symbol);
-
+    const currentIndex = marketSymbols.indexOf(symbol);
     return marketSymbols[
-      current >= 0
-        ? (current + 1) % marketSymbols.length
-        : 0
+      currentIndex >= 0 ? (currentIndex + 1) % marketSymbols.length : 0
     ];
   }
 
   async function switchMarket(reason) {
     if (
-      switchRef.current ||
+      switchingRef.current ||
       hasOpenTrade ||
       tradeBusy ||
       typeof changeSymbol !== "function"
@@ -194,53 +197,50 @@ export default function OverUnderAnalysis() {
       return;
     }
 
-    const next = nextMarket();
-
+    const next = nextMarketSymbol();
     if (!next || next === symbol) return;
 
-    switchRef.current = true;
-    lastSwitchRef.current = Date.now();
-    waitRef.current = Date.now();
-    setMessage(`Switching ${symbol} → ${next} · ${reason}.`);
+    switchingRef.current = true;
+    setMessage(`Switching ${symbol || "market"} → ${next}. ${reason}`);
 
     try {
       await Promise.resolve(changeSymbol(next));
       setSwitches((value) => value + 1);
+      waitStartedAtRef.current = Date.now();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Market switch failed.");
     } finally {
       window.setTimeout(() => {
-        switchRef.current = false;
-      }, 1200);
+        switchingRef.current = false;
+      }, 900);
     }
   }
 
-  async function executeTrade() {
-    if (
-      busyRef.current ||
-      !runningRef.current ||
-      hasOpenTrade ||
-      Date.now() < nextEntryAtRef.current ||
-      !analysis.tradeNow ||
-      analysis.best.side === "WAIT"
-    ) {
-      return;
-    }
+  async function sendTrade({
+    side,
+    barrier,
+    mode,
+    score = 0,
+    confidence = 0,
+  }) {
+    if (busyRef.current || tradeBusy || hasOpenTrade) return;
 
     if (!connected) {
-      setMessage("Waiting for Deriv feed.");
+      setMessage("Waiting for Deriv live feed.");
       return;
     }
 
     if (!selectedAccountId) {
-      stopAuto("Choose a Demo or Real account.");
+      setMessage("Choose a Demo or Real account.");
       return;
     }
 
-    if (selectedAccountType !== "demo" && !allowReal) {
-      stopAuto("Real execution is locked.");
+    if (!canTradeReal()) {
+      setMessage("Real execution is locked. Enable it first.");
       return;
     }
 
-    if (lossRef.current >= 2) {
+    if (mode === "AUTO" && lossesRef.current >= 2) {
       stopAuto("Hard stop: 2 consecutive losses.");
       return;
     }
@@ -248,22 +248,16 @@ export default function OverUnderAnalysis() {
     busyRef.current = true;
 
     try {
-      const contractType =
-        analysis.best.side === "OVER"
-          ? "DIGITOVER"
-          : "DIGITUNDER";
+      const contractType = side === "OVER" ? "DIGITOVER" : "DIGITUNDER";
 
       const result = await placeTrade({
         symbol,
         contractType,
-        amount: Math.max(0.35, Number(stake) || 0.35),
+        amount: selectedStake,
         basis: "stake",
-        duration: Math.max(
-          1,
-          Number(durationTicks) || 1
-        ),
+        duration: selectedDuration,
         durationUnit: "t",
-        barrier: String(analysis.best.barrier),
+        barrier: String(barrier),
       });
 
       const contractId = String(result?.contractId || "");
@@ -276,71 +270,77 @@ export default function OverUnderAnalysis() {
             contractId,
             time: Date.now(),
             symbol,
-            contract: `${analysis.best.side} ${analysis.best.barrier}`,
-            duration: `${durationTicks} TICK`,
-            stake: Math.max(0.35, Number(stake) || 0.35),
-            confidence: analysis.confidence,
-            score: analysis.best.score,
+            contract: `${side} ${barrier}`,
+            mode,
+            duration: `${selectedDuration}T`,
+            stake: selectedStake,
+            confidence,
+            score,
             status: "OPEN",
             profit: 0,
           },
           ...current,
-        ].slice(0, 40)
+        ].slice(0, 50)
       );
 
-      setMessage(
-        `${analysis.best.side} ${analysis.best.barrier} opened.`
-      );
-
+      setMessage(`${mode} ${side} ${barrier} opened.`);
       nextEntryAtRef.current = Date.now() + 5000;
-      waitRef.current = Date.now();
+      waitStartedAtRef.current = Date.now();
     } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Trade failed."
-      );
+      setMessage(error instanceof Error ? error.message : "Trade failed.");
     } finally {
       busyRef.current = false;
     }
   }
 
-  function toggleAuto() {
+  function startOrStopAuto() {
     if (autoRunning) {
       stopAuto("Stopped manually.");
       return;
     }
 
-    if (selectedAccountType !== "demo" && !allowReal) {
-      setMessage(
-        "Enable Real execution or switch to Demo."
-      );
+    if (!canTradeReal()) {
+      setMessage("Enable Real execution or switch to Demo.");
       return;
     }
 
-    waitRef.current = Date.now();
+    if (lossesRef.current >= 2) {
+      setMessage("Reset the session before restarting after 2 losses.");
+      return;
+    }
+
     runningRef.current = true;
     setAutoRunning(true);
-    setMessage(
-      "Scanning all OVER and UNDER contracts."
-    );
+    waitStartedAtRef.current = Date.now();
+    setMessage("Scanning all OVER and UNDER candidates.");
   }
 
   useEffect(() => {
     if (
-      autoRunning &&
-      analysis.tradeNow &&
-      !hasOpenTrade &&
-      losses < 2
+      !autoRunning ||
+      !analysis.tradeNow ||
+      analysis.best.side === "WAIT" ||
+      hasOpenTrade ||
+      Date.now() < nextEntryAtRef.current ||
+      losses >= 2
     ) {
-      void executeTrade();
+      return;
     }
+
+    void sendTrade({
+      side: analysis.best.side,
+      barrier: analysis.best.barrier,
+      mode: "AUTO",
+      score: analysis.best.score,
+      confidence: analysis.confidence,
+    });
   }, [
     autoRunning,
     analysis.tradeNow,
     analysis.best.side,
     analysis.best.barrier,
     analysis.best.score,
+    analysis.confidence,
     hasOpenTrade,
     losses,
     symbol,
@@ -350,6 +350,7 @@ export default function OverUnderAnalysis() {
     if (
       !autoRunning ||
       !autoSwitch ||
+      analysis.tradeNow ||
       hasOpenTrade ||
       tradeBusy ||
       marketSymbols.length < 2 ||
@@ -358,27 +359,11 @@ export default function OverUnderAnalysis() {
       return undefined;
     }
 
-    if (analysis.tradeNow) {
-      waitRef.current = Date.now();
-      return undefined;
-    }
-
     const timer = window.setInterval(() => {
-      const delay =
-        Math.max(
-          4,
-          Number(switchAfterSeconds) || 5
-        ) * 1000;
+      const delay = Math.max(4, safeNumber(switchAfterSeconds, 5)) * 1000;
 
-      const now = Date.now();
-
-      if (
-        now - waitRef.current >= delay &&
-        now - lastSwitchRef.current >= delay
-      ) {
-        void switchMarket(
-          analysis.reason || "No executable entry"
-        );
+      if (Date.now() - waitStartedAtRef.current >= delay) {
+        void switchMarket("No qualified entry found.");
       }
     }, 500);
 
@@ -386,49 +371,39 @@ export default function OverUnderAnalysis() {
   }, [
     autoRunning,
     autoSwitch,
+    analysis.tradeNow,
     hasOpenTrade,
     tradeBusy,
-    marketSymbols,
-    symbol,
-    analysis.tradeNow,
-    analysis.reason,
+    marketSymbols.length,
     switchAfterSeconds,
     losses,
+    symbol,
   ]);
 
   useEffect(() => {
-    const contracts = Array.isArray(openContracts)
-      ? openContracts
-      : [];
-
+    const contracts = Array.isArray(openContracts) ? openContracts : [];
     if (!contracts.length) return;
 
-    let result = null;
+    let settledResult = "";
 
     setTrades((current) =>
       current.map((trade) => {
         const match = contracts.find(
-          (item) =>
-            contractIdOf(item) === trade.contractId
+          (item) => contractIdOf(item) === trade.contractId
         );
 
         if (!match) return trade;
 
         const status = contractStatus(match);
-        const closed = [
-          "WON",
-          "LOST",
-          "SOLD",
-          "EXPIRED",
-        ].includes(status);
+        const closed = ["WON", "LOST", "SOLD", "EXPIRED"].includes(status);
 
         if (
           closed &&
           trade.contractId &&
-          !processedRef.current.has(trade.contractId)
+          !processedContractsRef.current.has(trade.contractId)
         ) {
-          processedRef.current.add(trade.contractId);
-          result = status;
+          processedContractsRef.current.add(trade.contractId);
+          settledResult = status;
         }
 
         return {
@@ -439,30 +414,23 @@ export default function OverUnderAnalysis() {
       })
     );
 
-    if (result === "WON") {
-      lossRef.current = 0;
+    if (settledResult === "WON") {
+      lossesRef.current = 0;
       setLosses(0);
       nextEntryAtRef.current = Date.now() + 5000;
-      waitRef.current = Date.now();
-    } else if (result === "LOST") {
-      const next = lossRef.current + 1;
-
-      lossRef.current = next;
-      setLosses(next);
+      waitStartedAtRef.current = Date.now();
+      setMessage("Trade won. Fresh scan started.");
+    } else if (settledResult === "LOST") {
+      const nextLosses = lossesRef.current + 1;
+      lossesRef.current = nextLosses;
+      setLosses(nextLosses);
       nextEntryAtRef.current = Date.now() + 5000;
-      waitRef.current = Date.now();
+      waitStartedAtRef.current = Date.now();
 
-      if (next >= 2 && runningRef.current) {
-        stopAuto(
-          "Hard stop: 2 consecutive losses. Reset before restarting."
-        );
-      } else if (
-        runningRef.current &&
-        autoSwitch
-      ) {
-        void switchMarket(
-          "Loss settled; testing another volatility market"
-        );
+      if (nextLosses >= 2 && runningRef.current) {
+        stopAuto("Hard stop: 2 consecutive losses.");
+      } else if (runningRef.current && autoSwitch) {
+        void switchMarket("Loss settled. Rotating market.");
       }
     }
   }, [openContracts, autoSwitch]);
@@ -473,62 +441,49 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V99 · Stable Multi-Contract Scanner"
-          subtitle="Safe full replacement · all OVER and UNDER barriers · no undefined digit fields"
+          title="EdgePilot V101 · Over/Under Trader"
+          subtitle="Fast manual entry · live multi-contract scanner · compact responsive layout"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
           onDisconnect={disconnect}
         />
 
-        <section className="ouToolbar">
-          <MarketSelector
-            markets={markets}
-            value={symbol}
-            disabled={loadingMarket}
-            onChange={changeSymbol}
-          />
+        <section className="ouTopRow">
+          <div className="ouMarketBox">
+            <span>VOLATILITY MARKET</span>
+            <MarketSelector
+              markets={markets}
+              value={symbol}
+              disabled={loadingMarket}
+              onChange={changeSymbol}
+            />
+          </div>
 
-          <div>
-            <button
-              type="button"
-              className="ouReset"
-              onClick={resetTransactions}
-            >
+          <div className="ouTopActions">
+            <button type="button" className="ouReset" onClick={resetSession}>
               RESET
             </button>
 
             <button
               type="button"
-              className={
-                autoRunning ? "ouStop" : "ouStart"
-              }
+              className={autoRunning ? "ouStop" : "ouStart"}
               disabled={tradeBusy}
-              onClick={toggleAuto}
+              onClick={startOrStopAuto}
             >
-              {tradeBusy
-                ? "SENDING..."
-                : autoRunning
-                  ? "■ STOP"
-                  : "▶ START"}
+              {tradeBusy ? "SENDING..." : autoRunning ? "■ STOP" : "▶ START"}
             </button>
           </div>
         </section>
 
-        <section
-          className={`ouExecution ${
-            autoRunning ? "running" : ""
-          }`}
-        >
-          <div>
+        <section className="ouExecutionCard">
+          <div className="ouStatusBlock">
             <small>OVER/UNDER AUTO EXECUTION</small>
-            <h2>
-              {autoRunning ? "RUNNING" : "STOPPED"}
-            </h2>
-            <p>{message || tradeError}</p>
+            <strong>{autoRunning ? "RUNNING" : "STOPPED"}</strong>
+            <span>{message || tradeError}</span>
           </div>
 
-          <div className="ouControlGrid">
+          <div className="ouCompactControls">
             <label>
               <span>Stake</span>
               <input
@@ -536,9 +491,7 @@ export default function OverUnderAnalysis() {
                 min="0.35"
                 step="0.01"
                 value={stake}
-                onChange={(event) =>
-                  setStake(event.target.value)
-                }
+                onChange={(event) => setStake(event.target.value)}
               />
             </label>
 
@@ -546,9 +499,7 @@ export default function OverUnderAnalysis() {
               <span>Duration</span>
               <select
                 value={durationTicks}
-                onChange={(event) =>
-                  setDurationTicks(event.target.value)
-                }
+                onChange={(event) => setDurationTicks(event.target.value)}
               >
                 <option value="1">1 TICK</option>
                 <option value="2">2 TICKS</option>
@@ -561,11 +512,7 @@ export default function OverUnderAnalysis() {
               <span>Auto switch</span>
               <select
                 value={autoSwitch ? "ON" : "OFF"}
-                onChange={(event) =>
-                  setAutoSwitch(
-                    event.target.value === "ON"
-                  )
-                }
+                onChange={(event) => setAutoSwitch(event.target.value === "ON")}
               >
                 <option value="ON">ON</option>
                 <option value="OFF">OFF</option>
@@ -579,11 +526,7 @@ export default function OverUnderAnalysis() {
                 min="4"
                 max="60"
                 value={switchAfterSeconds}
-                onChange={(event) =>
-                  setSwitchAfterSeconds(
-                    event.target.value
-                  )
-                }
+                onChange={(event) => setSwitchAfterSeconds(event.target.value)}
               />
             </label>
 
@@ -602,29 +545,86 @@ export default function OverUnderAnalysis() {
               <strong>{switches}</strong>
             </div>
 
-            <label>
+            <label className="ouRealToggle">
               <span>Real execution</span>
               <input
                 type="checkbox"
                 checked={allowReal}
-                disabled={
-                  selectedAccountType === "demo"
-                }
-                onChange={(event) =>
-                  setAllowReal(event.target.checked)
-                }
+                disabled={selectedAccountType === "demo"}
+                onChange={(event) => setAllowReal(event.target.checked)}
               />
             </label>
           </div>
         </section>
 
+        <section className="ouManualCard">
+          <div className="ouSectionTitle">
+            <small>DIRECT EXECUTION</small>
+            <h2>Manual Over/Under</h2>
+            <p>Manual trade sends immediately using your selected settings.</p>
+          </div>
+
+          <div className="ouManualControls">
+            <label>
+              <span>Side</span>
+              <select
+                value={manualSide}
+                onChange={(event) => setManualSide(event.target.value)}
+              >
+                <option value="OVER">OVER</option>
+                <option value="UNDER">UNDER</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Barrier</span>
+              <select
+                value={manualBarrier}
+                onChange={(event) => setManualBarrier(event.target.value)}
+              >
+                {[1, 2, 3, 4, 5, 6, 7].map((barrier) => (
+                  <option key={barrier} value={barrier}>
+                    {barrier}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              className="ouBuyOver"
+              disabled={tradeBusy || hasOpenTrade}
+              onClick={() =>
+                void sendTrade({
+                  side: "OVER",
+                  barrier: safeNumber(manualBarrier, 2),
+                  mode: "MANUAL",
+                })
+              }
+            >
+              BUY OVER {manualBarrier}
+            </button>
+
+            <button
+              type="button"
+              className="ouBuyUnder"
+              disabled={tradeBusy || hasOpenTrade}
+              onClick={() =>
+                void sendTrade({
+                  side: "UNDER",
+                  barrier: safeNumber(manualBarrier, 2),
+                  mode: "MANUAL",
+                })
+              }
+            >
+              BUY UNDER {manualBarrier}
+            </button>
+          </div>
+        </section>
+
         <section
-          className={`ouHero ${
-            analysis.tradeNow
-              ? "ready"
-              : analysis.prepare
-                ? "prepare"
-                : ""
+          className={`ouSignalCard ${
+            analysis.tradeNow ? "ready" : analysis.prepare ? "prepare" : ""
           }`}
         >
           <div>
@@ -633,197 +633,139 @@ export default function OverUnderAnalysis() {
             <p>{analysis.reason}</p>
           </div>
 
-          <div className="ouHeroStats">
-            <span>
-              <small>Grade</small>
+          <div className="ouSignalStats">
+            <article>
+              <span>Grade</span>
               <strong>{analysis.grade}</strong>
-            </span>
-
-            <span>
-              <small>Confidence</small>
-              <strong>
-                {pct(analysis.confidence)}
-              </strong>
-            </span>
-
-            <span>
-              <small>Quality</small>
+            </article>
+            <article>
+              <span>Confidence</span>
+              <strong>{pct(analysis.confidence)}</strong>
+            </article>
+            <article>
+              <span>Quality</span>
               <strong>{pct(analysis.quality)}</strong>
-            </span>
-
-            <span>
-              <small>Risk</small>
+            </article>
+            <article>
+              <span>Risk</span>
               <strong>{analysis.risk}</strong>
-            </span>
+            </article>
           </div>
         </section>
 
-        <section className="ouCandidateGrid">
+        <section className="ouMetricGrid">
           <article>
-            <small>CONTRACT</small>
+            <span>Contract</span>
             <strong>
-              {analysis.best.side}{" "}
-              {analysis.best.barrier}
+              {analysis.best.side} {analysis.best.barrier}
             </strong>
-            <span>Best ranked setup.</span>
           </article>
-
           <article>
-            <small>PROBABILITY</small>
-            <strong>
-              {pct(analysis.best.probability)}
-            </strong>
-            <span>Conservative live estimate.</span>
+            <span>Probability</span>
+            <strong>{pct(analysis.best.probability)}</strong>
           </article>
-
           <article>
-            <small>PROBABILITY EDGE</small>
-            <strong>
-              {pct(analysis.best.probabilityEdge)}
-            </strong>
-            <span>Above natural baseline.</span>
+            <span>Probability edge</span>
+            <strong>{pct(analysis.best.probabilityEdge)}</strong>
           </article>
-
           <article>
-            <small>TRANSITION EDGE</small>
-            <strong>
-              {pct(analysis.best.transitionEdge)}
-            </strong>
-            <span>Recent continuation evidence.</span>
+            <span>Transition edge</span>
+            <strong>{pct(analysis.best.transitionEdge)}</strong>
           </article>
-
           <article>
-            <small>ENTRY SCORE</small>
+            <span>Entry score</span>
             <strong>{pct(analysis.best.score)}</strong>
-            <span>Weighted opportunity.</span>
           </article>
-
           <article>
-            <small>CONSISTENCY</small>
-            <strong>
-              {pct(analysis.best.consistency)}
-            </strong>
-            <span>Multi-window agreement.</span>
+            <span>Consistency</span>
+            <strong>{pct(analysis.best.consistency)}</strong>
           </article>
         </section>
 
-        <section className="ouMainGrid">
+        <section className="ouTwoColumns">
           <article className="ouPanel">
-            <div className="ouPanelHead">
+            <header>
               <div>
                 <small>DIGIT HEATMAP</small>
                 <h2>Live distribution 0–9</h2>
               </div>
-
               <strong>{analysis.total} ticks</strong>
-            </div>
+            </header>
 
             <div className="ouDigitBars">
-              {analysis.counts.map(
-                (count, digit) => {
-                  const value = analysis.total
-                    ? (count / analysis.total) * 100
-                    : 0;
+              {analysis.counts.map((count, digit) => {
+                const value = analysis.total
+                  ? (safeNumber(count) / analysis.total) * 100
+                  : 0;
 
-                  return (
-                    <div key={digit}>
-                      <span>{digit}</span>
-                      <i>
-                        <b
-                          style={{
-                            width: `${value}%`,
-                          }}
-                        />
-                      </i>
-                      <strong>{pct(value)}</strong>
-                    </div>
-                  );
-                }
-              )}
+                return (
+                  <div key={digit}>
+                    <span>{digit}</span>
+                    <i>
+                      <b style={{ width: `${value}%` }} />
+                    </i>
+                    <strong>{pct(value)}</strong>
+                  </div>
+                );
+              })}
             </div>
           </article>
 
           <article className="ouPanel">
-            <div className="ouPanelHead">
+            <header>
               <div>
                 <small>LIVE DIGIT FLOW</small>
                 <h2>Most recent digits</h2>
               </div>
-
-              <strong>
-                {market?.label || symbol}
-              </strong>
-            </div>
+              <strong>{market?.label || symbol}</strong>
+            </header>
 
             <div className="ouRecentDigits">
-              {analysis.recentDigits.map(
-                (digit, index) => (
-                  <span
-                    key={`${digit}-${index}`}
-                    className={
-                      digit === analysis.latestDigit
-                        ? "latest"
-                        : ""
-                    }
-                  >
-                    {digit}
-                  </span>
-                )
-              )}
+              {analysis.recentDigits.map((digit, index) => (
+                <span
+                  key={`${digit}-${index}`}
+                  className={digit === analysis.latestDigit ? "latest" : ""}
+                >
+                  {digit}
+                </span>
+              ))}
             </div>
           </article>
         </section>
 
         <section className="ouPanel">
-          <div className="ouPanelHead">
+          <header>
             <div>
               <small>ALL CONTRACT RANKING</small>
               <h2>OVER and UNDER candidates</h2>
             </div>
+            <strong>{analysis.candidates.length} scanned</strong>
+          </header>
 
-            <strong>
-              {analysis.candidates.length} scanned
-            </strong>
-          </div>
-
-          <div className="ouCandidateGrid">
-            {analysis.candidates
-              .slice(0, 8)
-              .map((candidate, index) => (
-                <article
-                  key={`${candidate?.side || "WAIT"}-${
-                    candidate?.barrier ?? index
-                  }`}
-                >
-                  <small>
-                    {candidate?.side || "WAIT"}{" "}
-                    {candidate?.barrier ?? "—"}
-                  </small>
-
-                  <strong>
-                    {pct(candidate?.score)}
-                  </strong>
-
-                  <span>
-                    Edge{" "}
-                    {pct(
-                      candidate?.probabilityEdge
-                    )}
-                  </span>
-                </article>
-              ))}
+          <div className="ouRankingGrid">
+            {analysis.candidates.slice(0, 8).map((candidate, index) => (
+              <article
+                key={`${candidate?.side || "WAIT"}-${candidate?.barrier ?? index}`}
+              >
+                <span>
+                  {candidate?.side || "WAIT"} {candidate?.barrier ?? "—"}
+                </span>
+                <strong>{pct(candidate?.score)}</strong>
+                <small>Edge {pct(candidate?.probabilityEdge)}</small>
+              </article>
+            ))}
           </div>
         </section>
 
         <section className="ouPanel">
-          <div className="ouPanelHead">
+          <header>
             <div>
               <small>BARRIER COMPARISON</small>
               <h2>Over and Under probability</h2>
             </div>
-          </div>
+          </header>
 
-          <div className="ouBarrierTable">
+          <div className="ouTable ouBarrierTable">
             <div className="head">
               <span>Barrier</span>
               <span>Over</span>
@@ -835,8 +777,7 @@ export default function OverUnderAnalysis() {
               <div
                 key={row?.barrier}
                 className={
-                  row?.barrier ===
-                  analysis.best.barrier
+                  safeNumber(row?.barrier) === analysis.best.barrier
                     ? "selected"
                     : ""
                 }
@@ -851,79 +792,49 @@ export default function OverUnderAnalysis() {
         </section>
 
         <section className="ouPanel">
-          <div className="ouPanelHead">
+          <header>
             <div>
               <small>TRADE VIEWER</small>
               <h2>Open and recent trades</h2>
             </div>
+            <strong>{trades.length} session trades</strong>
+          </header>
 
-            <strong>
-              {trades.length} session trades
-            </strong>
-          </div>
-
-          <div className="ouTradeTable">
+          <div className="ouTable ouTradeTable">
             <div className="head">
               <span>Time</span>
               <span>Market</span>
               <span>Contract</span>
+              <span>Mode</span>
               <span>Duration</span>
               <span>Stake</span>
               <span>Status</span>
-              <span>Confidence</span>
-              <span>Score</span>
               <span>P/L</span>
             </div>
 
             {trades.map((trade) => (
               <div key={trade.id}>
-                <span>
-                  {new Date(
-                    trade.time
-                  ).toLocaleTimeString()}
-                </span>
+                <span>{new Date(trade.time).toLocaleTimeString()}</span>
                 <span>{trade.symbol}</span>
                 <strong>{trade.contract}</strong>
+                <span>{trade.mode}</span>
                 <span>{trade.duration}</span>
-                <span>
-                  {Number(
-                    trade.stake || 0
-                  ).toFixed(2)}
-                </span>
-                <b
-                  className={String(
-                    trade.status
-                  ).toLowerCase()}
-                >
+                <span>{safeNumber(trade.stake).toFixed(2)}</span>
+                <b className={String(trade.status).toLowerCase()}>
                   {trade.status}
                 </b>
-                <span>
-                  {pct(trade.confidence)}
-                </span>
-                <span>{pct(trade.score)}</span>
-                <b
-                  className={
-                    Number(trade.profit || 0) >= 0
-                      ? "won"
-                      : "lost"
-                  }
-                >
-                  {Number(
-                    trade.profit || 0
-                  ).toFixed(2)}
+                <b className={safeNumber(trade.profit) >= 0 ? "won" : "lost"}>
+                  {safeNumber(trade.profit).toFixed(2)}
                 </b>
               </div>
             ))}
 
-            {!trades.length ? (
-              <p>No trades in this session.</p>
-            ) : null}
+            {!trades.length ? <p>No trades in this session.</p> : null}
           </div>
         </section>
 
         <div className="ouDisclaimer">
-          Analysis is probabilistic. Test on Demo
-          before enabling Real execution.
+          Analysis is probabilistic. Test on Demo before enabling Real execution.
         </div>
       </main>
     </div>
