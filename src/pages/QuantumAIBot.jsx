@@ -524,6 +524,10 @@ export default function QuantumAIBot() {
             amount: Math.max(0.35, Number(settings.stake || 0.35)),
             basis: "stake",
             duration: analysis.duration,
+          durationUnit: analysis.durationUnit || "s",
+          displayDuration:
+            analysis.displayDuration ||
+            `${analysis.duration}${analysis.durationUnit === "t" ? " ticks" : "s"}`,
             durationUnit: "s",
             symbol,
           })
@@ -554,6 +558,10 @@ export default function QuantumAIBot() {
           direction,
           confidence: analysis.confidence,
           duration: analysis.duration,
+          durationUnit: analysis.durationUnit || "s",
+          displayDuration:
+            analysis.displayDuration ||
+            `${analysis.duration}${analysis.durationUnit === "t" ? " ticks" : "s"}`,
           stake: Number(settings.stake || 0.35),
           entryPrice: currentPrice,
           openedAt: Date.now(),
@@ -672,7 +680,13 @@ export default function QuantumAIBot() {
           <div className="quantumDecisionStats">
             <article><span>Confidence</span><strong>{analysis.confidence.toFixed(1)}%</strong></article>
             <article><span>Candidate</span><strong>{analysis.candidate || "â€”"}</strong></article>
-            <article><span>Smart duration</span><strong>{analysis.duration}s</strong></article>
+            <article>
+              <span>Smart duration</span>
+              <strong>
+                {analysis.displayDuration ||
+                  `${analysis.duration}${analysis.durationUnit === "t" ? " ticks" : "s"}`}
+              </strong>
+            </article>
             <article><span>Active slots</span><strong>{activeTrades.length}/{settings.maxOpenTrades}</strong></article>
           </div>
         </section>
@@ -737,6 +751,18 @@ export default function QuantumAIBot() {
               ["Vote consensus", `${Number(analysis.metrics?.voteConsensus || 0).toFixed(0)}%`],
               ["RISE votes", Number(analysis.votes?.rise || 0).toFixed(2)],
               ["FALL votes", Number(analysis.votes?.fall || 0).toFixed(2)],
+              ["ROC 3", Number(analysis.metrics?.roc3 || 0).toFixed(5)],
+              ["ROC 8", Number(analysis.metrics?.roc8 || 0).toFixed(5)],
+              ["Acceleration", Number(analysis.metrics?.acceleration || 0).toFixed(6)],
+              ["Z-score", Number(analysis.metrics?.zScore || 0).toFixed(2)],
+              ["Entropy", `${Number(analysis.metrics?.entropy || 0).toFixed(0)}%`],
+              ["Transition", `${Number(analysis.metrics?.transition || 0).toFixed(0)}%`],
+              ["Reversal bias", `${Number(analysis.metrics?.reversalBias || 0).toFixed(0)}%`],
+              ["Range position", `${Number(analysis.metrics?.rangePosition || 0).toFixed(0)}%`],
+              ["Breakout", analysis.metrics?.breakout || "NONE"],
+              ["Cycle 4", Number(analysis.metrics?.cycle4 || 0).toFixed(2)],
+              ["Cycle 7", Number(analysis.metrics?.cycle7 || 0).toFixed(2)],
+              ["Micro slope", Number(analysis.metrics?.microSlope || 0).toFixed(6)],
             ].map(([label, value]) => (
               <article key={label}><span>{label}</span><strong>{value}</strong></article>
             ))}
@@ -792,7 +818,13 @@ export default function QuantumAIBot() {
                 <article key={trade.contractId}>
                   <div><strong>{trade.direction}</strong><span>{trade.market}</span></div>
                   <div><span>Confidence</span><strong>{trade.confidence.toFixed(1)}%</strong></div>
-                  <div><span>Duration</span><strong>{trade.duration}s</strong></div>
+                  <div>
+                    <span>Duration</span>
+                    <strong>
+                      {trade.displayDuration ||
+                        `${trade.duration}${trade.durationUnit === "t" ? " ticks" : "s"}`}
+                    </strong>
+                  </div>
                   <div><span>Contract</span><strong>{trade.contractId}</strong></div>
                 </article>
               ))}
@@ -828,7 +860,12 @@ export default function QuantumAIBot() {
             {!stats.history.length && <p>No settled trades yet.</p>}
             {stats.history.map((trade) => (
               <article key={`${trade.contractId}-${trade.settledAt}`}>
-                <span>{trade.market}</span><strong>{trade.direction}</strong><span>{trade.duration}s</span>
+                <span>{trade.market}</span>
+                <strong>{trade.direction}</strong>
+                <span>
+                  {trade.displayDuration ||
+                    `${trade.duration}${trade.durationUnit === "t" ? " ticks" : "s"}`}
+                </span>
                 <b className={trade.result === "WON" ? "positive" : "negative"}>{trade.result}</b>
                 <strong>{money(trade.profit)} USD</strong>
               </article>
@@ -841,6 +878,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 

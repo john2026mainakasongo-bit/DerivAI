@@ -1,4 +1,4 @@
-const clamp = (value, min = 0, max = 100) =>
+﻿const clamp = (value, min = 0, max = 100) =>
   Math.max(min, Math.min(max, Number(value) || 0));
 
 function clean(values = []) {
@@ -95,6 +95,175 @@ function changes(values = []) {
   return output;
 }
 
+function zScore(values = [], lookback = 40) {
+  const source = clean(values).slice(-Math.max(8, lookback));
+  if (source.length < 8) return 0;
+  const average = mean(source);
+  const deviation = std(source) || 1e-9;
+  return (source.at(-1) - average) / deviation;
+}
+
+function rateOfChange(values = [], lookback = 8) {
+  const source = clean(values);
+  if (source.length <= lookback) return 0;
+  const previous = source.at(-(lookback + 1));
+  const current = source.at(-1);
+  return previous ? ((current - previous) / Math.abs(previous)) * 100 : 0;
+}
+
+function acceleration(values = [], short = 5, long = 14) {
+  return rateOfChange(values, short) - rateOfChange(values, long);
+}
+
+function transitionStats(values = []) {
+  const source = clean(values).slice(-80);
+  let uu = 0;
+  let ud = 0;
+  let du = 0;
+  let dd = 0;
+
+  for (let index = 2; index < source.length; index += 1) {
+    const previous = Math.sign(source[index - 1] - source[index - 2]);
+    const current = Math.sign(source[index] - source[index - 1]);
+
+    if (previous > 0 && current > 0) uu += 1;
+    if (previous > 0 && current < 0) ud += 1;
+    if (previous < 0 && current > 0) du += 1;
+    if (previous < 0 && current < 0) dd += 1;
+  }
+
+  const upContinuation = uu / Math.max(1, uu + ud);
+  const downContinuation = dd / Math.max(1, dd + du);
+
+  return {
+    upContinuation,
+    downContinuation,
+    reversalBias: Math.max(ud, du) / Math.max(1, uu + ud + du + dd),
+  };
+}
+
+function normalizedEntropy(values = []) {
+  const source = clean(values).slice(-60);
+  if (source.length < 8) return 1;
+
+  const bins = [0, 0, 0, 0];
+  const deltas = [];
+
+  for (let index = 1; index < source.length; index += 1) {
+    deltas.push(source[index] - source[index - 1]);
+  }
+
+  const deviation = std(deltas) || 1e-9;
+
+  deltas.forEach((delta) => {
+    if (delta <= -deviation) bins[0] += 1;
+    else if (delta < 0) bins[1] += 1;
+    else if (delta < deviation) bins[2] += 1;
+    else bins[3] += 1;
+  });
+
+  const total = Math.max(1, deltas.length);
+  let entropy = 0;
+
+  bins.forEach((count) => {
+    const probability = count / total;
+    if (probability > 0) entropy -= probability * Math.log2(probability);
+  });
+
+  return entropy / 2;
+}
+
+function supportResistance(values = [], lookback = 55) {
+  const source = clean(values).slice(-Math.max(12, lookback));
+  if (!source.length) {
+    return { support: 0, resistance: 0, position: 0.5, breakout: "NONE" };
+  }
+
+  const support = Math.min(...source);
+  const resistance = Math.max(...source);
+  const range = Math.max(1e-9, resistance - support);
+  const last = source.at(-1);
+  const position = (last - support) / range;
+
+  return {
+    support,
+    resistance,
+    position,
+    breakout:
+      position >= 0.985
+        ? "UP"
+        : position <= 0.015
+        ? "DOWN"
+        : "NONE",
+  };
+}
+
+function autocorrelation(values = [], lag = 4) {
+  const source = clean(values).slice(-100);
+  if (source.length <= lag + 4) return 0;
+
+  const left = source.slice(lag);
+  const right = source.slice(0, -lag);
+  const leftMean = mean(left);
+  const rightMean = mean(right);
+
+  let numerator = 0;
+  let leftPower = 0;
+  let rightPower = 0;
+
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index] - leftMean;
+    const b = right[index] - rightMean;
+    numerator += a * b;
+    leftPower += a * a;
+    rightPower += b * b;
+  }
+
+  return numerator / Math.max(1e-9, Math.sqrt(leftPower * rightPower));
+}
+
+function chooseSmartDuration({
+  confidence,
+  consistency,
+  noise,
+  reversalRisk,
+  transition,
+  accelerationValue,
+  volatility,
+}) {
+  const verySharp =
+    confidence >= 84 &&
+    consistency >= 48 &&
+    noise <= 48 &&
+    reversalRisk <= 32 &&
+    transition >= 0.68 &&
+    Math.abs(accelerationValue) >= 0.001;
+
+  const sharp =
+    confidence >= 78 &&
+    consistency >= 40 &&
+    noise <= 56 &&
+    reversalRisk <= 40 &&
+    transition >= 0.62;
+
+  if (verySharp) {
+    return { duration: 3, durationUnit: "t", displayDuration: "3 TICKS" };
+  }
+
+  if (sharp) {
+    return { duration: 5, durationUnit: "t", displayDuration: "5 TICKS" };
+  }
+
+  if (volatility >= 70 || noise >= 58) {
+    return { duration: 60, durationUnit: "s", displayDuration: "60 SECONDS" };
+  }
+
+  if (confidence >= 72 && consistency >= 32) {
+    return { duration: 20, durationUnit: "s", displayDuration: "20 SECONDS" };
+  }
+
+  return { duration: 30, durationUnit: "s", displayDuration: "30 SECONDS" };
+}
 function selectDuration({ confidence, volatility, consistency, impulse }) {
   if (confidence >= 91 && consistency >= 0.62 && impulse >= 0.68) return 15;
   if (confidence >= 86 && consistency >= 0.52) return 20;
@@ -128,6 +297,7 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
   const fastWindow = source.slice(-18);
   const mediumWindow = source.slice(-42);
   const slowWindow = source.slice(-90);
+  const microWindow = source.slice(-8);
   const last = source.at(-1);
   const fastEma = ema(source, 6);
   const mediumEma = ema(source, 14);
@@ -146,6 +316,16 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
   const recentMove = fastWindow.at(-1) - fastWindow[0];
   const baselineMove = Math.abs(mediumWindow.at(-1) - mediumWindow[0]) || 1e-9;
   const impulse = clamp(Math.abs(recentMove) / baselineMove * 100) / 100;
+  const roc3 = rateOfChange(source, 3);
+  const roc8 = rateOfChange(source, 8);
+  const accelerationValue = acceleration(source, 3, 10);
+  const priceZScore = zScore(source, 40);
+  const transition = transitionStats(source);
+  const entropy = normalizedEntropy(source);
+  const levels = supportResistance(source, 55);
+  const cycle4 = autocorrelation(source, 4);
+  const cycle7 = autocorrelation(source, 7);
+  const microSlope = linearSlope(microWindow);
 
   let riseVotes = 0;
   let fallVotes = 0;
@@ -162,6 +342,16 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
   vote(recentMove, 1.15, 1.15);
   vote(last - fastEma, 0.75, 0.75);
   vote(consistencyData.up - consistencyData.down, 1.1, 1.1);
+  vote(microSlope, 0.9, 0.9);
+  vote(roc3, 0.75, 0.75);
+  vote(roc8, 0.65, 0.65);
+  vote(accelerationValue, 0.8, 0.8);
+
+  if (levels.breakout === "UP") riseVotes += 0.9;
+  if (levels.breakout === "DOWN") fallVotes += 0.9;
+
+  if (transition.upContinuation >= 0.66) riseVotes += 0.7;
+  if (transition.downContinuation >= 0.66) fallVotes += 0.7;
 
   if (currentRsi > 54 && currentRsi < 78) riseVotes += 0.75;
   if (currentRsi < 46 && currentRsi > 22) fallVotes += 0.75;
@@ -179,7 +369,10 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
   const reversalRisk = clamp(
     (extendedRise || extendedFall ? 45 : 0) +
       (slopeConflict ? 32 : 0) +
-      noise * 0.28
+      noise * 0.28 +
+      transition.reversalBias * 22 +
+      (Math.abs(priceZScore) >= 2.2 ? 14 : 0) +
+      (entropy >= 0.88 ? 12 : 0)
   );
 
   const trendStrength = clamp(
@@ -216,7 +409,23 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
     consistencyData.score >= 0.24 &&
     fastMediumAgree;
 
-  const ready = strictReady || fastReady;
+  const directionTransition =
+    direction === "RISE"
+      ? transition.upContinuation
+      : transition.downContinuation;
+
+  const multiLayerReady =
+    confidence >= Math.max(66, minConfidence - 6) &&
+    noise <= Math.min(72, maxNoise + 6) &&
+    reversalRisk <= Math.min(66, maxReversalRisk + 6) &&
+    voteConsensus >= 0.62 &&
+    consistencyData.score >= 0.28 &&
+    directionTransition >= 0.58 &&
+    entropy <= 0.9 &&
+    Math.sign(microSlope) === Math.sign(fastSlope) &&
+    fastMediumAgree;
+
+  const ready = strictReady || fastReady || multiLayerReady;
 
   const regime =
     noise >= 72
@@ -227,12 +436,17 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
       ? "TREND"
       : "RANGE";
 
-  const duration = selectDuration({
+  const durationPlan = chooseSmartDuration({
     confidence,
+    consistency: consistencyData.score * 100,
+    noise,
+    reversalRisk,
+    transition: directionTransition,
+    accelerationValue,
     volatility,
-    consistency: consistencyData.score,
-    impulse,
   });
+
+  const duration = durationPlan.duration;
 
   const reason = ready
     ? `${strictReady ? "STRONG" : "FAST"} ${direction} entry: ${winningVotes.toFixed(1)} weighted votes, ${(voteConsensus * 100).toFixed(0)}% consensus.`
@@ -266,7 +480,15 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
     volatility,
     consistency: consistencyData.score * 100,
     reversalRisk,
-    entryMode: strictReady ? "STRONG" : fastReady ? "FAST" : "WAIT",
+    entryMode: strictReady
+      ? "STRONG"
+      : multiLayerReady
+      ? "MULTI"
+      : fastReady
+      ? "FAST"
+      : "WAIT",
+    durationUnit: durationPlan.durationUnit,
+    displayDuration: durationPlan.displayDuration,
     thresholds: { minConfidence, maxNoise, maxReversalRisk },
     checks: [
       { label: "Confidence", passed: confidence >= Math.max(62, minConfidence - 10), value: `${confidence.toFixed(1)}%` },
@@ -276,6 +498,10 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
       { label: "Tick consistency", passed: consistencyData.score >= 0.24, value: `${(consistencyData.score * 100).toFixed(0)}%` },
       { label: "Fast/medium trend", passed: fastMediumAgree, value: fastMediumAgree ? "AGREE" : "CONFLICT" },
       { label: "Full timeframe", passed: !slopeConflict, value: slopeConflict ? "MIXED" : "AGREE" },
+      { label: "Transition", passed: directionTransition >= 0.58, value: `${(directionTransition * 100).toFixed(0)}%` },
+      { label: "Entropy", passed: entropy <= 0.9, value: `${(entropy * 100).toFixed(0)}%` },
+      { label: "Micro trend", passed: Math.sign(microSlope) === Math.sign(fastSlope), value: Math.sign(microSlope) === Math.sign(fastSlope) ? "AGREE" : "CONFLICT" },
+      { label: "Acceleration", passed: Math.sign(accelerationValue) === Math.sign(fastSlope), value: accelerationValue.toFixed(6) },
     ],
     votes: { rise: riseVotes, fall: fallVotes },
     metrics: {
@@ -289,6 +515,20 @@ export function analyzeQuantumRiseFall(prices = [], options = {}) {
       impulse: impulse * 100,
       trendStrength,
       voteConsensus: voteConsensus * 100,
+      roc3,
+      roc8,
+      acceleration: accelerationValue,
+      zScore: priceZScore,
+      entropy: entropy * 100,
+      transition: directionTransition * 100,
+      reversalBias: transition.reversalBias * 100,
+      support: levels.support,
+      resistance: levels.resistance,
+      rangePosition: levels.position * 100,
+      breakout: levels.breakout,
+      cycle4,
+      cycle7,
+      microSlope,
     },
   };
 }
@@ -305,3 +545,4 @@ export function rankQuantumMarket(snapshot = {}) {
     updatedAt: Date.now(),
   };
 }
+
