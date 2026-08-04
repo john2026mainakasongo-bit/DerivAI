@@ -1,160 +1,533 @@
-﻿import { analyzeQuantumRiseFall } from "./quantumRiseFallEngine";
+import { analyzeQuantumRiseFall } from "./quantumRiseFallEngine";
 
-const clamp=(v,a=0,b=100)=>Math.max(a,Math.min(b,Number(v)||0));
-const nums=(x=[])=>x.map(v=>Number(typeof v==="number"?v:v?.quote??v?.price??v?.value??0)).filter(Number.isFinite);
-const avg=x=>x.length?x.reduce((a,b)=>a+b,0)/x.length:0;
-const ema=(x,p)=>{x=nums(x);if(!x.length)return 0;const a=2/(p+1);return x.slice(1).reduce((r,v)=>v*a+r*(1-a),x[0]);};
-const slope=x=>{x=nums(x);return x.length<3?0:(x.at(-1)-x[0])/(x.length-1);};
-const sd=x=>{const m=avg(x);return Math.sqrt(avg(x.map(v=>(v-m)**2)));};
-const sig=v=>v>0?"RISE":v<0?"FALL":"WAIT";
-const model=(name,signal,confidence,reason)=>({name,signal,confidence:clamp(confidence),reason});
+const clamp = (value, min = 0, max = 100) =>
+  Math.max(min, Math.min(max, Number(value) || 0));
 
-function trendAI(x){
-  const f=ema(x,6),m=ema(x,14),s=ema(x,30),fs=slope(x.slice(-10)),ms=slope(x.slice(-28));
-  const signal=f>m&&m>s&&fs>0&&ms>0?"RISE":f<m&&m<s&&fs<0&&ms<0?"FALL":"WAIT";
-  return model("Trend AI",signal,signal==="WAIT"?34:76,signal==="WAIT"?"EMA structure mixed.":`${signal} EMA stack aligned.`);
-}
-function momentumAI(x){
-  const a=x.slice(-6),b=x.slice(-16),m1=a.at(-1)-a[0],m2=b.at(-1)-b[0],acc=m1-m2/2.5;
-  const signal=Math.sign(m1)===Math.sign(m2)&&Math.sign(m1)===Math.sign(acc)?sig(m1):"WAIT";
-  return model("Momentum AI",signal,signal==="WAIT"?36:74,signal==="WAIT"?"Impulse conflict.":`${signal} impulse aligned.`);
-}
-function regimeAI(base){
-  const ok=Number(base.noiseScore||100)<=58&&Number(base.consistency||0)>=32&&Number(base.reversalRisk||100)<=48;
-  return model("Regime AI",ok?(base.candidate||"WAIT"):"WAIT",ok?72:30,ok?"Tradable regime.":"Noise/risk gate blocked.");
-}
-function transitionAI(x){
-  let uu=0,ud=0,dd=0,du=0;
-  x=x.slice(-70);
-  for(let i=2;i<x.length;i++){const p=Math.sign(x[i-1]-x[i-2]),c=Math.sign(x[i]-x[i-1]);if(p>0&&c>0)uu++;if(p>0&&c<0)ud++;if(p<0&&c<0)dd++;if(p<0&&c>0)du++;}
-  const up=uu/Math.max(1,uu+ud),down=dd/Math.max(1,dd+du),best=Math.max(up,down);
-  const signal=best>=.62?(up>down?"RISE":"FALL"):"WAIT";
-  return model("Transition AI",signal,best*100,signal==="WAIT"?"No transition edge.":`${signal} continuation ${(best*100).toFixed(0)}%.`);
-}
-function structureAI(x,base){
-  x=x.slice(-55);const lo=Math.min(...x),hi=Math.max(...x),r=Math.max(1e-9,hi-lo),pos=(x.at(-1)-lo)/r,c=base.candidate||"WAIT";
-  const room=c==="RISE"?pos<=.82:c==="FALL"?pos>=.18:false;
-  const ok=room&&Number(base.reversalRisk||100)<=44;
-  return model("Structure AI",ok?c:"WAIT",ok?70:32,ok?`${c} has room.`:"Too close to an extreme.");
+function clean(values = []) {
+  return (Array.isArray(values) ? values : [])
+    .map((item) =>
+      Number(
+        typeof item === "number"
+          ? item
+          : item?.quote ??
+              item?.price ??
+              item?.value ??
+              item?.currentPrice ??
+              0
+      )
+    )
+    .filter(Number.isFinite);
 }
 
-export function analyzeQuantumFiveAI(prices=[],options={}){
-  const x=nums(prices).slice(-260),base=analyzeQuantumRiseFall(x,options);
-  if(x.length<55)return {...base,fiveAI:{models:[],agreement:0,required:4,signal:"WAIT"}};
-  const models=[trendAI(x),momentumAI(x),regimeAI(base),transitionAI(x),structureAI(x,base)];
-  const rise=models.filter(m=>m.signal==="RISE"),fall=models.filter(m=>m.signal==="FALL");
-  const win=rise.length>fall.length?rise:fall,candidate=win===rise?"RISE":"FALL",agreement=win.length,aiConfidence=avg(win.map(m=>m.confidence));
-  const strictRisk =
-    Number(base.noiseScore || 100) <= 58 &&
-    Number(base.reversalRisk || 100) <= 48 &&
-    Number(base.consistency || 0) >= 30;
+function mean(values = []) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
 
-  const responsiveRisk =
-    Number(base.noiseScore || 100) <= 50 &&
-    Number(base.reversalRisk || 100) <= 40 &&
-    Number(base.consistency || 0) >= 34 &&
-    Number(base.confidence || 0) >= 64;
+function std(values = []) {
+  if (values.length < 2) return 0;
+  const average = mean(values);
+  return Math.sqrt(
+    values.reduce((sum, value) => sum + (value - average) ** 2, 0) /
+      values.length
+  );
+}
 
-  const strictReady =
-    agreement >= 4 &&
-    aiConfidence >= 68 &&
-    strictRisk;
+function ema(values = [], period = 9) {
+  const source = clean(values);
+  if (!source.length) return 0;
 
-  const responsiveReady =
-    agreement === 3 &&
-    aiConfidence >= 72 &&
-    responsiveRisk;
+  const alpha = 2 / (Math.max(2, period) + 1);
+  return source.slice(1).reduce(
+    (result, value) => value * alpha + result * (1 - alpha),
+    source[0]
+  );
+}
 
-  const balancedRisk =
-    Number(base.noiseScore || 100) <= 44 &&
-    Number(base.reversalRisk || 100) <= 34 &&
-    Number(base.consistency || 0) >= 42 &&
-    Number(base.confidence || 0) >= 74 &&
-    Number(base.metrics?.voteConsensus || 0) >= 72;
+function slope(values = []) {
+  const source = clean(values);
+  if (source.length < 3) return 0;
+  return (source.at(-1) - source[0]) / Math.max(1, source.length - 1);
+}
 
-  const balancedReady =
-    agreement === 2 &&
-    aiConfidence >= 78 &&
-    balancedRisk;
+function rsi(values = [], period = 14) {
+  const source = clean(values).slice(-(Math.max(2, period) + 1));
+  if (source.length < 3) return 50;
 
-  const ready = strictReady || responsiveReady || balancedReady;
+  let gains = 0;
+  let losses = 0;
 
-  const short =
+  for (let index = 1; index < source.length; index += 1) {
+    const delta = source[index] - source[index - 1];
+    if (delta > 0) gains += delta;
+    if (delta < 0) losses += Math.abs(delta);
+  }
+
+  if (!losses) return gains ? 100 : 50;
+  const rs = gains / losses;
+  return 100 - 100 / (1 + rs);
+}
+
+function changes(values = []) {
+  const source = clean(values);
+  const output = [];
+
+  for (let index = 1; index < source.length; index += 1) {
+    const previous = source[index - 1];
+    if (previous) {
+      output.push((source[index] - previous) / Math.abs(previous));
+    }
+  }
+
+  return output;
+}
+
+function direction(value, deadZone = 0) {
+  if (value > deadZone) return "RISE";
+  if (value < -deadZone) return "FALL";
+  return "WAIT";
+}
+
+function layer(name, signal, score, reason, details = {}) {
+  return {
+    name,
+    signal,
+    score: clamp(score),
+    reason,
+    details,
+  };
+}
+
+function trendLayer(source) {
+  const fast = ema(source, 6);
+  const medium = ema(source, 14);
+  const slow = ema(source, 30);
+  const fastSlope = slope(source.slice(-10));
+  const mediumSlope = slope(source.slice(-28));
+
+  const rise =
+    fast > medium &&
+    medium > slow &&
+    fastSlope > 0 &&
+    mediumSlope > 0;
+
+  const fall =
+    fast < medium &&
+    medium < slow &&
+    fastSlope < 0 &&
+    mediumSlope < 0;
+
+  const signal = rise ? "RISE" : fall ? "FALL" : "WAIT";
+  const separation =
+    Math.abs(fast - medium) +
+    Math.abs(medium - slow);
+
+  return layer(
+    "Trend AI",
+    signal,
+    signal === "WAIT"
+      ? 36
+      : 62 + Math.min(30, separation * 12000),
+    signal === "WAIT"
+      ? "EMA structure is mixed."
+      : `${signal} EMA stack and slopes agree.`,
+    { fast, medium, slow, fastSlope, mediumSlope }
+  );
+}
+
+function momentumLayer(source) {
+  const short = source.slice(-6);
+  const medium = source.slice(-18);
+
+  const shortMove = short.at(-1) - short[0];
+  const mediumMove = medium.at(-1) - medium[0];
+  const acceleration = shortMove - mediumMove / 3;
+  const currentRsi = rsi(source, 14);
+
+  const aligned =
+    Math.sign(shortMove) === Math.sign(mediumMove) &&
+    Math.sign(shortMove) === Math.sign(acceleration);
+
+  const notExtended =
+    (shortMove > 0 && currentRsi < 76) ||
+    (shortMove < 0 && currentRsi > 24);
+
+  const signal =
+    aligned && notExtended
+      ? direction(shortMove)
+      : "WAIT";
+
+  const scale =
+    Math.abs(shortMove) /
+    Math.max(
+      1e-9,
+      std(changes(medium)) *
+        Math.max(1, Math.abs(mean(medium)))
+    );
+
+  return layer(
+    "Momentum AI",
+    signal,
+    signal === "WAIT"
+      ? 38
+      : 64 + Math.min(28, scale * 8),
+    signal === "WAIT"
+      ? "Impulse, acceleration, or RSI is not aligned."
+      : `${signal} impulse and acceleration agree.`,
+    { shortMove, mediumMove, acceleration, rsi: currentRsi }
+  );
+}
+
+function reversalLayer(source, base) {
+  const recent = source.slice(-55);
+  const support = Math.min(...recent);
+  const resistance = Math.max(...recent);
+  const range = Math.max(1e-9, resistance - support);
+  const last = recent.at(-1);
+  const position = (last - support) / range;
+  const candidate = base.candidate || "WAIT";
+  const currentRsi = rsi(source, 14);
+
+  const riseSafe =
+    candidate === "RISE" &&
+    position <= 0.82 &&
+    currentRsi < 74;
+
+  const fallSafe =
+    candidate === "FALL" &&
+    position >= 0.18 &&
+    currentRsi > 26;
+
+  const accepted =
+    (riseSafe || fallSafe) &&
+    Number(base.reversalRisk || 100) <= 52;
+
+  return layer(
+    "Reversal AI",
+    accepted ? candidate : "WAIT",
+    accepted
+      ? 68 + Math.min(24, 52 - Number(base.reversalRisk || 52))
+      : 34,
+    accepted
+      ? `${candidate} has room before the nearest extreme.`
+      : "Price is extended or reversal risk is too high.",
+    {
+      support,
+      resistance,
+      position: position * 100,
+      rsi: currentRsi,
+    }
+  );
+}
+
+function patternLayer(source) {
+  const recent = source.slice(-24);
+  const micro = source.slice(-8);
+
+  const microSlope = slope(micro);
+  const shortSlope = slope(recent);
+  const last = source.at(-1);
+  const previous = source.at(-2);
+  const before = source.at(-3);
+
+  const higherHigh =
+    last > previous &&
+    previous > before &&
+    microSlope > 0;
+
+  const lowerLow =
+    last < previous &&
+    previous < before &&
+    microSlope < 0;
+
+  const breakoutUp =
+    last >= Math.max(...recent.slice(0, -1)) &&
+    shortSlope > 0;
+
+  const breakoutDown =
+    last <= Math.min(...recent.slice(0, -1)) &&
+    shortSlope < 0;
+
+  const signal =
+    higherHigh || breakoutUp
+      ? "RISE"
+      : lowerLow || breakoutDown
+      ? "FALL"
+      : "WAIT";
+
+  const score =
+    signal === "WAIT"
+      ? 40
+      : breakoutUp || breakoutDown
+      ? 80
+      : 70;
+
+  return layer(
+    "Pattern AI",
+    signal,
+    score,
+    signal === "WAIT"
+      ? "No clean continuation or breakout pattern."
+      : breakoutUp || breakoutDown
+      ? `${signal} breakout pattern detected.`
+      : `${signal} three-step continuation detected.`,
+    { microSlope, shortSlope }
+  );
+}
+
+function probabilityLayer(source, base) {
+  const recent = source.slice(-70);
+  let upUp = 0;
+  let upDown = 0;
+  let downDown = 0;
+  let downUp = 0;
+
+  for (let index = 2; index < recent.length; index += 1) {
+    const previous =
+      Math.sign(recent[index - 1] - recent[index - 2]);
+    const current =
+      Math.sign(recent[index] - recent[index - 1]);
+
+    if (previous > 0 && current > 0) upUp += 1;
+    if (previous > 0 && current < 0) upDown += 1;
+    if (previous < 0 && current < 0) downDown += 1;
+    if (previous < 0 && current > 0) downUp += 1;
+  }
+
+  const upContinuation =
+    upUp / Math.max(1, upUp + upDown);
+
+  const downContinuation =
+    downDown / Math.max(1, downDown + downUp);
+
+  const strongest =
+    Math.max(upContinuation, downContinuation);
+
+  const transitionSignal =
+    strongest >= 0.58
+      ? upContinuation > downContinuation
+        ? "RISE"
+        : "FALL"
+      : "WAIT";
+
+  const candidate = base.candidate || "WAIT";
+
+  const accepted =
+    transitionSignal !== "WAIT" &&
+    transitionSignal === candidate;
+
+  return layer(
+    "Probability AI",
+    accepted ? transitionSignal : "WAIT",
+    accepted ? strongest * 100 : 42,
+    accepted
+      ? `${transitionSignal} continuation probability ${(strongest * 100).toFixed(0)}%.`
+      : "Transition probability does not confirm the candidate.",
+    {
+      upContinuation: upContinuation * 100,
+      downContinuation: downContinuation * 100,
+    }
+  );
+}
+
+function chooseDuration({
+  score,
+  agreement,
+  noise,
+  reversal,
+  consistency,
+}) {
+  if (
     agreement === 5 &&
-    aiConfidence >= 86 &&
-    Number(base.noiseScore || 100) <= 42 &&
-    Number(base.reversalRisk || 100) <= 30;
+    score >= 88 &&
+    noise <= 42 &&
+    reversal <= 30 &&
+    consistency >= 48
+  ) {
+    return {
+      duration: 5,
+      durationUnit: "s",
+      displayDuration: "5 SECONDS",
+    };
+  }
 
-  const medium =
+  if (
     agreement >= 4 &&
-    aiConfidence >= 78 &&
-    Number(base.noiseScore || 100) <= 50;
+    score >= 80 &&
+    noise <= 50 &&
+    reversal <= 38
+  ) {
+    return {
+      duration: 10,
+      durationUnit: "s",
+      displayDuration: "10 SECONDS",
+    };
+  }
 
-  const plan = short
-    ? { duration: 3, durationUnit: "t", displayDuration: "3 TICKS" }
-    : medium
-    ? { duration: 5, durationUnit: "t", displayDuration: "5 TICKS" }
-    : balancedReady
-    ? { duration: 10, durationUnit: "s", displayDuration: "10 SECONDS" }
-    : responsiveReady
-    ? { duration: 15, durationUnit: "s", displayDuration: "15 SECONDS" }
-    : { duration: 20, durationUnit: "s", displayDuration: "20 SECONDS" };
+  if (
+    agreement >= 3 &&
+    score >= 72 &&
+    noise <= 60
+  ) {
+    return {
+      duration: 15,
+      durationUnit: "s",
+      displayDuration: "15 SECONDS",
+    };
+  }
+
+  return {
+    duration: 20,
+    durationUnit: "s",
+    displayDuration: "20 SECONDS",
+  };
+}
+
+export function analyzeQuantumFiveAI(prices = [], options = {}) {
+  const source = clean(prices).slice(-260);
+  const base = analyzeQuantumRiseFall(source, options);
+
+  if (source.length < 55) {
+    return {
+      ...base,
+      fiveAI: {
+        models: [],
+        agreement: 0,
+        required: 3,
+        signal: "WAIT",
+      },
+      scoreBreakdown: {
+        trend: 0,
+        momentum: 0,
+        reversal: 0,
+        pattern: 0,
+        probability: 0,
+        total: 0,
+      },
+    };
+  }
+
+  const layers = [
+    trendLayer(source),
+    momentumLayer(source),
+    reversalLayer(source, base),
+    patternLayer(source),
+    probabilityLayer(source, base),
+  ];
+
+  const rise = layers.filter((item) => item.signal === "RISE");
+  const fall = layers.filter((item) => item.signal === "FALL");
+
+  const winningLayers =
+    rise.length > fall.length ? rise : fall;
+
+  const candidate =
+    winningLayers === rise ? "RISE" : "FALL";
+
+  const agreement = winningLayers.length;
+
+  const weightedScores = {
+    trend:
+      layers.find((item) => item.name === "Trend AI")?.score || 0,
+    momentum:
+      layers.find((item) => item.name === "Momentum AI")?.score || 0,
+    reversal:
+      layers.find((item) => item.name === "Reversal AI")?.score || 0,
+    pattern:
+      layers.find((item) => item.name === "Pattern AI")?.score || 0,
+    probability:
+      layers.find((item) => item.name === "Probability AI")?.score || 0,
+  };
+
+  const totalScore = clamp(
+    weightedScores.trend * 0.22 +
+      weightedScores.momentum * 0.22 +
+      weightedScores.reversal * 0.18 +
+      weightedScores.pattern * 0.18 +
+      weightedScores.probability * 0.2
+  );
+
+  const noise = Number(base.noiseScore || 100);
+  const reversal = Number(base.reversalRisk || 100);
+  const consistency = Number(base.consistency || 0);
+  const voteConsensus = Number(
+    base.metrics?.voteConsensus || 0
+  );
+
+  const hardSafetyGate =
+    noise <= 68 &&
+    reversal <= 60 &&
+    consistency >= 18 &&
+    voteConsensus >= 56;
+
+  const ready =
+    agreement >= 3 &&
+    totalScore >= 72 &&
+    hardSafetyGate;
+
+  const durationPlan = chooseDuration({
+    score: totalScore,
+    agreement,
+    noise,
+    reversal,
+    consistency,
+  });
+
+  const checks = [
+    ...(base.checks || []),
+    {
+      label: "Five-layer agreement",
+      passed: agreement >= 3,
+      value: `${agreement}/5`,
+    },
+    {
+      label: "AI total score",
+      passed: totalScore >= 72,
+      value: `${totalScore.toFixed(1)}/100`,
+    },
+    {
+      label: "Hard safety gate",
+      passed: hardSafetyGate,
+      value: hardSafetyGate ? "PASS" : "BLOCK",
+    },
+  ];
+
   return {
     ...base,
     ready,
     decision: ready ? candidate : "WAIT",
     candidate,
-    confidence: ready
-      ? clamp((aiConfidence + Number(base.confidence || 0)) / 2)
-      : clamp(Math.min(aiConfidence, Number(base.confidence || 0))),
-    ...plan,
-    entryMode: ready
-      ? agreement === 5
-        ? "FIVE-AI"
-        : balancedReady
-        ? "BALANCED"
-        : responsiveReady
-        ? "RESPONSIVE"
-        : "ENSEMBLE"
-      : "WAIT",
+    confidence: totalScore,
+    duration: durationPlan.duration,
+    durationUnit: durationPlan.durationUnit,
+    displayDuration: durationPlan.displayDuration,
+    entryMode: ready ? "SCORE-AI" : "WAIT",
     reason: ready
-      ? `${agreement}/5 AI models confirm ${candidate} through ${
-          balancedReady
-            ? "balanced"
-            : responsiveReady
-            ? "responsive"
-            : "strict"
-        } lane.`
-      : `WAIT: ${agreement}/5 AI models agree, but entry quality is still below the active lane.`,
-    checks: [
-      ...(base.checks || []),
-      {
-        label: "Five-AI agreement",
-        passed: agreement >= 4 || responsiveReady,
-        value: `${agreement}/5`,
-      },
-      {
-        label: "Strict risk gate",
-        passed: strictRisk,
-        value: strictRisk ? "PASS" : "BLOCK",
-      },
-      {
-        label: "Responsive gate",
-        passed: responsiveReady,
-        value: responsiveReady ? "PASS" : "WAIT",
-      },
-    ],
+      ? `${agreement}/5 AI layers confirm ${candidate}. Total score ${totalScore.toFixed(1)}/100.`
+      : `WAIT: ${agreement}/5 layers agree, score ${totalScore.toFixed(1)}/100, safety ${hardSafetyGate ? "PASS" : "BLOCK"}.`,
+    checks,
     fiveAI: {
-      models,
+      models: layers.map((item) => ({
+        name: item.name,
+        signal: item.signal,
+        confidence: item.score,
+        reason: item.reason,
+      })),
       agreement,
-      required: responsiveReady ? 3 : 4,
+      required: 3,
       signal: ready ? candidate : "WAIT",
       candidate,
-      confidence: aiConfidence,
-      hardRiskGate: strictRisk,
-      responsiveReady,
+      confidence: totalScore,
+      hardRiskGate: hardSafetyGate,
+    },
+    scoreBreakdown: {
+      ...weightedScores,
+      total: totalScore,
+    },
+    metrics: {
+      ...(base.metrics || {}),
+      fiveAIAgreement: agreement,
+      fiveAIConfidence: totalScore,
     },
   };
 }
-
-

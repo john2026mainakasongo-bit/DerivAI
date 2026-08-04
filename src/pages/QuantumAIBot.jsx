@@ -108,11 +108,11 @@ export default function QuantumAIBot() {
   const [message, setMessage] = useState("Quantum AI is ready.");
   const [settings, setSettings] = useState({
     stake: 0.35,
-    minConfidence: 68,
-    maxNoise: 60,
-    maxReversalRisk: 50,
+    minConfidence: 64,
+    maxNoise: 68,
+    maxReversalRisk: 60,
     maxOpenTrades: 2,
-    marketSwitchSeconds: 6,
+    marketSwitchSeconds: 8,
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
@@ -120,8 +120,8 @@ export default function QuantumAIBot() {
     repeatLossBlockSeconds: 90,
     marketLossBlockSeconds: 60,
     entryDeadlineSeconds: 60,
-    deadlineMinConfidence: 62,
-    deadlineMaxNoise: 72,
+    deadlineminConfidence: 64,
+    deadlinemaxNoise: 68,
     deadlineMaxReversal: 64,
   });
   const [activeTrades, setActiveTrades] = useState([]);
@@ -934,6 +934,12 @@ export default function QuantumAIBot() {
               ["Cycle 4", Number(analysis.metrics?.cycle4 || 0).toFixed(2)],
               ["Cycle 7", Number(analysis.metrics?.cycle7 || 0).toFixed(2)],
               ["Micro slope", Number(analysis.metrics?.microSlope || 0).toFixed(6)],
+              ["Trend score", `${Number(analysis.scoreBreakdown?.trend || 0).toFixed(0)}/100`],
+              ["Momentum score", `${Number(analysis.scoreBreakdown?.momentum || 0).toFixed(0)}/100`],
+              ["Reversal score", `${Number(analysis.scoreBreakdown?.reversal || 0).toFixed(0)}/100`],
+              ["Pattern score", `${Number(analysis.scoreBreakdown?.pattern || 0).toFixed(0)}/100`],
+              ["Probability score", `${Number(analysis.scoreBreakdown?.probability || 0).toFixed(0)}/100`],
+              ["AI total score", `${Number(analysis.scoreBreakdown?.total || 0).toFixed(1)}/100`],
             ].map(([label, value]) => (
               <article key={label}><span>{label}</span><strong>{value}</strong></article>
             ))}
@@ -1072,6 +1078,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 
