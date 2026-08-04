@@ -5,6 +5,7 @@ import MarketSelector from "../components/MarketSelector";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderAnalysis.css";
+import "../styles/V107OverUnderGoodEntry.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
 
@@ -124,6 +125,13 @@ export default function OverUnderAnalysis() {
   const waitStartedAtRef = useRef(Date.now());
   const switchingRef = useRef(false);
   const processedContractsRef = useRef(new Set());
+  const confirmationRef = useRef({
+    key: "",
+    count: 0,
+    firstSeenAt: 0,
+  });
+  const lastLossAtRef = useRef(0);
+  const lastContractRef = useRef("");
 
   useEffect(() => {
     runningRef.current = autoRunning;
@@ -157,6 +165,55 @@ export default function OverUnderAnalysis() {
   const selectedStake = Math.max(0.35, safeNumber(stake, 0.35));
   const selectedDuration = Math.max(1, safeNumber(durationTicks, 1));
 
+  const candidateKey = `${analysis.best.side}-${analysis.best.barrier}`;
+
+  useEffect(() => {
+    if (!analysis.tradeNow || analysis.risk !== "LOW") {
+      confirmationRef.current = {
+        key: "",
+        count: 0,
+        firstSeenAt: 0,
+      };
+      return;
+    }
+
+    const now = Date.now();
+    const previous = confirmationRef.current;
+
+    if (
+      previous.key !== candidateKey ||
+      now - previous.firstSeenAt > 6000
+    ) {
+      confirmationRef.current = {
+        key: candidateKey,
+        count: 1,
+        firstSeenAt: now,
+      };
+      return;
+    }
+
+    confirmationRef.current = {
+      ...previous,
+      count: Math.min(4, previous.count + 1),
+    };
+  }, [
+    analysis.tradeNow,
+    analysis.risk,
+    candidateKey,
+    analysis.best.score,
+    analysis.best.probabilityEdge,
+    analysis.best.transitionEdge,
+    analysis.best.consistency,
+  ]);
+
+  const confirmedGoodEntry =
+    analysis.tradeNow &&
+    analysis.risk === "LOW" &&
+    confirmationRef.current.key === candidateKey &&
+    confirmationRef.current.count >= 3 &&
+    Date.now() - lastLossAtRef.current >= 20000 &&
+    candidateKey !== lastContractRef.current;
+
   function stopAuto(text) {
     runningRef.current = false;
     setAutoRunning(false);
@@ -170,6 +227,8 @@ export default function OverUnderAnalysis() {
     setTrades([]);
     lossesRef.current = 0;
     processedContractsRef.current = new Set();
+    confirmationRef.current = { key: "", count: 0, firstSeenAt: 0 };
+    lastContractRef.current = "";
     nextEntryAtRef.current = 0;
     waitStartedAtRef.current = Date.now();
     setMessage(autoRunning ? "Session reset. Scanner continues." : "Session reset.");
@@ -283,8 +342,10 @@ export default function OverUnderAnalysis() {
         ].slice(0, 50)
       );
 
-      setMessage(`${mode} ${side} ${barrier} opened.`);
-      nextEntryAtRef.current = Date.now() + 5000;
+      lastContractRef.current = `${side}-${barrier}`;
+      confirmationRef.current = { key: "", count: 0, firstSeenAt: 0 };
+      setMessage(`${mode} ${side} ${barrier} opened after GOOD ENTRY confirmation.`);
+      nextEntryAtRef.current = Date.now() + 12000;
       waitStartedAtRef.current = Date.now();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Trade failed.");
@@ -312,13 +373,13 @@ export default function OverUnderAnalysis() {
     runningRef.current = true;
     setAutoRunning(true);
     waitStartedAtRef.current = Date.now();
-    setMessage("Scanning all OVER and UNDER candidates.");
+    setMessage("Scanning all OVER and UNDER candidates. HIGH or MEDIUM risk will WAIT.");
   }
 
   useEffect(() => {
     if (
       !autoRunning ||
-      !analysis.tradeNow ||
+      !confirmedGoodEntry ||
       analysis.best.side === "WAIT" ||
       hasOpenTrade ||
       Date.now() < nextEntryAtRef.current ||
@@ -336,7 +397,7 @@ export default function OverUnderAnalysis() {
     });
   }, [
     autoRunning,
-    analysis.tradeNow,
+    confirmedGoodEntry,
     analysis.best.side,
     analysis.best.barrier,
     analysis.best.score,
@@ -350,7 +411,8 @@ export default function OverUnderAnalysis() {
     if (
       !autoRunning ||
       !autoSwitch ||
-      analysis.tradeNow ||
+      confirmedGoodEntry ||
+      analysis.prepare ||
       hasOpenTrade ||
       tradeBusy ||
       marketSymbols.length < 2 ||
@@ -371,7 +433,8 @@ export default function OverUnderAnalysis() {
   }, [
     autoRunning,
     autoSwitch,
-    analysis.tradeNow,
+    confirmedGoodEntry,
+    analysis.prepare,
     hasOpenTrade,
     tradeBusy,
     marketSymbols.length,
@@ -417,14 +480,16 @@ export default function OverUnderAnalysis() {
     if (settledResult === "WON") {
       lossesRef.current = 0;
       setLosses(0);
-      nextEntryAtRef.current = Date.now() + 5000;
+      nextEntryAtRef.current = Date.now() + 12000;
       waitStartedAtRef.current = Date.now();
       setMessage("Trade won. Fresh scan started.");
     } else if (settledResult === "LOST") {
+      lastLossAtRef.current = Date.now();
+      confirmationRef.current = { key: "", count: 0, firstSeenAt: 0 };
       const nextLosses = lossesRef.current + 1;
       lossesRef.current = nextLosses;
       setLosses(nextLosses);
-      nextEntryAtRef.current = Date.now() + 5000;
+      nextEntryAtRef.current = Date.now() + 12000;
       waitStartedAtRef.current = Date.now();
 
       if (nextLosses >= 2 && runningRef.current) {
@@ -629,8 +694,12 @@ export default function OverUnderAnalysis() {
         >
           <div>
             <small>NEXT ENTRY</small>
-            <h1>{analysis.decision}</h1>
-            <p>{analysis.reason}</p>
+            <h1>{confirmedGoodEntry
+                ? `BUY ${analysis.best.side} ${analysis.best.barrier}`
+                : analysis.prepare
+                  ? `CONFIRMING ${analysis.best.side} ${analysis.best.barrier}`
+                  : "WAIT FOR GOOD ENTRY"}</h1>
+            <p>{analysis.reason} Confirmation {confirmationRef.current.count}/3.</p>
           </div>
 
           <div className="ouSignalStats">

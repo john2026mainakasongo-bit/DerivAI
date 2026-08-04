@@ -19,9 +19,11 @@ function normalizePrices(prices = []) {
 
 function countsOf(digits) {
   const counts = Array.from({ length: 10 }, () => 0);
-  digits.forEach((digit) => {
+
+  for (const digit of digits) {
     if (digit >= 0 && digit <= 9) counts[digit] += 1;
-  });
+  }
+
   return counts;
 }
 
@@ -52,337 +54,204 @@ function sideProbability(counts, barrier, side, total) {
 }
 
 function naturalProbability(barrier, side) {
-  const safeBarrier = Math.max(0, Math.min(9, Number(barrier) || 0));
-
   return side === "OVER"
-    ? ((9 - safeBarrier) / 10) * 100
-    : (safeBarrier / 10) * 100;
+    ? ((9 - barrier) / 10) * 100
+    : (barrier / 10) * 100;
 }
 
-function standardDeviation(values = []) {
-  if (!values.length) return 0;
-  const mean =
-    values.reduce((sum, value) => sum + value, 0) / values.length;
-  const variance =
-    values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
-    values.length;
-  return Math.sqrt(variance);
-}
+function transition(digits, barrier, side) {
+  if (digits.length < 12) return 0;
 
-function windowProbability(digits, barrier, side, size) {
-  const window = digits.slice(-size);
-  const counts = countsOf(window);
-  return sideProbability(counts, barrier, side, window.length);
-}
-
-function transitionModel(digits, barrier, side) {
-  if (digits.length < 12) {
-    return {
-      probability: 0,
-      samples: 0,
-      edge: 0,
-    };
-  }
-
-  const wins = (digit) =>
+  const qualifies = (digit) =>
     side === "OVER" ? digit > barrier : digit < barrier;
 
   let samples = 0;
   let matches = 0;
 
   for (let index = 1; index < digits.length; index += 1) {
-    if (!wins(digits[index - 1])) continue;
+    if (!qualifies(digits[index - 1])) continue;
+
     samples += 1;
-    if (wins(digits[index])) matches += 1;
+
+    if (qualifies(digits[index])) {
+      matches += 1;
+    }
   }
 
-  const probability = samples ? (matches / samples) * 100 : 0;
-  const baseline = naturalProbability(barrier, side);
-
-  return {
-    probability: clamp(probability),
-    samples,
-    edge: probability - baseline,
-  };
+  return samples ? clamp((matches / samples) * 100) : 0;
 }
 
-function conditionalAfterLatest(digits, barrier, side) {
-  if (digits.length < 20) {
-    return {
-      probability: 0,
-      samples: 0,
-      edge: 0,
-    };
-  }
-
-  const latest = digits.at(-1);
-  const wins = (digit) =>
-    side === "OVER" ? digit > barrier : digit < barrier;
-
-  let samples = 0;
-  let matches = 0;
-
-  for (let index = 0; index < digits.length - 1; index += 1) {
-    if (digits[index] !== latest) continue;
-    samples += 1;
-    if (wins(digits[index + 1])) matches += 1;
-  }
-
-  const probability = samples ? (matches / samples) * 100 : 0;
-  const baseline = naturalProbability(barrier, side);
-
-  return {
-    probability: clamp(probability),
-    samples,
-    edge: probability - baseline,
-  };
-}
-
-function streakPenalty(digits, barrier, side) {
-  const wins = (digit) =>
-    side === "OVER" ? digit > barrier : digit < barrier;
-
-  let streak = 0;
-
-  for (let index = digits.length - 1; index >= 0; index -= 1) {
-    if (!wins(digits[index])) break;
-    streak += 1;
-  }
-
-  return Math.min(10, Math.max(0, streak - 2) * 2.5);
-}
-
-function winningDigitsFor(barrier, side) {
-  if (side === "OVER") {
-    return Array.from(
-      { length: Math.max(0, 9 - Number(barrier)) },
-      (_, index) => Number(barrier) + index + 1
-    );
-  }
-
-  return Array.from(
-    { length: Math.max(0, Number(barrier)) },
-    (_, index) => index
-  );
-}
-
-function avoidDigitsFor(barrier, side) {
-  const winning = new Set(winningDigitsFor(barrier, side));
-
-  return Array.from({ length: 10 }, (_, digit) => digit).filter(
-    (digit) => !winning.has(digit)
-  );
-}
-
-function buildCandidate(digits, counts, entropyScore, barrier, side) {
+function scoreWindow(digits, barrier, side) {
+  const counts = countsOf(digits);
   const total = digits.length;
+  const probability = sideProbability(counts, barrier, side, total);
   const baseline = naturalProbability(barrier, side);
-  const fullProbability = sideProbability(
-    counts,
-    barrier,
-    side,
-    total
-  );
-
-  const probability30 = windowProbability(
-    digits,
-    barrier,
-    side,
-    30
-  );
-  const probability60 = windowProbability(
-    digits,
-    barrier,
-    side,
-    60
-  );
-  const probability120 = windowProbability(
-    digits,
-    barrier,
-    side,
-    120
-  );
-
-  const windows = [
-    fullProbability,
-    probability30,
-    probability60,
-    probability120,
-  ];
-
-  const conservativeProbability = Math.min(...windows);
-  const probabilityEdge = conservativeProbability - baseline;
-  const spread = standardDeviation(windows);
-  const consistency = clamp(100 - spread * 8);
-
-  const exactRisk = total
-    ? (counts[barrier] / total) * 100
-    : 100;
-
-  const transition = transitionModel(
-    digits,
-    barrier,
-    side
-  );
-
-  const latestCondition = conditionalAfterLatest(
-    digits,
-    barrier,
-    side
-  );
-
-  const penalty =
-    streakPenalty(digits, barrier, side) +
-    Math.max(0, entropyScore - 92) * 1.6 +
-    Math.max(0, spread - 4) * 2;
-
-  const score = clamp(
-    46 +
-      probabilityEdge * 3.1 +
-      Math.max(0, transition.edge) * 1.15 +
-      Math.max(0, latestCondition.edge) * 0.75 +
-      consistency * 0.12 +
-      Math.min(8, transition.samples / 5) +
-      Math.min(6, latestCondition.samples / 3) -
-      exactRisk * 0.35 -
-      penalty
-  );
-
-  const autoEligible =
-    barrier >= 2 &&
-    barrier <= 6 &&
-    total >= 120 &&
-    probabilityEdge >= 2.5 &&
-    transition.edge >= 1 &&
-    consistency >= 68 &&
-    exactRisk <= 15 &&
-    entropyScore <= 96 &&
-    score >= 67;
+  const edge = probability - baseline;
 
   return {
-    side,
-    barrier,
-    contract: `${side} ${barrier}`,
-    winningDigits: winningDigitsFor(barrier, side),
-    avoidDigits: avoidDigitsFor(barrier, side),
-    probability: conservativeProbability,
-    observedProbability: fullProbability,
-    baselineProbability: baseline,
-    probabilityEdge,
-    transitionScore: transition.probability,
-    transitionEdge: transition.edge,
-    transitionSamples: transition.samples,
-    conditionalProbability: latestCondition.probability,
-    conditionalEdge: latestCondition.edge,
-    conditionalSamples: latestCondition.samples,
-    consistency,
-    exactRisk,
-    entropy: entropyScore,
-    score,
-    autoEligible,
+    probability,
+    edge,
+    exactRisk: total ? (counts[barrier] / total) * 100 : 100,
+    transition: transition(digits, barrier, side),
   };
+}
+
+function agreementScore(values) {
+  const valid = values.filter(Number.isFinite);
+
+  if (valid.length < 2) return 0;
+
+  const average =
+    valid.reduce((sum, value) => sum + value, 0) / valid.length;
+
+  const deviation =
+    valid.reduce((sum, value) => sum + Math.abs(value - average), 0) /
+    valid.length;
+
+  return clamp(100 - deviation * 3.5);
 }
 
 export function analyzeOverUnder(prices = []) {
-  const values = normalizePrices(prices).slice(-300);
+  const values = normalizePrices(prices).slice(-240);
   const digits = values.map(lastDigit);
-  const counts = countsOf(digits);
   const total = digits.length;
-  const entropyScore = entropy(counts, total);
 
+  const longDigits = digits.slice(-180);
+  const mediumDigits = digits.slice(-90);
+  const fastDigits = digits.slice(-36);
+  const triggerDigits = digits.slice(-14);
+
+  const counts = countsOf(longDigits);
+  const entropyScore = entropy(counts, longDigits.length);
   const candidates = [];
 
   for (let barrier = 1; barrier <= 7; barrier += 1) {
-    candidates.push(
-      buildCandidate(
-        digits,
-        counts,
-        entropyScore,
-        barrier,
-        "OVER"
-      )
-    );
+    for (const side of ["OVER", "UNDER"]) {
+      const long = scoreWindow(longDigits, barrier, side);
+      const medium = scoreWindow(mediumDigits, barrier, side);
+      const fast = scoreWindow(fastDigits, barrier, side);
+      const trigger = scoreWindow(triggerDigits, barrier, side);
 
-    candidates.push(
-      buildCandidate(
-        digits,
-        counts,
-        entropyScore,
+      const consistency = agreementScore([
+        long.probability,
+        medium.probability,
+        fast.probability,
+        trigger.probability,
+      ]);
+
+      const edgeAgreement = agreementScore([
+        long.edge,
+        medium.edge,
+        fast.edge,
+        trigger.edge,
+      ]);
+
+      const transitionEdge =
+        long.transition - naturalProbability(barrier, side);
+
+      const compositeEdge =
+        long.edge * 0.3 +
+        medium.edge * 0.25 +
+        fast.edge * 0.27 +
+        trigger.edge * 0.18;
+
+      const exactRisk =
+        long.exactRisk * 0.5 +
+        medium.exactRisk * 0.25 +
+        fast.exactRisk * 0.25;
+
+      const score = clamp(
+        50 +
+          compositeEdge * 3.5 +
+          transitionEdge * 0.7 +
+          (consistency - 50) * 0.17 +
+          (edgeAgreement - 50) * 0.12 -
+          Math.max(0, exactRisk - 10) * 1.8 -
+          Math.max(0, entropyScore - 88) * 1.7
+      );
+
+      candidates.push({
+        side,
         barrier,
-        "UNDER"
-      )
-    );
+        probability: long.probability,
+        mediumProbability: medium.probability,
+        fastProbability: fast.probability,
+        triggerProbability: trigger.probability,
+        probabilityEdge: compositeEdge,
+        transitionEdge,
+        consistency,
+        edgeAgreement,
+        exactRisk,
+        score,
+      });
+    }
   }
 
   candidates.sort((left, right) => {
-    if (left.autoEligible !== right.autoEligible) {
-      return Number(right.autoEligible) - Number(left.autoEligible);
-    }
-
-    if (right.score !== left.score) {
-      return right.score - left.score;
-    }
-
+    if (right.score !== left.score) return right.score - left.score;
     return right.probabilityEdge - left.probabilityEdge;
   });
 
-  const best =
-    candidates.find((candidate) => candidate.autoEligible) ||
-    candidates[0] || {
-      side: "WAIT",
-      barrier: 2,
-      probability: 0,
-      observedProbability: 0,
-      baselineProbability: 0,
-      probabilityEdge: 0,
-      transitionScore: 0,
-      transitionEdge: 0,
-      transitionSamples: 0,
-      conditionalProbability: 0,
-      conditionalEdge: 0,
-      conditionalSamples: 0,
-      consistency: 0,
-      exactRisk: 100,
-      entropy: 100,
-      score: 0,
-      autoEligible: false,
-    };
+  const best = candidates[0] || {
+    side: "WAIT",
+    barrier: 2,
+    probability: 0,
+    probabilityEdge: -100,
+    transitionEdge: -100,
+    consistency: 0,
+    exactRisk: 100,
+    score: 0,
+  };
 
   const confidence = clamp(
     best.score * 0.55 +
       best.consistency * 0.2 +
-      Math.max(0, best.probabilityEdge) * 2.2 +
-      Math.min(10, best.transitionSamples / 3)
+      best.edgeAgreement * 0.15 +
+      (100 - best.exactRisk) * 0.1
   );
 
   const quality = clamp(
-    best.score * 0.62 +
+    best.score * 0.55 +
       confidence * 0.25 +
-      Math.max(0, 96 - entropyScore) * 0.5
+      best.consistency * 0.12 +
+      (100 - entropyScore) * 0.08
   );
 
   const risk =
-    best.exactRisk > 15 ||
-    entropyScore > 96 ||
-    best.consistency < 65
+    best.exactRisk > 11 ||
+    entropyScore > 90 ||
+    best.probabilityEdge < 2.5 ||
+    best.consistency < 74
       ? "HIGH"
-      : best.exactRisk > 11 ||
-          entropyScore > 92 ||
-          best.consistency < 75
+      : best.exactRisk > 8 ||
+          entropyScore > 86 ||
+          best.probabilityEdge < 4 ||
+          best.consistency < 82
         ? "MEDIUM"
         : "LOW";
 
   const tradeNow =
-    Boolean(best.autoEligible) &&
-    confidence >= 68 &&
-    quality >= 64 &&
-    best.side !== "WAIT";
+    total >= 140 &&
+    best.score >= 88 &&
+    confidence >= 86 &&
+    quality >= 84 &&
+    best.probabilityEdge >= 4.5 &&
+    best.transitionEdge >= 1 &&
+    best.consistency >= 82 &&
+    best.edgeAgreement >= 78 &&
+    best.exactRisk <= 8 &&
+    entropyScore <= 86 &&
+    risk === "LOW";
 
   const prepare =
     !tradeNow &&
-    total >= 90 &&
-    best.score >= 60 &&
-    best.probabilityEdge >= 1.5;
+    total >= 110 &&
+    best.score >= 78 &&
+    confidence >= 76 &&
+    best.probabilityEdge >= 2.5 &&
+    best.consistency >= 72 &&
+    best.exactRisk <= 11 &&
+    entropyScore <= 90;
 
   return {
     total,
@@ -393,57 +262,42 @@ export function analyzeOverUnder(prices = []) {
     entropy: entropyScore,
     candidates,
     best,
-    contract: `${best.side} ${best.barrier}`,
-    winningDigits: Array.isArray(best.winningDigits)
-      ? best.winningDigits
-      : winningDigitsFor(best.barrier, best.side),
-    avoidDigits: Array.isArray(best.avoidDigits)
-      ? best.avoidDigits
-      : avoidDigitsFor(best.barrier, best.side),
     confidence,
     quality,
     risk,
     tradeNow,
     prepare,
     decision: tradeNow
-      ? `BUY ${best.side} ${best.barrier}`
+      ? `GOOD ENTRY ${best.side} ${best.barrier}`
       : prepare
         ? `PREPARE ${best.side} ${best.barrier}`
-        : "SCANNING OVER + UNDER",
+        : "WAIT FOR GOOD ENTRY",
     grade:
-      tradeNow && quality >= 82
-        ? "A"
-        : tradeNow && quality >= 72
-          ? "B"
+      tradeNow && quality >= 90
+        ? "A+"
+        : tradeNow
+          ? "A"
           : prepare
-            ? "C"
+            ? "B"
             : "WAIT",
-    waitDigits: [0, 1, 2],
-    triggerDigits: [0, 1, 2],
     reason: tradeNow
-      ? `${best.side} ${best.barrier} qualified · edge ${best.probabilityEdge.toFixed(1)} · score ${best.score.toFixed(1)}.`
+      ? `${best.side} ${best.barrier} passed all quality gates · score ${best.score.toFixed(
+          1
+        )}, edge ${best.probabilityEdge.toFixed(1)}, risk LOW.`
       : prepare
-        ? `${best.side} ${best.barrier} is forming · edge ${best.probabilityEdge.toFixed(1)}.`
-        : "Comparing every OVER and UNDER barrier from live Deriv ticks.",
+        ? `${best.side} ${best.barrier} is forming, but confirmation is not complete.`
+        : `High-risk or weak setup. Waiting. Best score ${best.score.toFixed(
+            1
+          )}, edge ${best.probabilityEdge.toFixed(1)}, risk ${risk}.`,
     rows: Array.from({ length: 7 }, (_, index) => {
       const barrier = index + 1;
 
       return {
         barrier,
-        over: sideProbability(
-          counts,
-          barrier,
-          "OVER",
-          total
-        ),
-        under: sideProbability(
-          counts,
-          barrier,
-          "UNDER",
-          total
-        ),
-        exact: total
-          ? (counts[barrier] / total) * 100
+        over: sideProbability(counts, barrier, "OVER", longDigits.length),
+        under: sideProbability(counts, barrier, "UNDER", longDigits.length),
+        exact: longDigits.length
+          ? (counts[barrier] / longDigits.length) * 100
           : 0,
       };
     }),
