@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -126,7 +126,7 @@ export default function useDerivTicks() {
       markets[0] || {
         id: "",
         label: "No market selected",
-        short: "—",
+        short: "â€”",
         decimals: 3,
       },
     [markets, symbol]
@@ -282,13 +282,25 @@ export default function useDerivTicks() {
     const removeTick = derivPublicClient.onTick(addTick);
 
     const removeContract = derivPublicClient.onContract((contract) => {
-      const id = String(contract?.contract_id || contract?.id || "");
+      const id = String(
+        contract?.contract_id ||
+          contract?.contractId ||
+          contract?.id ||
+          contract?.proposal_open_contract?.contract_id ||
+          contract?.data?.contract_id ||
+          ""
+      );
       if (!id) return;
 
       setOpenContracts((current) => {
         const rest = current.filter(
           (item) =>
-            String(item?.contract_id || item?.id || "") !== id
+            String(
+              item?.contract_id ||
+                item?.contractId ||
+                item?.id ||
+                ""
+            ) !== id
         );
         return [contract, ...rest].slice(0, 30);
       });
@@ -442,7 +454,7 @@ export default function useDerivTicks() {
       try {
         await derivPublicClient.ensureTradingConnection();
 
-        return await derivPublicClient.buyContract({
+        const bought = await derivPublicClient.buyContract({
           symbol: finalSymbol,
           contractType,
           amount,
@@ -455,6 +467,70 @@ export default function useDerivTicks() {
           durationUnit,
           barrier,
         });
+
+        const contractId = String(
+          bought?.contractId ||
+            bought?.contract_id ||
+            bought?.buy?.contract_id ||
+            bought?.raw?.buy?.contract_id ||
+            bought?.raw?.data?.buy?.contract_id ||
+            ""
+        );
+
+        if (!contractId) {
+          throw new Error(
+            "Deriv confirmed the purchase but no contract ID was returned."
+          );
+        }
+
+        /*
+         * V9: Insert the purchased contract immediately.
+         * This makes Quantum AI show 1 OPEN as soon as the balance is
+         * deducted, instead of waiting for a websocket contract event.
+         */
+        setOpenContracts((current) => {
+          const optimistic = {
+            contract_id: contractId,
+            id: contractId,
+            status: "OPEN",
+            is_sold: false,
+            is_expired: false,
+            symbol: finalSymbol,
+            underlying: finalSymbol,
+            contract_type: contractType,
+            buy_price: Number(amount),
+            purchase_price: Number(amount),
+            date_start: Math.floor(Date.now() / 1000),
+            duration: Number(duration),
+            duration_unit: durationUnit,
+            quantum_pending: true,
+          };
+
+          const rest = current.filter(
+            (item) =>
+              String(
+                item?.contract_id ||
+                  item?.contractId ||
+                  item?.id ||
+                  ""
+              ) !== contractId
+          );
+
+          return [optimistic, ...rest].slice(0, 30);
+        });
+
+        /*
+         * buyQuotedContract already subscribes, but requesting once more is
+         * safe and helps recover if the first contract event was missed.
+         */
+        Promise.resolve(
+          derivPublicClient.subscribeOpenContract(contractId)
+        ).catch(() => {});
+
+        return {
+          ...bought,
+          contractId,
+        };
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Trade failed.";
@@ -577,3 +653,4 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
+

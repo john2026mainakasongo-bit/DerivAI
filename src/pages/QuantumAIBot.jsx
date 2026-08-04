@@ -20,13 +20,15 @@ function money(value) {
 
 function contractIdOf(value) {
   return String(
-    value?.contract_id ||
-      value?.contractId ||
-      value?.id ||
+    value?.contractId ||
+      value?.contract_id ||
       value?.buy?.contract_id ||
+      value?.raw?.buy?.contract_id ||
+      value?.raw?.data?.buy?.contract_id ||
       value?.proposal_open_contract?.contract_id ||
       value?.data?.contract_id ||
       value?.data?.contractId ||
+      value?.id ||
       ""
   );
 }
@@ -618,5 +620,6 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
