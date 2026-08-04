@@ -3,12 +3,12 @@ import { evaluateSyntheticSetup } from "../analysis/syntheticIntelligenceEngine"
 
 const DEFAULTS = {
   maxRuns: 56,
-  maxScanTicks: 10,
+  maxScanTicks: 36,
   minConfidence: 75,
   minVotes: 1,
   stake: 1,
   duration: 5,
-  delaySeconds: 0,
+  delaySeconds: 5,
   takeProfit: 20,
   stopLoss: 6,
   cooldownAfterLosses: 1,
@@ -29,7 +29,7 @@ const DEFAULTS = {
   confirmationSeconds: 1,
   signalMaxAgeSeconds: 8,
   lossSetupBlockSeconds: 90,
-  minimumTradeGapSeconds: 1,
+  minimumTradeGapSeconds: 4,
   deepMinimumScore: 70,
   deepOverrideScore: 90,
 };
@@ -1198,6 +1198,205 @@ function v46IsStandardDigit(candidate = {}) {
 }
 
 
+
+function v49DigitArray(signal = {}) {
+  const analysis = signal.analysis || {};
+  const sources = [
+    signal.digitHistory,
+    signal.recentDigits,
+    analysis.digitHistory,
+    analysis.recentDigits,
+    analysis.lastDigits,
+    analysis.digits,
+  ];
+
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+
+    const digits = source
+      .map((item) => {
+        const raw =
+          typeof item === "object"
+            ? item?.digit ?? item?.lastDigit ?? item?.value
+            : item;
+        const value = Number(raw);
+        return Number.isInteger(value) && value >= 0 && value <= 9
+          ? value
+          : null;
+      })
+      .filter((value) => value !== null);
+
+    if (digits.length) return digits;
+  }
+
+  return [];
+}
+
+function v49Percent(count, total) {
+  return total > 0 ? (count / total) * 100 : 0;
+}
+
+function v49Range(start, end) {
+  const values = [];
+  for (let value = start; value <= end; value += 1) values.push(value);
+  return values;
+}
+
+function v49BuildFastDigitCandidates(signal = {}) {
+  const allDigits = v49DigitArray(signal);
+  if (allDigits.length < 12) return [];
+
+  const historical = allDigits.slice(-Math.min(200, allDigits.length));
+  const fast = allDigits.slice(-Math.min(25, allDigits.length));
+  const trigger = allDigits.slice(-Math.min(6, allDigits.length));
+  const currentDigit = fast[fast.length - 1];
+
+  const lowerFast = fast.filter((digit) => digit <= 4).length;
+  const upperFast = fast.filter((digit) => digit >= 5).length;
+  const lowerTrigger = trigger.filter((digit) => digit <= 4).length;
+  const upperTrigger = trigger.filter((digit) => digit >= 5).length;
+
+  const rowPressure =
+    upperFast + upperTrigger > lowerFast + lowerTrigger
+      ? "LOWER_TO_UPPER"
+      : lowerFast + lowerTrigger > upperFast + upperTrigger
+        ? "UPPER_TO_LOWER"
+        : "BALANCED";
+
+  const candidates = [];
+
+  for (let barrier = 1; barrier <= 7; barrier += 1) {
+    const overHistorical = v49Percent(
+      historical.filter((digit) => digit > barrier).length,
+      historical.length
+    );
+    const overFast = v49Percent(
+      fast.filter((digit) => digit > barrier).length,
+      fast.length
+    );
+    const overTrigger = v49Percent(
+      trigger.filter((digit) => digit > barrier).length,
+      trigger.length
+    );
+
+    const underHistorical = v49Percent(
+      historical.filter((digit) => digit < barrier).length,
+      historical.length
+    );
+    const underFast = v49Percent(
+      fast.filter((digit) => digit < barrier).length,
+      fast.length
+    );
+    const underTrigger = v49Percent(
+      trigger.filter((digit) => digit < barrier).length,
+      trigger.length
+    );
+
+    const overBonus =
+      rowPressure === "LOWER_TO_UPPER" ? 4 :
+      rowPressure === "UPPER_TO_LOWER" ? -3 : 0;
+
+    const underBonus =
+      rowPressure === "UPPER_TO_LOWER" ? 4 :
+      rowPressure === "LOWER_TO_UPPER" ? -3 : 0;
+
+    const overProbability = clampScore(
+      overHistorical * 0.45 +
+      overFast * 0.35 +
+      overTrigger * 0.20 +
+      overBonus
+    );
+
+    const underProbability = clampScore(
+      underHistorical * 0.45 +
+      underFast * 0.35 +
+      underTrigger * 0.20 +
+      underBonus
+    );
+
+    const overBaseline = ((9 - barrier) / 10) * 100;
+    const underBaseline = (barrier / 10) * 100;
+
+    candidates.push({
+      setup: `OVER ${barrier}`,
+      action: `OVER ${barrier}`,
+      family: "OVER_UNDER",
+      approved: overProbability >= 62,
+      probability: overProbability,
+      confidence: clampScore(overProbability + Math.min(8, fast.length / 4)),
+      edge: Math.max(0, overProbability - overBaseline),
+      source: "V49_FAST_ROW",
+      rowPressure,
+      currentDigit,
+      triggerDigits: v49Range(0, Math.min(9, barrier + 1)),
+      winningDigits: v49Range(barrier + 1, 9),
+      fastEntry: true,
+    });
+
+    candidates.push({
+      setup: `UNDER ${barrier}`,
+      action: `UNDER ${barrier}`,
+      family: "OVER_UNDER",
+      approved: underProbability >= 62,
+      probability: underProbability,
+      confidence: clampScore(underProbability + Math.min(8, fast.length / 4)),
+      edge: Math.max(0, underProbability - underBaseline),
+      source: "V49_FAST_ROW",
+      rowPressure,
+      currentDigit,
+      triggerDigits: v49Range(Math.max(0, barrier - 1), 9),
+      winningDigits: v49Range(0, barrier - 1),
+      fastEntry: true,
+    });
+  }
+
+  for (let target = 0; target <= 9; target += 1) {
+    const historicalExact = v49Percent(
+      historical.filter((digit) => digit === target).length,
+      historical.length
+    );
+    const fastExact = v49Percent(
+      fast.filter((digit) => digit === target).length,
+      fast.length
+    );
+
+    let transitionTotal = 0;
+    let transitionReturns = 0;
+
+    for (let index = 0; index < historical.length - 1; index += 1) {
+      if (historical[index] !== currentDigit) continue;
+      transitionTotal += 1;
+      if (historical[index + 1] === target) transitionReturns += 1;
+    }
+
+    const transitionReturn = v49Percent(transitionReturns, transitionTotal);
+    const exactRisk = clampScore(
+      historicalExact * 0.45 +
+      fastExact * 0.35 +
+      transitionReturn * 0.20
+    );
+
+    candidates.push({
+      setup: `DIFFERS ${target}`,
+      action: `DIFFERS ${target}`,
+      family: "MATCH_DIFFERS",
+      approved: exactRisk <= 13,
+      probability: exactRisk,
+      confidence: clampScore(100 - exactRisk),
+      edge: Math.max(0, 10 - exactRisk),
+      source: "V49_DYNAMIC_DIFFERS",
+      rowPressure,
+      currentDigit,
+      avoidDigit: target,
+      triggerDigits: v49Range(0, 9).filter((digit) => digit !== target),
+      winningDigits: v49Range(0, 9).filter((digit) => digit !== target),
+      fastEntry: true,
+    });
+  }
+
+  return candidates;
+}
+
 function v48AllowedCandidate(candidate = {}, isDemo = false) {
   const setup = candidateAction(candidate);
 
@@ -1213,10 +1412,10 @@ function v47CanExecute(candidate = {}, isDemo = false) {
 
   if (isDemo && v46IsStandardDigit(candidate)) {
     return (
-      Number(candidate.probability || 0) >= 65 &&
-      Number(candidate.samples || 0) >= 30 &&
-      Number(candidate.transitionCount || 0) >= 2 &&
-      Number(candidate.passedVotes || 0) >= 1
+      Number(candidate.probability || 0) >= 70 &&
+      Number(candidate.samples || 0) >= 50 &&
+      Number(candidate.transitionCount || 0) >= 4 &&
+      Number(candidate.passedVotes || 0) >= 2
     );
   }
 
@@ -1651,6 +1850,35 @@ export default class DerivBotEngine {
       }
     }
 
+    for (const fastCandidate of v49BuildFastDigitCandidates(signal)) {
+      const fastKey = candidateAction(fastCandidate);
+      const existingIndex = candidates.findIndex(
+        (candidate) => candidateAction(candidate) === fastKey
+      );
+
+      if (existingIndex < 0) {
+        candidates.push(fastCandidate);
+      } else {
+        const existing = candidates[existingIndex];
+        candidates[existingIndex] = {
+          ...existing,
+          ...fastCandidate,
+          probability: Math.max(
+            Number(existing.probability || 0),
+            Number(fastCandidate.probability || 0)
+          ),
+          confidence: Math.max(
+            Number(existing.confidence || 0),
+            Number(fastCandidate.confidence || 0)
+          ),
+          edge: Math.max(
+            Number(existing.edge || 0),
+            Number(fastCandidate.edge || 0)
+          ),
+        };
+      }
+    }
+
     if (gate.setup) {
       const fallbackProbability = Number(
         gate.selectedProbability ??
@@ -1795,9 +2023,20 @@ export default class DerivBotEngine {
               .filter((candidate) => v46IsStandardDigit(candidate))
               .filter((candidate) => v47CanExecute(candidate, true))
               .sort((left, right) => {
+                const normalizedProbability = (candidate) => {
+                  const setup = candidateAction(candidate);
+                  const probability = Number(candidate.probability || 0);
+                  return setup.startsWith("DIFFERS")
+                    ? 100 - probability
+                    : probability;
+                };
+
+                const fastBonus = (candidate) =>
+                  candidate.fastEntry ? 4 : 0;
+
                 const probabilityDifference =
-                  Number(right.probability || 0) -
-                  Number(left.probability || 0);
+                  normalizedProbability(right) + fastBonus(right) -
+                  (normalizedProbability(left) + fastBonus(left));
 
                 if (probabilityDifference !== 0) {
                   return probabilityDifference;
@@ -1836,7 +2075,7 @@ export default class DerivBotEngine {
         reason:
           `${bestText} ${
             this.isDemoAccount
-              ? "V49 Demo Turbo excludes RISE/FALL and uses digit contracts only. Standard digits need probability 65%+, 30 samples, 2 transitions and 1 vote."
+              ? "V48 Demo Auto excludes RISE/FALL and uses digit contracts only. Standard digits need probability 70%+, 50 samples, 4 transitions and 2 votes."
               : "V48 Real remains unchanged and keeps the strict scored gate."
           } Probability, confidence and ranking now use one evidence model. No forced entry.`,
         elapsedSeconds,
@@ -2118,6 +2357,12 @@ export default class DerivBotEngine {
           this.isDemoAccount
         ),
         accountExecutionPass: true,
+        currentDigit: selected.currentDigit,
+        rowPressure: selected.rowPressure || "BALANCED",
+        triggerDigits: selected.triggerDigits || [],
+        winningDigits: selected.winningDigits || [],
+        avoidDigit: selected.avoidDigit,
+        fastEntry: Boolean(selected.fastEntry),
         blockedChecks:
           this.isDemoAccount && v46IsStandardDigit(selected)
             ? null
@@ -2158,7 +2403,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V49 Turbo keeps Demo digits-only mode, scans every 100ms, uses one fresh confirmation, and removes the post-trade delay. Real remains unchanged and strict.",
+        "V49 keeps Demo digits-only, adds lower/upper row pressure, ranks OVER/UNDER barriers 1–7, dynamically ranks DIFFERS digits, and enters after one fresh confirmation.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2447,7 +2692,7 @@ export default class DerivBotEngine {
           lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "—",
         });
 
-        await sleep(this.isDemoAccount ? 100 : 1000);
+        await sleep(1000);
         continue;
       }
 
@@ -2482,25 +2727,20 @@ export default class DerivBotEngine {
           activeContractId: "",
         });
 
-        await sleep(this.isDemoAccount ? 500 : 3000);
+        await sleep(3000);
       }
-
-      const effectiveDelaySeconds =
-        this.isDemoAccount
-          ? 0
-          : this.settings.delaySeconds;
 
       if (
         this.running &&
         Number(this.state.cooldownUntil || 0) <= Date.now() &&
-        effectiveDelaySeconds > 0
+        this.settings.delaySeconds > 0
       ) {
         this.patch({
           status: "COOLDOWN",
-          message: `Waiting ${effectiveDelaySeconds}s before the next scan.`,
+          message: `Waiting ${this.settings.delaySeconds}s before the next scan.`,
         });
 
-        await sleep(effectiveDelaySeconds * 1000);
+        await sleep(this.settings.delaySeconds * 1000);
       }
     }
   }
@@ -2580,11 +2820,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} · V49 demo turbo confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} · V49 fast digit-row entry confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} · V49 DEMO TURBO`,
+      activeSetup: `${check.contract.label} · V49 FAST DIGIT ROW`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount

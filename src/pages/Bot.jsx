@@ -1,5 +1,11 @@
-
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  cloneElement,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
@@ -8,60 +14,85 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 
-import {
-  analyzeUnifiedSignals,
-} from "../analysis/v71UnifiedSignalEngine";
-import TurboAutoDigitBotEngine from "../bot/TurboAutoDigitBotEngine";
+import { analyzeMarket } from "../analysis/analysisEngine";
+import { buildValidatedSignals } from "../analysis/backtestEngine";
+import { buildEntryTiming } from "../analysis/entryTimingEngine";
+import { buildProfessionalDecision } from "../analysis/professionalDecisionEngine";
+import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
+import { analyzeSyntheticIntelligence } from "../analysis/syntheticIntelligenceEngine";
 
+import DerivBotEngine from "../bot/DerivBotEngine";
 import "../styles/Bot.css";
-import "../styles/TurboBot.css";
 
 const INITIAL_SETTINGS = {
+  maxRuns: 56,
+  maxScanTicks: 36,
+  stake: 1,
+  duration: 5,
+  minConfidence: 75,
+  minVotes: 1,
+  takeProfit: 20,
+  stopLoss: 6,
+  cooldownAfterLosses: 1,
+  cooldownSeconds: 45,
+  hardStopLossStreak: 3,
+  delaySeconds: 5,
+  martingaleEnabled: false,
+  maxMartingaleSteps: 1,
+  analysisAssisted: true,
   contractMode: "AUTO",
-  predictionMode: "AUTO",
   prediction: 2,
-  stake: 0.35,
-  duration: 1,
-  maxRuns: 5,
-  unlimited: false,
-  stopProfit: 0,
-  stopLoss: 0.35,
-  minimumConfidence: 90,
-  confirmationUpdates: 3,
-  lossCooldownMs: 15000,
-  sameSetupBlockMs: 300000,
-  maximumSignalAgeMs: 5000,
-  lossSkipSignals: 3,
-  allowHighRiskContracts: false,
-  highRiskMinimumQuality: 90,
-  highRiskMinimumSamples: 220,
-  highRiskMinimumEdge: 12,
-  minimumPayoutEdgePct: 7,
-  minimumProposalEvPct: 5,
-  minimumStability: 78,
-  scanSwitchMs: 45000,
-  postTradeDelayMs: 1500,
+  durationUnit: "t",
+  autoSwitchVolatility: true,
+  marketScanSeconds: 12,
+  confirmationCount: 1,
+  confirmationSeconds: 1,
+  signalMaxAgeSeconds: 6,
+  lossSetupBlockSeconds: 90,
+  minimumTradeGapSeconds: 5,
+  deepMinimumScore: 70,
+  deepOverrideScore: 90,
 };
 
-const INITIAL_STATE = {
-  status: "STOPPED",
-  message: "V52 Adaptive Transition Calibration is ready.",
+const INITIAL_BOT_STATE = {
+  status: "IDLE",
+  message: "Bot is ready.",
   runs: 0,
   wins: 0,
   losses: 0,
   profit: 0,
   totalStake: 0,
+  totalPayout: 0,
+  completedAt: 0,
+  stopReason: "",
+  consecutiveLosses: 0,
+  lossesSinceWin: 0,
+  cooldownUntil: 0,
+  cooldownCount: 0,
+  currentWinStreak: 0,
+  largestWinStreak: 0,
+  largestLossStreak: 0,
+  martingaleStep: 0,
+  currentStake: 1,
   activeSetup: "—",
   activeContractId: "",
-  selectedConfidence: 0,
-  selectedSource: "—",
-  selectedQuality: 0,
+  scanStartedAt: 0,
+  scanElapsedSeconds: 0,
+  scanTicks: 0,
+  maxScanTicks: 36,
+  scanWindow: 1,
+  lastBlockReason: "",
+  fallbackTrades: 0,
   signalConfirmations: 0,
-  skipSignalsRemaining: 0,
-  executionPhase: "IDLE",
-  entryCountdown: 0,
-  debugSteps: [],
-  marketSwitches: 0,
+  requiredConfirmations: 2,
+  blockedSetupUntil: 0,
+  lastLossSetup: "—",
+  lossProtectionCount: 0,
+  deepScore: 0,
+  deepConsensus: 0,
+  deepRegime: "UNKNOWN",
+  cyclePeriod: 0,
+  fastLane: false,
   history: [],
 };
 
@@ -75,98 +106,126 @@ function accountId(account) {
   );
 }
 
-function qualityLabel(score) {
-  const value = Number(score || 0);
-  if (value >= 88) return { stars: "★★★★★", label: "Excellent" };
-  if (value >= 80) return { stars: "★★★★☆", label: "Good" };
-  if (value >= 72) return { stars: "★★★☆☆", label: "Average" };
-  return { stars: "★★☆☆☆", label: "Weak" };
-}
+const DIGIT_CONTRACT_MODES = new Set([
+  "EVEN",
+  "ODD",
+  "OVER",
+  "UNDER",
+  "MATCH",
+  "DIFFERS",
+]);
 
-function signalReason(candidate = {}) {
-  if (!candidate?.setup) {
-    return "Collecting fresh multi-window evidence.";
-  }
-
-  return (
-    `EV ${Number(candidate.expectedValue || 0) >= 0 ? "+" : ""}` +
-    `${Number(candidate.expectedValue || 0).toFixed(1)}% · ` +
-    `consistency ${Number(candidate.consistency || 0).toFixed(1)}% · ` +
-    `${Number(candidate.sampleSize || 0)} ticks`
+function isDigitContractMode(mode) {
+  return DIGIT_CONTRACT_MODES.has(
+    String(mode || "").toUpperCase()
   );
 }
 
-function statusLabel(status) {
-  const value = String(status || "STOPPED").toUpperCase();
-
-  if (value === "QUOTING") return "PAYOUT CHECK";
-  if (value === "BUYING") return "BUYING";
-  if (value === "MONITORING") return "TRADE OPEN";
-  if (value === "SCANNING") return "SCANNING";
-  if (value === "RUNNING") return "RUNNING";
-  if (value === "COMPLETED") return "COMPLETED";
-  if (value === "ERROR") return "ERROR";
-  return value;
+function needsPrediction(mode) {
+  return ["OVER", "UNDER", "MATCH", "DIFFERS"].includes(
+    String(mode || "").toUpperCase()
+  );
 }
 
-function Metric({ label, value, tone = "" }) {
+function predictionOptions(mode) {
+  const value = String(mode || "").toUpperCase();
+
+  if (value === "OVER") {
+    return Array.from({ length: 9 }, (_, index) => index);
+  }
+
+  if (value === "UNDER") {
+    return Array.from({ length: 9 }, (_, index) => index + 1);
+  }
+
+  return Array.from({ length: 10 }, (_, index) => index);
+}
+
+function contractModeLabel(mode, prediction) {
+  const value = String(mode || "AUTO").toUpperCase();
+
+  if (value === "AUTO") {
+    return "AUTO BEST";
+  }
+
+  return needsPrediction(value)
+    ? `${value} ${prediction}`
+    : value;
+}
+
+function setupForTest(settings, analysisGate) {
+  if (analysisGate?.approved && analysisGate?.setup) {
+    return analysisGate.setup;
+  }
+
+  const mode = String(settings.contractMode || "AUTO").toUpperCase();
+  const prediction = Number(settings.prediction || 0);
+
+  if (mode === "AUTO") {
+    return settings.durationUnit === "s" ? "RISE" : "OVER 2";
+  }
+
+  return needsPrediction(mode) ? `${mode} ${prediction}` : mode;
+}
+
+function Field({ label, children }) {
+  const generatedId = useId();
+  const fieldId =
+    children?.props?.id ||
+    `bot-field-${String(generatedId).replace(/:/g, "")}`;
+
+  const field = cloneElement(children, {
+    id: fieldId,
+    name: children?.props?.name || fieldId,
+  });
+
   return (
-    <div className={`turboMetric ${tone}`}>
-      <small>{label}</small>
+    <label className="botField" htmlFor={fieldId}>
+      <span>{label}</span>
+      {field}
+    </label>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="botMetric">
+      <span>{label}</span>
       <strong>{value}</strong>
     </div>
   );
 }
 
-function entryRisk(candidate) {
-  if (!candidate) return "SCANNING";
-
-  const stability = Number(candidate.stability || candidate.consistency || 0);
-  const expectedValue = Number(candidate.expectedValue || 0);
-  const confidence = Number(candidate.qualityScore || candidate.confidence || 0);
-
-  if (confidence >= 90 && stability >= 85 && expectedValue >= 8) return "LOW";
-  if (confidence >= 82 && stability >= 70 && expectedValue >= 3) return "MEDIUM";
-  return "HIGH";
-}
-
-function riskTone(risk) {
-  if (risk === "LOW") return "riskLow";
-  if (risk === "MEDIUM") return "riskMedium";
-  if (risk === "HIGH") return "riskHigh";
-  return "riskWait";
-}
-
 export default function Bot() {
   const auth = useDerivAuth();
   const engineRef = useRef(null);
-  const marketContextRef = useRef({
-    markets: [],
-    symbol: "",
-    changeSymbol: null,
+  const marketSwitchingRef = useRef(false);
+  const marketScanStartedRef = useRef(Date.now());
+
+  const [marketSwitchState, setMarketSwitchState] = useState({
+    remaining: 0,
+    switches: 0,
+    lastMarket: "",
   });
 
-  const [settings, setSettings] = useState(INITIAL_SETTINGS);
-  const [botState, setBotState] = useState(INITIAL_STATE);
-  const [botType, setBotType] = useState("SMART_AUTO");
-  const [riseFallState, setRiseFallState] = useState({
-    running: false,
-    status: "STOPPED",
-    message: "Rise/Fall Bot is ready.",
-    runs: 0,
-    wins: 0,
-    losses: 0,
-    profit: 0,
-    history: [],
-  });
-  const riseFallStopRef = useRef(false);
-  const liveDataRef = useRef({
-    prices: [],
-    currentPrice: null,
-    digitHistory: [],
-    symbol: "",
-  });
-  const [realRiskAccepted, setRealRiskAccepted] = useState(false);
+  const [settings, setSettings] =
+    useState(INITIAL_SETTINGS);
+
+  useEffect(() => {
+    setSettings((current) => {
+      const safeTarget = Math.max(
+        24,
+        Math.min(120, Number(current.maxScanTicks || 36))
+      );
+
+      return safeTarget === Number(current.maxScanTicks)
+        ? current
+        : { ...current, maxScanTicks: safeTarget };
+    });
+  }, []);
+
+  const [botState, setBotState] =
+    useState(INITIAL_BOT_STATE);
 
   const {
     markets,
@@ -183,147 +242,23 @@ export default function Bot() {
     connect,
     disconnect,
     changeSymbol,
-    placeTrade,
   } = useDerivTicks();
 
-  const selectedId = accountId(auth.selectedAccount);
-  const isDemo = auth.selectedAccountType === "demo";
-
-  const unifiedSignals = useMemo(
-    () =>
-      analyzeUnifiedSignals({
-        digitHistory,
-        prices,
-        currentPrice,
-        allowHighRisk: settings.allowHighRiskContracts,
-        minimumConfidence: settings.minimumConfidence,
-      }),
-    [
-      digitHistory,
-      prices,
-      currentPrice,
-      settings.allowHighRiskContracts,
-      settings.minimumConfidence,
-    ]
+  const selectedId = accountId(
+    auth.selectedAccount
   );
 
-  const v66Analysis = unifiedSignals.digit;
-  const riseFallAnalysis = unifiedSignals.riseFall;
-  const allRankedCandidates = v66Analysis.candidates || [];
-
-  const isRiseFallBot = false;
-  const isDigitFamilyBot = true;
-
-  const selectedModes =
-    botType === "OVER_UNDER"
-      ? ["OVER", "UNDER"]
-      : botType === "EVEN_ODD"
-        ? ["EVEN", "ODD"]
-        : botType === "MATCH_DIFFERS"
-          ? ["MATCH", "DIFFERS"]
-          : ["OVER", "UNDER", "EVEN", "ODD", "DIFFERS"];
-
-  const rankedCandidates =
-    isRiseFallBot
-      ? []
-      : allRankedCandidates.filter((candidate) =>
-          selectedModes.includes(candidate.mode)
-        );
-
-  const executableCandidates = rankedCandidates.filter(
-    (candidate) => candidate.executable
-  );
-
-  const autoSignal =
-    executableCandidates[0] ||
-    null;
-
-  const topCandidates = rankedCandidates.slice(0, 6);
-
-  const familyLeaders = selectedModes
-    .map((mode) =>
-      rankedCandidates.find(
-        (candidate) => candidate.mode === mode
-      )
-    )
-    .filter(Boolean);
-
-  const digitRunning = [
-    "RUNNING",
-    "SCANNING",
-    "BUYING",
-    "MONITORING",
-    "WON",
-    "LOST",
-    "COOLDOWN",
-    "SWITCHING",
-  ].includes(botState.status);
-
-
-  const running =
-    isDigitFamilyBot
-      ? digitRunning
-      : riseFallState.running;
-
-  const quality = qualityLabel(autoSignal?.qualityScore);
-
-  const liveSignalLabel = autoSignal?.setup || "";
-  const liveConfidence = Number(autoSignal?.qualityScore || 0);
-  const liveRisk = entryRisk(autoSignal);
-
-  const displaySignal =
-    (liveSignalLabel || botState.activeSetup !== "—")
-      ? liveSignalLabel || botState.activeSetup
-      : botState.lastCompletedSetup
-        ? `LAST: ${botState.lastCompletedSetup}`
-        : running
-          ? "SCANNING..."
-          : "WAIT";
-
-  const displayConfidence =
-    liveSignalLabel
-      ? `${liveConfidence.toFixed(1)}%`
-      : running
-        ? "SCANNING..."
-        : botState.lastCompletedConfidence > 0
-          ? `${Number(botState.lastCompletedConfidence).toFixed(1)}% LAST`
-          : "—";
-
-  const displayRisk =
-    liveSignalLabel
-      ? liveRisk
-      : botState.lastCompletedRisk || "SCANNING";
-
-
-  const connecting =
-    status === "CONNECTING" || loadingMarket;
-
-  const winRate =
-    botState.runs > 0
-      ? ((botState.wins / botState.runs) * 100).toFixed(1)
-      : "0.0";
+  const isDemo =
+    auth.selectedAccountType === "demo";
 
   useEffect(() => {
-    if (
-      auth.authenticated &&
-      !connected &&
-      !connecting
-    ) {
-      void connect();
-    }
-  }, [
-    auth.authenticated,
-    connected,
-    connecting,
-    connect,
-  ]);
-
-  useEffect(() => {
-    const changed = derivPublicClient.configureAccount({
-      accessToken: auth.session?.accessToken || "",
-      appId: auth.config?.clientId || "",
-      accountId: selectedId,
-    });
+    const changed =
+      derivPublicClient.configureAccount({
+        accessToken:
+          auth.session?.accessToken || "",
+        appId: auth.config?.clientId || "",
+        accountId: selectedId,
+      });
 
     if (changed && connected) {
       void derivPublicClient.reconnect();
@@ -336,61 +271,9 @@ export default function Bot() {
   ]);
 
   useEffect(() => {
-    marketContextRef.current = {
-      markets: Array.isArray(markets) ? markets : [],
-      symbol,
-      changeSymbol,
-    };
-
-    liveDataRef.current = {
-      prices,
-      currentPrice,
-      digitHistory,
-      symbol,
-    };
-  }, [
-    markets,
-    symbol,
-    changeSymbol,
-    prices,
-    currentPrice,
-    digitHistory,
-  ]);
-
-  useEffect(() => {
-    const engine = new TurboAutoDigitBotEngine({
+    const engine = new DerivBotEngine({
       client: derivPublicClient,
       onState: setBotState,
-      onRequestMarketSwitch: async () => {
-        const context = marketContextRef.current;
-        const list = Array.isArray(context.markets)
-          ? context.markets.filter((item) => item?.id || item?.symbol)
-          : [];
-
-        if (list.length < 2 || typeof context.changeSymbol !== "function") {
-          return {
-            symbol: context.symbol,
-            label: "current market",
-          };
-        }
-
-        const currentIndex = list.findIndex(
-          (item) => (item.id || item.symbol) === context.symbol
-        );
-        const nextIndex =
-          currentIndex >= 0
-            ? (currentIndex + 1) % list.length
-            : 0;
-        const next = list[nextIndex];
-
-        const nextSymbol = next.id || next.symbol;
-        await context.changeSymbol(nextSymbol);
-
-        return {
-          symbol: nextSymbol,
-          label: next.label || nextSymbol,
-        };
-      },
     });
 
     engineRef.current = engine;
@@ -406,138 +289,326 @@ export default function Bot() {
   }, [settings]);
 
   useEffect(() => {
+    engineRef.current?.setAccountMode({
+      isDemo,
+    });
+  }, [isDemo]);
+
+  useEffect(() => {
     engineRef.current?.setMarket({
       symbol,
-      currency: auth.selectedAccount?.currency || "USD",
+      currency:
+        auth.selectedAccount?.currency ||
+        "USD",
     });
-    engineRef.current?.setAccountType(
-      auth.selectedAccountType || "demo"
-    );
   }, [
     symbol,
     auth.selectedAccount?.currency,
-    auth.selectedAccountType,
   ]);
 
+  const snapshot = useMemo(
+    () => ({
+      prices,
+      currentPrice,
+      lastDigit,
+      digitHistory,
+    }),
+    [
+      prices,
+      currentPrice,
+      lastDigit,
+      digitHistory,
+    ]
+  );
+
+  const validatedSignals = useMemo(
+    () => buildValidatedSignals(snapshot),
+    [snapshot]
+  );
+
+  const entryTiming = useMemo(
+    () =>
+      buildEntryTiming(
+        validatedSignals,
+        snapshot,
+        {
+          tradeTicks:
+            settings.durationUnit === "t"
+              ? settings.duration
+              : 5,
+          validitySeconds: 15,
+        }
+      ),
+    [
+      validatedSignals,
+      snapshot,
+      settings.duration,
+      settings.durationUnit,
+    ]
+  );
+
+  const professionalDecision = useMemo(
+    () =>
+      buildProfessionalDecision(
+        snapshot,
+        validatedSignals
+      ),
+    [snapshot, validatedSignals]
+  );
+
+  const analysis = useMemo(
+    () => analyzeMarket(snapshot),
+    [snapshot]
+  );
+
+  const syntheticIntelligence = useMemo(
+    () => analyzeSyntheticIntelligence(snapshot),
+    [snapshot]
+  );
+
+  const analysisGate = useMemo(
+    () =>
+      evaluateAnalysisAssistedSignal(analysis, {
+        minimumConfidence: settings.minConfidence,
+        contractMode: settings.contractMode,
+        prediction: settings.prediction,
+        durationUnit: settings.durationUnit,
+      }),
+    [
+      analysis,
+      settings.minConfidence,
+      settings.contractMode,
+      settings.prediction,
+      settings.durationUnit,
+    ]
+  );
+
   useEffect(() => {
-    engineRef.current?.updateSignal(
-      autoSignal
-        ? {
-            ...autoSignal,
-            confidence: autoSignal.qualityScore,
-            qualityScore: autoSignal.qualityScore,
-          }
-        : null
+    engineRef.current?.updateSignal({
+      symbol,
+      tickKey: `${symbol}:${prices.length}:${currentPrice}:${lastDigit}`,
+      sampleSize: prices.length,
+      priceCount: prices.length,
+      lastDigit,
+      digitHistory,
+      recentDigits: digitHistory,
+      updatedAt: Date.now(),
+      professionalDecision,
+      entryTiming,
+      analysis,
+      validatedSignals,
+    });
+  }, [
+    symbol,
+    professionalDecision,
+    entryTiming,
+    analysis,
+    validatedSignals,
+    prices.length,
+    currentPrice,
+    lastDigit,
+  ]);
+
+
+  const connecting =
+    status === "CONNECTING" ||
+    loadingMarket;
+
+  const running = [
+    "RUNNING",
+    "WAITING",
+    "LOCKED",
+    "CONFIRMING",
+    "READY",
+    "PROPOSAL",
+    "BUYING",
+    "MONITORING",
+    "COOLDOWN",
+    "RISK_COOLDOWN",
+    "TESTING",
+    "WON",
+    "LOST",
+  ].includes(botState.status);
+
+  const paused =
+    botState.status === "PAUSED";
+
+
+  useEffect(() => {
+    marketScanStartedRef.current = Date.now();
+    setMarketSwitchState((current) => ({
+      ...current,
+      remaining: settings.marketScanSeconds,
+      lastMarket: market?.label || symbol || "",
+    }));
+  }, [symbol, market?.label, settings.marketScanSeconds]);
+
+  useEffect(() => {
+    const switchableStatus = ["RUNNING", "WAITING"].includes(
+      botState.status
     );
-  }, [autoSignal, botType]);
 
-  function updateNumber(key) {
-    return (event) => {
-      const value = Number(event.target.value);
-
-      setSettings((current) => ({
-        ...current,
-        [key]: Number.isFinite(value) ? value : current[key],
-      }));
-    };
-  }
-
-  async function ensureTradingConnection() {
-    if (connected && marketContextRef.current.symbol) {
-      return marketContextRef.current.symbol;
+    if (
+      !settings.autoSwitchVolatility ||
+      !connected ||
+      loadingMarket ||
+      paused ||
+      !switchableStatus ||
+      markets.length < 2
+    ) {
+      return undefined;
     }
 
-    const result = await connect();
-    const liveSymbol =
-      result?.symbol ||
-      marketContextRef.current.symbol ||
-      liveDataRef.current.symbol;
-
-    if (!liveSymbol) {
-      throw new Error(
-        "The Deriv feed connected but no volatility market was selected."
+    const timer = window.setInterval(async () => {
+      const elapsed = Math.floor(
+        (Date.now() - marketScanStartedRef.current) / 1000
       );
-    }
+      const remaining = Math.max(
+        0,
+        settings.marketScanSeconds - elapsed
+      );
 
-    engineRef.current?.setMarket({
-      symbol: liveSymbol,
-      currency: auth.selectedAccount?.currency || "USD",
-    });
+      setMarketSwitchState((current) => ({
+        ...current,
+        remaining,
+      }));
 
-    return liveSymbol;
-  }
+      const collectingHistory =
+        Number(syntheticIntelligence?.dataQuality || 0) < 48;
+      const deepReady =
+        Number(syntheticIntelligence?.bestScore || 0) >=
+          Number(settings.deepMinimumScore || 70) &&
+        Number(syntheticIntelligence?.dataQuality || 0) >= 48;
 
-  async function rotateToNextMarket() {
-    const context = marketContextRef.current;
-    const list = Array.isArray(context.markets)
-      ? context.markets.filter((item) => item?.id || item?.symbol)
-      : [];
-
-    if (list.length < 2 || typeof context.changeSymbol !== "function") {
-      return context.symbol;
-    }
-
-    const currentIndex = list.findIndex(
-      (item) => (item.id || item.symbol) === context.symbol
-    );
-    const next = list[
-      currentIndex >= 0
-        ? (currentIndex + 1) % list.length
-        : 0
-    ];
-    const nextSymbol = next.id || next.symbol;
-
-    await context.changeSymbol(nextSymbol);
-    return nextSymbol;
-  }
-
-  function waitForSettlement(contractId, timeoutMs = 45000) {
-    return new Promise((resolve, reject) => {
-      let finished = false;
-
-      const cleanup = derivPublicClient.onContract((contract) => {
-        const id = String(
-          contract?.contract_id ||
-          contract?.id ||
-          ""
+      const engineNeedsAnotherMarket =
+        botState.status === "WAITING" &&
+        /loss protection|walk-forward|professional direction|market changed|stale|deep engines disagree|regime shift|too random/i.test(
+          String(botState.lastBlockReason || "")
         );
 
-        if (id !== String(contractId)) return;
+      if (
+        collectingHistory ||
+        remaining > 0 ||
+        ((analysisGate.approved || deepReady) && !engineNeedsAnotherMarket)
+      ) {
+        return;
+      }
 
-        const settled = Boolean(
-          contract?.is_sold ||
-          contract?.is_expired ||
-          ["won", "lost", "sold"].includes(
-            String(contract?.status || "").toLowerCase()
-          )
-        );
+      if (marketSwitchingRef.current) {
+        return;
+      }
 
-        if (!settled || finished) return;
-        finished = true;
-        window.clearTimeout(timer);
-        cleanup();
+      const currentIndex = Math.max(
+        0,
+        markets.findIndex((item) => item.id === symbol)
+      );
+      const nextMarket = markets[(currentIndex + 1) % markets.length];
 
-        const explicitProfit = Number(contract?.profit);
-        const profit = Number.isFinite(explicitProfit)
-          ? explicitProfit
-          : Number(contract?.sell_price || 0) -
-            Number(contract?.buy_price || 0);
+      if (!nextMarket || nextMarket.id === symbol) {
+        marketScanStartedRef.current = Date.now();
+        return;
+      }
 
-        resolve({
-          result: profit >= 0 ? "WIN" : "LOSS",
-          profit,
-          contract,
-        });
-      });
+      marketSwitchingRef.current = true;
 
-      const timer = window.setTimeout(() => {
-        if (finished) return;
-        finished = true;
-        cleanup();
-        reject(new Error("Contract settlement timed out."));
-      }, timeoutMs);
+      try {
+        await changeSymbol(nextMarket.id);
+        setMarketSwitchState((current) => ({
+          remaining: settings.marketScanSeconds,
+          switches: current.switches + 1,
+          lastMarket: nextMarket.label || nextMarket.id,
+        }));
+      } finally {
+        marketScanStartedRef.current = Date.now();
+        marketSwitchingRef.current = false;
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    settings.autoSwitchVolatility,
+    settings.marketScanSeconds,
+    connected,
+    loadingMarket,
+    paused,
+    botState.status,
+    markets,
+    symbol,
+    analysisGate.approved,
+    syntheticIntelligence,
+    settings.deepMinimumScore,
+    botState.lastBlockReason,
+    changeSymbol,
+  ]);
+  const winRate =
+    botState.runs > 0
+      ? (
+          (botState.wins /
+            botState.runs) *
+          100
+        ).toFixed(1)
+      : "0.0";
+
+  const roi =
+    botState.totalStake > 0
+      ? (
+          (botState.profit /
+            botState.totalStake) *
+          100
+        ).toFixed(1)
+      : "0.0";
+
+  const completed =
+    botState.status === "COMPLETED";
+
+  const updateNumber = (key) => (event) => {
+    setSettings((current) => ({
+      ...current,
+      [key]: Number(event.target.value),
+    }));
+  };
+
+
+  const updateContractMode = (event) => {
+    const contractMode = event.target.value;
+
+    setSettings((current) => {
+      let prediction = current.prediction;
+
+      if (contractMode === "OVER") {
+        prediction = Math.min(8, Math.max(0, prediction));
+      } else if (contractMode === "UNDER") {
+        prediction = Math.min(9, Math.max(1, prediction));
+      } else {
+        prediction = Math.min(9, Math.max(0, prediction));
+      }
+
+      const digitMode = isDigitContractMode(contractMode);
+
+      return {
+        ...current,
+        contractMode,
+        prediction,
+        durationUnit: digitMode ? "t" : current.durationUnit,
+        duration: digitMode
+          ? Math.min(10, Math.max(1, current.duration))
+          : current.duration,
+      };
     });
-  }
+  };
+
+  const updateDurationUnit = (event) => {
+    const durationUnit = event.target.value === "s" ? "s" : "t";
+
+    setSettings((current) => ({
+      ...current,
+      durationUnit,
+      duration:
+        durationUnit === "s"
+          ? Math.min(3600, Math.max(15, current.duration))
+          : Math.min(10, Math.max(1, current.duration)),
+    }));
+  };
 
   async function startBot() {
     if (!auth.authenticated) {
@@ -545,254 +616,81 @@ export default function Bot() {
       return;
     }
 
-    if (!isDemo && !realRiskAccepted) {
-      window.alert(
-        "Confirm the Real Account risk checkbox before starting. Real trades can lose money."
-      );
-      return;
+    if (!connected) {
+      await connect();
     }
 
-    try {
-      await ensureTradingConnection();
-      await engineRef.current?.start();
-    } catch (error) {
-      window.alert(
-        error instanceof Error
-          ? error.message
-          : "Unable to start the bot."
+    if (!isDemo) {
+      const confirmed = window.confirm(
+        `REAL TRADING WARNING\n\n` +
+          `Account: ${selectedId || "selected real account"}\n` +
+          `Stake: ${Number(settings.stake || 0).toFixed(2)} ${
+            auth.selectedAccount?.currency || "USD"
+          }\n` +
+          `Maximum scan: ${settings.maxScanTicks} ticks\n` +
+          `Contract duration: ${settings.duration} ${
+            settings.durationUnit === "s" ? "seconds" : "ticks"
+          }\n\n` +
+          `Trades placed here will be sent to the connected Deriv real account. Continue?`
       );
+
+      if (!confirmed) {
+        return;
+      }
     }
+
+    await engineRef.current?.start();
   }
 
-
-  async function startRiseFallBot() {
+  async function testOneTrade() {
     if (!auth.authenticated) {
       auth.login();
       return;
     }
 
-    if (!isDemo && !realRiskAccepted) {
-      window.alert(
-        "Confirm the Real Account risk checkbox before starting. Real trades can lose money."
+    const accountLabel = isDemo ? "Demo" : "REAL";
+    const setup = setupForTest(settings, analysisGate);
+
+    if (!isDemo) {
+      const confirmed = window.confirm(
+        `PLACE ONE REAL TEST TRADE?\n\n` +
+          `Account: ${selectedId || "selected real account"}\n` +
+          `Setup: ${setup}\n` +
+          `Stake: ${Number(settings.stake || 0).toFixed(2)} ${
+            auth.selectedAccount?.currency || "USD"
+          }\n\n` +
+          `This sends a real proposal and buy request to Deriv.`
       );
-      return;
-    }
 
-    setRiseFallState((current) => ({
-      ...current,
-      running: false,
-      status: "CONNECTING",
-      message: "Connecting the authenticated Deriv feed...",
-    }));
-
-    let activeSymbol = await ensureTradingConnection();
-
-    riseFallStopRef.current = false;
-    setRiseFallState((current) => ({
-      ...current,
-      running: true,
-      status: "SCANNING",
-      message: "Scanning Rise/Fall trend, momentum and entry level.",
-    }));
-
-    let runs = 0;
-    let wins = 0;
-    let losses = 0;
-    let profit = 0;
-    let noEntrySince = Date.now();
-    const history = [];
-
-    while (
-      !riseFallStopRef.current &&
-      (settings.unlimited || runs < settings.maxRuns)
-    ) {
-      const snapshot = liveDataRef.current;
-      const signal = analyzeUnifiedSignals({
-        digitHistory: snapshot.digitHistory,
-        prices: snapshot.prices,
-        currentPrice: snapshot.currentPrice,
-        allowHighRisk: false,
-        minimumConfidence: settings.minimumConfidence,
-      }).riseFall;
-
-      if (
-        !signal.executable ||
-        signal.risk !== "GOOD ENTRY" ||
-        signal.signal === "WAIT"
-      ) {
-        const waitedMs = Date.now() - noEntrySince;
-
-        setRiseFallState((current) => ({
-          ...current,
-          status: "SCANNING",
-          message:
-            `${signal.reason || signal.instruction || "Waiting for aligned evidence."} ` +
-            `Market switch in ${Math.max(
-              0,
-              Math.ceil((5000 - waitedMs) / 1000)
-            )}s.`,
-        }));
-
-        if (waitedMs >= 5000) {
-          setRiseFallState((current) => ({
-            ...current,
-            status: "SWITCHING",
-            message: "No qualified Rise/Fall setup. Switching volatility.",
-          }));
-
-          activeSymbol = await rotateToNextMarket();
-          noEntrySince = Date.now();
-          await new Promise((resolve) => setTimeout(resolve, 700));
-        } else {
-          await new Promise((resolve) => setTimeout(resolve, 180));
-        }
-
-        continue;
-      }
-
-      noEntrySince = Date.now();
-
-      setRiseFallState((current) => ({
-        ...current,
-        status: "BUYING",
-        message: `${signal.signal} validated. Opening trade.`,
-      }));
-
-      try {
-        const tradeRequest = {
-          symbol: activeSymbol || liveDataRef.current.symbol,
-          contractType: signal.signal === "RISE" ? "CALL" : "PUT",
-          amount: Math.max(
-            0.35,
-            Number(settings.stake) || 0.35
-          ),
-          basis: "stake",
-          duration: Math.max(
-            1,
-            Math.min(
-              10,
-              Number(settings.duration) || signal.duration || 5
-            )
-          ),
-          durationUnit: "t",
-        };
-
-        let result;
-
-        try {
-          result = await placeTrade(tradeRequest);
-        } catch (firstError) {
-          const message =
-            firstError instanceof Error
-              ? firstError.message
-              : String(firstError || "");
-
-          if (/connect|feed|socket|authenticated/i.test(message)) {
-            await connect();
-            await new Promise((resolve) => setTimeout(resolve, 1400));
-            result = await placeTrade(tradeRequest);
-          } else {
-            throw firstError;
-          }
-        }
-
-        const contractId =
-          result?.contractId ||
-          result?.contract_id ||
-          "opened";
-
-        setRiseFallState((current) => ({
-          ...current,
-          running: true,
-          status: "MONITORING",
-          message: `${signal.signal} contract ${contractId} is open.`,
-        }));
-
-        const settlement = await waitForSettlement(contractId);
-        runs += 1;
-        profit += Number(settlement.profit || 0);
-
-        if (settlement.result === "WIN") {
-          wins += 1;
-        } else {
-          losses += 1;
-        }
-
-        history.unshift({
-          id: `${Date.now()}-${runs}`,
-          time: Date.now(),
-          setup: signal.signal,
-          stake: Math.max(
-            0.35,
-            Number(settings.stake) || 0.35
-          ),
-          result: settlement.result,
-          profit: Number(settlement.profit || 0),
-          confidence: signal.confidence,
-          contractId,
-        });
-
-        setRiseFallState({
-          running:
-            !riseFallStopRef.current &&
-            settlement.result !== "LOSS",
-          status:
-            settlement.result === "WIN"
-              ? "SCANNING"
-              : "COMPLETED",
-          message:
-            settlement.result === "WIN"
-              ? "Trade won. Rebuilding fresh analysis on this market."
-              : "Risk stop: bot stopped immediately after one loss.",
-          runs,
-          wins,
-          losses,
-          profit,
-          history: [...history],
-        });
-
-        if (settlement.result === "LOSS") {
-          riseFallStopRef.current = true;
-          break;
-        }
-
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.max(250, Number(settings.postTradeDelayMs) || 250))
-        );
-      } catch (error) {
-        riseFallStopRef.current = true;
-        setRiseFallState((current) => ({
-          ...current,
-          running: false,
-          status: "ERROR",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Rise/Fall trade failed.",
-        }));
+      if (!confirmed) {
+        return;
       }
     }
 
-    if (!riseFallStopRef.current) {
-      setRiseFallState((current) => ({
-        ...current,
-        running: false,
-        status: "COMPLETED",
-        message: "Maximum Rise/Fall runs completed.",
-      }));
+    try {
+      if (!connected) {
+        await connect();
+      }
+
+      await engineRef.current?.testOneTrade(setup);
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : `Unable to complete the ${accountLabel} test trade.`
+      );
     }
   }
 
-  function stopRiseFallBot() {
-    riseFallStopRef.current = true;
-    setRiseFallState((current) => ({
-      ...current,
-      running: false,
-      status: "STOPPED",
-      message: "Rise/Fall Bot stopped.",
-    }));
+  function resetBot() {
+    engineRef.current?.reset();
+    marketScanStartedRef.current = Date.now();
+    setMarketSwitchState({
+      remaining: settings.marketScanSeconds,
+      switches: 0,
+      lastMarket: market?.label || symbol || "",
+    });
   }
-
 
   return (
     <div className="appShell">
@@ -800,11 +698,11 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V52 · Dynamic Digit AI V74.1 · Smart Signal Status Engine"
-          subtitle="Clear live signal state, last-trade memory, entry-risk labels and fast fresh rescanning"
-          connected={auth.authenticated || connected}
-          connecting={!auth.authenticated && connecting}
-          onConnect={auth.authenticated ? undefined : connect}
+          title="EdgePilot V49 · Fast Digit Row Engine"
+          subtitle="Cycles, entropy, transitions, regimes, walk-forward validation and fast AI entries"
+          connected={connected}
+          connecting={connecting}
+          onConnect={connect}
           onDisconnect={disconnect}
         />
 
@@ -812,864 +710,971 @@ export default function Bot() {
           <MarketSelector
             markets={markets}
             value={symbol}
-            disabled={loadingMarket || running}
+            disabled={
+              loadingMarket || running
+            }
             onChange={changeSymbol}
           />
 
-          <div className={isDemo ? "botDemoLock safe" : "botDemoLock real"}>
+          <div
+            className={isDemo ? "botDemoLock safe" : "botDemoLock real"}
+          >
             {isDemo
-              ? "✓ DEMO EXECUTION"
-              : `⚠ REAL ACTIVE · ${selectedId || "SELECTED"}`}
+              ? "✓ DEMO ACCOUNT"
+              : `⚠ REAL ACCOUNT · ${selectedId || "SELECTED"}`}
           </div>
-        </section>
-
-        <section className="v72BotSelector">
-          {[
-            {
-              id: "OVER_UNDER",
-              title: "Over / Under Bot",
-              subtitle: "Only OVER 1–6 and UNDER 3–8",
-            },
-            {
-              id: "EVEN_ODD",
-              title: "Even / Odd Bot",
-              subtitle: "Only EVEN and ODD",
-            },
-            {
-              id: "RISE_FALL",
-              title: "Rise / Fall Bot",
-              subtitle: "Only CALL and PUT trend entries",
-            },
-            {
-              id: "MATCH_DIFFERS",
-              title: "Matches / Differs Bot",
-              subtitle: "Only MATCH and DIFFERS",
-            },
-            {
-              id: "SMART_AUTO",
-              title: "Smart Auto AI",
-              subtitle: "Ranks every enabled contract family",
-            },
-          ].filter((item) => item.id !== "RISE_FALL")
-            .map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              className={botType === item.id ? "active" : ""}
-              disabled={running}
-              onClick={() => {
-                setBotType(item.id);
-
-                setSettings((current) => ({
-                  ...current,
-                  contractMode: "AUTO",
-                  allowHighRiskContracts:
-                    item.id === "MATCH_DIFFERS"
-                      ? true
-                      : item.id === "SMART_AUTO"
-                        ? current.allowHighRiskContracts
-                        : false,
-                }));
-              }}
-            >
-              <strong>{item.title}</strong>
-              <small>{item.subtitle}</small>
-            </button>
-          ))}
         </section>
 
         {statusDetail ? (
-          <div className="connectionError">{statusDetail}</div>
+          <div className="connectionError">
+            {statusDetail}
+          </div>
         ) : null}
 
-        <section className="turboStatusHero">
-          <div>
-            <small>BOT STATUS</small>
-            <strong>
-              {isDigitFamilyBot
-                ? statusLabel(botState.status)
-                : statusLabel(riseFallState.status)}
-            </strong>
-            <p>
-              {isDigitFamilyBot
-                ? botState.message
-                : riseFallState.message}
-            </p>
-          </div>
-
-          <div
-            className={`turboStatusOrb ${
-              isDigitFamilyBot
-                ? botState.status.toLowerCase()
-                : riseFallState.status.toLowerCase()
-            }`}
-          >
-            {running ? "●" : "■"}
-          </div>
-        </section>
-
-        <section className="turboLayout">
-          <article className="botCard turboControlCard">
+        <section className="botLayout">
+          <article className="botCard botExecutionCard">
             <div className="botCardHeader">
               <div>
                 <small>BOT CONFIGURATION</small>
-                <h2>
-                  {botType === "OVER_UNDER"
-                    ? "Over / Under execution"
-                    : botType === "EVEN_ODD"
-                      ? "Even / Odd execution"
-                      : botType === "MATCH_DIFFERS"
-                        ? "Matches / Differs execution"
-                        : botType === "SMART_AUTO"
-                          ? "Smart Auto AI execution"
-                          : "Auto Rise/Fall execution"}
-                </h2>
+                <h2>Execution rules</h2>
               </div>
 
               <span className={`botStatus ${botState.status.toLowerCase()}`}>
-                {statusLabel(botState.status)}
+                {botState.status}
               </span>
             </div>
 
-            {isRiseFallBot ? (
-              <div className="v67RiseFallSummary">
-                <div>
-                  <small>SIGNAL</small>
-                  <strong>{riseFallAnalysis.signal}</strong>
-                </div>
-                <div>
-                  <small>RISK</small>
-                  <strong>{riseFallAnalysis.risk}</strong>
-                </div>
-                <div>
-                  <small>CONFIDENCE</small>
-                  <strong>
-                    {Number(riseFallAnalysis.confidence || 0).toFixed(1)}%
-                  </strong>
-                </div>
-                <div>
-                  <small>ENTRY</small>
-                  <strong>
-                    {Number.isFinite(riseFallAnalysis.entryPrice)
-                      ? Number(riseFallAnalysis.entryPrice).toFixed(3)
-                      : "WAIT"}
-                  </strong>
-                </div>
-              </div>
-            ) : null}
-
-            {isDigitFamilyBot ? (
-              <div className="v72FamilySummary">
-                <div>
-                  <small>SELECTED BOT</small>
-                  <strong>
-                    {botType === "OVER_UNDER"
-                      ? "OVER / UNDER"
-                      : botType === "EVEN_ODD"
-                        ? "EVEN / ODD"
-                        : botType === "MATCH_DIFFERS"
-                          ? "MATCHES / DIFFERS"
-                          : "SMART AUTO AI"}
-                  </strong>
-                </div>
-                <div>
-                  <small>CURRENT SIGNAL</small>
-                  <strong>{displaySignal}</strong>
-                </div>
-                <div>
-                  <small>ENTRY RISK</small>
-                  <strong className={riskTone(displayRisk)}>
-                    {displayRisk}
-                  </strong>
-                </div>
-                <div>
-                  <small>CONFIDENCE</small>
-                  <strong>{displayConfidence}</strong>
-                </div>
-              </div>
-            ) : null}
-
-            <div className={isDigitFamilyBot ? "turboFormGrid" : "turboFormGrid riseFallMode"}>
-              <label className="botField">
-                <span>Contract family</span>
-                <select value={botType} disabled>
-                  <option value="OVER_UNDER">OVER / UNDER ONLY</option>
-                  <option value="EVEN_ODD">EVEN / ODD ONLY</option>
-                  
-                  <option value="MATCH_DIFFERS">MATCHES / DIFFERS ONLY</option>
-                  <option value="SMART_AUTO">SMART AUTO AI</option>
-                </select>
-              </label>
-
-              <label className="botField">
-                <span>Prediction digit</span>
+            <div className="botFormGrid">
+              <Field label="Maximum runs">
                 <select
-                  value={settings.predictionMode}
-                  disabled={running}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      predictionMode: event.target.value,
-                    }))
-                  }
+                  value={settings.maxRuns}
+                  disabled={running || paused}
+                  onChange={updateNumber("maxRuns")}
                 >
-                  <option value="AUTO">AUTO — Signal digit</option>
-                  <option value="MANUAL">Manual digit</option>
+                  {[10, 20, 30, 40, 50, 56, 100].map(
+                    (value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    )
+                  )}
                 </select>
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Manual digit</span>
+              <Field label="Data target (adaptive ticks)">
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={settings.maxScanTicks}
+                  disabled={running || paused}
+                  onChange={updateNumber("maxScanTicks")}
+                />
+              </Field>
+
+              <Field label="Contract">
                 <select
-                  value={settings.prediction}
-                  disabled={
-                    running ||
-                    settings.predictionMode === "AUTO" ||
-                    botType === "EVEN_ODD" ||
-                    botType === "RISE_FALL" ||
-                    botType === "SMART_AUTO"
-                  }
-                  onChange={updateNumber("prediction")}
+                  value={settings.contractMode}
+                  disabled={running || paused}
+                  onChange={updateContractMode}
                 >
-                  {Array.from({ length: 10 }, (_, digit) => (
-                    <option value={digit} key={digit}>
-                      {digit}
-                    </option>
-                  ))}
+                  <option value="AUTO">Auto SAFE — validated contract only</option>
+                  <option value="RISE">Rise</option>
+                  <option value="FALL">Fall</option>
+                  <option value="EVEN">Even</option>
+                  <option value="ODD">Odd</option>
+                  <option value="OVER">Over selected digit</option>
+                  <option value="UNDER">Under selected digit</option>
+                  <option value="MATCH">Matches selected digit</option>
+                  <option value="DIFFERS">Differs selected digit</option>
                 </select>
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Stake</span>
+              {needsPrediction(settings.contractMode) ? (
+                <Field label="Prediction digit">
+                  <select
+                    value={settings.prediction}
+                    disabled={running || paused}
+                    onChange={updateNumber("prediction")}
+                  >
+                    {predictionOptions(settings.contractMode).map(
+                      (digit) => (
+                        <option key={digit} value={digit}>
+                          {digit}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </Field>
+              ) : null}
+
+              <Field label="Base stake">
                 <input
                   type="number"
                   min="0.35"
                   step="0.01"
                   value={settings.stake}
-                  disabled={running}
+                  disabled={running || paused}
                   onChange={updateNumber("stake")}
                 />
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Duration (ticks)</span>
+              <Field label="Duration unit">
+                <select
+                  value={settings.durationUnit}
+                  disabled={running || paused}
+                  onChange={updateDurationUnit}
+                >
+                  <option value="t">Ticks</option>
+                  <option
+                    value="s"
+                    disabled={isDigitContractMode(settings.contractMode)}
+                  >
+                    Seconds — Rise/Fall or Auto
+                  </option>
+                </select>
+              </Field>
+
+              <Field
+                label={`Duration (${
+                  settings.durationUnit === "s" ? "seconds" : "ticks"
+                })`}
+              >
                 <input
                   type="number"
-                  min="1"
-                  max="10"
+                  min={settings.durationUnit === "s" ? 15 : 1}
+                  max={settings.durationUnit === "s" ? 3600 : 10}
                   value={settings.duration}
-                  disabled={running}
+                  disabled={running || paused}
                   onChange={updateNumber("duration")}
                 />
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Maximum runs</span>
+              <Field label="Minimum confidence">
                 <input
                   type="number"
-                  min="1"
-                  max="1000"
-                  value={settings.maxRuns}
-                  disabled={running || settings.unlimited}
-                  onChange={updateNumber("maxRuns")}
+                  min="70"
+                  max="95"
+                  value={settings.minConfidence}
+                  disabled={running || paused}
+                  onChange={updateNumber("minConfidence")}
                 />
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Stop after profit</span>
+
+              <Field label="Delay after trade (seconds)">
+                <input
+                  type="number"
+                  min="0"
+                  max="60"
+                  value={settings.delaySeconds}
+                  disabled={running || paused}
+                  onChange={updateNumber("delaySeconds")}
+                />
+              </Field>
+
+              <Field label="Take profit">
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  value={settings.stopProfit}
-                  disabled={running}
-                  onChange={updateNumber("stopProfit")}
+                  value={settings.takeProfit}
+                  disabled={running || paused}
+                  onChange={updateNumber("takeProfit")}
                 />
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Stop after loss</span>
+              <Field label="Stop loss">
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={settings.stopLoss}
-                  disabled={running}
+                  disabled={running || paused}
                   onChange={updateNumber("stopLoss")}
                 />
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Minimum confidence</span>
-                <input
-                  type="number"
-                  min="50"
-                  max="99"
-                  step="1"
-                  value={settings.minimumConfidence}
-                  disabled={running}
-                  onChange={updateNumber("minimumConfidence")}
-                />
-              </label>
-
-              <label className="botField">
-                <span>Signal confirmations</span>
+              <Field label="Losses before cooldown">
                 <input
                   type="number"
                   min="1"
                   max="10"
-                  step="1"
-                  value={settings.confirmationUpdates}
-                  disabled={running}
-                  onChange={updateNumber("confirmationUpdates")}
+                  value={settings.cooldownAfterLosses}
+                  disabled={running || paused}
+                  onChange={updateNumber("cooldownAfterLosses")}
                 />
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Signal age limit (ms)</span>
+              <Field label="Risk cooldown (seconds)">
                 <input
                   type="number"
-                  min="500"
-                  max="10000"
-                  step="100"
-                  value={settings.maximumSignalAgeMs}
-                  disabled={running}
-                  onChange={updateNumber("maximumSignalAgeMs")}
+                  min="10"
+                  max="900"
+                  value={settings.cooldownSeconds}
+                  disabled={running || paused}
+                  onChange={updateNumber("cooldownSeconds")}
                 />
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>Switch volatility after no setup (ms)</span>
+              <Field label="Hard-stop loss streak">
                 <input
                   type="number"
-                  min="1000"
-                  max="15000"
-                  step="250"
-                  value={settings.scanSwitchMs}
-                  disabled={running}
-                  onChange={updateNumber("scanSwitchMs")}
-                />
-              </label>
-
-              <label className="botField">
-                <span>Delay after trade (ms)</span>
-                <input
-                  type="number"
-                  min="50"
-                  max="3000"
-                  step="50"
-                  value={settings.postTradeDelayMs}
-                  disabled={running}
-                  onChange={updateNumber("postTradeDelayMs")}
-                />
-              </label>
-
-              <label className="botField">
-                <span>Skip signals after loss</span>
-                <input
-                  type="number"
-                  min="0"
+                  min="2"
                   max="20"
-                  step="1"
-                  value={settings.lossSkipSignals}
-                  disabled={running}
-                  onChange={updateNumber("lossSkipSignals")}
+                  value={settings.hardStopLossStreak}
+                  disabled={running || paused}
+                  onChange={updateNumber("hardStopLossStreak")}
                 />
-              </label>
+              </Field>
 
-              <label className="botField">
-                <span>High-risk minimum quality</span>
-                <input
-                  type="number"
-                  min="80"
-                  max="99"
-                  step="1"
-                  value={settings.highRiskMinimumQuality}
-                  disabled={running || !settings.allowHighRiskContracts}
-                  onChange={updateNumber("highRiskMinimumQuality")}
-                />
-              </label>
-
-              <label className="botField">
-                <span>High-risk minimum samples</span>
-                <input
-                  type="number"
-                  min="100"
-                  max="1000"
-                  step="10"
-                  value={settings.highRiskMinimumSamples}
-                  disabled={running || !settings.allowHighRiskContracts}
-                  onChange={updateNumber("highRiskMinimumSamples")}
-                />
-              </label>
-            </div>
-
-            <label className="v58HighRiskToggle">
-              <input
-                type="checkbox"
-                checked={settings.allowHighRiskContracts}
-                disabled={running}
-                onChange={(event) =>
-                  setSettings((current) => ({
-                    ...current,
-                    allowHighRiskContracts: event.target.checked,
-                  }))
-                }
-              />
-              <span>
-                Allow MATCH and DIFFERS execution. Off by default because these
-                contracts have asymmetric payout/risk and require stricter evidence.
-              </span>
-            </label>
-
-            <label className="turboUnlimited">
-              <input
-                type="checkbox"
-                checked={settings.unlimited}
-                disabled={running || !isDemo}
-                onChange={(event) =>
-                  setSettings((current) => ({
-                    ...current,
-                    unlimited: event.target.checked,
-                  }))
-                }
-              />
-              <span>
-                Unlimited runs until Stop, profit target or loss limit
-                {!isDemo ? " (disabled on Real)" : ""}
-              </span>
-            </label>
-
-            {!isDemo ? (
-              <label className="v54RealRisk">
+              <label className="botToggle">
                 <input
                   type="checkbox"
-                  checked={realRiskAccepted}
-                  disabled={running}
+                  checked={settings.martingaleEnabled}
+                  disabled={running || paused}
                   onChange={(event) =>
-                    setRealRiskAccepted(event.target.checked)
+                    setSettings((current) => ({
+                      ...current,
+                      martingaleEnabled:
+                        event.target.checked,
+                    }))
                   }
                 />
                 <span>
-                  I understand Real trades can lose money. Real stake is capped
-                  at 0.35 USD and the bot stops after one loss.
+                  Enable limited martingale
                 </span>
               </label>
-            ) : null}
 
-            <div className="turboSignalStrip">
+              <div className="botRecoverySchedule">
+                <span>Smart recovery schedule</span>
+                <strong>Step 1 ×1.35 only</strong>
+                <small>
+                  Safer cap. It remains OFF by default and a win resets to base.
+                </small>
+              </div>
+
+              <Field label="Maximum martingale steps">
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  value={settings.maxMartingaleSteps}
+                  disabled={
+                    running ||
+                    paused ||
+                    !settings.martingaleEnabled
+                  }
+                  onChange={updateNumber("maxMartingaleSteps")}
+                />
+              </Field>
+
+              <label className="botToggle botFrequencyToggle">
+                <input
+                  type="checkbox"
+                  checked={settings.analysisAssisted !== false}
+                  disabled={running || paused}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      analysisAssisted: event.target.checked,
+                    }))
+                  }
+                />
+                <span>
+                  Enable Analysis Assisted entry
+                </span>
+              </label>
+
+
+              <label className="botToggle botMarketSwitchToggle">
+                <input
+                  type="checkbox"
+                  checked={settings.autoSwitchVolatility}
+                  disabled={running || paused}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      autoSwitchVolatility: event.target.checked,
+                    }))
+                  }
+                />
+                <span>Auto-switch Volatility markets</span>
+              </label>
+
+              <Field label="Seconds per market scan">
+                <input
+                  type="number"
+                  min="10"
+                  max="120"
+                  value={settings.marketScanSeconds}
+                  disabled={
+                    running ||
+                    paused ||
+                    !settings.autoSwitchVolatility
+                  }
+                  onChange={updateNumber("marketScanSeconds")}
+                />
+              </Field>
+
+              
+            </div>
+
+            <div className="botTerminalStrip">
               <div>
-                <small>CURRENT BEST</small>
-                <strong>{displaySignal}</strong>
+                <small>AI MODE</small>
+                <strong>{settings.analysisAssisted ? "ANALYSIS ASSISTED" : "DISABLED"}</strong>
               </div>
               <div>
-                <small>QUALITY</small>
-                <strong>{displayConfidence}</strong>
+                <small>MARKET SWITCH</small>
+                <strong>{settings.autoSwitchVolatility ? `${settings.marketScanSeconds}s AUTO` : "MANUAL"}</strong>
               </div>
               <div>
-                <small>RATING</small>
-                <strong>{quality.stars} {quality.label}</strong>
+                <small>RISK CONTROL</small>
+                <strong>SL {settings.stopLoss} · HARD {settings.hardStopLossStreak}</strong>
               </div>
               <div>
-                <small>CONFIRMS</small>
+                <small>RECOVERY</small>
+                <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
+              </div>
+              <div>
+                <small>FAST DIGIT ROW · OVER/UNDER + DIFFERS</small>
                 <strong>
-                  {Math.min(
-                    settings.confirmationUpdates,
-                    botState.signalConfirmations || 0
-                  )}/{settings.confirmationUpdates}
+                  ROW PRESSURE → BARRIER RANK → 1 TICK CONFIRM → BUY
                 </strong>
               </div>
             </div>
 
-            <div className="v55Families">
-              <span>OVER 1–6</span>
-              <span>UNDER 3–8</span>
-              <span>EVEN / ODD</span>
-              <span>MATCH / DIFFERS</span>
+            
+
+            <div className="botMessage">
+              {botState.message}
             </div>
 
-            {botType === "MATCH_DIFFERS" ? (
-              <div className="v72HighRiskWarning">
-                <strong>HIGH-RISK CONTRACT FAMILY</strong>
-                <span>
-                  MATCH and DIFFERS have asymmetric payout and risk. V72 keeps
-                  the one-loss stop and minimum stake. No signal is guaranteed.
-                </span>
-              </div>
-            ) : null}
-
-            <div className="v63ModeBanner">
-              <strong>FAST STRICT MODE</strong>
-              <span>
-                V52 checks the live proposal first. Buy is blocked unless model probability beats break-even, EV is positive and stability is sufficient. The bot rotates volatility after
-                every completed trade, or after 2.5 seconds without a qualifying
-                setup. It enters immediately after two fresh confirmations.
-              </span>
-            </div>
-
-            <div className="v56SwitchNotice">
-              <strong>FRESH MARKET MODE</strong>
-              <span>
-                V72 isolates each contract family. Over/Under never receives
-                Even/Odd signals; Even/Odd never receives Over/Under signals;
-                This build is digits-only: Over/Under, Even/Odd and Differs. Rise/Fall is disabled.
-                Smart Auto is the only mode allowed to compare families.
-              </span>
-            </div>
-
-            <div className="v53Recommendation">
-              <div>
-                <small>AI RECOMMENDATION</small>
-                <h3>{autoSignal?.setup || "WAIT"}</h3>
-                <p>
-                  {autoSignal
-                    ? signalReason(autoSignal)
-                    : "Collecting live digit evidence."}
-                </p>
-              </div>
-
-              <div className="v53Expected">
-                <span>
-                  <small>Consensus</small>
-                  <strong>
-                    {Number(autoSignal?.voteCount || 0)}/
-                    {Number(autoSignal?.totalVotes || 10)}
-                  </strong>
-                </span>
-                <span>
-                  <small>Backtest</small>
-                  <strong>
-                    {Number(autoSignal?.backtestWinRate || 0).toFixed(1)}%
-                  </strong>
-                </span>
-                <span>
-                  <small>Expected value</small>
-                  <strong>
-                    {Number(autoSignal?.expectedValue || 0) >= 0 ? "+" : ""}
-                    {Number(autoSignal?.expectedValue || 0).toFixed(1)}%
-                  </strong>
-                </span>
-              </div>
-            </div>
-
-            <div className={autoSignal ? "v60Gate pass" : "v60Gate wait"}>
-              <strong>{autoSignal ? "EXECUTE GATE PASSED" : "WAIT — NO CONTRACT PASSES"}</strong>
-              <span>{v66Analysis.reason}</span>
-            </div>
-
-            <div className="v64AnalysisGrid v65">
-              {[
-                "20-Tick Probability",
-                "50-Tick Probability",
-                "100-Tick Probability",
-                "200-Tick Probability",
-                "Expected Value",
-                "Probability Edge",
-                "Markov Transition",
-                "Window Agreement",
-                "Stability",
-                "Streak Behaviour",
-                "Reversal Control",
-                "Autocorrelation",
-                "Walk-Forward Backtest",
-              ].map((label, index) => (
-                <div key={label}>
-                  <span>{index + 1}</span>
-                  <strong>{label}</strong>
-                </div>
-              ))}
-            </div>
-
-            <div className="v61ScoreModel">
-              <div>
-                <small>PRIMARY RANK</small>
-                <strong>EV</strong>
-              </div>
-              <div>
-                <small>SECOND</small>
-                <strong>EDGE</strong>
-              </div>
-              <div>
-                <small>THIRD</small>
-                <strong>STABILITY</strong>
-              </div>
-              <div>
-                <small>LIVE WINDOWS</small>
-                <strong>30–240</strong>
-              </div>
-              <div>
-                <small>FRESH UPDATE</small>
-                <strong>EVERY TICK</strong>
-              </div>
-            </div>
-
-            <div className="v57FamilyBoard">
-              <div className="v53RankingHeader">
-                <strong>Best candidate per contract family</strong>
-                <span>No raw-probability bias</span>
-              </div>
-
-              <div className="v57FamilyGrid">
-                {familyLeaders.map((candidate) => (
-                  <div key={candidate.mode}>
-                    <small>{candidate.mode}</small>
-                    <strong>{candidate.setup}</strong>
-                    <span>
-                      Q {candidate.qualityScore.toFixed(1)} · EV
-                      {" "}{candidate.expectedValue >= 0 ? "+" : ""}
-                      {candidate.expectedValue.toFixed(1)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="v53Ranking">
-              <div className="v53RankingHeader">
-                <strong>Live contract ranking</strong>
-                <span>Updates with every tick</span>
-              </div>
-
-              {topCandidates.map((candidate, index) => (
-                <div
-                  className={
-                    candidate.highRisk
-                      ? "v53RankRow highRisk"
-                      : "v53RankRow"
-                  }
-                  key={candidate.setup}
+            <div className="botActions">
+              {!running && !paused ? (
+                <button
+                  type="button"
+                  className="primaryButton"
+                  onClick={startBot}
                 >
-                  <span>#{index + 1}</span>
-                  <strong>{candidate.setup}</strong>
-                  <em>{candidate.qualityScore.toFixed(1)}</em>
-                  <small>
-                    {candidate.highRisk ? "HIGH RISK · " : ""}
-                    EV {candidate.expectedValue >= 0 ? "+" : ""}
-                    {candidate.expectedValue.toFixed(1)}% ·
-                    Edge {candidate.probabilityEdge.toFixed(1)}% ·
-                    Stability {candidate.consistency.toFixed(1)}%
-                  </small>
-                </div>
-              ))}
+                  {isDemo ? "Start Demo Bot" : "Start Real Bot"}
+                </button>
+              ) : null}
+
+              {running ? (
+                <button
+                  type="button"
+                  className="secondaryButton"
+                  onClick={() =>
+                    engineRef.current?.pause()
+                  }
+                >
+                  Pause
+                </button>
+              ) : null}
+
+              {paused ? (
+                <button
+                  type="button"
+                  className="primaryButton"
+                  onClick={() =>
+                    engineRef.current?.resume()
+                  }
+                >
+                  Resume
+                </button>
+              ) : null}
+
+              {(running || paused) ? (
+                <button
+                  type="button"
+                  className="dangerButton"
+                  onClick={() =>
+                    engineRef.current?.stop()
+                  }
+                >
+                  Stop
+                </button>
+              ) : null}
+
+              {!running && !paused ? (
+                <>
+                  <button
+                    type="button"
+                    className="testTradeButton"
+                    onClick={testOneTrade}
+                  >
+                    {isDemo ? "Test 1 Demo Trade" : "Test 1 Real Trade"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={resetBot}
+                  >
+                    Reset Stats
+                  </button>
+                </>
+              ) : null}
             </div>
 
-            <div className="v54DebugPanel">
-              <div className="v54DebugHeader">
-                <strong>Execution flow</strong>
-                <span>{botState.executionPhase || "IDLE"}</span>
+            <div className="botSafetyNote">
+              {isDemo
+                ? "Demo mode: orders go to the connected Deriv demo account."
+                : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
+              V49 keeps Demo digits-only and scans continuously. It compares row 0–4 against row 5–9, ranks OVER/UNDER barriers 1–7, uses historical, fast and trigger windows, and dynamically selects DIFFERS digits with lower observed immediate return risk. A qualified setup proceeds after one fresh confirmation. No analysis guarantees a win.
+            </div>
+          </article>
+
+          
+          <article className="botCard botAnalysisCard">
+            <div className="botCardHeader botSectionHeader">
+              <div>
+                <small>LIVE ANALYSIS</small>
+                <h2>Live AI</h2>
               </div>
 
-              <div className="v54DebugSteps">
-                {(botState.debugSteps || []).length ? (
-                  botState.debugSteps.slice(0, 7).map((step) => (
-                    <div key={step.id}>
-                      <strong>{step.step}</strong>
-                      <span>{step.detail || "—"}</span>
+              <span className={`botStatus ${analysisGate.approved ? "running" : "waiting"}`}>
+                {analysisGate.approved ? "SIGNAL READY" : "SCANNING"}
+              </span>
+            </div>
+
+<div className="botDecisionBox">
+              <div>
+                <small>CONTRACT CONTROL</small>
+                <strong>
+                  {contractModeLabel(
+                    settings.contractMode,
+                    settings.prediction
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <small>ANALYSIS DECISION</small>
+                <strong>
+                  {analysisGate.approved
+                    ? analysisGate.setup
+                    : Number(syntheticIntelligence.bestScore || 0) >=
+                      Number(settings.deepMinimumScore || 70)
+                    ? syntheticIntelligence.bestSetup
+                    : "WAIT"}
+                </strong>
+              </div>
+
+              <div>
+                <small>GATE CONFIDENCE</small>
+                <strong>
+                  {Math.max(
+                    Number(analysisGate.confidence || 0),
+                    Number(syntheticIntelligence.bestScore || 0)
+                  ).toFixed(1)}%
+                </strong>
+              </div>
+
+              <div>
+                <small>ENTRY</small>
+                <strong>
+                  {analysisGate.approved ||
+                  Number(syntheticIntelligence.bestScore || 0) >=
+                    Number(settings.deepMinimumScore || 70)
+                    ? botState.status === "WAITING" && botState.lastBlockReason
+                      ? "CONFIRM"
+                      : syntheticIntelligence.fastLane
+                      ? "FAST AI"
+                      : "READY"
+                    : "WAIT"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="botStrictGate">
+              <strong>
+                {analysisGate.approved || Number(syntheticIntelligence.bestScore || 0) >= Number(settings.deepMinimumScore || 70)
+                  ? botState.status === "WAITING" && botState.lastBlockReason
+                    ? `DEEP CHECK / CONFIRMING: ${analysisGate.approved ? analysisGate.setup : syntheticIntelligence.bestSetup}`
+                    : `${syntheticIntelligence.fastLane ? "FAST AI" : "DEEP VALIDATED"}: ${analysisGate.approved ? analysisGate.setup : syntheticIntelligence.bestSetup}`
+                  : "DEEP SCAN FOR A REAL EDGE"}
+              </strong>
+              <span>
+                {market?.label || symbol} · Scan {botState.scanTicks || 0}/{settings.maxScanTicks} ticks · Contract {settings.duration}{" "}
+                {settings.durationUnit === "s" ? "seconds" : "ticks"} ·{" "}
+                {botState.lastBlockReason ||
+                  analysisGate.reason ||
+                  syntheticIntelligence.bestDetail}
+              </span>
+            </div>
+
+            <div className="botIntelligence">
+              <div className="botIntelligenceHeader">
+                <div>
+                  <small>ACTIVE V12 DECISION LAYER</small>
+                  <h3>Core decision metrics</h3>
+                </div>
+
+                <span
+                  className={`botRiskBadge ${
+                    syntheticIntelligence.regime === "REGIME SHIFT" ||
+                    syntheticIntelligence.volatility?.state === "BURST"
+                      ? "high"
+                      : syntheticIntelligence.fastLane
+                      ? "low"
+                      : "medium"
+                  }`}
+                >
+                  {syntheticIntelligence.fastLane
+                    ? "FAST AI READY"
+                    : syntheticIntelligence.regime || "SCANNING"}
+                </span>
+              </div>
+
+              <div className="botIntelligenceGrid">
+                <Metric
+                  label="Probability"
+                  value={`${Number(
+                    syntheticIntelligence.consensus || 0
+                  ).toFixed(1)}%`}
+                />
+                <Metric
+                  label="Bayesian setup"
+                  value={`${syntheticIntelligence.bestSetup || "WAIT"} · ${Number(
+                    syntheticIntelligence.bestScore || 0
+                  ).toFixed(1)}%`}
+                />
+                <Metric
+                  label="Regime"
+                  value={syntheticIntelligence.regime || "UNKNOWN"}
+                />
+                <Metric
+                  label="Cycle"
+                  value={
+                    syntheticIntelligence.cycle?.period
+                      ? `${syntheticIntelligence.cycle.period} ticks · ${Number(
+                          syntheticIntelligence.cycle.strength || 0
+                        ).toFixed(0)}%`
+                      : "NO STABLE CYCLE"
+                  }
+                />
+                <Metric
+                  label="Momentum"
+                  value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} · ${Number(
+                    syntheticIntelligence.momentum?.agreement || 0
+                  ).toFixed(0)}%`}
+                />
+                <Metric
+                  label="Entropy"
+                  value={`${Number(
+                    syntheticIntelligence.entropy?.normalized || 0
+                  ).toFixed(1)}% · ${
+                    syntheticIntelligence.entropy?.label || "UNKNOWN"
+                  }`}
+                />
+                <Metric
+                  label="Lag"
+                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "—"} · ${Number(
+                    syntheticIntelligence.autocorrelation?.strength || 0
+                  ).toFixed(0)}%`}
+                />
+                <Metric
+                  label="Transition"
+                  value={`${syntheticIntelligence.transition?.observed || 0} matching transitions`}
+                />
+                <Metric
+                  label="Volatility phase"
+                  value={`${syntheticIntelligence.volatility?.state || "UNKNOWN"} · ${Number(
+                    syntheticIntelligence.volatility?.stability || 0
+                  ).toFixed(0)}% stable`}
+                />
+                <Metric
+                  label="Data quality"
+                  value={`${Number(
+                    syntheticIntelligence.dataQuality || 0
+                  ).toFixed(1)}%`}
+                />
+                <Metric
+                  label="Decision"
+                  value={`${professionalDecision.bestContract || "WAIT"} · ${Number(
+                    professionalDecision.professionalScore ||
+                      professionalDecision.confidence ||
+                      0
+                  ).toFixed(0)}%`}
+                />
+                <Metric
+                  label="Entry speed"
+                  value={"VALIDATED · 1 fresh confirm"}
+                />
+              </div>
+
+              <div className="botScoreBreakdown">
+                {(syntheticIntelligence.components || []).map(
+                  (component) => (
+                    <div
+                      className="botScoreRow"
+                      key={component.key}
+                    >
+                      <div>
+                        <strong>{component.label}</strong>
+                        <small>{component.detail}</small>
+                      </div>
+
+                      <div className="botScoreTrack">
+                        <span
+                          style={{
+                            width: `${Math.max(
+                              0,
+                              Math.min(
+                                100,
+                                Number(component.score || 0)
+                              )
+                            )}%`,
+                          }}
+                        />
+                      </div>
+
+                      <b>
+                        {Number(component.score || 0).toFixed(0)}
+                      </b>
                     </div>
-                  ))
-                ) : (
-                  <p>START → SCAN → CONFIRM → BUY SENT → SETTLED → NEXT SCAN</p>
+                  )
                 )}
               </div>
             </div>
-
-            <div className="botActions turboActions">
-              {!running ? (
-                <button
-                  className="botStartButton turboStart"
-                  onClick={
-                    isDigitFamilyBot
-                      ? startBot
-                      : startRiseFallBot
-                  }
-                >
-                  ▶ START {
-                    botType === "OVER_UNDER"
-                      ? "OVER/UNDER"
-                      : botType === "EVEN_ODD"
-                        ? "EVEN/ODD"
-                        : botType === "MATCH_DIFFERS"
-                          ? "MATCH/DIFFERS"
-                          : botType === "SMART_AUTO"
-                            ? "SMART AUTO"
-                            : "RISE/FALL"
-                  } BOT
-                </button>
-              ) : (
-                <button
-                  className="botStopButton turboStop"
-                  onClick={
-                    isDigitFamilyBot
-                      ? () => engineRef.current?.stop()
-                      : stopRiseFallBot
-                  }
-                >
-                  ■ STOP BOT
-                </button>
-              )}
-
-              <button
-                className="botSecondaryButton"
-                disabled={running}
-                onClick={() => engineRef.current?.reset()}
-              >
-                Reset Stats
-              </button>
-            </div>
-
-            <p className="botSafetyText">
-              V55 analyzes Over 1–6, Under 3–8, Even, Odd, Match and Differs on
-              every fresh tick. A previous win never forces the next contract: after
-              settlement the signal is cleared and all families are ranked again.
-              Real mode stays capped at 0.35 USD and stops after one loss.
-            </p>
           </article>
 
-          <article className="botCard turboPerformanceCard">
+<aside className="botCard botPerformanceCard">
             <div className="botCardHeader">
               <div>
                 <small>LIVE PERFORMANCE</small>
                 <h2>
-                  {isDigitFamilyBot
-                    ? settings.unlimited
-                      ? `Run ${botState.runs}`
-                      : `Run ${botState.runs}/${settings.maxRuns}`
-                    : settings.unlimited
-                      ? `Run ${riseFallState.runs}`
-                      : `Run ${riseFallState.runs}/${settings.maxRuns}`}
+                  Run {botState.runs}/{settings.maxRuns}
                 </h2>
               </div>
-
-              <span>{market?.label || symbol}</span>
             </div>
 
-            <div className="turboMetrics">
-              {isDigitFamilyBot ? (
-                <>
+            <div className="botMetrics">
+              <Metric
+                label="Wins"
+                value={botState.wins}
+              />
+              <Metric
+                label="Losses"
+                value={botState.losses}
+              />
+              <Metric
+                label="Win rate"
+                value={`${winRate}%`}
+              />
+              <Metric
+                label="Total P&L"
+                value={`${botState.profit.toFixed(
+                  2
+                )} ${
+                  auth.selectedAccount?.currency ||
+                  "USD"
+                }`}
+              />
+              <Metric
+                label="Current stake"
+                value={botState.currentStake.toFixed(
+                  2
+                )}
+              />
+              <Metric
+                label="Loss streak"
+                value={botState.consecutiveLosses}
+              />
+              <Metric
+                label="Losses since win"
+                value={botState.lossesSinceWin}
+              />
+              <Metric
+                label="Risk cooldowns"
+                value={botState.cooldownCount}
+              />
+              <Metric
+                label="Gate mode"
+                value={
+                  botState.gate?.independentContractScore
+                    ? isDemo
+                      ? "DEMO TOP-RANKED"
+                      : "REAL TOP-RANKED"
+                    : isDemo
+                      ? "DEMO WAIT"
+                      : "REAL STRICT"
+                }
+              />
+              <Metric
+                label="Engine votes"
+                value={`${Number(botState.gate?.engineVotes || 0)}/${Number(botState.gate?.requiredEngineVotes || 0)}`}
+              />
+              <Metric
+                label="Strong votes"
+                value={Number(botState.gate?.strongEngineVotes || 0)}
+              />
+              <Metric
+                label="Market profile"
+                value={botState.gate?.marketProfile || symbol}
+              />
+              <Metric
+                label="Execution phase"
+                value={botState.executionPhase || botState.gate?.executionPhase || "SCAN"}
+              />
+              <Metric
+                label="Locked candidate"
+                value={botState.lockedCandidate || botState.gate?.lockedCandidate || "—"}
+              />
+              <Metric
+                label="Top contract"
+                value={
+                  (
+                    botState.gate?.lockedCandidate &&
+                    botState.gate.lockedCandidate !== "WAIT"
+                      ? botState.gate.lockedCandidate
+                      : ""
+                  ) ||
+                  (
+                    botState.lockedCandidate &&
+                    botState.lockedCandidate !== "WAIT"
+                      ? botState.lockedCandidate
+                      : ""
+                  ) ||
+                  botState.gate?.scoredCandidates?.find(
+                    (candidate) =>
+                      candidate.accountExecutionPass &&
+                      candidate.setup &&
+                      candidate.setup !== "WAIT"
+                  )?.setup ||
+                  botState.gate?.scoredCandidates?.find(
+                    (candidate) =>
+                      candidate.setup &&
+                      candidate.setup !== "WAIT"
+                  )?.setup ||
+                  botState.activeSetup ||
+                  "WAIT"
+                }
+              />
+              <Metric
+                label="Execution score"
+                value={`${Number(botState.gate?.executionScore || 0).toFixed(1)}/${Number(botState.gate?.executionThreshold || 0).toFixed(1)}`}
+              />
+              <Metric
+                label="Fresh confirms"
+                value={botState.signalConfirmations || 0}
+              />
+              <Metric
+                label="Data readiness"
+                value={(botState.scanTicks || 0) >= 20 ? `READY · ${botState.scanTicks || 0} ticks` : `${botState.scanTicks || 0}/20`}
+              />
+              <Metric
+                label="Analysis cycle"
+                value={botState.scanWindow || 1}
+              />
+              <Metric
+                label="Scan time"
+                value={`${botState.scanElapsedSeconds || 0}s`}
+              />
+              <Metric
+                label="Gate"
+                value={
+                  analysisGate.approved ||
+                  Number(syntheticIntelligence.bestScore || 0) >=
+                    Number(settings.deepMinimumScore || 70)
+                    ? syntheticIntelligence.fastLane
+                      ? "FAST AI"
+                      : "DEEP READY"
+                    : "WAIT"
+                }
+              />
+              <Metric
+                label="Entry gate"
+                value={
+                  botState.gate?.accountExecutionPass ||
+                  botState.gate?.directEvidencePass ||
+                  botState.gate?.qualificationMode === "DEMO_BLOCKER_REMOVED" ||
+                  botState.gate?.qualificationMode === "DEMO_EXECUTABLE_CANDIDATE" ||
+                  botState.gate?.qualificationMode === "WEIGHTED_SCORE"
+                    ? `QUALIFIED · ${
+                        botState.gate?.qualificationMode || "V42"
+                      }`
+                    : botState.gate?.blockedChecks?.score
+                      ? `BLOCKED ${botState.gate.blockedChecks.score} · ${
+                          isDemo
+                            ? "P70 S50 T4 V2"
+                            : "SCORE65 P79 C76 S100 T7 V3"
+                        }`
+                      : "WAIT"
+                }
+              />
+              <Metric
+                label="Signal version"
+                value={`${botState.signalVersion || 0} / lock ${botState.lockedSignalVersion || 0}`}
+              />
+              <Metric
+                label="Fresh confirmations"
+                value={`${botState.signalConfirmations || 0}/${
+                  botState.requiredConfirmations || settings.confirmationCount || 1
+                }`}
+              />
+              <Metric
+                label="Deep score"
+                value={`${Number(
+                  botState.deepScore || syntheticIntelligence.bestScore || 0
+                ).toFixed(1)}%`}
+              />
+              <Metric
+                label="Deep regime"
+                value={botState.deepRegime || syntheticIntelligence.regime || "UNKNOWN"}
+              />
+              <Metric
+                label="Cycle read"
+                value={
+                  (botState.cyclePeriod || syntheticIntelligence.cycle?.period)
+                    ? `${botState.cyclePeriod || syntheticIntelligence.cycle?.period} ticks`
+                    : "NONE"
+                }
+              />
+              <Metric
+                label="AI lane"
+                value={botState.fastLane || syntheticIntelligence.fastLane ? "FAST" : "NORMAL"}
+              />
+              <Metric
+                label="Loss protection"
+                value={
+                  botState.blockedSetupUntil > Date.now()
+                    ? `${botState.lastLossSetup || "SETUP"} BLOCKED`
+                    : `${botState.lossProtectionCount || 0} used`
+                }
+              />
+              <Metric
+                label="Contract control"
+                value={contractModeLabel(
+                  settings.contractMode,
+                  settings.prediction
+                )}
+              />
+              <Metric
+                label="Duration"
+                value={`${settings.duration} ${
+                  settings.durationUnit === "s" ? "sec" : "ticks"
+                }`}
+              />
+              <Metric
+                label="Market switch"
+                value={
+                  settings.autoSwitchVolatility
+                    ? `${marketSwitchState.remaining}s`
+                    : "FIXED"
+                }
+              />
+              <Metric
+                label="Markets checked"
+                value={marketSwitchState.switches + 1}
+              />
+              <Metric
+                label="Martingale step"
+                value={botState.martingaleStep}
+              />
+              <Metric
+                label="Active setup"
+                value={botState.activeSetup}
+              />
+            </div>
+
+            {completed ? (
+              <div className="botCompletionSummary">
+                <small>SESSION COMPLETE</small>
+                <h3>{botState.stopReason || "Bot session completed."}</h3>
+
+                <div className="botCompletionGrid">
                   <Metric label="Runs" value={botState.runs} />
                   <Metric label="Wins" value={botState.wins} />
                   <Metric label="Losses" value={botState.losses} />
                   <Metric label="Win rate" value={`${winRate}%`} />
                   <Metric
-                    label="Profit"
-                    value={`${botState.profit >= 0 ? "+" : ""}${botState.profit.toFixed(2)} USD`}
+                    label="Net profit"
+                    value={`${botState.profit.toFixed(2)} ${
+                      auth.selectedAccount?.currency || "USD"
+                    }`}
+                  />
+                  <Metric label="ROI" value={`${roi}%`} />
+                  <Metric
+                    label="Largest win streak"
+                    value={botState.largestWinStreak}
                   />
                   <Metric
-                    label={
-                      botState.activeSetup !== "—"
-                        ? "Current contract"
-                        : "Last contract"
-                    }
-                    value={
-                      botState.activeSetup !== "—"
-                        ? botState.activeSetup
-                        : botState.lastCompletedSetup || "—"
-                    }
+                    label="Largest loss streak"
+                    value={botState.largestLossStreak}
                   />
-                  <Metric
-                    label="Entry risk"
-                    value={displayRisk}
-                    tone={riskTone(displayRisk)}
-                  />
-                  <Metric label="Market switches" value={botState.marketSwitches || 0} />
-                </>
-              ) : (
-                <>
-                  <Metric label="Runs" value={riseFallState.runs} />
-                  <Metric label="Signal" value={riseFallAnalysis.signal} />
-                  <Metric label="Risk" value={riseFallAnalysis.risk} />
-                  <Metric
-                    label="Confidence"
-                    value={`${Number(riseFallAnalysis.confidence || 0).toFixed(1)}%`}
-                  />
-                  <Metric label="Trend" value={riseFallAnalysis.trend} />
-                  <Metric
-                    label="Entry level"
-                    value={
-                      Number.isFinite(riseFallAnalysis.entryPrice)
-                        ? Number(riseFallAnalysis.entryPrice).toFixed(3)
-                        : "WAIT"
-                    }
-                  />
-                </>
-              )}
-            </div>
-
-            {isRiseFallBot ? (
-              <div className="v67RiseFallInstruction">
-                <strong>{riseFallAnalysis.signal}</strong>
-                <p>{riseFallAnalysis.instruction}</p>
-                <span>
-                  Support {Number(riseFallAnalysis.support || 0).toFixed(3)} ·
-                  Resistance {Number(riseFallAnalysis.resistance || 0).toFixed(3)}
-                </span>
+                </div>
               </div>
             ) : null}
 
-            {isDigitFamilyBot ? (
-            <div className="turboHistoryWrap">
-              <table className="turboHistoryTable">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Contract</th>
-                    <th>Stake</th>
-                    <th>Result</th>
-                    <th>Profit</th>
-                    <th>Evidence</th>
-                    <th>EV</th>
-                    <th>Stability</th>
-                    <th>ID</th>
-                  </tr>
-                </thead>
+            <div className="botHistory">
+              <div className="botHistoryHeader">
+                <strong>Recent runs</strong>
+                <span>
+                  {botState.history.length}
+                </span>
+              </div>
 
-                <tbody>
-                  {botState.history.length ? (
-                    botState.history.map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          {new Date(item.time).toLocaleTimeString()}
-                        </td>
-                        <td>{item.setup}</td>
-                        <td>{item.stake.toFixed(2)}</td>
-                        <td>
-                          <strong
-                            className={
-                              item.result === "WIN"
-                                ? "turboWin"
-                                : "turboLoss"
-                            }
-                          >
-                            {item.result}
-                          </strong>
-                        </td>
-                        <td>
-                          {item.profit >= 0 ? "+" : ""}
-                          {item.profit.toFixed(2)}
-                        </td>
-                        <td>{Number(item.confidence || 0).toFixed(1)}</td>
-                        <td>
-                          {Number(item.expectedValue || 0) >= 0 ? "+" : ""}
-                          {Number(item.expectedValue || 0).toFixed(1)}%
-                        </td>
-                        <td>{Number(item.consistency || 0).toFixed(1)}%</td>
-                        <td>{item.contractId}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="9" className="turboEmpty">
-                        No completed trades yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              {botState.history.length === 0 ? (
+                <div className="botHistoryEmpty">
+                  No completed runs yet.
+                </div>
+              ) : (
+                botState.history.map((item) => (
+                  <div
+                    className="botHistoryRow botHistoryRowDetailed"
+                    key={`${item.id}-${item.time}`}
+                  >
+                    <div className="botHistoryMain">
+                      <strong>
+                        {item.setup} · {item.symbol || market?.id || symbol}
+                      </strong>
+                      <small>
+                        {new Date(item.time).toLocaleTimeString()} · Contract{" "}
+                        {item.contractId || "—"}
+                      </small>
+                      <small>
+                        Entry {Number(item.entrySpot || 0).toFixed(3)} · Exit{" "}
+                        {Number(item.exitSpot || 0).toFixed(3)} · Stake{" "}
+                        {Number(item.stake || 0).toFixed(2)} ·{" "}
+                        {Number(item.duration || 0)}{" "}
+                        {item.durationUnit === "s" ? "sec" : "ticks"} · Entry scan{" "}
+                        {Number(item.entryScanTick || 0)}/{settings.maxScanTicks} · MG{" "}
+                        {Number(item.martingaleStep || 0)}
+                      </small>
+                      <small>
+                        Mode {item.executionMode || "V12_DEEP_CYCLE_AI"} ·
+                        Confidence {Number(item.confidence || 0).toFixed(1)}% ·{" "}
+                        Entry {item.entryStage || "ENTER"}
+                      </small>
+                    </div>
+
+                    <span
+                      className={`botResult ${String(
+                        item.result
+                      ).toLowerCase()}`}
+                    >
+                      {item.result}
+                    </span>
+
+                    <strong>
+                      {Number(item.profit || 0) >= 0 ? "+" : ""}
+                      {Number(item.profit || 0).toFixed(2)}
+                    </strong>
+                  </div>
+                ))
+              )}
             </div>
-            ) : null}
-          </article>
+          </aside>
         </section>
       </main>
     </div>
   );
 }
+
+
+
+
