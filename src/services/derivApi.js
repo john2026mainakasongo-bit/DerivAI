@@ -770,9 +770,15 @@ class DerivTradingClient {
       throw new Error("Proposal ID is missing.");
     }
 
+    const maximumPrice = Number(price);
+
+    if (!Number.isFinite(maximumPrice) || maximumPrice <= 0) {
+      throw new Error("Buy price must be a positive number.");
+    }
+
     return this.request({
       buy: String(proposalId),
-      price: Number(price),
+      price: maximumPrice,
     });
   }
 

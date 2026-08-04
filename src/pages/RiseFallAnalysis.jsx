@@ -12,6 +12,7 @@ import MarketSelector from "../components/MarketSelector";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeRiseFall } from "../analysis/riseFallAnalysisEngine";
 import "../styles/RiseFallAnalysis.css";
+import "../styles/V103RiseFallRealExecution.css";
 
 function clamp(value, minimum = 0, maximum = 100) {
   const numeric = Number(value);
@@ -34,6 +35,30 @@ function num(value, digits = 5) {
 
 function signalClass(value) {
   return String(value || "WAIT").toLowerCase();
+}
+
+function executionErrorMessage(error, fallback = "Trade execution failed.") {
+  const message = String(
+    error?.message ||
+      error?.error?.message ||
+      error?.errors?.[0]?.message ||
+      error?.data?.error?.message ||
+      fallback
+  ).trim();
+
+  if (/authenticated|logged-in|account/i.test(message)) {
+    return `${message} Re-select the account, reconnect the feed, then try again.`;
+  }
+
+  if (/proposal|contract|buy|market|symbol|duration/i.test(message)) {
+    return `Deriv rejected the order: ${message}`;
+  }
+
+  return message || fallback;
+}
+
+function realPermissionKey(accountId = "") {
+  return `edgepilot-rf-real-execution:${String(accountId || "unknown")}`;
 }
 
 const LEARNING_STORAGE_KEY = "edgepilot-rise-fall-learning-v70";
@@ -903,6 +928,9 @@ export default function RiseFallAnalysis() {
   const [autoRunning, setAutoRunning] = useState(false);
   const [stake, setStake] = useState(0.35);
   const [allowReal, setAllowReal] = useState(false);
+  const [realExecutionStatus, setRealExecutionStatus] = useState(
+    "Real execution is locked."
+  );
   const [autoSwitchMarket, setAutoSwitchMarket] = useState(true);
   const [switchAfterSeconds, setSwitchAfterSeconds] = useState(4);
   const [marketSwitches, setMarketSwitches] = useState(0);
@@ -972,6 +1000,55 @@ export default function RiseFallAnalysis() {
   useEffect(() => {
     consecutiveLossesRef.current = consecutiveLosses;
   }, [consecutiveLosses]);
+
+  useEffect(() => {
+    if (selectedAccountType === "demo") {
+      setAllowReal(false);
+      setRealExecutionStatus("Demo account selected. Real confirmation is not required.");
+      return;
+    }
+
+    let enabled = false;
+
+    try {
+      enabled =
+        window.sessionStorage.getItem(
+          realPermissionKey(selectedAccountId)
+        ) === "enabled";
+    } catch {
+      enabled = false;
+    }
+
+    setAllowReal(enabled);
+    setRealExecutionStatus(
+      enabled
+        ? `Real execution enabled for ${selectedAccountId || "selected account"}.`
+        : "Real execution is locked. Tick the confirmation before START or manual BUY."
+    );
+  }, [selectedAccountType, selectedAccountId]);
+
+  function updateRealExecutionPermission(enabled) {
+    const next = Boolean(enabled);
+    setAllowReal(next);
+
+    try {
+      const key = realPermissionKey(selectedAccountId);
+
+      if (next) {
+        window.sessionStorage.setItem(key, "enabled");
+      } else {
+        window.sessionStorage.removeItem(key);
+      }
+    } catch {
+      // In-memory permission still works when browser storage is unavailable.
+    }
+
+    setRealExecutionStatus(
+      next
+        ? `Real execution enabled for ${selectedAccountId || "selected account"}.`
+        : "Real execution is locked."
+    );
+  }
 
   useEffect(() => {
     if (
@@ -1710,13 +1787,25 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    if (
-      selectedAccountType === "real" &&
-      !allowReal
-    ) {
+    if (!connected) {
+      setManualStatus("Connect the authenticated Deriv feed before buying.");
+      return;
+    }
+
+    if (!selectedAccountId) {
+      setManualStatus("Choose a Demo or Real Deriv account before buying.");
+      return;
+    }
+
+    if (selectedAccountType !== "demo" && !allowReal) {
       setManualStatus(
-        "Enable Real-account execution before buying on the Real account."
+        "Real execution is locked. Tick the Real-account confirmation first."
       );
+      return;
+    }
+
+    if (typeof placeTrade !== "function") {
+      setManualStatus("Trade execution is unavailable.");
       return;
     }
 
@@ -1758,6 +1847,7 @@ export default function RiseFallAnalysis() {
       setManualStatus(`Sending ${signal} contract…`);
 
       const response = await placeTrade({
+        symbol,
         contractType,
         amount,
         basis: "stake",
@@ -1769,11 +1859,19 @@ export default function RiseFallAnalysis() {
             : String(barrier),
       });
 
-      const contractId =
-        response?.buy?.contract_id ||
-        response?.contract_id ||
-        response?.proposal_open_contract?.contract_id ||
-        Date.now();
+      const contractId = String(
+        response?.contractId ||
+          response?.buy?.contract_id ||
+          response?.contract_id ||
+          response?.proposal_open_contract?.contract_id ||
+          ""
+      );
+
+      if (!contractId) {
+        throw new Error(
+          "Deriv accepted no contract ID. The trade was not added to the session."
+        );
+      }
 
       setSessionTrades((current) => [
         {
@@ -1798,9 +1896,7 @@ export default function RiseFallAnalysis() {
       );
     } catch (error) {
       setManualStatus(
-        error instanceof Error
-          ? error.message
-          : "Manual trade failed."
+        executionErrorMessage(error, "Manual Rise/Fall trade failed.")
       );
     }
   }
@@ -1982,24 +2078,27 @@ export default function RiseFallAnalysis() {
     } catch (error) {
       lastExecutedSignalRef.current = "";
       setExecutionMessage(
-        error instanceof Error
-          ? error.message
-          : "Trade execution failed."
+        executionErrorMessage(error, "Automatic Rise/Fall trade failed.")
       );
     } finally {
       executionBusyRef.current = false;
     }
   }
 
-  function toggleAutoExecution() {
+  async function toggleAutoExecution() {
     if (autoRunning) {
       stopAuto("Auto execution stopped manually.");
       return;
     }
 
+    if (!selectedAccountId) {
+      setExecutionMessage("Choose a Demo or Real Deriv account first.");
+      return;
+    }
+
     if (selectedAccountType !== "demo" && !allowReal) {
       setExecutionMessage(
-        "Enable Real execution explicitly or switch to Demo."
+        "Real execution is locked. Tick the Real-account confirmation before START."
       );
       return;
     }
@@ -2011,15 +2110,28 @@ export default function RiseFallAnalysis() {
       return;
     }
 
+    try {
+      if (!connected && typeof connect === "function") {
+        setExecutionMessage("Connecting the authenticated Deriv feed…");
+        await Promise.resolve(connect());
+      }
+    } catch (error) {
+      setExecutionMessage(
+        executionErrorMessage(error, "Unable to connect the selected account.")
+      );
+      return;
+    }
+
     stopGenerationRef.current += 1;
     lastExecutedSignalRef.current = "";
     waitStartedAtRef.current = Date.now();
+    nextAutoEntryAtRef.current = 0;
     setAutoRunning(true);
     autoRunningRef.current = true;
     setExecutionMessage(
-      allowOneTick
-        ? "Running continuously. A valid entry executes immediately; weak markets switch automatically."
-        : "Running continuously until STOP. Confirmed entries execute immediately."
+      selectedAccountType === "demo"
+        ? "Demo scanner running. Confirmed entries execute automatically."
+        : `REAL scanner running on ${selectedAccountId}. Confirmed entries execute automatically.`
     );
   }
 
@@ -2533,7 +2645,11 @@ export default function RiseFallAnalysis() {
               className={`rfSideStartButton ${
                 autoRunning ? "running" : "stopped"
               }`}
-              disabled={tradeBusy}
+              disabled={
+                tradeBusy ||
+                !selectedAccountId ||
+                (selectedAccountType !== "demo" && !allowReal)
+              }
               onClick={toggleAutoExecution}
             >
               {tradeBusy
@@ -2605,7 +2721,15 @@ export default function RiseFallAnalysis() {
             <div>
               <small>RISE/FALL AUTO EXECUTION</small>
               <h2>{autoRunning ? "RUNNING" : "STOPPED"}</h2>
-              <p>{executionMessage || tradeError}</p>
+              <p>{executionMessage || tradeError || realExecutionStatus}</p>
+              {tradeError ? (
+                <div className="rfExecutionError">
+                  {executionErrorMessage(
+                    { message: tradeError },
+                    "Deriv execution error."
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="rfAutoPanelButtons">
@@ -2620,7 +2744,11 @@ export default function RiseFallAnalysis() {
               <button
                 type="button"
                 className={autoRunning ? "stop" : "start"}
-                disabled={tradeBusy}
+                disabled={
+                  tradeBusy ||
+                  !selectedAccountId ||
+                  (selectedAccountType !== "demo" && !allowReal)
+                }
                 onClick={toggleAutoExecution}
               >
                 {tradeBusy
@@ -2776,14 +2904,29 @@ export default function RiseFallAnalysis() {
               Direction probability: <strong>{pct(activeDirectionProbability)}</strong>
             </span>
 
-            <label className={selectedAccountType === "demo" ? "disabled" : ""}>
+            <label
+              className={`rfRealExecutionLock ${
+                selectedAccountType === "demo"
+                  ? "disabled"
+                  : allowReal
+                    ? "enabled"
+                    : "locked"
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={allowReal}
                 disabled={selectedAccountType === "demo" || autoRunning}
-                onChange={(event) => setAllowReal(event.target.checked)}
+                onChange={(event) =>
+                  updateRealExecutionPermission(event.target.checked)
+                }
               />
-              I understand and enable Real-account execution
+              {selectedAccountType === "demo"
+                ? "Demo execution enabled"
+                : allowReal
+                  ? "REAL EXECUTION ENABLED"
+                  : "ENABLE REAL-ACCOUNT EXECUTION"}
+              <small>{realExecutionStatus}</small>
             </label>
 
             <span>
