@@ -7,9 +7,11 @@
 .dosControlCard,
 .dosMessage,
 .dosMetrics,
+.dosAnalysisGrid,
 .dosDigits,
+.dosMarketRanking,
 .dosResultCard {
-  margin: 18px 24px 0;
+  margin: 16px 24px 0;
 }
 
 .dosHeader {
@@ -21,10 +23,11 @@
 
 .dosHeader small,
 .dosMetrics small,
+.dosAnalysisGrid small,
 .dosResultCard small,
 .dosStatus small {
   color: #76a9c5;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -58,7 +61,7 @@
 
 .dosControlCard {
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(140px, 0.7fr) minmax(200px, 1fr) auto auto;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(140px, 0.7fr) minmax(210px, 1fr) auto auto;
   align-items: end;
   gap: 12px;
   padding: 16px;
@@ -134,42 +137,50 @@
 }
 
 .dosMessage span {
-  color: #ff8197;
+  color: #8fc5dc;
+  font-size: 12px;
 }
 
-.dosMetrics {
+.dosMetrics,
+.dosAnalysisGrid {
   display: grid;
   grid-template-columns: repeat(8, minmax(95px, 1fr));
-  gap: 10px;
+  gap: 9px;
 }
 
-.dosMetrics article {
+.dosMetrics article,
+.dosAnalysisGrid article {
   min-width: 0;
-  padding: 13px;
+  padding: 12px;
   border: 1px solid #1c5168;
   border-radius: 12px;
   background: #062335;
 }
 
-.dosMetrics strong {
+.dosAnalysisGrid article {
+  background: #071e2b;
+}
+
+.dosMetrics strong,
+.dosAnalysisGrid strong {
   display: block;
   margin-top: 7px;
   overflow: hidden;
   color: #eaf9ff;
-  font-size: 18px;
+  font-size: 17px;
   text-overflow: ellipsis;
 }
 
 .dosDigits {
   display: grid;
-  grid-template-columns: repeat(10, minmax(72px, 1fr));
+  grid-template-columns: repeat(10, minmax(82px, 1fr));
   gap: 8px;
 }
 
 .dosDigits article {
   display: grid;
-  gap: 5px;
-  padding: 12px 8px;
+  gap: 4px;
+  padding: 11px 8px;
   border: 1px solid #1d4e65;
   border-radius: 12px;
   background: #051f2e;
@@ -178,12 +189,29 @@
 
 .dosDigits article.selected {
   border-color: #34e1b1;
-  box-shadow: 0 0 0 2px rgba(52, 225, 177, 0.15);
+  box-shadow: 0 0 0 2px rgba(52, 225, 177, 0.16);
+}
+
+.dosDigits article.topCandidate {
+  background: #082a37;
+}
+
+.dosDigits article > div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
 }
 
 .dosDigits strong {
   color: #f8fdff;
   font-size: 24px;
+}
+
+.dosDigits em {
+  color: #7ca9bd;
+  font-size: 10px;
+  font-style: normal;
 }
 
 .dosDigits span {
@@ -194,6 +222,49 @@
 
 .dosDigits small {
   color: #7ea5b9;
+  font-size: 9px;
+}
+
+.dosMarketRanking {
+  padding: 14px;
+  border: 1px solid #1d526a;
+  border-radius: 14px;
+  background: #061f2d;
+}
+
+.dosMarketRanking header {
+  display: flex;
+  justify-content: space-between;
+  color: #e9f8ff;
+}
+
+.dosMarketRanking header span {
+  color: #7fa9bd;
+  font-size: 12px;
+}
+
+.dosMarketRanking > div {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.dosMarketRanking article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #18485e;
+  border-radius: 10px;
+  background: #041925;
+}
+
+.dosMarketRanking article strong {
+  color: #f1fbff;
+}
+
+.dosMarketRanking article span {
+  color: #83afc4;
   font-size: 10px;
 }
 
@@ -222,21 +293,26 @@
 }
 
 .dosRiskNote {
-  margin: 18px 24px 0;
+  margin: 16px 24px 0;
   font-size: 12px;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .dosControlCard {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .dosMetrics {
+  .dosMetrics,
+  .dosAnalysisGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .dosDigits {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .dosMarketRanking > div {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -252,11 +328,16 @@
 
   .dosControlCard,
   .dosMetrics,
+  .dosAnalysisGrid,
   .dosResultCard {
     grid-template-columns: 1fr;
   }
 
   .dosDigits {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dosMarketRanking > div {
+    grid-template-columns: 1fr;
   }
 }

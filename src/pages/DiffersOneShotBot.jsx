@@ -67,6 +67,42 @@ function lastDigitFromQuote(value, decimals = 3) {
   return text ? Number(text.at(-1)) : null;
 }
 
+function adaptiveRequirements(elapsedMs = 0) {
+  if (elapsedMs >= 90000) {
+    return {
+      confidence: 80,
+      safety: 76,
+      matchRisk: 13,
+      transitionRisk: 20,
+      stable: 2,
+      fresh: 4,
+      label: "ADAPTIVE",
+    };
+  }
+
+  if (elapsedMs >= 45000) {
+    return {
+      confidence: 81,
+      safety: 77,
+      matchRisk: 12.8,
+      transitionRisk: 19,
+      stable: 2,
+      fresh: 5,
+      label: "BALANCED",
+    };
+  }
+
+  return {
+    confidence: 82,
+    safety: 78,
+    matchRisk: 12.5,
+    transitionRisk: 18,
+    stable: 3,
+    fresh: 6,
+    label: "STRICT",
+  };
+}
+
 export default function DiffersOneShotBot() {
   const {
     markets = [],
@@ -74,6 +110,7 @@ export default function DiffersOneShotBot() {
     symbol = "",
     connected = false,
     loadingMarket = false,
+    digitHistory = [],
     ticks = [],
     currentPrice = null,
     selectedAccountType = "demo",
@@ -99,20 +136,62 @@ export default function DiffersOneShotBot() {
   const [profit, setProfit] = useState(0);
   const [entry, setEntry] = useState(null);
   const [scanStartedAt, setScanStartedAt] = useState(0);
+  const [marketStartedAt, setMarketStartedAt] = useState(0);
   const [marketSwitches, setMarketSwitches] = useState(0);
   const [freshDigits, setFreshDigits] = useState([]);
   const [stableCandidateTicks, setStableCandidateTicks] = useState(0);
   const [stableCandidateDigit, setStableCandidateDigit] = useState(null);
+  const [marketScores, setMarketScores] = useState({});
+  const [clock, setClock] = useState(Date.now());
 
   const executionRef = useRef(false);
   const completedRef = useRef(false);
   const switchingRef = useRef(false);
   const lastFreshTickKeyRef = useRef("");
 
-  const analysis = useMemo(
-    () => analyzeDiffersOneShot(freshDigits),
-    [freshDigits]
+  const combinedDigits = useMemo(
+    () =>
+      [
+        ...(Array.isArray(digitHistory)
+          ? digitHistory.slice(-80)
+          : []),
+        ...freshDigits,
+      ].slice(-140),
+    [digitHistory, freshDigits]
   );
+
+  const analysis = useMemo(
+    () => analyzeDiffersOneShot(combinedDigits),
+    [combinedDigits]
+  );
+
+  const elapsedMs = running
+    ? Math.max(0, clock - scanStartedAt)
+    : 0;
+
+  const requirements = useMemo(
+    () => adaptiveRequirements(elapsedMs),
+    [elapsedMs]
+  );
+
+  const qualified =
+    analysis.selectedDigit !== null &&
+    analysis.confidence >= requirements.confidence &&
+    analysis.safetyScore >= requirements.safety &&
+    analysis.estimatedMatchProbability <= requirements.matchRisk &&
+    analysis.transitionRisk <= requirements.transitionRisk &&
+    freshDigits.length >= requirements.fresh &&
+    stableCandidateTicks >= requirements.stable;
+
+  useEffect(() => {
+    if (!running) return undefined;
+
+    const timer = window.setInterval(() => {
+      setClock(Date.now());
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [running]);
 
   useEffect(() => {
     if (connected) return;
@@ -139,6 +218,8 @@ export default function DiffersOneShotBot() {
     try {
       if (!connected) await connect();
 
+      const now = Date.now();
+
       completedRef.current = false;
       executionRef.current = false;
       setContractId("");
@@ -146,15 +227,18 @@ export default function DiffersOneShotBot() {
       setProfit(0);
       setEntry(null);
       setMarketSwitches(0);
+      setMarketScores({});
       setFreshDigits([]);
       setStableCandidateTicks(0);
       setStableCandidateDigit(null);
       lastFreshTickKeyRef.current = "";
-      setScanStartedAt(Date.now());
+      setScanStartedAt(now);
+      setMarketStartedAt(now);
+      setClock(now);
       setRunning(true);
       setStatus("SCANNING");
       setMessage(
-        "Collecting fresh live digits before one controlled DIFFERS entry."
+        "Fast market scan started. Comparing digit frequency, transitions, match risk and stability."
       );
     } catch (error) {
       setStatus("ERROR");
@@ -187,13 +271,14 @@ export default function DiffersOneShotBot() {
 
     const tick = ticks.at(-1);
     const rawEpoch = Number(tick?.epoch || 0);
-    const epochMs = rawEpoch > 0 && rawEpoch < 1e12
-      ? rawEpoch * 1000
-      : rawEpoch;
+    const epochMs =
+      rawEpoch > 0 && rawEpoch < 1e12
+        ? rawEpoch * 1000
+        : rawEpoch;
 
-    if (epochMs && epochMs < scanStartedAt) return;
+    if (epochMs && epochMs < marketStartedAt) return;
 
-    const key = `${tick?.epoch || ""}:${tick?.quote || ""}`;
+    const key = `${symbol}:${tick?.epoch || ""}:${tick?.quote || ""}`;
 
     if (!key || lastFreshTickKeyRef.current === key) return;
 
@@ -206,17 +291,19 @@ export default function DiffersOneShotBot() {
 
     if (!Number.isInteger(digit)) return;
 
-    setFreshDigits((current) => [...current, digit].slice(-120));
+    setFreshDigits((current) => [...current, digit].slice(-40));
   }, [
     running,
     contractId,
     scanStartedAt,
+    marketStartedAt,
     ticks,
+    symbol,
     market?.decimals,
   ]);
 
   useEffect(() => {
-    if (!running || contractId || !analysis.ready) {
+    if (!running || contractId || analysis.selectedDigit === null) {
       setStableCandidateTicks(0);
       setStableCandidateDigit(null);
       return;
@@ -232,9 +319,37 @@ export default function DiffersOneShotBot() {
   }, [
     running,
     contractId,
-    analysis.ready,
     analysis.selectedDigit,
     stableCandidateDigit,
+  ]);
+
+  useEffect(() => {
+    if (!running || !symbol || analysis.selectedDigit === null) return;
+
+    setMarketScores((current) => ({
+      ...current,
+      [symbol]: {
+        symbol,
+        label: market?.label || symbol,
+        quality: analysis.marketQuality,
+        confidence: analysis.confidence,
+        safety: analysis.safetyScore,
+        digit: analysis.selectedDigit,
+        matchRisk: analysis.estimatedMatchProbability,
+        transitionRisk: analysis.transitionRisk,
+        updatedAt: Date.now(),
+      },
+    }));
+  }, [
+    running,
+    symbol,
+    market?.label,
+    analysis.selectedDigit,
+    analysis.marketQuality,
+    analysis.confidence,
+    analysis.safetyScore,
+    analysis.estimatedMatchProbability,
+    analysis.transitionRisk,
   ]);
 
   useEffect(() => {
@@ -245,20 +360,16 @@ export default function DiffersOneShotBot() {
       tradeBusy ||
       contractId ||
       !connected ||
-      loadingMarket
+      loadingMarket ||
+      !qualified
     ) {
       return;
     }
 
-    if (!analysis.ready) return;
-    if (freshDigits.length < 18) return;
-    if (Date.now() - scanStartedAt < 8000) return;
-    if (stableCandidateTicks < 5) return;
-
     executionRef.current = true;
     setStatus("BUYING");
     setMessage(
-      `Buying one DIGITDIFF contract against ${analysis.selectedDigit}.`
+      `Qualified ${requirements.label} setup found: DIFFERS ${analysis.selectedDigit}. Buying one contract.`
     );
 
     void (async () => {
@@ -284,6 +395,8 @@ export default function DiffersOneShotBot() {
           confidence: analysis.confidence,
           safetyScore: analysis.safetyScore,
           probability: analysis.differsProbability,
+          matchRisk: analysis.estimatedMatchProbability,
+          transitionRisk: analysis.transitionRisk,
           market: market?.label || symbol,
           time: Date.now(),
         });
@@ -312,10 +425,9 @@ export default function DiffersOneShotBot() {
     loadingMarket,
     tradeBusy,
     contractId,
+    qualified,
+    requirements.label,
     analysis,
-    freshDigits.length,
-    scanStartedAt,
-    stableCandidateTicks,
     placeTrade,
     refreshContract,
     stake,
@@ -333,15 +445,15 @@ export default function DiffersOneShotBot() {
       loadingMarket ||
       markets.length < 2 ||
       switchingRef.current ||
-      !scanStartedAt
+      !marketStartedAt ||
+      qualified
     ) {
       return;
     }
 
-    if (analysis.ready) return;
+    const marketElapsed = Date.now() - marketStartedAt;
 
-    const elapsed = Date.now() - scanStartedAt;
-    if (elapsed < 20000 || freshDigits.length < 18) return;
+    if (marketElapsed < 15000 || freshDigits.length < 4) return;
 
     switchingRef.current = true;
 
@@ -353,23 +465,24 @@ export default function DiffersOneShotBot() {
 
     if (!next || next.id === symbol) {
       switchingRef.current = false;
-      setScanStartedAt(Date.now());
+      setMarketStartedAt(Date.now());
       return;
     }
 
     setStatus("SWITCHING");
     setMessage(
-      `No clean setup on ${market?.label || symbol}. Checking ${next.label}.`
+      `No qualified entry on ${market?.label || symbol}. Switching to ${next.label} for a fresh digit scan.`
     );
 
     void Promise.resolve(changeSymbol(next.id))
       .then(() => {
+        const now = Date.now();
         setMarketSwitches((value) => value + 1);
         setFreshDigits([]);
         setStableCandidateTicks(0);
         setStableCandidateDigit(null);
         lastFreshTickKeyRef.current = "";
-        setScanStartedAt(Date.now());
+        setMarketStartedAt(now);
         setStatus("SCANNING");
       })
       .catch((error) => {
@@ -392,8 +505,8 @@ export default function DiffersOneShotBot() {
     markets,
     symbol,
     market?.label,
-    scanStartedAt,
-    analysis.ready,
+    marketStartedAt,
+    qualified,
     freshDigits.length,
     changeSymbol,
   ]);
@@ -423,6 +536,14 @@ export default function DiffersOneShotBot() {
     );
   }, [openContracts, contractId]);
 
+  const rankedMarkets = useMemo(
+    () =>
+      Object.values(marketScores)
+        .sort((a, b) => Number(b.quality) - Number(a.quality))
+        .slice(0, 5),
+    [marketScores]
+  );
+
   const buttonDisabled =
     running ||
     tradeBusy ||
@@ -445,8 +566,8 @@ export default function DiffersOneShotBot() {
             <small>ONE-SHOT DIGIT BOT</small>
             <h1>Differs Precision Run</h1>
             <p>
-              Collects fresh live ticks, confirms one candidate repeatedly, then buys one 1-tick DIGITDIFF contract,
-              waits for the result, then stops.
+              Scans multiple markets, analyses every digit, takes one
+              qualified 1-tick DIGITDIFF entry, then stops.
             </p>
           </div>
 
@@ -511,15 +632,18 @@ export default function DiffersOneShotBot() {
 
         <section className="dosMessage">
           <strong>{message}</strong>
+          <span>
+            Mode {requirements.label} · elapsed{" "}
+            {Math.floor(elapsedMs / 1000)}s · market switches{" "}
+            {marketSwitches}
+          </span>
           {tradeError ? <span>{tradeError}</span> : null}
         </section>
 
         <section className="dosMetrics">
           <article>
             <small>Selected digit</small>
-            <strong>
-              {entry?.digit ?? analysis.selectedDigit ?? "—"}
-            </strong>
+            <strong>{entry?.digit ?? analysis.selectedDigit ?? "—"}</strong>
           </article>
           <article>
             <small>Estimated differs</small>
@@ -534,16 +658,55 @@ export default function DiffersOneShotBot() {
             <strong>{pct(analysis.safetyScore)}</strong>
           </article>
           <article>
+            <small>Match risk</small>
+            <strong>{pct(analysis.estimatedMatchProbability)}</strong>
+          </article>
+          <article>
+            <small>Transition risk</small>
+            <strong>{pct(analysis.transitionRisk)}</strong>
+          </article>
+          <article>
             <small>Entropy</small>
             <strong>{pct(analysis.entropy)}</strong>
           </article>
           <article>
-            <small>Fresh samples</small>
-            <strong>{analysis.samples || 0}/18</strong>
+            <small>Stable candidate</small>
+            <strong>
+              {stableCandidateTicks}/{requirements.stable}
+            </strong>
+          </article>
+        </section>
+
+        <section className="dosAnalysisGrid">
+          <article>
+            <small>Market quality</small>
+            <strong>{pct(analysis.marketQuality)}</strong>
           </article>
           <article>
-            <small>Stable candidate</small>
-            <strong>{stableCandidateTicks}/5</strong>
+            <small>Candidate separation</small>
+            <strong>{Number(analysis.separation || 0).toFixed(2)}</strong>
+          </article>
+          <article>
+            <small>Repeat risk</small>
+            <strong>{pct(analysis.repeatRisk)}</strong>
+          </article>
+          <article>
+            <small>Recent frequency</small>
+            <strong>{pct(analysis.recentRate)}</strong>
+          </article>
+          <article>
+            <small>Micro frequency</small>
+            <strong>{pct(analysis.microRate)}</strong>
+          </article>
+          <article>
+            <small>Fresh confirmation</small>
+            <strong>
+              {freshDigits.length}/{requirements.fresh}
+            </strong>
+          </article>
+          <article>
+            <small>History samples</small>
+            <strong>{combinedDigits.length}</strong>
           </article>
           <article>
             <small>Current price</small>
@@ -558,25 +721,52 @@ export default function DiffersOneShotBot() {
         </section>
 
         <section className="dosDigits">
-          {(analysis.candidates || []).map((candidate) => (
+          {(analysis.candidates || []).map((candidate, index) => (
             <article
               key={candidate.digit}
-              className={
+              className={[
                 candidate.digit === analysis.selectedDigit
                   ? "selected"
-                  : ""
-              }
+                  : "",
+                index < 3 ? "topCandidate" : "",
+              ].join(" ")}
             >
-              <strong>{candidate.digit}</strong>
-              <span>
-                DIFF {pct(candidate.differsProbability)}
-              </span>
+              <div>
+                <strong>{candidate.digit}</strong>
+                <em>#{index + 1}</em>
+              </div>
+              <span>DIFF {pct(candidate.differsProbability)}</span>
               <small>
-                Match est. {pct(candidate.weightedMatchProbability)}
+                Match {pct(candidate.weightedMatchProbability)}
               </small>
+              <small>
+                Transition {pct(candidate.transitionRate)}
+              </small>
+              <small>Safety {pct(candidate.safetyScore)}</small>
+              <small>Gap {candidate.gap}</small>
             </article>
           ))}
         </section>
+
+        {rankedMarkets.length ? (
+          <section className="dosMarketRanking">
+            <header>
+              <strong>Markets scanned</strong>
+              <span>Best observed quality first</span>
+            </header>
+
+            <div>
+              {rankedMarkets.map((item) => (
+                <article key={item.symbol}>
+                  <strong>{item.label}</strong>
+                  <span>Quality {pct(item.quality)}</span>
+                  <span>Digit {item.digit}</span>
+                  <span>Match risk {pct(item.matchRisk)}</span>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="dosResultCard">
           <div>
@@ -605,9 +795,10 @@ export default function DiffersOneShotBot() {
         </section>
 
         <p className="dosRiskNote">
-          This bot makes one controlled attempt only. Analysis can
-          filter weak setups, but no digit contract can be guaranteed
-          to win.
+          It will not wait forever: thresholds adapt gradually and the
+          bot changes market every 15 seconds when no qualified setup
+          appears. It still makes one trade only. No analysis can
+          guarantee the next digit.
         </p>
       </main>
     </div>

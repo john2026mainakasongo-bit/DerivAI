@@ -10,7 +10,7 @@ function mean(values = []) {
 }
 
 function entropy(counts = []) {
-  const total = counts.reduce((sum, value) => sum + value, 0);
+  const total = counts.reduce((sum, value) => sum + Number(value || 0), 0);
   if (!total) return 100;
 
   const raw = counts.reduce((sum, count) => {
@@ -44,11 +44,9 @@ function transitionTable(digits = []) {
   return table;
 }
 
-function longestGap(digits = [], target = 0) {
+function gapSinceLastSeen(digits = [], target = 0) {
   for (let index = digits.length - 1; index >= 0; index -= 1) {
-    if (digits[index] === target) {
-      return digits.length - 1 - index;
-    }
+    if (digits[index] === target) return digits.length - 1 - index;
   }
 
   return digits.length;
@@ -57,15 +55,38 @@ function longestGap(digits = [], target = 0) {
 function recentStreak(digits = []) {
   if (!digits.length) return { digit: null, length: 0 };
 
-  const last = digits.at(-1);
+  const digit = digits.at(-1);
   let length = 0;
 
   for (let index = digits.length - 1; index >= 0; index -= 1) {
-    if (digits[index] !== last) break;
+    if (digits[index] !== digit) break;
     length += 1;
   }
 
-  return { digit: last, length };
+  return { digit, length };
+}
+
+function countWindow(digits = [], size = 20) {
+  const counts = Array(10).fill(0);
+  digits.slice(-size).forEach((digit) => {
+    if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
+      counts[digit] += 1;
+    }
+  });
+  return counts;
+}
+
+function repeatRisk(digits = []) {
+  if (digits.length < 2) return 10;
+
+  const sample = digits.slice(-40);
+  let repeats = 0;
+
+  for (let index = 1; index < sample.length; index += 1) {
+    if (sample[index] === sample[index - 1]) repeats += 1;
+  }
+
+  return clamp((repeats / Math.max(1, sample.length - 1)) * 100);
 }
 
 export function analyzeDiffersOneShot(digitHistory = []) {
@@ -77,18 +98,20 @@ export function analyzeDiffersOneShot(digitHistory = []) {
         digit >= 0 &&
         digit <= 9
     )
-    .slice(-120);
+    .slice(-140);
 
-  if (digits.length < 18) {
+  if (digits.length < 24) {
     return {
       ready: false,
-      reason: `Collecting fresh digits ${digits.length}/18`,
+      reason: `Building analysis ${digits.length}/24`,
       samples: digits.length,
       selectedDigit: null,
       confidence: 0,
       safetyScore: 0,
       entropy: 100,
       candidates: [],
+      repeatRisk: 0,
+      marketQuality: 0,
     };
   }
 
@@ -97,15 +120,10 @@ export function analyzeDiffersOneShot(digitHistory = []) {
   const shortWindow = digits.slice(-20);
   const microWindow = digits.slice(-8);
 
-  const longCounts = Array(10).fill(0);
-  const mediumCounts = Array(10).fill(0);
-  const shortCounts = Array(10).fill(0);
-  const microCounts = Array(10).fill(0);
-
-  longWindow.forEach((digit) => longCounts[digit] += 1);
-  mediumWindow.forEach((digit) => mediumCounts[digit] += 1);
-  shortWindow.forEach((digit) => shortCounts[digit] += 1);
-  microWindow.forEach((digit) => microCounts[digit] += 1);
+  const longCounts = countWindow(longWindow, 100);
+  const mediumCounts = countWindow(mediumWindow, 50);
+  const shortCounts = countWindow(shortWindow, 20);
+  const microCounts = countWindow(microWindow, 8);
 
   const transitions = transitionTable(digits);
   const lastDigit = digits.at(-1);
@@ -113,6 +131,7 @@ export function analyzeDiffersOneShot(digitHistory = []) {
   const nextTotal = nextCounts.reduce((sum, count) => sum + count, 0);
   const distributionEntropy = entropy(shortCounts);
   const streak = recentStreak(digits);
+  const currentRepeatRisk = repeatRisk(digits);
 
   const candidates = Array.from({ length: 10 }, (_, digit) => {
     const longRate = longCounts[digit] / Math.max(1, longWindow.length);
@@ -125,45 +144,44 @@ export function analyzeDiffersOneShot(digitHistory = []) {
 
     const weightedMatchProbability = clamp(
       (
-        longRate * 0.15 +
-        mediumRate * 0.20 +
+        longRate * 0.12 +
+        mediumRate * 0.18 +
         shortRate * 0.25 +
-        microRate * 0.15 +
+        microRate * 0.20 +
         transitionRate * 0.25
-      ) * 100,
-      0,
-      100
+      ) * 100
     );
 
-    const gap = longestGap(digits, digit);
-    const immediateRepeatPenalty = digit === lastDigit ? 4 : 0;
-    const streakPenalty =
+    const gap = gapSinceLastSeen(digits, digit);
+    const sameAsLastPenalty = digit === lastDigit ? 3.5 : 0;
+    const activeStreakPenalty =
       digit === streak.digit && streak.length >= 2
-        ? Math.min(10, streak.length * 2.5)
+        ? Math.min(8, streak.length * 2)
         : 0;
 
-    /*
-      For DIGITDIFF, lower estimated match probability is better.
-      Gap is only a weak tie-breaker; a long absence does not make a digit "due".
-    */
     const differsProbability = clamp(
       100 -
         weightedMatchProbability -
-        immediateRepeatPenalty -
-        streakPenalty,
+        sameAsLastPenalty -
+        activeStreakPenalty,
       0,
-      99.9
+      99.5
     );
 
-    const stabilityPenalty =
-      Math.abs(longRate - shortRate) * 100 * 0.45 +
+    const windowDrift =
+      Math.abs(longRate - shortRate) * 100 * 0.35 +
       Math.abs(mediumRate - microRate) * 100 * 0.35;
 
+    const transitionSafety = clamp(100 - transitionRate * 100);
+    const frequencySafety = clamp(100 - weightedMatchProbability * 6.5);
+    const gapScore = clamp(gap * 5, 0, 30);
+
     const safetyScore = clamp(
-      differsProbability * 0.72 +
-        (100 - distributionEntropy) * 0.08 +
-        clamp(gap * 3, 0, 30) * 0.08 +
-        (100 - stabilityPenalty) * 0.12
+      differsProbability * 0.44 +
+        transitionSafety * 0.20 +
+        frequencySafety * 0.18 +
+        (100 - windowDrift) * 0.12 +
+        gapScore * 0.06
     );
 
     return {
@@ -175,11 +193,15 @@ export function analyzeDiffersOneShot(digitHistory = []) {
       transitionRate: transitionRate * 100,
       recentRate: shortRate * 100,
       microRate: microRate * 100,
+      frequencySafety,
+      transitionSafety,
+      windowDrift,
     };
   }).sort((a, b) => b.safetyScore - a.safetyScore);
 
   const best = candidates[0];
   const second = candidates[1];
+
   const separation = Math.max(
     0,
     Number(best?.safetyScore || 0) -
@@ -187,51 +209,60 @@ export function analyzeDiffersOneShot(digitHistory = []) {
   );
 
   const confidence = clamp(
-    Number(best?.safetyScore || 0) * 0.78 +
-      Number(best?.differsProbability || 0) * 0.14 +
-      separation * 1.5 +
-      Math.min(8, digits.length / 15)
+    Number(best?.safetyScore || 0) * 0.68 +
+      Number(best?.differsProbability || 0) * 0.16 +
+      Number(best?.transitionSafety || 0) * 0.08 +
+      Math.min(6, separation * 2) +
+      Math.min(6, digits.length / 24)
   );
 
-  const reasons = [];
-
-  if (distributionEntropy >= 96) {
-    reasons.push("Digit distribution is highly random.");
-  }
-
-  if (confidence < 91) {
-    reasons.push("Fresh-scan confidence is below 91%.");
-  }
-
-  if (separation < 3) {
-    reasons.push("The best digit has not stayed clearly separated.");
-  }
-
-  if (Number(best?.weightedMatchProbability || 100) > 8.5) {
-    reasons.push("Estimated match rate is above the strict 8.5% limit.");
-  }
+  const marketQuality = clamp(
+    confidence * 0.38 +
+      Number(best?.safetyScore || 0) * 0.30 +
+      (100 - distributionEntropy) * 0.10 +
+      (100 - currentRepeatRisk) * 0.12 +
+      Math.min(100, separation * 15) * 0.10
+  );
 
   const ready =
-    confidence >= 91 &&
-    separation >= 3 &&
-    Number(best?.weightedMatchProbability || 100) <= 8.5 &&
-    distributionEntropy <= 96;
+    confidence >= 82 &&
+    Number(best?.weightedMatchProbability || 100) <= 12.5 &&
+    Number(best?.transitionRate || 100) <= 18 &&
+    Number(best?.safetyScore || 0) >= 78 &&
+    separation >= 0.45;
+
+  let reason = "Waiting for stronger digit separation.";
+
+  if (ready) {
+    reason = `DIFFERS ${best.digit} setup ready.`;
+  } else if (Number(best?.weightedMatchProbability || 100) > 12.5) {
+    reason = "Best digit match-risk is still too high.";
+  } else if (Number(best?.transitionRate || 100) > 18) {
+    reason = "Transition risk for the best digit is too high.";
+  } else if (confidence < 82) {
+    reason = "Combined confidence is below 82%.";
+  } else if (Number(best?.safetyScore || 0) < 78) {
+    reason = "Safety score is below 78%.";
+  }
 
   return {
     ready,
-    reason: ready
-      ? `DIFFERS ${best.digit} setup prepared.`
-      : reasons[0] || "Waiting for a cleaner differs setup.",
+    reason,
     samples: digits.length,
-    selectedDigit: best.digit,
+    selectedDigit: best?.digit ?? null,
     confidence,
     safetyScore: Number(best?.safetyScore || 0),
     differsProbability: Number(best?.differsProbability || 0),
     estimatedMatchProbability: Number(best?.weightedMatchProbability || 0),
+    transitionRisk: Number(best?.transitionRate || 0),
+    recentRate: Number(best?.recentRate || 0),
+    microRate: Number(best?.microRate || 0),
     entropy: distributionEntropy,
     separation,
     lastDigit,
     streak,
+    repeatRisk: currentRepeatRisk,
+    marketQuality,
     candidates,
   };
 }
