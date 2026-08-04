@@ -319,7 +319,6 @@ export default function QuantumAIBot() {
     const gapMs = Number(settings.minimumTradeGapSeconds || 3) * 1000;
     if (Date.now() - lastTradeAtRef.current < gapMs) return;
 
-    let cancelled = false;
     buyingRef.current = true;
 
     void (async () => {
@@ -329,16 +328,32 @@ export default function QuantumAIBot() {
           `${direction} sharp entry found at ${analysis.confidence.toFixed(1)}%. Buying ${analysis.duration}s...`
         );
 
-        const response = await placeTrade({
-          contractType: direction === "RISE" ? "CALL" : "PUT",
-          amount: Math.max(0.35, Number(settings.stake || 0.35)),
-          basis: "stake",
-          duration: analysis.duration,
-          durationUnit: "s",
-          symbol,
+        const tradeRequest = Promise.resolve(
+          placeTrade({
+            contractType: direction === "RISE" ? "CALL" : "PUT",
+            amount: Math.max(0.35, Number(settings.stake || 0.35)),
+            basis: "stake",
+            duration: analysis.duration,
+            durationUnit: "s",
+            symbol,
+          })
+        );
+
+        const timeoutRequest = new Promise((_, reject) => {
+          window.setTimeout(() => {
+            reject(
+              new Error(
+                "Deriv purchase confirmation timed out after 15 seconds. Scanner has been released."
+              )
+            );
+          }, 15000);
         });
 
-        if (cancelled) return;
+        const response = await Promise.race([
+          tradeRequest,
+          timeoutRequest,
+        ]);
+
         const contractId = contractIdOf(response);
         if (!contractId) throw new Error("Deriv did not return a contract ID.");
 
@@ -365,9 +380,7 @@ export default function QuantumAIBot() {
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+
   }, [running, analysis, authenticatedFeed, activeTrades.length, settings, tradeBusy, placeTrade, symbol, market?.label, currentPrice]);
 
   async function startBot() {
@@ -605,4 +618,5 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
