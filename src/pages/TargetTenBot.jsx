@@ -8,11 +8,11 @@ import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 import {
   buildTargetTenDecision,
-  nextTargetStage,
 } from "../analysis/targetTenStrategyEngine";
 import "../styles/TargetTenBot.css";
 import "../styles/V102BotTargetFix.css";
 import "../styles/V103TargetTenVisibilityFix.css";
+import "../styles/V104TargetTenRunFix.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
 
@@ -97,12 +97,14 @@ export default function TargetTenBot() {
   const [message, setMessage] = useState("Target 10 bot is stopped.");
   const [trades, setTrades] = useState([]);
   const [manualBarrier, setManualBarrier] = useState(1);
+  const [sessionStartBalance, setSessionStartBalance] = useState(null);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
   const waitStartedRef = useRef(Date.now());
   const lastEntryRef = useRef(0);
   const processedRef = useRef(new Set());
+  const latestTickCountRef = useRef(0);
 
   const accounts = useMemo(() => {
     const list =
@@ -125,7 +127,11 @@ export default function TargetTenBot() {
     getAccountType(selectedAccount);
   const balance = getAccountBalance(selectedAccount);
   const currency = selectedAccount?.currency || "USD";
-  const stageTarget = nextTargetStage(balance, target);
+  const profitTarget = Math.max(1, Number(target) || 10);
+  const nextProfitStage = Math.min(
+    profitTarget,
+    Math.max(2, Math.ceil((Math.max(0, sessionProfit) + 0.001) / 2) * 2)
+  );
 
   const decision = useMemo(
     () =>
@@ -144,6 +150,10 @@ export default function TargetTenBot() {
   useEffect(() => {
     runningRef.current = running;
   }, [running]);
+
+  useEffect(() => {
+    latestTickCountRef.current = Array.isArray(prices) ? prices.length : 0;
+  }, [prices]);
 
   useEffect(() => {
     if (!connected && typeof connect === "function") {
@@ -207,8 +217,8 @@ export default function TargetTenBot() {
       return;
     }
 
-    if (balance >= target) {
-      stopBot(`Final target ${target.toFixed(2)} ${currency} reached.`);
+    if (sessionProfit >= profitTarget) {
+      stopBot(`Profit target ${profitTarget.toFixed(2)} ${currency} reached.`);
       return;
     }
 
@@ -355,12 +365,12 @@ export default function TargetTenBot() {
   }, [openContracts]);
 
   useEffect(() => {
-    if (running && balance >= stageTarget) {
-      stopBot(`Stage target ${stageTarget.toFixed(2)} ${currency} reached.`);
+    if (running && sessionProfit >= profitTarget) {
+      stopBot(`Profit target ${profitTarget.toFixed(2)} ${currency} reached.`);
     }
-  }, [running, balance, stageTarget, currency]);
+  }, [running, sessionProfit, profitTarget, currency]);
 
-  async function placeManualTrade(side = manualSide) {
+  async function placeManualTrade(side = "OVER") {
     if (busyRef.current || tradeBusy || hasOpenTrade) {
       setMessage("Wait for the current trade to settle.");
       return;
@@ -437,16 +447,45 @@ export default function TargetTenBot() {
 
     try {
       if (!connected) {
+        setMessage("Connecting Deriv live feed…");
         await connect();
       }
 
+      setRuns(0);
+      setWins(0);
+      setLosses(0);
+      setSessionProfit(0);
+      setTrades([]);
+      processedRef.current = new Set();
+      setSessionStartBalance(balance);
+      lastEntryRef.current = 0;
       waitStartedRef.current = Date.now();
+
+      setMessage("Loading live ticks before the first scan…");
+
+      const warmupStarted = Date.now();
+      while (
+        latestTickCountRef.current < 30 &&
+        Date.now() - warmupStarted < 8000
+      ) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+
       runningRef.current = true;
       setRunning(true);
-      setMessage(
-        `${accountType.toUpperCase()} mode started. Loading live ticks and scanning immediately.`
-      );
+
+      if (latestTickCountRef.current < 30) {
+        setMessage(
+          `${accountType.toUpperCase()} bot running. Collecting more ticks and scanning continuously.`
+        );
+      } else {
+        setMessage(
+          `${accountType.toUpperCase()} bot running. ${latestTickCountRef.current} live ticks loaded; scanning now.`
+        );
+      }
     } catch (error) {
+      runningRef.current = false;
+      setRunning(false);
       setMessage(error instanceof Error ? error.message : "Unable to start bot.");
     }
   }
@@ -457,8 +496,8 @@ export default function TargetTenBot() {
 
       <main className="mainContent targetTenPage">
         <Topbar
-          title="EdgePilot V102 · Target 10 Auto + Manual"
-          subtitle="Separate staged-growth bot · same strategy for Demo and Real · no martingale"
+          title="EdgePilot V104 · Target 10 Profit Bot"
+          subtitle="Profit-based target · live tick warm-up · automatic analysis + manual execution"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -484,12 +523,12 @@ export default function TargetTenBot() {
 
         <section className="targetProgress">
           <div>
-            <small>NEXT STAGE</small>
-            <strong>{stageTarget.toFixed(2)} {currency}</strong>
+            <small>NEXT PROFIT STAGE</small>
+            <strong>+{nextProfitStage.toFixed(2)} {currency}</strong>
           </div>
           <div>
-            <small>FINAL TARGET</small>
-            <strong>{Number(target).toFixed(2)} {currency}</strong>
+            <small>PROFIT TARGET</small>
+            <strong>+{profitTarget.toFixed(2)} {currency}</strong>
           </div>
           <div>
             <small>SESSION P/L</small>
@@ -502,7 +541,7 @@ export default function TargetTenBot() {
               style={{
                 width: `${Math.max(
                   0,
-                  Math.min(100, (balance / Math.max(0.01, target)) * 100)
+                  Math.min(100, (Math.max(0, sessionProfit) / profitTarget) * 100)
                 )}%`,
               }}
             />
@@ -522,7 +561,7 @@ export default function TargetTenBot() {
             />
           </label>
           <label>
-            <span>Final target</span>
+            <span>Profit target</span>
             <input
               type="number"
               min="1"
