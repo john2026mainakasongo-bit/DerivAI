@@ -1309,7 +1309,7 @@ function buildConsensus({
     {
       name: "Stability",
       vote:
-        stability >= 58
+        stability >= 55
           ? direction
           : "WAIT",
     },
@@ -2266,30 +2266,30 @@ export function analyzeRiseFall(
         : 0;
 
   const prepareThreshold = clamp(
-    65 + regimeAdjustment + noiseAdjustment,
-    63,
-    75
+    58 + regimeAdjustment + noiseAdjustment,
+    56,
+    66
   );
 
   const buyThreshold = clamp(
-    72 +
+    64 +
       regimeAdjustment +
       noiseAdjustment +
       volatilityAdjustment,
-    70,
-    84
+    62,
+    74
   );
 
   const strongThreshold = clamp(
-    buyThreshold + 8,
-    78,
-    90
+    buyThreshold + 6,
+    74,
+    86
   );
 
   const instantThreshold = clamp(
-    strongThreshold + 8,
-    86,
-    96
+    strongThreshold + 7,
+    82,
+    93
   );
 
   const adaptiveThresholds = {
@@ -2337,11 +2337,11 @@ export function analyzeRiseFall(
   const tradeNow =
     direction !== "WAIT" &&
     consensus.direction === direction &&
-    consensus.score >= 58 &&
+    consensus.score >= 50 &&
     entryScore >= buyThreshold &&
-    dominantVotes >= 7 &&
-    dominantPressure >= 60 &&
-    continuationReversal.continuation >= 52 &&
+    dominantVotes >= 5 &&
+    dominantPressure >= 55 &&
+    continuationReversal.continuation >= 47 &&
     (
       emaAligned ||
       ribbon.state !== "MIXED" ||
@@ -2357,31 +2357,31 @@ export function analyzeRiseFall(
           : flowDelta.delta < 0
       )
     ) &&
-    exhaustion <= 85;
+    exhaustion <= 82;
 
   const strongTrade =
     tradeNow &&
     entryScore >= strongThreshold &&
-    consensus.score >= 72 &&
-    dominantVotes >= 9 &&
-    confirmationsPassed >= 8;
+    consensus.score >= 68 &&
+    dominantVotes >= 8 &&
+    confirmationsPassed >= 7;
 
   const instantOneTick =
     strongTrade &&
     opportunityScore >= instantThreshold &&
-    consensus.score >= 78 &&
+    consensus.score >= 72 &&
     freshTick.ready &&
-    dominantPressure >= 64 &&
-    continuationReversal.continuation >= 58 &&
-    persistence >= 55 &&
-    rhythm >= 42 &&
-    noise <= 74;
+    dominantPressure >= 61 &&
+    continuationReversal.continuation >= 55 &&
+    persistence >= 52 &&
+    rhythm >= 38 &&
+    noise <= 70;
 
   const prepare =
     !tradeNow &&
     direction !== "WAIT" &&
     entryScore >= prepareThreshold &&
-    dominantVotes >= 6 &&
+    dominantVotes >= 5 &&
     (
       dominantPressure >= 55 ||
       continuationReversal.continuation >= 50 ||
@@ -2398,9 +2398,10 @@ export function analyzeRiseFall(
   const signal = tradeNow ? direction : "WAIT";
 
   const risk = ready
-    ? confidence >= 86 &&
-      reversalCount <= 1 &&
-      regime === "TREND"
+    ? smartConfidence >= 78 &&
+      continuationReversal.reversal <= 30 &&
+      noise <= 58 &&
+      consensus.score >= 62
       ? "LOW"
       : "MEDIUM"
     : "HIGH";
@@ -2455,15 +2456,15 @@ export function analyzeRiseFall(
 
   const autoSkip =
     risk === "HIGH" ||
-    ["C", "REJECT"].includes(quality) ||
-    noise >= 86 ||
+    quality === "REJECT" ||
+    noise >= 82 ||
     consensus.direction === "WAIT" ||
     structureConflict ||
     continuationConflict ||
-    rhythm < 22;
+    rhythm < 18;
 
   const skipReason =
-    noise >= 86
+    noise >= 82
       ? "Noise too high"
       : consensus.direction === "WAIT"
         ? "Consensus is mixed"
@@ -2471,7 +2472,7 @@ export function analyzeRiseFall(
           ? "Pressure conflicts with the selected direction"
           : continuationConflict
             ? "Reversal probability exceeds continuation"
-            : rhythm < 22
+            : rhythm < 18
               ? "Tick rhythm is too weak"
               : risk === "HIGH"
                 ? "Risk is high"
@@ -2518,12 +2519,12 @@ export function analyzeRiseFall(
   const fastScalpReady =
     tradeNow &&
     entryScore >= buyThreshold &&
-    dominantPressure >= 60 &&
-    continuationReversal.continuation >= 52 &&
+    dominantPressure >= 57 &&
+    continuationReversal.continuation >= 50 &&
     (
       microTrend.dominantDirection === direction ||
       sequence.direction === direction ||
-      stability >= 58
+      stability >= 55
     );
 
   const finalScore = clamp(

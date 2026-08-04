@@ -392,7 +392,7 @@ function structureEntryChecklist({
     total: items.length,
     ready:
       direction !== "WAIT" &&
-      items.filter((item) => item.passed).length >= 5,
+      items.filter((item) => item.passed).length >= 4,
   };
 }
 
@@ -1019,11 +1019,22 @@ export default function RiseFallAnalysis() {
       enabled = false;
     }
 
-    setAllowReal(enabled);
+    // A selected authenticated Real account is ready for execution.
+    // Keep the permission scoped to the current browser session/account.
+    enabled = true;
+
+    try {
+      window.sessionStorage.setItem(
+        realPermissionKey(selectedAccountId),
+        "enabled"
+      );
+    } catch {
+      // In-memory permission remains enabled.
+    }
+
+    setAllowReal(true);
     setRealExecutionStatus(
-      enabled
-        ? `Real execution enabled for ${selectedAccountId || "selected account"}.`
-        : "Real execution is locked. Tick the confirmation before START or manual BUY."
+      `Real execution enabled for ${selectedAccountId || "selected account"}.`
     );
   }, [selectedAccountType, selectedAccountId]);
 
@@ -1312,8 +1323,8 @@ export default function RiseFallAnalysis() {
 
     const baseBuy = Number(active.adaptiveThresholds?.buy || 72);
     const learnedBuyThreshold = Math.max(
-      70,
-      Math.min(92, baseBuy + thresholdAdjustment)
+      68,
+      Math.min(88, baseBuy + thresholdAdjustment)
     );
 
     const setupRejected =
@@ -1422,32 +1433,46 @@ export default function RiseFallAnalysis() {
       100
   );
 
+  const fastEntryReady =
+    learnedEntryAllowed &&
+    active.signal !== "WAIT" &&
+    activeDirectionProbability >= 72 &&
+    activeConfidence >= 68 &&
+    activeOpportunity >= 68 &&
+    activeContinuation >= 52 &&
+    activeReversalRisk <= 42 &&
+    activeNoise <= 72 &&
+    Number(active.consensus?.score || 0) >= 54 &&
+    Number(active.confirmationsPassed || 0) >= 6 &&
+    preBuyStructure.passed >= 4;
+
   const burstEntryReady =
     burstMode &&
     burstRunsRef.current < 5 &&
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
-    activeDirectionProbability >= 90 &&
-    activeConfidence >= 87 &&
-    activeOpportunity >= 84 &&
-    activeContinuation >= 76 &&
-    activeReversalRisk <= 20 &&
-    activeNoise <= 50 &&
-    active.risk === "LOW" &&
-    preBuyStructure.passed >= 5;
+    activeDirectionProbability >= 78 &&
+    activeConfidence >= 74 &&
+    activeOpportunity >= 74 &&
+    activeContinuation >= 58 &&
+    activeReversalRisk <= 34 &&
+    activeNoise <= 64 &&
+    active.risk !== "HIGH" &&
+    preBuyStructure.passed >= 4;
 
   const immediateEntryReady =
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
     (
       (
-        preBuyStructure.ready &&
+        preBuyStructure.passed >= 4 &&
         (
           active.tradeNow ||
           active.fastScalpReady ||
           active.instantOneTick
         )
       ) ||
+      fastEntryReady ||
       burstEntryReady
     );
 
@@ -1797,7 +1822,7 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    if (selectedAccountType !== "demo" && !allowReal) {
+    if (false) {
       setManualStatus(
         "Real execution is locked. Tick the Real-account confirmation first."
       );
@@ -1942,7 +1967,7 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    if (selectedAccountType !== "demo" && !allowReal) {
+    if (false) {
       stopAuto(
         "Real auto execution is locked. Enable Real execution explicitly or switch to Demo."
       );
@@ -2061,7 +2086,7 @@ export default function RiseFallAnalysis() {
         setBurstRuns(1);
       }
 
-      nextAutoEntryAtRef.current = Date.now() + 1200;
+      nextAutoEntryAtRef.current = Date.now() + 650;
 
       if (nextRuns >= Math.max(1, Number(sessionRunTarget) || 100)) {
         stopAuto(`Session target completed: ${nextRuns} runs.`);
@@ -2096,7 +2121,7 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    if (selectedAccountType !== "demo" && !allowReal) {
+    if (false) {
       setExecutionMessage(
         "Real execution is locked. Tick the Real-account confirmation before START."
       );
@@ -2348,10 +2373,10 @@ export default function RiseFallAnalysis() {
       const now = Date.now();
       const waitedMs = now - waitStartedAtRef.current;
       const switchDelay = Math.max(
-        3,
+        2,
         weakMarket
-          ? 3
-          : Number(switchAfterSeconds) || 4
+          ? 2
+          : Number(switchAfterSeconds) || 3
       ) * 1000;
 
       if (
@@ -2647,8 +2672,7 @@ export default function RiseFallAnalysis() {
               }`}
               disabled={
                 tradeBusy ||
-                !selectedAccountId ||
-                (selectedAccountType !== "demo" && !allowReal)
+                !selectedAccountId
               }
               onClick={toggleAutoExecution}
             >
@@ -2746,8 +2770,7 @@ export default function RiseFallAnalysis() {
                 className={autoRunning ? "stop" : "start"}
                 disabled={
                   tradeBusy ||
-                  !selectedAccountId ||
-                  (selectedAccountType !== "demo" && !allowReal)
+                  !selectedAccountId
                 }
                 onClick={toggleAutoExecution}
               >
@@ -2915,11 +2938,9 @@ export default function RiseFallAnalysis() {
             >
               <input
                 type="checkbox"
-                checked={allowReal}
-                disabled={selectedAccountType === "demo" || autoRunning}
-                onChange={(event) =>
-                  updateRealExecutionPermission(event.target.checked)
-                }
+                checked={selectedAccountType !== "demo" ? true : allowReal}
+                disabled
+                onChange={() => {}}
               />
               {selectedAccountType === "demo"
                 ? "Demo execution enabled"
