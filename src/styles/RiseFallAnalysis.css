@@ -3060,3 +3060,288 @@
   }
 }
 
+
+
+/* V83 TRADINGVIEW STYLE CHART */
+.rfCandleSection {
+  padding: 12px !important;
+}
+
+.rfCandleSection > .rfPanelHead {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.rfCandleModes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.rfCandleModes button {
+  min-width: 54px;
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid #1b526b;
+  border-radius: 8px;
+  background: #041827;
+  color: #8db1c2;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.rfCandleModes button.active {
+  border-color: #24caa2;
+  background: #0a7f67;
+  color: #fff;
+}
+
+.rfTvChart {
+  overflow: hidden;
+  border: 1px solid #174b63;
+  border-radius: 12px;
+  background: #020f18;
+  box-shadow: inset 0 0 28px rgba(3, 15, 24, .8);
+}
+
+.rfTvToolbar {
+  min-height: 44px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #123b4e;
+  background: #041722;
+}
+
+.rfTvToolbar > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.rfTvToolbar strong {
+  color: #fff;
+  font-size: 12px;
+}
+
+.rfTvToolbar span {
+  color: #88a9b9;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rfTvToolbar button {
+  min-width: 38px;
+  height: 30px;
+  border: 1px solid #1b526b;
+  border-radius: 6px;
+  background: #071d2b;
+  color: #d8edf5;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.rfTvCanvas {
+  width: 100%;
+  height: clamp(390px, 56vh, 620px);
+  min-height: 390px;
+}
+
+.rfTvCanvas svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.rfTvBackground {
+  fill: #031722;
+}
+
+.rfTvGrid line {
+  stroke: #173746;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.rfTvCandle .wick {
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.rfTvCandle .body {
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.rfTvCandle.rise .wick,
+.rfTvCandle.rise .body {
+  stroke: #28d3a8;
+  fill: #12a882;
+}
+
+.rfTvCandle.fall .wick,
+.rfTvCandle.fall .body {
+  stroke: #ff6b83;
+  fill: #d94b64;
+}
+
+.rfTvCandle.live .body {
+  filter: drop-shadow(0 0 5px rgba(58, 227, 185, .8));
+}
+
+.rfTvEma {
+  fill: none;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.rfTvEma.ema20 {
+  stroke: #f6c350;
+}
+
+.rfTvEma.ema50 {
+  stroke: #50a6ff;
+}
+
+.rfTvLevel line {
+  stroke-width: 1.4;
+  stroke-dasharray: 7 6;
+  vector-effect: non-scaling-stroke;
+}
+
+.rfTvLevel text {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.rfTvLevel.support line,
+.rfTvLevel.support text {
+  stroke: #2fd6b0;
+  fill: #2fd6b0;
+}
+
+.rfTvLevel.resistance line,
+.rfTvLevel.resistance text {
+  stroke: #f2b74b;
+  fill: #f2b74b;
+}
+
+.rfTvCurrentPrice line {
+  stroke: #d9edf5;
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  opacity: .8;
+  vector-effect: non-scaling-stroke;
+}
+
+.rfTvCurrentPrice rect {
+  fill: #e7f3f7;
+}
+
+.rfTvCurrentPrice text {
+  fill: #07141c;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.rfTvCrosshair line {
+  stroke: #90aab7;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: .75;
+  vector-effect: non-scaling-stroke;
+}
+
+.rfTvPriceScale text,
+.rfTvTimeScale text {
+  fill: #839eac;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.rfTvFooter {
+  min-height: 42px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-top: 1px solid #123b4e;
+  background: #041722;
+}
+
+.rfTvFooter > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.rfTvFooter span,
+.rfTvFooter strong {
+  font-size: 11px;
+}
+
+.rfTvFooter strong {
+  color: #fff;
+}
+
+.rfTvFooter .rise { color: #30d9ae; }
+.rfTvFooter .fall { color: #ff6d86; }
+.rfTvFooter .ema20 { color: #f6c350; }
+.rfTvFooter .ema50 { color: #50a6ff; }
+
+.rfAutoExecution,
+.rfExecutionPanel,
+.rfVisibleAlert {
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .rfCandleSection {
+    padding: 7px !important;
+  }
+
+  .rfCandleSection > .rfPanelHead {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .rfCandleModes {
+    justify-content: flex-start;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 3px;
+  }
+
+  .rfCandleModes button {
+    min-width: 52px;
+    flex: 0 0 auto;
+  }
+
+  .rfTvToolbar {
+    align-items: flex-start;
+  }
+
+  .rfTvToolbar > div:first-child {
+    display: grid;
+    grid-template-columns: repeat(3, auto);
+    gap: 4px 8px;
+  }
+
+  .rfTvCanvas {
+    height: 430px;
+    min-height: 430px;
+  }
+
+  .rfTvFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

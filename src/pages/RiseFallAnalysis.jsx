@@ -371,6 +371,30 @@ function structureEntryChecklist({
   };
 }
 
+
+function emaSeries(candles = [], period = 20) {
+  const multiplier = 2 / (period + 1);
+  let previous = null;
+
+  return candles.map((candle) => {
+    const close = Number(candle?.close || 0);
+    previous =
+      previous === null
+        ? close
+        : close * multiplier + previous * (1 - multiplier);
+    return previous;
+  });
+}
+
+function chartTimeLabel(value) {
+  const date = new Date(Number(value || Date.now()));
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function CandleChart({
   candles = [],
   signal = "WAIT",
@@ -378,138 +402,337 @@ function CandleChart({
   probabilityFall = 0,
   structure = null,
 }) {
+  const [visibleCount, setVisibleCount] = useState(56);
+  const [hoverIndex, setHoverIndex] = useState(-1);
+
   if (!candles.length) {
-    return <div className="rfEmptyChart">Building candlestick history…</div>;
+    return (
+      <div className="rfEmptyChart">
+        Building professional candlestick history…
+      </div>
+    );
   }
 
-  const width = 1200;
-  const height = 390;
-  const padding = 34;
-  const values = candles.flatMap((item) => [item.high, item.low]);
-  const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
-  const range = Math.max(0.000001, maximum - minimum);
-  const step = (width - padding * 2) / Math.max(1, candles.length);
-  const bodyWidth = Math.max(3, Math.min(14, step * 0.55));
+  const displayed = candles.slice(-Math.max(18, visibleCount));
+  const width = 1280;
+  const height = 520;
+  const left = 22;
+  const right = 104;
+  const top = 24;
+  const bottom = 48;
+  const chartWidth = width - left - right;
+  const chartHeight = height - top - bottom;
 
+  const ema20 = emaSeries(displayed, 20);
+  const ema50 = emaSeries(displayed, 50);
+
+  const rawValues = displayed.flatMap((item, index) => [
+    Number(item.high || 0),
+    Number(item.low || 0),
+    Number(ema20[index] || 0),
+    Number(ema50[index] || 0),
+  ]);
+
+  const rawMin = Math.min(...rawValues);
+  const rawMax = Math.max(...rawValues);
+  const rawRange = Math.max(0.000001, rawMax - rawMin);
+  const minimum = rawMin - rawRange * 0.08;
+  const maximum = rawMax + rawRange * 0.08;
+  const range = Math.max(0.000001, maximum - minimum);
+
+  const xStep = chartWidth / Math.max(1, displayed.length);
+  const bodyWidth = Math.max(4, Math.min(15, xStep * 0.58));
+
+  const x = (index) => left + index * xStep + xStep / 2;
   const y = (value) =>
-    padding + (maximum - value) / range * (height - padding * 2);
+    top + ((maximum - Number(value || 0)) / range) * chartHeight;
+
+  const priceTicks = Array.from({ length: 7 }, (_, index) => {
+    const ratio = index / 6;
+    return maximum - range * ratio;
+  });
+
+  const timeIndexes = Array.from(
+    new Set([
+      0,
+      Math.floor((displayed.length - 1) * 0.25),
+      Math.floor((displayed.length - 1) * 0.5),
+      Math.floor((displayed.length - 1) * 0.75),
+      displayed.length - 1,
+    ])
+  ).filter((index) => index >= 0);
+
+  const emaPoints = (series) =>
+    series
+      .map((value, index) => \`\${x(index)},\${y(value)}\`)
+      .join(" ");
+
+  const current = displayed.at(-1);
+  const currentPrice = Number(current?.close || 0);
+  const currentY = y(currentPrice);
+  const hovered =
+    hoverIndex >= 0 && hoverIndex < displayed.length
+      ? displayed[hoverIndex]
+      : current;
+  const hoveredIndex =
+    hoverIndex >= 0 && hoverIndex < displayed.length
+      ? hoverIndex
+      : displayed.length - 1;
 
   const supportY =
-    structure?.support > 0 ? y(structure.support) : null;
+    Number(structure?.support || 0) > 0 ? y(structure.support) : null;
   const resistanceY =
-    structure?.resistance > 0 ? y(structure.resistance) : null;
+    Number(structure?.resistance || 0) > 0
+      ? y(structure.resistance)
+      : null;
 
   return (
-    <div className={`rfCandleChart ${signalClass(signal)}`}>
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-        <g className="rfCandleGrid">
-          {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
-            <line
-              key={ratio}
-              x1={padding}
-              x2={width - padding}
-              y1={height * ratio}
-              y2={height * ratio}
-            />
-          ))}
-        </g>
+    <div className={\`rfTvChart \${signalClass(signal)}\`}>
+      <div className="rfTvToolbar">
+        <div>
+          <strong>{chartTimeLabel(hovered?.time)}</strong>
+          <span>O {num(hovered?.open, 5)}</span>
+          <span>H {num(hovered?.high, 5)}</span>
+          <span>L {num(hovered?.low, 5)}</span>
+          <span>C {num(hovered?.close, 5)}</span>
+        </div>
 
-        {supportY !== null ? (
-          <g className="rfStructureLine support">
-            <line
-              x1={padding}
-              x2={width - padding}
-              y1={supportY}
-              y2={supportY}
-            />
-            <text x={padding + 8} y={supportY - 6}>
-              SUPPORT {Number(structure.support).toFixed(6)}
-            </text>
-          </g>
-        ) : null}
+        <div>
+          <button
+            type="button"
+            onClick={() =>
+              setVisibleCount((value) => Math.max(18, value - 10))
+            }
+          >
+            ＋
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setVisibleCount((value) =>
+                Math.min(Math.max(candles.length, 18), value + 10)
+              )
+            }
+          >
+            －
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setVisibleCount(56);
+              setHoverIndex(-1);
+            }}
+          >
+            Reset
+          </button>
+        </div>
+      </div>
 
-        {resistanceY !== null ? (
-          <g className="rfStructureLine resistance">
-            <line
-              x1={padding}
-              x2={width - padding}
-              y1={resistanceY}
-              y2={resistanceY}
-            />
-            <text x={padding + 8} y={resistanceY - 6}>
-              RESISTANCE {Number(structure.resistance).toFixed(6)}
-            </text>
-          </g>
-        ) : null}
+      <div className="rfTvCanvas">
+        <svg
+          viewBox={\`0 0 \${width} \${height}\`}
+          preserveAspectRatio="none"
+          onMouseLeave={() => setHoverIndex(-1)}
+          onMouseMove={(event) => {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const localX =
+              ((event.clientX - bounds.left) / bounds.width) * width;
+            const index = Math.round(
+              (localX - left - xStep / 2) / xStep
+            );
+            setHoverIndex(
+              Math.max(0, Math.min(displayed.length - 1, index))
+            );
+          }}
+        >
+          <rect
+            x={left}
+            y={top}
+            width={chartWidth}
+            height={chartHeight}
+            className="rfTvBackground"
+          />
 
-        {candles.map((candle, index) => {
-          const x = padding + index * step + step / 2;
-          const rising = candle.close >= candle.open;
-          const bodyTop = y(Math.max(candle.open, candle.close));
-          const bodyBottom = y(Math.min(candle.open, candle.close));
-          const bodyHeight = Math.max(2, bodyBottom - bodyTop);
-          const isLive = index === candles.length - 1;
-
-          return (
-            <g
-              key={`${candle.time}-${index}`}
-              className={`${rising ? "rise" : "fall"} ${isLive ? "live" : "closed"}`}
-            >
+          <g className="rfTvGrid">
+            {priceTicks.map((price) => (
               <line
-                x1={x}
-                x2={x}
-                y1={y(candle.high)}
-                y2={y(candle.low)}
-                className="wick"
+                key={price}
+                x1={left}
+                x2={left + chartWidth}
+                y1={y(price)}
+                y2={y(price)}
               />
-              <rect
-                x={x - bodyWidth / 2}
-                y={bodyTop}
-                width={bodyWidth}
-                height={bodyHeight}
-                rx="1"
-                className="body"
-              />
-            </g>
-          );
-        })}
+            ))}
 
-        {signal !== "WAIT" ? (
-          <g className={`rfChartSignalMarker ${signalClass(signal)}`}>
+            {timeIndexes.map((index) => (
+              <line
+                key={index}
+                x1={x(index)}
+                x2={x(index)}
+                y1={top}
+                y2={top + chartHeight}
+              />
+            ))}
+          </g>
+
+          {supportY !== null ? (
+            <g className="rfTvLevel support">
+              <line
+                x1={left}
+                x2={left + chartWidth}
+                y1={supportY}
+                y2={supportY}
+              />
+              <text x={left + 9} y={supportY - 7}>
+                SUPPORT
+              </text>
+            </g>
+          ) : null}
+
+          {resistanceY !== null ? (
+            <g className="rfTvLevel resistance">
+              <line
+                x1={left}
+                x2={left + chartWidth}
+                y1={resistanceY}
+                y2={resistanceY}
+              />
+              <text x={left + 9} y={resistanceY - 7}>
+                RESISTANCE
+              </text>
+            </g>
+          ) : null}
+
+          <polyline
+            points={emaPoints(ema50)}
+            className="rfTvEma ema50"
+          />
+          <polyline
+            points={emaPoints(ema20)}
+            className="rfTvEma ema20"
+          />
+
+          {displayed.map((candle, index) => {
+            const rising =
+              Number(candle.close) >= Number(candle.open);
+            const candleX = x(index);
+            const bodyTop = y(
+              Math.max(Number(candle.open), Number(candle.close))
+            );
+            const bodyBottom = y(
+              Math.min(Number(candle.open), Number(candle.close))
+            );
+            const bodyHeight = Math.max(2, bodyBottom - bodyTop);
+            const live = index === displayed.length - 1;
+
+            return (
+              <g
+                key={\`\${candle.time}-\${index}\`}
+                className={\`rfTvCandle \${
+                  rising ? "rise" : "fall"
+                } \${live ? "live" : ""}\`}
+              >
+                <line
+                  x1={candleX}
+                  x2={candleX}
+                  y1={y(candle.high)}
+                  y2={y(candle.low)}
+                  className="wick"
+                />
+                <rect
+                  x={candleX - bodyWidth / 2}
+                  y={bodyTop}
+                  width={bodyWidth}
+                  height={bodyHeight}
+                  className="body"
+                />
+              </g>
+            );
+          })}
+
+          <g className="rfTvCurrentPrice">
             <line
-              x1={padding}
-              x2={width - padding}
-              y1={signal === "RISE" ? height * 0.18 : height * 0.82}
-              y2={signal === "RISE" ? height * 0.18 : height * 0.82}
+              x1={left}
+              x2={left + chartWidth}
+              y1={currentY}
+              y2={currentY}
+            />
+            <rect
+              x={left + chartWidth + 4}
+              y={currentY - 14}
+              width={96}
+              height={28}
+              rx="4"
             />
             <text
-              x={width - padding - 170}
-              y={signal === "RISE" ? height * 0.15 : height * 0.78}
+              x={left + chartWidth + 12}
+              y={currentY + 5}
             >
-              {signal === "RISE"
-                ? `RISE ZONE ${Number(probabilityRise).toFixed(1)}%`
-                : `FALL ZONE ${Number(probabilityFall).toFixed(1)}%`}
+              {num(currentPrice, 5)}
             </text>
           </g>
-        ) : null}
 
-        {structure?.breakout !== "NONE" ? (
-          <g className={`rfBreakoutBadge ${structure.breakout.toLowerCase()}`}>
-            <rect x={width - 260} y={24} width={220} height={44} rx="8" />
-            <text x={width - 245} y={51}>
-              {structure.breakout} BREAKOUT · {Number(structure.breakoutStrength).toFixed(1)}%
-            </text>
+          {hoverIndex >= 0 ? (
+            <g className="rfTvCrosshair">
+              <line
+                x1={x(hoveredIndex)}
+                x2={x(hoveredIndex)}
+                y1={top}
+                y2={top + chartHeight}
+              />
+              <line
+                x1={left}
+                x2={left + chartWidth}
+                y1={y(hovered?.close)}
+                y2={y(hovered?.close)}
+              />
+            </g>
+          ) : null}
+
+          <g className="rfTvPriceScale">
+            {priceTicks.map((price) => (
+              <text
+                key={price}
+                x={left + chartWidth + 10}
+                y={y(price) + 4}
+              >
+                {num(price, 5)}
+              </text>
+            ))}
           </g>
-        ) : null}
-      </svg>
 
-      <div className="rfCandleLegend">
-        <span className="rise">RISE candle</span>
-        <span className="fall">FALL candle</span>
-        <span className="closed">Closed candles are frozen</span>
-        <span className="live">Only last candle moves</span>
-        <strong>{num(candles.at(-1)?.close, 6)}</strong>
+          <g className="rfTvTimeScale">
+            {timeIndexes.map((index) => (
+              <text
+                key={index}
+                x={x(index)}
+                y={height - 15}
+                textAnchor="middle"
+              >
+                {chartTimeLabel(displayed[index]?.time)}
+              </text>
+            ))}
+          </g>
+        </svg>
+      </div>
+
+      <div className="rfTvFooter">
+        <div>
+          <span className="rise">Bull candle</span>
+          <span className="fall">Bear candle</span>
+          <span className="ema20">EMA 20</span>
+          <span className="ema50">EMA 50</span>
+        </div>
+
+        <div>
+          <strong>{signal}</strong>
+          <span>
+            Rise {Number(probabilityRise || 0).toFixed(1)}%
+          </span>
+          <span>
+            Fall {Number(probabilityFall || 0).toFixed(1)}%
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -2816,8 +3039,8 @@ export default function RiseFallAnalysis() {
         <section className="rfCandleSection">
           <div className="rfPanelHead">
             <div>
-              <small>PRO CANDLESTICK CHART</small>
-              <h2>Persistent Rise/Fall price action</h2>
+              <small>TRADINGVIEW-STYLE CANDLESTICK CHART</small>
+              <h2>Professional market price action</h2>
             </div>
 
             <div className="rfCandleModes">
