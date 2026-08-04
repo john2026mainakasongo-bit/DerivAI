@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
@@ -60,7 +60,7 @@ function number(value, digits = 4) {
   const parsed = Number(value);
   return Number.isFinite(parsed)
     ? parsed.toFixed(digits)
-    : "—";
+    : "â€”";
 }
 
 function nextAvailableMarket(markets, symbol, blockedMarkets) {
@@ -384,6 +384,10 @@ export default function HigherHighBot() {
     (1 - calibratedProbability) *
       Number(settings.assumedLossAmount);
 
+  const elapsedScanSeconds = Math.max(
+    0,
+    (Date.now() - Number(scanCycle.startedAt || Date.now())) / 1000
+  );
   const currentVotes = Number(
     analysis.metrics?.votePasses || 0
   );
@@ -446,10 +450,6 @@ export default function HigherHighBot() {
         Number(settings.recoveryProbabilityMinimum)
     );
 
-  const elapsedScanSeconds = Math.max(
-    0,
-    (Date.now() - Number(scanCycle.startedAt || Date.now())) / 1000
-  );
 
   const fallbackWindow =
     elapsedScanSeconds >= Number(settings.fallbackStartSeconds);
@@ -1277,7 +1277,7 @@ export default function HigherHighBot() {
       <main className="mainContent hhPage">
         <Topbar
           title="Higher High AI PRO V9"
-          subtitle="Fixed probability · Tier A/B/C entries · hard risk block · CALL execution"
+          subtitle="Fixed probability Â· Tier A/B/C entries Â· hard risk block Â· CALL execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1741,19 +1741,19 @@ export default function HigherHighBot() {
           <article className={activeTier === "A" ? "active" : ""}>
             <span>Tier A</span>
             <strong>
-              {settings.tierAProbability}% P · {settings.tierAScore}% score · {settings.tierAVotes} votes
+              {settings.tierAProbability}% P Â· {settings.tierAScore}% score Â· {settings.tierAVotes} votes
             </strong>
           </article>
           <article className={activeTier === "B" ? "active" : ""}>
             <span>Tier B after {settings.tierBStartSeconds}s</span>
             <strong>
-              {settings.tierBProbability}% P · {settings.tierBScore}% score · {settings.tierBVotes} votes
+              {settings.tierBProbability}% P Â· {settings.tierBScore}% score Â· {settings.tierBVotes} votes
             </strong>
           </article>
           <article className={activeTier === "C" ? "active" : ""}>
             <span>Tier C after {settings.tierCStartSeconds}s</span>
             <strong>
-              {settings.tierCProbability}% P · {settings.tierCScore}% score · {settings.tierCVotes} votes
+              {settings.tierCProbability}% P Â· {settings.tierCScore}% score Â· {settings.tierCVotes} votes
             </strong>
           </article>
         </section>
@@ -1915,14 +1915,14 @@ export default function HigherHighBot() {
                         <strong>{item.market}</strong>
                         <small>
                           {item.recoveryTrade
-                            ? "RECOVERY · "
+                            ? "RECOVERY Â· "
                             : item.fallbackTrade
-                            ? "2-MIN FALLBACK · "
+                            ? "2-MIN FALLBACK Â· "
                             : ""}
-                          {snapshot.activeTier ? `TIER ${snapshot.activeTier} · ` : ""}
-                          C {item.confidence}% · P{" "}
-                          {item.probability}% · CP{" "}
-                          {number(snapshot.calibratedProbability, 1)}% · TF{" "}
+                          {snapshot.activeTier ? `TIER ${snapshot.activeTier} Â· ` : ""}
+                          C {item.confidence}% Â· P{" "}
+                          {item.probability}% Â· CP{" "}
+                          {number(snapshot.calibratedProbability, 1)}% Â· TF{" "}
                           {snapshot.timeframeAgreement || 0}/3
                         </small>
                       </div>
@@ -1930,7 +1930,7 @@ export default function HigherHighBot() {
                       <div>
                         <span>
                           Ent{" "}
-                          {number(snapshot.entropy18, 2)} ·
+                          {number(snapshot.entropy18, 2)} Â·
                           Eff{" "}
                           {number(snapshot.efficiency28, 2)}
                         </span>
@@ -1941,8 +1941,8 @@ export default function HigherHighBot() {
                               100,
                             0
                           )}
-                          % · Spike{" "}
-                          {number(snapshot.spikeRatio, 2)} · EV{" "}
+                          % Â· Spike{" "}
+                          {number(snapshot.spikeRatio, 2)} Â· EV{" "}
                           {number(snapshot.expectedValue, 3)}
                         </small>
                         {item.lossCause ? (
@@ -1982,3 +1982,4 @@ export default function HigherHighBot() {
     </div>
   );
 }
+
