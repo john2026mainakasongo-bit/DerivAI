@@ -1,56 +1,18 @@
 import { Link } from "react-router-dom";
-import "./BotDashboardCatalog.css";
+import "../styles/BotDashboardCatalog.css";
 
 const bots = [
-  {
-    name: "Target 10 Bot",
-    route: "/target-10-bot",
-    mode: "Demo + Real",
-    description:
-      "Staged growth strategy with no martingale, one open trade and stop after one loss.",
-    status: "ACTIVE",
-  },
-  {
-    name: "Fast Digit Row Engine",
-    route: "/bot",
-    mode: "Auto Bot",
-    description:
-      "Digit-row analysis for Over/Under, Even/Odd and Differs contract ranking.",
-    status: "ACTIVE",
-  },
-  {
-    name: "Over/Under Quick Trader",
-    route: "/over-under-analysis",
-    mode: "Manual + Auto",
-    description:
-      "Dedicated Over and Under buttons with live probability, transition and digit flow.",
-    status: "ACTIVE",
-  },
+  { tag:"NEW • RISE/FALL", title:"MetaBinary Quantum AI", text:"Sharp-entry AI, smart seconds, auto market switching and two active trade slots.", path:"/quantum-ai-bot", featured:true },
+  { tag:"AUTO", title:"MetaBinary Auto Bot", text:"Multi-contract automated analysis and execution.", path:"/bot" },
+  { tag:"TARGET", title:"Target 10 Bot", text:"Target-based automated trading session.", path:"/target-10-bot" },
+  { tag:"ONE SHOT", title:"Differs One Shot", text:"Focused digit differs scanner and execution.", path:"/differs-one-shot" },
+  { tag:"ANALYSIS", title:"Rise/Fall Analysis", text:"Professional Rise/Fall market analysis center.", path:"/rise-fall-analysis" },
+  { tag:"ANALYSIS", title:"Over/Under Analysis", text:"Over/Under digit analysis and manual execution.", path:"/over-under-analysis" },
 ];
 
-export default function BotDashboardCatalog() {
-  return (
-    <section className="botDashboardCatalog">
-      <div className="botDashboardHeader">
-        <div>
-          <small>MY BOTS</small>
-          <h2>Trading bots</h2>
-        </div>
-        <span>{bots.length} bots</span>
-      </div>
-
-      <div className="botDashboardGrid">
-        {bots.map((bot) => (
-          <Link key={bot.route} to={bot.route} className="botDashboardCard">
-            <div>
-              <small>{bot.mode}</small>
-              <strong>{bot.name}</strong>
-              <p>{bot.description}</p>
-            </div>
-            <span>{bot.status}</span>
-          </Link>
-        ))}
-      </div>
-    </section>
-  );
+export default function BotDashboardCatalog(){
+  return <section className="botDashboardCatalog">
+    <header className="botDashboardHeader"><div><small>BOT COMMAND CENTER</small><h2>MetaBinary Bots</h2></div><span>{bots.length} tools</span></header>
+    <div className="botDashboardGrid">{bots.map(bot=><Link key={bot.path} to={bot.path} className={`botDashboardCard ${bot.featured?"quantumFeatured":""}`}><div><small>{bot.tag}</small><strong>{bot.title}</strong><p>{bot.text}</p></div><span>OPEN</span></Link>)}</div>
+  </section>;
 }
