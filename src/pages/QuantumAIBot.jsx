@@ -2,8 +2,9 @@
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
+import QuantumTradingChart from "../components/QuantumTradingChart";
 import useDerivTicks from "../hooks/useDerivTicks";
-import { analyzeQuantumRiseFall } from "../analysis/quantumRiseFallEngine";
+import { analyzeQuantumFiveAI } from "../analysis/quantumFiveAIEngine";
 import "../styles/QuantumAIBot.css";
 
 const INITIAL_STATS = {
@@ -148,7 +149,7 @@ export default function QuantumAIBot() {
 
   const analysis = useMemo(
     () =>
-      analyzeQuantumRiseFall(prices, {
+      analyzeQuantumFiveAI(prices, {
         minConfidence: settings.minConfidence,
         maxNoise: settings.maxNoise,
         maxReversalRisk: settings.maxReversalRisk,
@@ -728,6 +729,8 @@ export default function QuantumAIBot() {
           <article><span>Price</span><strong>{currentPrice ?? "â€”"}</strong></article>
         </section>
 
+        <QuantumTradingChart prices={prices} analysis={analysis} />
+
         <section className="quantumToolsPanel">
           <header>
             <div>
@@ -878,6 +881,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 
