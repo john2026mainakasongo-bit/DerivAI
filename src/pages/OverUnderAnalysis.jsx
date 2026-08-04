@@ -731,6 +731,8 @@ export default function OverUnderAnalysis() {
         stopAuto("Hard stop: 2 consecutive losses.");
       } else if (runningRef.current && autoSwitch) {
         void switchMarket("Loss settled; testing a different volatility market.");
+      } else if (runningRef.current && autoSwitch) {
+        void switchMarket("Loss settled; testing a different volatility market.");
       }
     }
   }, [openContracts]);
