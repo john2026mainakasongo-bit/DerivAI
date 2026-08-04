@@ -1229,7 +1229,7 @@ export default function QuantumAIBot() {
           best.symbol !== symbol
         ) {
           setMessage(
-            `60s scan complete. Re-checking best recent market ${best.label} at ${Number(
+            `${settings.scanCycleSeconds}s scan complete. Re-checking best recent market ${best.label} at ${Number(
               best.confidence || 0
             ).toFixed(1)}% learned confidence.`
           );
@@ -1524,7 +1524,6 @@ export default function QuantumAIBot() {
   }
 
 
-
   return (
     <div className="appShell quantumShell">
       <Sidebar />
@@ -1544,8 +1543,8 @@ export default function QuantumAIBot() {
             <h1>MetaBinary Quantum AI V14</h1>
             <p>
               Ranks markets continuously, adapts the confidence gate,
-              explains settled outcomes and recovers from trade
-              starvation without Martingale.
+              explains settled outcomes and uses a capped two-step
+              recovery sequence after a confirmed loss.
             </p>
           </div>
           <div className="quantumHeroStatus">
@@ -2029,9 +2028,10 @@ export default function QuantumAIBot() {
                   <strong>{trade.market}</strong>
                   <span>
                     {trade.recoveryTrade
-                      ? `RECOVERY ${trade.recoveryAttempt}`
+                      ? `RECOVERY ${trade.recoveryAttempt} · X${trade.recoveryMultiplier || 2}`
                       : "NORMAL"}{" "}
-                    · {trade.direction}
+                    · {trade.direction} ·{" "}
+                    {Number(trade.stake || 0).toFixed(2)} USD
                   </span>
                 </div>
                 <div>
@@ -2090,15 +2090,12 @@ export default function QuantumAIBot() {
 
         <p className="quantumRiskNote">
           V14 learns from recent settled trades, ranks markets and diagnoses outcomes,
-          but past performance cannot guarantee future wins.
+          and uses capped recovery, but past performance cannot guarantee future wins.
           Test on Demo before Real execution.
         </p>
       </main>
     </div>
   );
 }
-
-
-
 
 
