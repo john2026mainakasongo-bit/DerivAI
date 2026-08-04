@@ -115,6 +115,9 @@ export default function QuantumAIBot() {
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
+    oneLossCooldownSeconds: 20,
+    repeatLossBlockSeconds: 90,
+    marketLossBlockSeconds: 60,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -125,6 +128,7 @@ export default function QuantumAIBot() {
   const processedContractsRef = useRef(new Set());
   const buyingRef = useRef(false);
   const autoConnectStartedRef = useRef(false);
+  const adaptiveMarketBlockRef = useRef(new Map());
 
   const connecting = status === "CONNECTING" || loadingMarket;
 
@@ -152,6 +156,156 @@ export default function QuantumAIBot() {
     [prices, settings.minConfidence, settings.maxNoise, settings.maxReversalRisk]
   );
 
+  const adaptiveLossGuard = useMemo(() => {
+    const history = Array.isArray(stats.history) ? stats.history : [];
+    const now = Date.now();
+
+    const symbolHistory = history
+      .filter((item) => item.symbol === symbol)
+      .sort((a, b) => Number(b.settledAt || 0) - Number(a.settledAt || 0));
+
+    const recent = symbolHistory.slice(0, 8);
+    const last = recent[0] || null;
+
+    let sameDirectionLossStreak = 0;
+    let marketLossStreak = 0;
+    let sessionLossStreak = 0;
+
+    for (const item of history) {
+      if (item.result !== "LOST") break;
+      sessionLossStreak += 1;
+    }
+
+    for (const item of recent) {
+      if (item.result !== "LOST") break;
+      marketLossStreak += 1;
+    }
+
+    if (last?.result === "LOST") {
+      for (const item of recent) {
+        if (item.result !== "LOST" || item.direction !== last.direction) break;
+        sameDirectionLossStreak += 1;
+      }
+    }
+
+    const lastLossAgeSeconds =
+      last?.result === "LOST"
+        ? Math.max(0, (now - Number(last.settledAt || now)) / 1000)
+        : Number.POSITIVE_INFINITY;
+
+    const candidate = analysis.candidate || analysis.decision || "WAIT";
+    const sameAsLastLoss =
+      last?.result === "LOST" && candidate === last.direction;
+
+    const oppositeOfLastLoss =
+      last?.result === "LOST" &&
+      candidate !== "WAIT" &&
+      candidate !== last.direction;
+
+    const voteConsensus = Number(analysis.metrics?.voteConsensus || 0);
+    const consistency = Number(analysis.consistency || 0);
+    const fullTimeframePassed = Boolean(
+      (analysis.checks || []).find((item) => item.label === "Full timeframe")?.passed
+    );
+
+    const oppositeConfirmed =
+      oppositeOfLastLoss &&
+      analysis.entryMode === "STRONG" &&
+      Number(analysis.confidence || 0) >= Number(settings.minConfidence || 72) + 6 &&
+      Number(analysis.noiseScore || 100) <= Math.max(20, Number(settings.maxNoise || 66) - 8) &&
+      Number(analysis.reversalRisk || 100) <= Math.max(15, Number(settings.maxReversalRisk || 60) - 10) &&
+      voteConsensus >= 68 &&
+      consistency >= 35 &&
+      fullTimeframePassed;
+
+    const oneLossCooldown =
+      sameAsLastLoss &&
+      sameDirectionLossStreak === 1 &&
+      lastLossAgeSeconds < Number(settings.oneLossCooldownSeconds || 20);
+
+    const repeatedDirectionBlock =
+      sameAsLastLoss &&
+      sameDirectionLossStreak >= 2 &&
+      lastLossAgeSeconds < Number(settings.repeatLossBlockSeconds || 90);
+
+    const marketBlockedUntil = Number(adaptiveMarketBlockRef.current.get(symbol) || 0);
+    const marketBlocked = marketLossStreak >= 2 && now < marketBlockedUntil;
+
+    const sessionCooldown = sessionLossStreak >= 3 && lastLossAgeSeconds < 120;
+
+    let reason = "Loss memory clear. Normal confirmed-entry rules apply.";
+
+    if (sessionCooldown) {
+      reason = "Three consecutive session losses: scanner cooling down for 120 seconds.";
+    } else if (marketBlocked) {
+      reason = "This market is temporarily blocked after repeated losses.";
+    } else if (repeatedDirectionBlock) {
+      reason = `${candidate} is blocked after repeated same-direction losses. Switching market.`;
+    } else if (oneLossCooldown) {
+      reason = `${candidate} lost recently. Waiting for a fresh setup instead of repeating immediately.`;
+    } else if (oppositeOfLastLoss && !oppositeConfirmed) {
+      reason = `Opposite ${candidate} is not accepted automatically; strong independent confirmation is required.`;
+    } else if (oppositeConfirmed) {
+      reason = `Opposite ${candidate} passed strong independent confirmation after the previous loss.`;
+    }
+
+    const ready =
+      analysis.ready &&
+      !sessionCooldown &&
+      !marketBlocked &&
+      !oneLossCooldown &&
+      !repeatedDirectionBlock &&
+      (!oppositeOfLastLoss || oppositeConfirmed);
+
+    return {
+      ready,
+      reason,
+      candidate,
+      lastLossDirection: last?.result === "LOST" ? last.direction : "—",
+      sameDirectionLossStreak,
+      marketLossStreak,
+      sessionLossStreak,
+      oppositeConfirmed,
+      shouldSwitchMarket: repeatedDirectionBlock || marketBlocked || sessionCooldown,
+    };
+  }, [
+    stats.history,
+    symbol,
+    analysis.ready,
+    analysis.candidate,
+    analysis.decision,
+    analysis.entryMode,
+    analysis.confidence,
+    analysis.noiseScore,
+    analysis.reversalRisk,
+    analysis.consistency,
+    analysis.metrics?.voteConsensus,
+    analysis.checks,
+    settings.minConfidence,
+    settings.maxNoise,
+    settings.maxReversalRisk,
+    settings.oneLossCooldownSeconds,
+    settings.repeatLossBlockSeconds,
+  ]);
+
+  useEffect(() => {
+    const symbolHistory = (Array.isArray(stats.history) ? stats.history : [])
+      .filter((item) => item.symbol === symbol)
+      .sort((a, b) => Number(b.settledAt || 0) - Number(a.settledAt || 0));
+
+    let losses = 0;
+    for (const item of symbolHistory) {
+      if (item.result !== "LOST") break;
+      losses += 1;
+    }
+
+    if (losses >= 2 && symbol) {
+      adaptiveMarketBlockRef.current.set(
+        symbol,
+        Date.now() + Number(settings.marketLossBlockSeconds || 60) * 1000
+      );
+    }
+  }, [stats.history, symbol, settings.marketLossBlockSeconds]);
   useEffect(() => {
     if (!symbol) return;
     setMarketScores((current) => ({
@@ -289,8 +443,20 @@ export default function QuantumAIBot() {
 
   useEffect(() => {
     if (!running || loadingMarket || activeTrades.length > 0 || markets.length < 2) return;
-    if (analysis.ready) {
+    if (adaptiveLossGuard.ready) {
       scanStartedAtRef.current = Date.now();
+      return;
+    }
+
+    if (adaptiveLossGuard.shouldSwitchMarket) {
+      const index = Math.max(0, markets.findIndex((item) => item.id === symbol));
+      const next = markets[(index + 1) % markets.length];
+
+      if (next?.id && next.id !== symbol) {
+        setMessage(adaptiveLossGuard.reason);
+        scanStartedAtRef.current = Date.now();
+        void changeSymbol(next.id);
+      }
       return;
     }
 
@@ -308,10 +474,32 @@ export default function QuantumAIBot() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [running, loadingMarket, activeTrades.length, markets, symbol, analysis.ready, settings.marketSwitchSeconds, changeSymbol]);
+  }, [
+    running,
+    loadingMarket,
+    activeTrades.length,
+    markets,
+    symbol,
+    analysis.ready,
+    adaptiveLossGuard.ready,
+    adaptiveLossGuard.reason,
+    adaptiveLossGuard.shouldSwitchMarket,
+    settings.marketSwitchSeconds,
+    changeSymbol,
+  ]);
 
   useEffect(() => {
-    if (!running || !analysis.ready || buyingRef.current || tradeBusy) return;
+    if (
+      !running ||
+      !adaptiveLossGuard.ready ||
+      buyingRef.current ||
+      tradeBusy
+    ) {
+      if (running && analysis.ready && !adaptiveLossGuard.ready) {
+        setMessage(adaptiveLossGuard.reason);
+      }
+      return;
+    }
     if (!authenticatedFeed) {
       setMessage("Choose a Deriv Demo or Real account and reconnect first.");
       return;
@@ -325,7 +513,7 @@ export default function QuantumAIBot() {
 
     void (async () => {
       try {
-        const direction = analysis.decision;
+        const direction = adaptiveLossGuard.candidate;
         setMessage(
           `${direction} sharp entry found at ${analysis.confidence.toFixed(1)}%. Buying ${analysis.duration}s...`
         );
@@ -383,7 +571,21 @@ export default function QuantumAIBot() {
     })();
 
 
-  }, [running, analysis, authenticatedFeed, activeTrades.length, settings, tradeBusy, placeTrade, symbol, market?.label, currentPrice]);
+  }, [
+    running,
+    analysis,
+    adaptiveLossGuard.ready,
+    adaptiveLossGuard.reason,
+    adaptiveLossGuard.candidate,
+    authenticatedFeed,
+    activeTrades.length,
+    settings,
+    tradeBusy,
+    placeTrade,
+    symbol,
+    market?.label,
+    currentPrice,
+  ]);
 
   async function startBot() {
     if (!connected) {
@@ -551,6 +753,25 @@ export default function QuantumAIBot() {
           </div>
         </section>
 
+        <section className={`quantumLossGuard ${adaptiveLossGuard.ready ? "ready" : "blocked"}`}>
+          <header>
+            <div>
+              <small>ADAPTIVE LOSS MEMORY</small>
+              <h3>Loss-aware market protection</h3>
+            </div>
+            <strong>{adaptiveLossGuard.ready ? "ENTRY ALLOWED" : "FILTERING"}</strong>
+          </header>
+
+          <div>
+            <article><span>Last losing side</span><strong>{adaptiveLossGuard.lastLossDirection}</strong></article>
+            <article><span>Same-side loss streak</span><strong>{adaptiveLossGuard.sameDirectionLossStreak}</strong></article>
+            <article><span>Market loss streak</span><strong>{adaptiveLossGuard.marketLossStreak}</strong></article>
+            <article><span>Session loss streak</span><strong>{adaptiveLossGuard.sessionLossStreak}</strong></article>
+            <article><span>Opposite confirmation</span><strong>{adaptiveLossGuard.oppositeConfirmed ? "STRONG PASS" : "NOT CONFIRMED"}</strong></article>
+          </div>
+
+          <p>{adaptiveLossGuard.reason}</p>
+        </section>
         <section className="quantumMessage">
           <strong>{message}</strong>
           {(tradeError || statusDetail || !authenticatedFeed) && (
@@ -620,6 +841,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 

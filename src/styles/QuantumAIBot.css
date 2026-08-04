@@ -253,3 +253,57 @@ html:has(.quantumShell),
 .quantumGateGrid article.failed strong { color:#ffd160; }
 @media(max-width:900px){.quantumToolGrid{grid-template-columns:repeat(3,minmax(0,1fr))}.quantumGateGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:520px){.quantumToolGrid,.quantumGateGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* V10 adaptive loss-memory guard */
+.quantumLossGuard {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #775f19;
+  border-radius: 12px;
+  background: #092235;
+}
+.quantumLossGuard.ready { border-color: #168f72; }
+.quantumLossGuard header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.quantumLossGuard small,
+.quantumLossGuard span {
+  color: #42dfba;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+.quantumLossGuard h3 { margin: 3px 0 0; }
+.quantumLossGuard header > strong { color: #f2c85b; }
+.quantumLossGuard.ready header > strong { color: #35deb0; }
+.quantumLossGuard > div {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+.quantumLossGuard article {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+.quantumLossGuard article strong {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.quantumLossGuard p {
+  margin: 8px 0 0;
+  color: #9fc2d1;
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .quantumLossGuard > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
