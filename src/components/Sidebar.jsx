@@ -1,17 +1,18 @@
-import { NavLink } from "react-router-dom";
+﻿import { NavLink } from "react-router-dom";
 
 const links = [
-  { to: "/dashboard", label: "Dashboard", icon: "⌂" },
-  { to: "/analysis", label: "Analysis", icon: "◉" },
+  { to: "/dashboard", label: "Dashboard", icon: "âŒ‚" },
+  { to: "/analysis", label: "Analysis", icon: "â—‰" },
   {
     to: "/rise-fall-analysis",
     label: "Rise/Fall",
-    icon: "↗",
+    icon: "â†—",
   },
-  { to: "/over-under-analysis", label: "Over/Under", icon: "â†•" },
-  { to: "/bot", label: "Auto Bot", icon: "⚡" },
-  { to: "/target-10-bot", label: "Target 10", icon: "◎" },
-  { to: "/settings", label: "Settings", icon: "⚙" },
+  { to: "/over-under-analysis", label: "Over/Under", icon: "Ã¢â€ â€¢" },
+  { to: "/bot", label: "Auto Bot", icon: "âš¡" },
+  { to: "/differs-one-shot", label: "Differs 1 Run", icon: "1" },
+  { to: "/target-10-bot", label: "Target 10", icon: "â—Ž" },
+  { to: "/settings", label: "Settings", icon: "âš™" },
 ];
 
 export default function Sidebar() {
@@ -48,4 +49,5 @@ export default function Sidebar() {
     </aside>
   );
 }
+
 

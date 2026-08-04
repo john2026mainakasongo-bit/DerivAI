@@ -1,4 +1,4 @@
-import {
+﻿import {
   BrowserRouter,
   Navigate,
   Route,
@@ -11,6 +11,7 @@ import RiseFallAnalysis from "./pages/RiseFallAnalysis";
 import OverUnderAnalysis from "./pages/OverUnderAnalysis";
 import TargetTenBot from "./pages/TargetTenBot";
 import Bot from "./pages/Bot";
+import DiffersOneShotBot from "./pages/DiffersOneShotBot";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/target-10-bot" element={<TargetTenBot />} />
 
         <Route path="/bot" element={<Bot />} />
+        <Route path="/differs-one-shot" element={<DiffersOneShotBot />} />
         <Route path="/settings" element={<Settings />} />
 
         <Route
@@ -47,4 +49,5 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
 

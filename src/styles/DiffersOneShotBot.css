@@ -1,0 +1,262 @@
+.differsOneShotPage {
+  min-width: 0;
+  padding-bottom: 28px;
+}
+
+.dosHeader,
+.dosControlCard,
+.dosMessage,
+.dosMetrics,
+.dosDigits,
+.dosResultCard {
+  margin: 18px 24px 0;
+}
+
+.dosHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.dosHeader small,
+.dosMetrics small,
+.dosResultCard small,
+.dosStatus small {
+  color: #76a9c5;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dosHeader h1 {
+  margin: 4px 0;
+  color: #f5fbff;
+  font-size: 28px;
+}
+
+.dosHeader p,
+.dosRiskNote {
+  color: #88aabd;
+}
+
+.dosStatus {
+  min-width: 150px;
+  padding: 14px 18px;
+  border: 1px solid #1c526a;
+  border-radius: 14px;
+  background: #062131;
+  text-align: right;
+}
+
+.dosStatus strong {
+  display: block;
+  margin-top: 5px;
+  color: #37e2b2;
+  font-size: 20px;
+}
+
+.dosControlCard {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(140px, 0.7fr) minmax(200px, 1fr) auto auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #1d566f;
+  border-radius: 16px;
+  background: #062536;
+}
+
+.dosControlCard label,
+.dosAccount {
+  display: grid;
+  gap: 7px;
+}
+
+.dosControlCard label span,
+.dosAccount span {
+  color: #7fb0c9;
+  font-size: 12px;
+}
+
+.dosControlCard input {
+  height: 42px;
+  padding: 0 12px;
+  color: #f4fbff;
+  border: 1px solid #28647e;
+  border-radius: 9px;
+  background: #031a27;
+}
+
+.dosAccount {
+  min-height: 42px;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid #28647e;
+  border-radius: 9px;
+  background: #031a27;
+}
+
+.dosStart,
+.dosStop {
+  height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.dosStart {
+  color: #00271e;
+  background: #31e4b2;
+}
+
+.dosStop {
+  color: #fff;
+  background: #943247;
+}
+
+.dosStart:disabled,
+.dosStop:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.dosMessage {
+  display: grid;
+  gap: 6px;
+  padding: 15px 17px;
+  color: #f3d676;
+  border: 1px solid #8c7120;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #302b0d, #0a2731);
+}
+
+.dosMessage span {
+  color: #ff8197;
+}
+
+.dosMetrics {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(95px, 1fr));
+  gap: 10px;
+}
+
+.dosMetrics article {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #1c5168;
+  border-radius: 12px;
+  background: #062335;
+}
+
+.dosMetrics strong {
+  display: block;
+  margin-top: 7px;
+  overflow: hidden;
+  color: #eaf9ff;
+  font-size: 18px;
+  text-overflow: ellipsis;
+}
+
+.dosDigits {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(72px, 1fr));
+  gap: 8px;
+}
+
+.dosDigits article {
+  display: grid;
+  gap: 5px;
+  padding: 12px 8px;
+  border: 1px solid #1d4e65;
+  border-radius: 12px;
+  background: #051f2e;
+  text-align: center;
+}
+
+.dosDigits article.selected {
+  border-color: #34e1b1;
+  box-shadow: 0 0 0 2px rgba(52, 225, 177, 0.15);
+}
+
+.dosDigits strong {
+  color: #f8fdff;
+  font-size: 24px;
+}
+
+.dosDigits span {
+  color: #41dfb4;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dosDigits small {
+  color: #7ea5b9;
+  font-size: 10px;
+}
+
+.dosResultCard {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #1c526a;
+  border-radius: 15px;
+  background: #061f2d;
+}
+
+.dosResultCard strong {
+  display: block;
+  margin-top: 7px;
+  color: #ecfaff;
+}
+
+.dosResultCard .won {
+  color: #35dfaa;
+}
+
+.dosResultCard .lost {
+  color: #ff607e;
+}
+
+.dosRiskNote {
+  margin: 18px 24px 0;
+  font-size: 12px;
+}
+
+@media (max-width: 1100px) {
+  .dosControlCard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dosMetrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .dosDigits {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .dosHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dosStatus {
+    text-align: left;
+  }
+
+  .dosControlCard,
+  .dosMetrics,
+  .dosResultCard {
+    grid-template-columns: 1fr;
+  }
+
+  .dosDigits {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
