@@ -267,3 +267,14 @@
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
+
+
+.rfCompactMonitor:has(.rfMonitorDecision.scanning) {
+  border-color: #8d7422;
+}
+
+.rfMonitorDecision.wait {
+  color: #f0ce65;
+  border-color: #80691d;
+  background: #2a250d;
+}

@@ -993,6 +993,8 @@ export default function RiseFallAnalysis() {
   const nextAutoEntryAtRef = useRef(0);
   const freshTickKeyRef = useRef("");
   const settlementResetAtRef = useRef(0);
+  const freshScanStartedAtRef = useRef(0);
+  const freshSwitchAttemptRef = useRef(0);
 
   const connectingRef = useRef(false);
 
@@ -1280,6 +1282,9 @@ export default function RiseFallAnalysis() {
     }
 
     setFreshScanRequired(false);
+    freshScanStartedAtRef.current = 0;
+    freshSwitchAttemptRef.current = 0;
+    waitStartedAtRef.current = Date.now();
     nextAutoEntryAtRef.current = Date.now() + 500;
     setExecutionMessage(
       `Fresh analysis confirmed: ${freshSignalDirection} · ${freshTicksAfterSettlement} new ticks · ${freshSignalConfirmations} confirmations.`
@@ -1290,6 +1295,104 @@ export default function RiseFallAnalysis() {
     freshSignalConfirmations,
     freshSignalDirection,
     requiredFreshTicks,
+  ]);
+
+  useEffect(() => {
+    if (
+      !freshScanRequired ||
+      !autoRunningRef.current ||
+      !autoSwitchMarket ||
+      marketSwitchingRef.current ||
+      !markets.length
+    ) {
+      return;
+    }
+
+    const startedAt =
+      freshScanStartedAtRef.current ||
+      settlementResetAtRef.current ||
+      Date.now();
+
+    const elapsed = Date.now() - startedAt;
+    const enoughObservation =
+      freshTicksAfterSettlement >= Math.min(requiredFreshTicks, 8);
+
+    const freshDirectionReady =
+      freshSignalConfirmations >= 3 &&
+      freshSignalDirection !== "WAIT";
+
+    if (freshDirectionReady) return;
+
+    // Never sit on one weak/ranging market after a settled trade.
+    // After 8 seconds (or enough fresh ticks), move to the next market
+    // and continue scanning until a new setup qualifies.
+    if (elapsed < 8000 && !enoughObservation) return;
+
+    const now = Date.now();
+
+    if (now - freshSwitchAttemptRef.current < 2500) return;
+
+    freshSwitchAttemptRef.current = now;
+    marketSwitchingRef.current = true;
+
+    setExecutionMessage(
+      `No fresh qualified entry on ${market?.label || symbol}. Switching market and continuing the scan.`
+    );
+
+    const currentIndex = Math.max(
+      0,
+      markets.findIndex((item) => item.id === symbol)
+    );
+
+    const nextMarket =
+      markets[(currentIndex + 1) % Math.max(1, markets.length)];
+
+    if (!nextMarket || nextMarket.id === symbol) {
+      marketSwitchingRef.current = false;
+      freshScanStartedAtRef.current = Date.now();
+      return;
+    }
+
+    void Promise.resolve(changeSymbol(nextMarket.id))
+      .then(() => {
+        const resetAt = Date.now();
+
+        setMarketSwitches((value) => value + 1);
+        setFreshTicksAfterSettlement(0);
+        setFreshSignalConfirmations(0);
+        setFreshSignalDirection("WAIT");
+
+        settlementResetAtRef.current = resetAt;
+        freshScanStartedAtRef.current = resetAt;
+        freshTickKeyRef.current = "";
+        waitStartedAtRef.current = resetAt;
+
+        setExecutionMessage(
+          `Scanning ${nextMarket.label} for a new post-settlement entry.`
+        );
+      })
+      .catch((error) => {
+        setExecutionMessage(
+          executionErrorMessage(
+            error,
+            "Unable to switch market during the fresh scan."
+          )
+        );
+      })
+      .finally(() => {
+        marketSwitchingRef.current = false;
+      });
+  }, [
+    freshScanRequired,
+    freshTicksAfterSettlement,
+    freshSignalConfirmations,
+    freshSignalDirection,
+    requiredFreshTicks,
+    autoSwitchMarket,
+    markets,
+    symbol,
+    market?.label,
+    changeSymbol,
   ]);
 
   const syntheticScore = useMemo(
@@ -1640,6 +1743,8 @@ export default function RiseFallAnalysis() {
     learnedContractsRef.current = new Set();
     lastExecutedSignalRef.current = "";
     setFreshScanRequired(false);
+    freshScanStartedAtRef.current = 0;
+    freshSwitchAttemptRef.current = 0;
     setFreshTicksAfterSettlement(0);
     setFreshSignalConfirmations(0);
     setFreshSignalDirection("WAIT");
@@ -2772,6 +2877,8 @@ export default function RiseFallAnalysis() {
         // A new trade cannot open until fresh ticks and a fresh MTF direction
         // have been confirmed after this settlement.
         settlementResetAtRef.current = Date.now();
+        freshScanStartedAtRef.current = Date.now();
+        freshSwitchAttemptRef.current = 0;
         freshTickKeyRef.current = "";
         setFreshTicksAfterSettlement(0);
         setFreshSignalConfirmations(0);
@@ -3245,7 +3352,7 @@ export default function RiseFallAnalysis() {
 
           <p>
             {freshScanRequired
-              ? "Previous trade signal is invalid. Rebuilding all timeframes from fresh post-settlement ticks."
+              ? "Previous signal is cleared. The bot is collecting fresh ticks and will change market automatically until a new entry qualifies."
               : multiTimeframe.reason}
           </p>
         </section>
