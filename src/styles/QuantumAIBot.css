@@ -528,49 +528,75 @@ html:has(.quantumShell),
 }
 
 
-/* QUANTUM AI V14 — adaptive confidence and ranked markets */
-.quantumAdaptivePanel {
+/* QUANTUM AI V14 — early entry and capped x2 recovery */
+.quantumLearningGrid {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.quantumLearningGrid article:nth-last-child(-n + 2) {
+  border-color: #846b1e;
+  background: #29240d;
+}
+
+.quantumLearningGrid article:nth-last-child(-n + 2) strong {
+  color: #f3d36b;
+}
+
+@media (max-width: 1100px) {
+  .quantumLearningGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumLearningGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* QUANTUM AI V15 — staged timeout and dynamic recovery */
+.quantumV15Manager {
   margin: 7px 0;
   padding: 9px;
-  border: 1px solid #246782;
+  border: 1px solid #2a6d82;
   border-radius: 12px;
   background: #062235;
 }
 
-.quantumAdaptivePanel header {
+.quantumV15Manager header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
 }
 
-.quantumAdaptivePanel small {
-  color: #36ddb4;
+.quantumV15Manager small {
+  color: #3de0b4;
   font-size: 8px;
   font-weight: 900;
   letter-spacing: .08em;
 }
 
-.quantumAdaptivePanel h3 {
+.quantumV15Manager h3 {
   margin: 3px 0 0;
   color: #fff;
   font-size: 15px;
 }
 
-.quantumAdaptivePanel header > strong {
-  color: #f0ce67;
+.quantumV15Manager header > strong {
+  color: #f0cf67;
   font-size: 11px;
 }
 
-.quantumAdaptiveGrid {
+.quantumV15Grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 5px;
   margin-top: 7px;
 }
 
-.quantumAdaptiveGrid article,
-.quantumTopMarkets article {
+.quantumV15Grid article {
   min-width: 0;
   padding: 7px;
   border: 1px solid #184f67;
@@ -578,295 +604,106 @@ html:has(.quantumShell),
   background: #041a29;
 }
 
-.quantumAdaptiveGrid span,
-.quantumTopMarkets span,
-.quantumTopMarkets small {
+.quantumV15Grid span {
+  display: block;
   color: #7faec0;
   font-size: 8px;
   font-weight: 800;
 }
 
-.quantumAdaptiveGrid strong {
+.quantumV15Grid strong {
   display: block;
   margin-top: 4px;
   color: #fff;
   font-size: 11px;
-}
-
-.quantumTopMarkets {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-  margin-top: 6px;
-}
-
-.quantumTopMarkets article {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 6px;
-  align-items: center;
-}
-
-.quantumTopMarkets strong {
-  color: #fff;
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.quantumTopMarkets b {
-  color: #3de0b4;
-  font-size: 11px;
-}
-
-.quantumTopMarkets small {
-  grid-column: 1 / -1;
-}
-
-.quantumTopMarkets p {
-  margin: 0;
-  color: #86adbd;
-  font-size: 9px;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1100px) {
-  .quantumAdaptiveGrid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .quantumTopMarkets {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .quantumAdaptiveGrid,
-  .quantumTopMarkets {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-
-/* QUANTUM AI V15 — smart reader and sound controls */
-.quantumToolbar {
-  grid-template-columns:
-    minmax(220px, 1fr)
-    150px
-    repeat(4, auto);
-}
-
-.quantumSound {
-  background: #17607a;
-}
-
-.quantumSmartDecision {
-  margin: 8px 0;
-  padding: 10px;
-  border: 1px solid #80691f;
-  border-radius: 12px;
-  background: #062235;
-}
-
-.quantumSmartDecision.ready {
-  border-color: #1aa47f;
-}
-
-.quantumSmartDecision header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.quantumSmartDecision small {
-  color: #3ce1b6;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: .08em;
-}
-
-.quantumSmartDecision h3 {
-  margin: 3px 0 0;
-  color: #f1d06a;
-  font-size: 16px;
-}
-
-.quantumSmartDecision.ready h3 {
-  color: #3ce1b6;
-}
-
-.quantumSmartDecision header > strong {
-  padding: 5px 9px;
-  border-radius: 99px;
-  color: #fff;
-  background: #12394b;
-  font-size: 10px;
-}
-
-.quantumSmartDecision > p {
-  margin: 7px 0;
-  color: #a8c5d1;
-  font-size: 10px;
-}
-
-.quantumSmartDecision > div {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.quantumSmartDecision article {
-  min-width: 0;
-  padding: 8px;
-  border: 1px solid #7f6420;
-  border-radius: 8px;
-  background: #29240d;
-}
-
-.quantumSmartDecision article.passed {
-  border-color: #168d6e;
-  background: #06372c;
-}
-
-.quantumSmartDecision article span {
-  display: block;
-  color: #f1ce64;
-  font-size: 8px;
-  font-weight: 900;
-}
-
-.quantumSmartDecision article.passed span {
-  color: #3ce1b6;
-}
-
-.quantumSmartDecision article strong {
-  display: block;
-  margin-top: 4px;
-  color: #dce9ef;
-  font-size: 9px;
-  line-height: 1.35;
-}
-
-@media (max-width: 1100px) {
-  .quantumToolbar {
-    grid-template-columns: 1fr 1fr repeat(4, auto) !important;
-  }
-
-  .quantumSmartDecision > div {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .quantumToolbar {
-    grid-template-columns: 1fr 1fr !important;
-  }
-
-  .quantumSmartDecision > div {
-    grid-template-columns: 1fr;
-  }
-}
-
-
-/* QUANTUM AI V16 — adaptive learning brain */
-.quantumBrainPanel {
-  margin: 8px 0;
-  padding: 10px;
-  border: 1px solid #5d4aa0;
-  border-radius: 12px;
-  background: #091d34;
-}
-
-.quantumBrainPanel header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.quantumBrainPanel small {
-  color: #b897ff;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: .08em;
-}
-
-.quantumBrainPanel h3 {
-  margin: 3px 0 0;
-  color: #fff;
-  font-size: 15px;
-}
-
-.quantumBrainPanel header > strong {
-  color: #c9b3ff;
-  font-size: 10px;
-}
-
-.quantumBrainGrid {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.quantumBrainGrid article,
-.quantumRegimeMemory article {
-  min-width: 0;
-  padding: 8px;
-  border: 1px solid #394f78;
-  border-radius: 8px;
-  background: #071827;
-}
-
-.quantumBrainGrid span,
-.quantumRegimeMemory span {
-  display: block;
-  color: #8ca9bc;
-  font-size: 8px;
-  font-weight: 800;
-}
-
-.quantumBrainGrid strong {
-  display: block;
-  margin-top: 4px;
-  color: #fff;
-  font-size: 11px;
-}
-
-.quantumRegimeMemory {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.quantumRegimeMemory article {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 3px 6px;
-}
-
-.quantumRegimeMemory strong {
-  color: #fff;
-  font-size: 9px;
-}
-
-.quantumRegimeMemory b {
-  grid-column: 1 / -1;
-  color: #42dfb5;
-  font-size: 11px;
-}
-
-@media (max-width: 1100px) {
-  .quantumBrainGrid {
+  .quantumV15Grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 760px) {
-  .quantumBrainGrid,
-  .quantumRegimeMemory {
+  .quantumV15Grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* QUANTUM AI V16 — self-learning pattern brain */
+.quantumV16Brain {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #2d7186;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumV16Brain header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumV16Brain small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.quantumV16Brain h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumV16Brain header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.quantumV16Grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumV16Grid article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumV16Grid span {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumV16Grid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .quantumV16Grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumV16Grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
