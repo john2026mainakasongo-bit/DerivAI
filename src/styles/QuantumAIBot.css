@@ -526,3 +526,30 @@ html:has(.quantumShell),
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* QUANTUM AI V14 — early entry and capped x2 recovery */
+.quantumLearningGrid {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.quantumLearningGrid article:nth-last-child(-n + 2) {
+  border-color: #846b1e;
+  background: #29240d;
+}
+
+.quantumLearningGrid article:nth-last-child(-n + 2) strong {
+  color: #f3d36b;
+}
+
+@media (max-width: 1100px) {
+  .quantumLearningGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumLearningGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
