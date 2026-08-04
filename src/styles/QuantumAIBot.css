@@ -528,138 +528,18 @@ html:has(.quantumShell),
 }
 
 
-/* QUANTUM AI V14 — adaptive confidence and ranked markets */
-.quantumAdaptivePanel {
-  margin: 7px 0;
-  padding: 9px;
-  border: 1px solid #246782;
-  border-radius: 12px;
-  background: #062235;
-}
-
-.quantumAdaptivePanel header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-
-.quantumAdaptivePanel small {
-  color: #36ddb4;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: .08em;
-}
-
-.quantumAdaptivePanel h3 {
-  margin: 3px 0 0;
-  color: #fff;
-  font-size: 15px;
-}
-
-.quantumAdaptivePanel header > strong {
-  color: #f0ce67;
-  font-size: 11px;
-}
-
-.quantumAdaptiveGrid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 5px;
-  margin-top: 7px;
-}
-
-.quantumAdaptiveGrid article,
-.quantumTopMarkets article {
-  min-width: 0;
-  padding: 7px;
-  border: 1px solid #184f67;
-  border-radius: 8px;
-  background: #041a29;
-}
-
-.quantumAdaptiveGrid span,
-.quantumTopMarkets span,
-.quantumTopMarkets small {
-  color: #7faec0;
-  font-size: 8px;
-  font-weight: 800;
-}
-
-.quantumAdaptiveGrid strong {
-  display: block;
-  margin-top: 4px;
-  color: #fff;
-  font-size: 11px;
-}
-
-.quantumTopMarkets {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-  margin-top: 6px;
-}
-
-.quantumTopMarkets article {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 6px;
-  align-items: center;
-}
-
-.quantumTopMarkets strong {
-  color: #fff;
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.quantumTopMarkets b {
-  color: #3de0b4;
-  font-size: 11px;
-}
-
-.quantumTopMarkets small {
-  grid-column: 1 / -1;
-}
-
-.quantumTopMarkets p {
-  margin: 0;
-  color: #86adbd;
-  font-size: 9px;
-}
-
-@media (max-width: 1100px) {
-  .quantumAdaptiveGrid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .quantumTopMarkets {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .quantumAdaptiveGrid,
-  .quantumTopMarkets {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-
-/* QUANTUM AI V14 — runtime fix and capped x2 recovery */
+/* QUANTUM AI V14 — early entry and capped x2 recovery */
 .quantumLearningGrid {
   grid-template-columns: repeat(8, minmax(0, 1fr));
 }
 
 .quantumLearningGrid article:nth-last-child(-n + 2) {
-  border-color: #80691f;
+  border-color: #846b1e;
   background: #29240d;
 }
 
 .quantumLearningGrid article:nth-last-child(-n + 2) strong {
-  color: #f1d16a;
+  color: #f3d36b;
 }
 
 @media (max-width: 1100px) {
@@ -670,6 +550,83 @@ html:has(.quantumShell),
 
 @media (max-width: 760px) {
   .quantumLearningGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* QUANTUM AI V15 — staged timeout and dynamic recovery */
+.quantumV15Manager {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #2a6d82;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumV15Manager header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumV15Manager small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.quantumV15Manager h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumV15Manager header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.quantumV15Grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumV15Grid article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumV15Grid span {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumV15Grid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .quantumV15Grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumV15Grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
