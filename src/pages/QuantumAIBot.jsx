@@ -119,6 +119,10 @@ export default function QuantumAIBot() {
     oneLossCooldownSeconds: 20,
     repeatLossBlockSeconds: 90,
     marketLossBlockSeconds: 60,
+    entryDeadlineSeconds: 60,
+    deadlineMinConfidence: 62,
+    deadlineMaxNoise: 72,
+    deadlineMaxReversal: 64,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -131,6 +135,7 @@ export default function QuantumAIBot() {
   const autoConnectStartedRef = useRef(false);
   const marketWarmupStartedRef = useRef(Date.now());
   const previousSymbolRef = useRef("");
+  const entryDeadlineStartedRef = useRef(Date.now());
   const adaptiveMarketBlockRef = useRef(new Map());
 
   const connecting = status === "CONNECTING" || loadingMarket;
@@ -200,7 +205,76 @@ export default function QuantumAIBot() {
         maxReversalRisk: settings.maxReversalRisk,
       }),
     [prices, settings.minConfidence, settings.maxNoise, settings.maxReversalRisk]
-  );
+  );  const minuteEntry = useMemo(() => {
+    const elapsedSeconds =
+      (Date.now() - Number(entryDeadlineStartedRef.current || Date.now())) / 1000;
+
+    const candidate =
+      analysis.candidate ||
+      analysis.fiveAI?.candidate ||
+      "WAIT";
+
+    const agreement = Number(analysis.fiveAI?.agreement || 0);
+    const confidence = Number(analysis.confidence || 0);
+    const noise = Number(analysis.noiseScore || 100);
+    const reversal = Number(analysis.reversalRisk || 100);
+    const consistency = Number(analysis.consistency || 0);
+    const voteConsensus = Number(analysis.metrics?.voteConsensus || 0);
+
+    const safetyPassed =
+      candidate !== "WAIT" &&
+      agreement >= 2 &&
+      confidence >= Number(settings.deadlineMinConfidence || 62) &&
+      noise <= Number(settings.deadlineMaxNoise || 72) &&
+      reversal <= Number(settings.deadlineMaxReversal || 64) &&
+      consistency >= 18 &&
+      voteConsensus >= 58;
+
+    const ready =
+      running &&
+      marketWarmup.ready &&
+      elapsedSeconds >= Number(settings.entryDeadlineSeconds || 60) &&
+      safetyPassed;
+
+    return {
+      ready,
+      candidate,
+      elapsedSeconds,
+      agreement,
+      confidence,
+      noise,
+      reversal,
+      consistency,
+      voteConsensus,
+      duration: 10,
+      durationUnit: "s",
+      displayDuration: "10 SECONDS",
+      reason: ready
+        ? `One-minute lane selected ${candidate} at ${confidence.toFixed(1)}%.`
+        : elapsedSeconds >= Number(settings.entryDeadlineSeconds || 60)
+        ? `Deadline reached but current setup is unsafe: ${agreement}/5 AI, noise ${noise.toFixed(0)}%, reversal ${reversal.toFixed(0)}%.`
+        : `Searching best entry: ${Math.max(
+            0,
+            Math.ceil(Number(settings.entryDeadlineSeconds || 60) - elapsedSeconds)
+          )}s remaining.`,
+    };
+  }, [
+    running,
+    marketWarmup.ready,
+    analysis.candidate,
+    analysis.fiveAI?.candidate,
+    analysis.fiveAI?.agreement,
+    analysis.confidence,
+    analysis.noiseScore,
+    analysis.reversalRisk,
+    analysis.consistency,
+    analysis.metrics?.voteConsensus,
+    settings.entryDeadlineSeconds,
+    settings.deadlineMinConfidence,
+    settings.deadlineMaxNoise,
+    settings.deadlineMaxReversal,
+  ]);
+
 
   const adaptiveLossGuard = useMemo(() => {
     const history = Array.isArray(stats.history) ? stats.history : [];
@@ -560,7 +634,7 @@ export default function QuantumAIBot() {
     if (
       !running ||
       !marketWarmup.ready ||
-      !adaptiveLossGuard.ready ||
+      !(adaptiveLossGuard.ready || minuteEntry.ready) ||
       buyingRef.current ||
       tradeBusy
     ) {
@@ -570,7 +644,7 @@ export default function QuantumAIBot() {
             ? `${market?.label || symbol} tick sample is ready. Final entry vote is being calculated.`
             : `Warming ${market?.label || symbol}: ${marketWarmup.sampleCount}/${marketWarmup.minimumSamples} ticks.`
         );
-      } else if (running && analysis.ready && !adaptiveLossGuard.ready) {
+      } else if (running && analysis.ready && !(adaptiveLossGuard.ready || minuteEntry.ready)) {
         setMessage(adaptiveLossGuard.reason);
       }
       return;
@@ -588,7 +662,9 @@ export default function QuantumAIBot() {
 
     void (async () => {
       try {
-        const direction = adaptiveLossGuard.candidate;
+        const direction = minuteEntry.ready
+          ? minuteEntry.candidate
+          : adaptiveLossGuard.candidate;
         setMessage(
           `${direction} sharp entry found at ${analysis.confidence.toFixed(1)}%. Buying ${analysis.duration}s...`
         );
@@ -598,8 +674,12 @@ export default function QuantumAIBot() {
             contractType: direction === "RISE" ? "CALL" : "PUT",
             amount: Math.max(0.35, Number(settings.stake || 0.35)),
             basis: "stake",
-            duration: analysis.duration,
-          durationUnit: analysis.durationUnit || "s",
+            duration: minuteEntry.ready
+            ? minuteEntry.duration
+            : analysis.duration,
+          durationUnit: minuteEntry.ready
+            ? minuteEntry.durationUnit
+            : analysis.durationUnit || "s",
           displayDuration:
             analysis.displayDuration ||
             `${analysis.duration}${analysis.durationUnit === "t" ? " ticks" : "s"}`,
@@ -632,8 +712,12 @@ export default function QuantumAIBot() {
           symbol,
           direction,
           confidence: analysis.confidence,
-          duration: analysis.duration,
-          durationUnit: analysis.durationUnit || "s",
+          duration: minuteEntry.ready
+            ? minuteEntry.duration
+            : analysis.duration,
+          durationUnit: minuteEntry.ready
+            ? minuteEntry.durationUnit
+            : analysis.durationUnit || "s",
           displayDuration:
             analysis.displayDuration ||
             `${analysis.duration}${analysis.durationUnit === "t" ? " ticks" : "s"}`,
@@ -643,6 +727,7 @@ export default function QuantumAIBot() {
         };
 
         lastTradeAtRef.current = Date.now();
+        entryDeadlineStartedRef.current = Date.now();
         setActiveTrades((current) => [trade, ...current]);
         setStats((current) => ({ ...current, runs: current.runs + 1 }));
         setMessage(`Trade ${contractId} opened. Quantum AI continues scanning for slot 2.`);
@@ -660,7 +745,11 @@ export default function QuantumAIBot() {
     adaptiveLossGuard.ready,
     adaptiveLossGuard.reason,
     adaptiveLossGuard.candidate,
-    authenticatedFeed,
+    minuteEntry.ready,
+    minuteEntry.candidate,
+    minuteEntry.duration,
+    minuteEntry.durationUnit,
+    minuteEntry.displayDuration,    authenticatedFeed,
     activeTrades.length,
     settings,
     tradeBusy,
@@ -682,6 +771,7 @@ export default function QuantumAIBot() {
     }
 
     scanStartedAtRef.current = Date.now();
+    entryDeadlineStartedRef.current = Date.now();
     setRunning(true);
     setMessage("Quantum AI is scanning all conditions. It will trade only confirmed entries.");
   }
@@ -776,6 +866,10 @@ export default function QuantumAIBot() {
             ["Switch sec", "marketSwitchSeconds", 5, 60, 1],
             ["Take profit", "takeProfit", 0.5, 1000, 0.5],
             ["Stop loss", "stopLoss", 0.5, 1000, 0.5],
+            ["Entry deadline sec", "entryDeadlineSeconds", 30, 180, 5],
+            ["Deadline confidence", "deadlineMinConfidence", 55, 90, 1],
+            ["Deadline max noise", "deadlineMaxNoise", 40, 85, 1],
+            ["Deadline reversal", "deadlineMaxReversal", 30, 80, 1],
           ].map(([label, key, min, max, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -874,7 +968,30 @@ export default function QuantumAIBot() {
           </div>
 
           <p>{adaptiveLossGuard.reason}</p>
+        </section>        <section className={`quantumLossGuard ${minuteEntry.ready ? "ready" : "blocked"}`}>
+          <header>
+            <div>
+              <small>ONE-MINUTE OPPORTUNITY ENGINE</small>
+              <h3>Best acceptable entry deadline</h3>
+            </div>
+            <strong>
+              {minuteEntry.ready
+                ? "ENTRY READY"
+                : `${Math.floor(minuteEntry.elapsedSeconds)}s`}
+            </strong>
+          </header>
+
+          <div>
+            <article><span>Candidate</span><strong>{minuteEntry.candidate}</strong></article>
+            <article><span>Five-AI</span><strong>{minuteEntry.agreement}/5</strong></article>
+            <article><span>Confidence</span><strong>{minuteEntry.confidence.toFixed(1)}%</strong></article>
+            <article><span>Noise</span><strong>{minuteEntry.noise.toFixed(0)}%</strong></article>
+            <article><span>Reversal</span><strong>{minuteEntry.reversal.toFixed(0)}%</strong></article>
+          </div>
+
+          <p>{minuteEntry.reason}</p>
         </section>
+
         <section className="quantumMessage">
           <strong>{message}</strong>
           {(tradeError || statusDetail || !authenticatedFeed) && (
@@ -955,6 +1072,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 
