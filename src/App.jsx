@@ -49,11 +49,12 @@ export default function App() {
           path="*"
           element={<Navigate to="/dashboard" replace />}
         />
-              <Route path="/higher-high-ai" element={<HigherHighBot />} />
+              <Route path="/higher-high-ai" element={<QuantumAIBot />} />
       </Routes>
     </BrowserRouter>
   );
 }
+
 
 
 
