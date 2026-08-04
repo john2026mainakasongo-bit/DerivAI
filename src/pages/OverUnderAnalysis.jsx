@@ -65,6 +65,22 @@ function profitOf(item = {}) {
   return Number.isFinite(value) ? value : 0;
 }
 
+
+function naturalProbability(barrier, side) {
+  const safeBarrier = Math.max(0, Math.min(9, Number(barrier) || 0));
+  const safeSide = String(side || "").toUpperCase();
+
+  if (safeSide === "OVER") {
+    return ((9 - safeBarrier) / 10) * 100;
+  }
+
+  if (safeSide === "UNDER") {
+    return (safeBarrier / 10) * 100;
+  }
+
+  return 0;
+}
+
 export default function OverUnderAnalysis() {
   const auth = useDerivAuth();
   const {
