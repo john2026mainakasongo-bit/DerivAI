@@ -108,11 +108,11 @@ export default function QuantumAIBot() {
   const [message, setMessage] = useState("Quantum AI is ready.");
   const [settings, setSettings] = useState({
     stake: 0.35,
-    minConfidence: 72,
-    maxNoise: 66,
-    maxReversalRisk: 60,
+    minConfidence: 68,
+    maxNoise: 60,
+    maxReversalRisk: 50,
     maxOpenTrades: 2,
-    marketSwitchSeconds: 12,
+    marketSwitchSeconds: 6,
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
@@ -881,6 +881,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 

@@ -1,4 +1,4 @@
-import { analyzeQuantumRiseFall } from "./quantumRiseFallEngine";
+﻿import { analyzeQuantumRiseFall } from "./quantumRiseFallEngine";
 
 const clamp=(v,a=0,b=100)=>Math.max(a,Math.min(b,Number(v)||0));
 const nums=(x=[])=>x.map(v=>Number(typeof v==="number"?v:v?.quote??v?.price??v?.value??0)).filter(Number.isFinite);
@@ -44,10 +44,96 @@ export function analyzeQuantumFiveAI(prices=[],options={}){
   const models=[trendAI(x),momentumAI(x),regimeAI(base),transitionAI(x),structureAI(x,base)];
   const rise=models.filter(m=>m.signal==="RISE"),fall=models.filter(m=>m.signal==="FALL");
   const win=rise.length>fall.length?rise:fall,candidate=win===rise?"RISE":"FALL",agreement=win.length,aiConfidence=avg(win.map(m=>m.confidence));
-  const hard=Number(base.noiseScore||100)<=58&&Number(base.reversalRisk||100)<=48&&Number(base.consistency||0)>=30;
-  const ready=agreement>=4&&aiConfidence>=68&&hard;
-  const short=agreement===5&&aiConfidence>=84&&Number(base.noiseScore||100)<=45&&Number(base.reversalRisk||100)<=32;
-  const medium=agreement>=4&&aiConfidence>=78&&Number(base.noiseScore||100)<=52;
-  const plan=short?{duration:3,durationUnit:"t",displayDuration:"3 TICKS"}:medium?{duration:5,durationUnit:"t",displayDuration:"5 TICKS"}:{duration:15,durationUnit:"s",displayDuration:"15 SECONDS"};
-  return {...base,ready,decision:ready?candidate:"WAIT",candidate,confidence:ready?clamp((aiConfidence+Number(base.confidence||0))/2):clamp(Math.min(aiConfidence,Number(base.confidence||0))),...plan,entryMode:ready?(agreement===5?"FIVE-AI":"ENSEMBLE"):"WAIT",reason:ready?`${agreement}/5 AI models confirm ${candidate}.`:`WAIT: only ${agreement}/5 AI models agree or risk gate blocked.`,checks:[...(base.checks||[]),{label:"Five-AI agreement",passed:agreement>=4,value:`${agreement}/5`},{label:"Hard risk gate",passed:hard,value:hard?"PASS":"BLOCK"}],fiveAI:{models,agreement,required:4,signal:ready?candidate:"WAIT",candidate,confidence:aiConfidence,hardRiskGate:hard}};
+  const strictRisk =
+    Number(base.noiseScore || 100) <= 58 &&
+    Number(base.reversalRisk || 100) <= 48 &&
+    Number(base.consistency || 0) >= 30;
+
+  const responsiveRisk =
+    Number(base.noiseScore || 100) <= 50 &&
+    Number(base.reversalRisk || 100) <= 40 &&
+    Number(base.consistency || 0) >= 34 &&
+    Number(base.confidence || 0) >= 64;
+
+  const strictReady =
+    agreement >= 4 &&
+    aiConfidence >= 68 &&
+    strictRisk;
+
+  const responsiveReady =
+    agreement === 3 &&
+    aiConfidence >= 72 &&
+    responsiveRisk;
+
+  const ready = strictReady || responsiveReady;
+
+  const short =
+    agreement === 5 &&
+    aiConfidence >= 86 &&
+    Number(base.noiseScore || 100) <= 42 &&
+    Number(base.reversalRisk || 100) <= 30;
+
+  const medium =
+    agreement >= 4 &&
+    aiConfidence >= 78 &&
+    Number(base.noiseScore || 100) <= 50;
+
+  const plan = short
+    ? { duration: 3, durationUnit: "t", displayDuration: "3 TICKS" }
+    : medium
+    ? { duration: 5, durationUnit: "t", displayDuration: "5 TICKS" }
+    : responsiveReady
+    ? { duration: 15, durationUnit: "s", displayDuration: "15 SECONDS" }
+    : { duration: 20, durationUnit: "s", displayDuration: "20 SECONDS" };
+  return {
+    ...base,
+    ready,
+    decision: ready ? candidate : "WAIT",
+    candidate,
+    confidence: ready
+      ? clamp((aiConfidence + Number(base.confidence || 0)) / 2)
+      : clamp(Math.min(aiConfidence, Number(base.confidence || 0))),
+    ...plan,
+    entryMode: ready
+      ? agreement === 5
+        ? "FIVE-AI"
+        : responsiveReady
+        ? "RESPONSIVE"
+        : "ENSEMBLE"
+      : "WAIT",
+    reason: ready
+      ? `${agreement}/5 AI models confirm ${candidate} through ${
+          responsiveReady ? "responsive" : "strict"
+        } lane.`
+      : `WAIT: ${agreement}/5 AI models agree, but entry quality is still below the active lane.`,
+    checks: [
+      ...(base.checks || []),
+      {
+        label: "Five-AI agreement",
+        passed: agreement >= 4 || responsiveReady,
+        value: `${agreement}/5`,
+      },
+      {
+        label: "Strict risk gate",
+        passed: strictRisk,
+        value: strictRisk ? "PASS" : "BLOCK",
+      },
+      {
+        label: "Responsive gate",
+        passed: responsiveReady,
+        value: responsiveReady ? "PASS" : "WAIT",
+      },
+    ],
+    fiveAI: {
+      models,
+      agreement,
+      required: responsiveReady ? 3 : 4,
+      signal: ready ? candidate : "WAIT",
+      candidate,
+      confidence: aiConfidence,
+      hardRiskGate: strictRisk,
+      responsiveReady,
+    },
+  };
 }
+
