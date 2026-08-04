@@ -43,8 +43,6 @@ export default function QuantumAIBot() {
     markets,
     market,
     symbol,
-    status,
-    statusDetail,
     connected,
     authenticatedFeed,
     loadingMarket,
@@ -55,7 +53,6 @@ export default function QuantumAIBot() {
     tradeError,
     selectedAccountType,
     connect,
-    disconnect,
     changeSymbol,
     placeTrade,
   } = useDerivTicks();
@@ -81,23 +78,6 @@ export default function QuantumAIBot() {
   const scanStartedAtRef = useRef(Date.now());
   const processedContractsRef = useRef(new Set());
   const buyingRef = useRef(false);
-  const autoConnectStartedRef = useRef(false);
-
-  const connecting = status === "CONNECTING" || loadingMarket;
-
-  useEffect(() => {
-    if (connected || connecting || autoConnectStartedRef.current) return;
-
-    autoConnectStartedRef.current = true;
-    setMessage("Connecting Quantum AI to Deriv live feed...");
-
-    Promise.resolve(connect())
-      .then(() => setMessage("Deriv live feed connected. Collecting market ticks..."))
-      .catch((error) => {
-        autoConnectStartedRef.current = false;
-        setMessage(error instanceof Error ? error.message : "Unable to connect Deriv feed.");
-      });
-  }, [connected, connecting, connect]);
 
   const analysis = useMemo(
     () =>
@@ -291,14 +271,7 @@ export default function QuantumAIBot() {
     <div className="appShell quantumShell">
       <Sidebar />
       <main className="mainContent quantumPage">
-        <Topbar
-          title="MetaBinary Quantum AI"
-          subtitle="Adaptive Rise/Fall scanner · smart seconds · two-run execution"
-          connected={connected}
-          connecting={connecting}
-          onConnect={connect}
-          onDisconnect={disconnect}
-        />
+        <Topbar />
 
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
@@ -384,13 +357,7 @@ export default function QuantumAIBot() {
 
         <section className="quantumMessage">
           <strong>{message}</strong>
-          {(tradeError || statusDetail || !authenticatedFeed) && (
-            <span>
-              {tradeError || statusDetail || (connected
-                ? "Public analysis feed is connected. Reconnect the selected Demo/Real account for trading."
-                : "Deriv feed is disconnected. Press Connect feed.")}
-            </span>
-          )}
+          {(tradeError || !authenticatedFeed) && <span>{tradeError || "Authenticated trading feed is not ready."}</span>}
         </section>
 
         <section className="quantumBottomGrid">

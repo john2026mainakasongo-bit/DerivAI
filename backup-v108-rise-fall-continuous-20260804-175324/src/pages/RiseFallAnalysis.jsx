@@ -10,8 +10,13 @@ import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
 import useDerivTicks from "../hooks/useDerivTicks";
-import { analyzeRiseFall } from "../analysis/riseFallAnalysisEngine";
+import {
+  analyzeRiseFall,
+  analyzeRiseFallMultiTimeframe,
+} from "../analysis/riseFallAnalysisEngine";
 import "../styles/RiseFallAnalysis.css";
+import "../styles/V103RiseFallRealExecution.css";
+import "../styles/RiseFallCompactV4.css";
 
 function clamp(value, minimum = 0, maximum = 100) {
   const numeric = Number(value);
@@ -34,6 +39,30 @@ function num(value, digits = 5) {
 
 function signalClass(value) {
   return String(value || "WAIT").toLowerCase();
+}
+
+function executionErrorMessage(error, fallback = "Trade execution failed.") {
+  const message = String(
+    error?.message ||
+      error?.error?.message ||
+      error?.errors?.[0]?.message ||
+      error?.data?.error?.message ||
+      fallback
+  ).trim();
+
+  if (/authenticated|logged-in|account/i.test(message)) {
+    return `${message} Re-select the account, reconnect the feed, then try again.`;
+  }
+
+  if (/proposal|contract|buy|market|symbol|duration/i.test(message)) {
+    return `Deriv rejected the order: ${message}`;
+  }
+
+  return message || fallback;
+}
+
+function realPermissionKey(accountId = "") {
+  return `edgepilot-rf-real-execution:${String(accountId || "unknown")}`;
 }
 
 const LEARNING_STORAGE_KEY = "edgepilot-rise-fall-learning-v70";
@@ -95,8 +124,8 @@ function currentLossStreak(records = []) {
 }
 
 
-const RF_HISTORY_STORAGE_KEY = "edgepilot-rf-price-history-v73";
-const RF_MARKET_SNAPSHOT_KEY = "edgepilot-rf-market-snapshots-v73";
+const RF_HISTORY_STORAGE_KEY = "edgepilot-rf-price-history-v90";
+const RF_MARKET_SNAPSHOT_KEY = "edgepilot-rf-market-snapshots-v90";
 const RF_MAX_HISTORY_POINTS = 2400;
 const RF_MAX_MARKET_SNAPSHOTS = 40;
 
@@ -367,7 +396,7 @@ function structureEntryChecklist({
     total: items.length,
     ready:
       direction !== "WAIT" &&
-      items.filter((item) => item.passed).length >= 5,
+      items.filter((item) => item.passed).length >= 4,
   };
 }
 
@@ -879,6 +908,7 @@ export default function RiseFallAnalysis() {
     symbol = "",
     connected = false,
     loadingMarket = false,
+    ticks = [],
     prices = [],
     currentPrice = null,
     selectedAccountType = "demo",
@@ -903,8 +933,11 @@ export default function RiseFallAnalysis() {
   const [autoRunning, setAutoRunning] = useState(false);
   const [stake, setStake] = useState(0.35);
   const [allowReal, setAllowReal] = useState(false);
+  const [realExecutionStatus, setRealExecutionStatus] = useState(
+    "Real execution is locked."
+  );
   const [autoSwitchMarket, setAutoSwitchMarket] = useState(true);
-  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(4);
+  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(6);
   const [marketSwitches, setMarketSwitches] = useState(0);
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [durationMode, setDurationMode] = useState("AUTO");
@@ -915,7 +948,7 @@ export default function RiseFallAnalysis() {
     "Auto execution is stopped."
   );
   const [executionRuns, setExecutionRuns] = useState(0);
-  const [sessionRunTarget, setSessionRunTarget] = useState(100);
+  const [sessionRunTarget, setSessionRunTarget] = useState(20);
   const [burstMode, setBurstMode] = useState(true);
   const [burstRuns, setBurstRuns] = useState(0);
   const [sessionTrades, setSessionTrades] = useState([]);
@@ -926,11 +959,6 @@ export default function RiseFallAnalysis() {
   const [manualStatus, setManualStatus] = useState(
     "Ready for a direct manual contract."
   );
-  const [recoveryRequired, setRecoveryRequired] = useState(false);
-  const [recoveryPhase, setRecoveryPhase] = useState("READY");
-  const [recoveryTicks, setRecoveryTicks] = useState(0);
-  const [recoveryConfirmations, setRecoveryConfirmations] = useState(0);
-  const [recoveryDirection, setRecoveryDirection] = useState("WAIT");
   const [learningHistory, setLearningHistory] = useState(
     safeReadLearningHistory
   );
@@ -940,6 +968,10 @@ export default function RiseFallAnalysis() {
   const [marketSnapshots, setMarketSnapshots] = useState(() =>
     readStoredMap(RF_MARKET_SNAPSHOT_KEY)
   );
+  const [freshScanRequired, setFreshScanRequired] = useState(false);
+  const [freshTicksAfterSettlement, setFreshTicksAfterSettlement] = useState(0);
+  const [freshSignalConfirmations, setFreshSignalConfirmations] = useState(0);
+  const [freshSignalDirection, setFreshSignalDirection] = useState("WAIT");
   const previousSignalRef = useRef("WAIT");
   const lastResultSoundRef = useRef("");
   const lastAlertAtRef = useRef(0);
@@ -959,12 +991,10 @@ export default function RiseFallAnalysis() {
   const burstDirectionRef = useRef("WAIT");
   const burstRunsRef = useRef(0);
   const nextAutoEntryAtRef = useRef(0);
-  const recoveryRequiredRef = useRef(false);
-  const recoveryTickKeyRef = useRef("");
-  const recoveryStartedAtRef = useRef(0);
-  const recoveryCooldownUntilRef = useRef(0);
-  const recoveryResultRef = useRef("WON");
-  const processedSettlementIdsRef = useRef(new Set());
+  const freshTickKeyRef = useRef("");
+  const settlementResetAtRef = useRef(0);
+  const freshScanStartedAtRef = useRef(0);
+  const freshSwitchAttemptRef = useRef(0);
 
   const connectingRef = useRef(false);
 
@@ -985,8 +1015,53 @@ export default function RiseFallAnalysis() {
   }, [consecutiveLosses]);
 
   useEffect(() => {
-    recoveryRequiredRef.current = recoveryRequired;
-  }, [recoveryRequired]);
+    if (selectedAccountType === "demo") {
+      setAllowReal(false);
+      setRealExecutionStatus("Demo account selected. Real confirmation is not required.");
+      return;
+    }
+
+    let enabled = false;
+
+    try {
+      enabled =
+        window.sessionStorage.getItem(
+          realPermissionKey(selectedAccountId)
+        ) === "enabled";
+    } catch {
+      enabled = false;
+    }
+
+    setAllowReal(enabled);
+    setRealExecutionStatus(
+      enabled
+        ? `Real execution enabled for ${selectedAccountId || "selected account"}.`
+        : "Real execution is locked. Tick the confirmation before START or manual BUY."
+    );
+  }, [selectedAccountType, selectedAccountId]);
+
+  function updateRealExecutionPermission(enabled) {
+    const next = Boolean(enabled);
+    setAllowReal(next);
+
+    try {
+      const key = realPermissionKey(selectedAccountId);
+
+      if (next) {
+        window.sessionStorage.setItem(key, "enabled");
+      } else {
+        window.sessionStorage.removeItem(key);
+      }
+    } catch {
+      // In-memory permission still works when browser storage is unavailable.
+    }
+
+    setRealExecutionStatus(
+      next
+        ? `Real execution enabled for ${selectedAccountId || "selected account"}.`
+        : "Real execution is locked."
+    );
+  }
 
   useEffect(() => {
     if (
@@ -1019,6 +1094,10 @@ export default function RiseFallAnalysis() {
 
   useEffect(() => {
     if (!symbol) return;
+
+    setDisplayedCandles([]);
+    setPersistentHistory([]);
+    lastLiveTickRef.current = { symbol: "", key: "" };
 
     const stored = readStoredMap(RF_HISTORY_STORAGE_KEY);
     const saved = Array.isArray(stored[symbol]) ? stored[symbol] : [];
@@ -1117,6 +1196,204 @@ export default function RiseFallAnalysis() {
   const active =
     mode === "15s" ? analysis15 : analysis10;
 
+  const multiTimeframe = useMemo(
+    () => analyzeRiseFallMultiTimeframe(combinedPriceHistory),
+    [combinedPriceHistory]
+  );
+
+  const requiredFreshTicks = useMemo(() => {
+    const duration = Number(multiTimeframe.recommendedDuration || 5);
+    const unit = multiTimeframe.recommendedDurationUnit;
+
+    if (unit === "s") return 14;
+    return Math.max(8, Math.min(18, duration + 7));
+  }, [
+    multiTimeframe.recommendedDuration,
+    multiTimeframe.recommendedDurationUnit,
+  ]);
+
+  useEffect(() => {
+    if (!freshScanRequired || !ticks.length) return;
+
+    const latest = ticks.at(-1);
+    const rawEpoch = Number(latest?.epoch || 0);
+    const epochMs =
+      rawEpoch > 0 && rawEpoch < 1e12
+        ? rawEpoch * 1000
+        : rawEpoch;
+
+    if (
+      settlementResetAtRef.current &&
+      epochMs &&
+      epochMs < settlementResetAtRef.current
+    ) {
+      return;
+    }
+
+    const key = `${symbol}:${latest?.epoch || ""}:${latest?.quote || ""}`;
+
+    if (!key || freshTickKeyRef.current === key) return;
+
+    freshTickKeyRef.current = key;
+    setFreshTicksAfterSettlement((value) => value + 1);
+  }, [freshScanRequired, ticks, symbol]);
+
+  useEffect(() => {
+    if (!freshScanRequired) {
+      setFreshSignalConfirmations(0);
+      setFreshSignalDirection("WAIT");
+      return;
+    }
+
+    const direction = multiTimeframe.direction;
+
+    if (
+      direction === "WAIT" ||
+      !multiTimeframe.qualified ||
+      multiTimeframe.agreement < 66
+    ) {
+      setFreshSignalConfirmations(0);
+      setFreshSignalDirection("WAIT");
+      return;
+    }
+
+    if (direction === freshSignalDirection) {
+      setFreshSignalConfirmations((value) => value + 1);
+      return;
+    }
+
+    setFreshSignalDirection(direction);
+    setFreshSignalConfirmations(1);
+  }, [
+    freshScanRequired,
+    freshSignalDirection,
+    multiTimeframe.direction,
+    multiTimeframe.qualified,
+    multiTimeframe.agreement,
+  ]);
+
+  useEffect(() => {
+    if (
+      !freshScanRequired ||
+      freshTicksAfterSettlement < requiredFreshTicks ||
+      freshSignalConfirmations < 3
+    ) {
+      return;
+    }
+
+    setFreshScanRequired(false);
+    freshScanStartedAtRef.current = 0;
+    freshSwitchAttemptRef.current = 0;
+    waitStartedAtRef.current = Date.now();
+    nextAutoEntryAtRef.current = Date.now() + 500;
+    setExecutionMessage(
+      `Fresh analysis confirmed: ${freshSignalDirection} · ${freshTicksAfterSettlement} new ticks · ${freshSignalConfirmations} confirmations.`
+    );
+  }, [
+    freshScanRequired,
+    freshTicksAfterSettlement,
+    freshSignalConfirmations,
+    freshSignalDirection,
+    requiredFreshTicks,
+  ]);
+
+  useEffect(() => {
+    if (
+      !freshScanRequired ||
+      !autoRunningRef.current ||
+      !autoSwitchMarket ||
+      marketSwitchingRef.current ||
+      !markets.length
+    ) {
+      return;
+    }
+
+    const startedAt =
+      freshScanStartedAtRef.current ||
+      settlementResetAtRef.current ||
+      Date.now();
+
+    const elapsed = Date.now() - startedAt;
+    const enoughObservation =
+      freshTicksAfterSettlement >= Math.min(requiredFreshTicks, 8);
+
+    const freshDirectionReady =
+      freshSignalConfirmations >= 3 &&
+      freshSignalDirection !== "WAIT";
+
+    if (freshDirectionReady) return;
+
+    // Never sit on one weak/ranging market after a settled trade.
+    // After 8 seconds (or enough fresh ticks), move to the next market
+    // and continue scanning until a new setup qualifies.
+    if (elapsed < 8000 && !enoughObservation) return;
+
+    const now = Date.now();
+
+    if (now - freshSwitchAttemptRef.current < 2500) return;
+
+    freshSwitchAttemptRef.current = now;
+    marketSwitchingRef.current = true;
+
+    setExecutionMessage(
+      `No fresh qualified entry on ${market?.label || symbol}. Switching market and continuing the scan.`
+    );
+
+    const currentIndex = Math.max(
+      0,
+      markets.findIndex((item) => item.id === symbol)
+    );
+
+    const nextMarket =
+      markets[(currentIndex + 1) % Math.max(1, markets.length)];
+
+    if (!nextMarket || nextMarket.id === symbol) {
+      marketSwitchingRef.current = false;
+      freshScanStartedAtRef.current = Date.now();
+      return;
+    }
+
+    void Promise.resolve(changeSymbol(nextMarket.id))
+      .then(() => {
+        const resetAt = Date.now();
+
+        setMarketSwitches((value) => value + 1);
+        setFreshTicksAfterSettlement(0);
+        setFreshSignalConfirmations(0);
+        setFreshSignalDirection("WAIT");
+
+        settlementResetAtRef.current = resetAt;
+        freshScanStartedAtRef.current = resetAt;
+        freshTickKeyRef.current = "";
+        waitStartedAtRef.current = resetAt;
+
+        setExecutionMessage(
+          `Scanning ${nextMarket.label} for a new post-settlement entry.`
+        );
+      })
+      .catch((error) => {
+        setExecutionMessage(
+          executionErrorMessage(
+            error,
+            "Unable to switch market during the fresh scan."
+          )
+        );
+      })
+      .finally(() => {
+        marketSwitchingRef.current = false;
+      });
+  }, [
+    freshScanRequired,
+    freshTicksAfterSettlement,
+    freshSignalConfirmations,
+    freshSignalDirection,
+    requiredFreshTicks,
+    autoSwitchMarket,
+    markets,
+    symbol,
+    market?.label,
+    changeSymbol,
+  ]);
 
   const syntheticScore = useMemo(
     () =>
@@ -1250,8 +1527,8 @@ export default function RiseFallAnalysis() {
 
     const baseBuy = Number(active.adaptiveThresholds?.buy || 72);
     const learnedBuyThreshold = Math.max(
-      70,
-      Math.min(92, baseBuy + thresholdAdjustment)
+      68,
+      Math.min(88, baseBuy + thresholdAdjustment)
     );
 
     const setupRejected =
@@ -1360,169 +1637,49 @@ export default function RiseFallAnalysis() {
       100
   );
 
-  const burstEntryReady =
-    burstMode &&
-    burstRunsRef.current < 5 &&
+  const fastEntryReady =
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
-    activeDirectionProbability >= 90 &&
-    activeConfidence >= 87 &&
-    activeOpportunity >= 84 &&
-    activeContinuation >= 76 &&
-    activeReversalRisk <= 20 &&
-    activeNoise <= 50 &&
-    active.risk === "LOW" &&
-    preBuyStructure.passed >= 5;
+    activeDirectionProbability >= 72 &&
+    activeConfidence >= 68 &&
+    activeOpportunity >= 68 &&
+    activeContinuation >= 52 &&
+    activeReversalRisk <= 42 &&
+    activeNoise <= 72 &&
+    Number(active.consensus?.score || 0) >= 54 &&
+    Number(active.confirmationsPassed || 0) >= 6 &&
+    preBuyStructure.passed >= 4;
+
+  const burstEntryReady =
+    burstMode &&
+    burstRunsRef.current < 2 &&
+    learnedEntryAllowed &&
+    active.signal !== "WAIT" &&
+    activeDirectionProbability >= 78 &&
+    activeConfidence >= 74 &&
+    activeOpportunity >= 74 &&
+    activeContinuation >= 58 &&
+    activeReversalRisk <= 34 &&
+    activeNoise <= 64 &&
+    active.risk !== "HIGH" &&
+    preBuyStructure.passed >= 4;
 
   const immediateEntryReady =
-    !recoveryRequired &&
+    !freshScanRequired &&
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
     (
       (
-        preBuyStructure.ready &&
+        preBuyStructure.passed >= 4 &&
         (
           active.tradeNow ||
           active.fastScalpReady ||
           active.instantOneTick
         )
       ) ||
+      fastEntryReady ||
       burstEntryReady
     );
-
-
-  useEffect(() => {
-    if (!recoveryRequired || !autoRunning) return;
-
-    const latestRaw =
-      (Array.isArray(ticks) && ticks.length ? ticks.at(-1) : null) ??
-      (Array.isArray(prices) && prices.length ? prices.at(-1) : null);
-
-    if (latestRaw == null) return;
-
-    const quote = Number(
-      typeof latestRaw === "number"
-        ? latestRaw
-        : latestRaw?.quote ??
-            latestRaw?.price ??
-            latestRaw?.value ??
-            latestRaw?.tick ??
-            0
-    );
-
-    const epoch =
-      typeof latestRaw === "object" && latestRaw
-        ? latestRaw.epoch ??
-          latestRaw.time ??
-          latestRaw.timestamp ??
-          latestRaw.createdAt ??
-          ""
-        : "";
-
-    const key = `${symbol}:${epoch}:${quote}:${prices.length}`;
-
-    if (!Number.isFinite(quote) || recoveryTickKeyRef.current === key) {
-      return;
-    }
-
-    recoveryTickKeyRef.current = key;
-
-    setRecoveryTicks((current) => {
-      const next = Math.min(5, current + 1);
-
-      if (next < 5) {
-        setRecoveryPhase(`COLLECTING FRESH TICKS ${next}/5`);
-        setExecutionMessage(
-          `${recoveryResultRef.current} settled. Collecting fresh ticks ${next}/5 before the next setup.`
-        );
-      } else {
-        setRecoveryPhase("CONFIRMING NEW DIRECTION");
-        setExecutionMessage(
-          `${recoveryResultRef.current} settled. Fresh ticks ready; confirming a new Rise/Fall direction.`
-        );
-      }
-
-      return next;
-    });
-  }, [
-    recoveryRequired,
-    autoRunning,
-    ticks,
-    prices,
-    symbol,
-  ]);
-
-  useEffect(() => {
-    if (
-      !recoveryRequired ||
-      !autoRunning ||
-      recoveryTicks < 5
-    ) {
-      return;
-    }
-
-    const direction = active.signal || "WAIT";
-    const acceptable =
-      direction !== "WAIT" &&
-      active.risk !== "HIGH" &&
-      activeConfidence >= 76 &&
-      activeOpportunity >= 74 &&
-      activeContinuation >= 62 &&
-      activeReversalRisk <= 30 &&
-      activeNoise <= 60;
-
-    if (!acceptable) {
-      setRecoveryDirection("WAIT");
-      setRecoveryConfirmations(0);
-      setRecoveryPhase("SEARCHING NEW CLEAN SIGNAL");
-      return;
-    }
-
-    setRecoveryDirection((previous) => {
-      if (previous !== direction) {
-        setRecoveryConfirmations(1);
-        setRecoveryPhase(`CONFIRMING ${direction} 1/2`);
-        return direction;
-      }
-
-      setRecoveryConfirmations((current) => {
-        const next = Math.min(2, current + 1);
-
-        if (next >= 2) {
-          recoveryRequiredRef.current = false;
-          setRecoveryRequired(false);
-          setRecoveryPhase("READY FOR NEXT ENTRY");
-          nextAutoEntryAtRef.current = Math.max(
-            Date.now() + 800,
-            recoveryCooldownUntilRef.current
-          );
-          lastExecutedSignalRef.current = "";
-          executionBusyRef.current = false;
-          waitStartedAtRef.current = Date.now();
-          setExecutionMessage(
-            `${direction} confirmed after settlement. Scanner re-armed and searching for the next qualified entry.`
-          );
-        } else {
-          setRecoveryPhase(`CONFIRMING ${direction} ${next}/2`);
-        }
-
-        return next;
-      });
-
-      return previous;
-    });
-  }, [
-    recoveryRequired,
-    autoRunning,
-    recoveryTicks,
-    active.signal,
-    active.risk,
-    activeConfidence,
-    activeOpportunity,
-    activeContinuation,
-    activeReversalRisk,
-    activeNoise,
-  ]);
 
   function nextMarketSymbol() {
     if (!marketSymbols.length) return "";
@@ -1585,6 +1742,12 @@ export default function RiseFallAnalysis() {
     burstDirectionRef.current = "WAIT";
     learnedContractsRef.current = new Set();
     lastExecutedSignalRef.current = "";
+    setFreshScanRequired(false);
+    freshScanStartedAtRef.current = 0;
+    freshSwitchAttemptRef.current = 0;
+    setFreshTicksAfterSettlement(0);
+    setFreshSignalConfirmations(0);
+    setFreshSignalDirection("WAIT");
     setExecutionMessage(
       autoRunningRef.current
         ? "Transaction view reset. Auto execution continues."
@@ -1672,7 +1835,24 @@ export default function RiseFallAnalysis() {
       label: rise ? "RISE" : "FALL",
     };
 
-    const exceptionalOneTick = false;
+    const mtfAligned =
+      multiTimeframe.direction === signal &&
+      multiTimeframe.agreement >= 64 &&
+      multiTimeframe.lowRiskFrames >= 2;
+
+    const exceptionalOneTick =
+      allowOneTick &&
+      mtfAligned &&
+      multiTimeframe.agreement >= 84 &&
+      multiTimeframe.confidence >= 88 &&
+      multiTimeframe.score >= 86 &&
+      multiTimeframe.probability >= 90 &&
+      multiTimeframe.noise <= 34 &&
+      probability >= 92 &&
+      confidence >= 90 &&
+      finalScore >= 88 &&
+      reversal <= 14 &&
+      analysis?.risk === "LOW";
 
     const twoTickQualified =
       probability >= 94 &&
@@ -1736,6 +1916,39 @@ export default function RiseFallAnalysis() {
     }
 
     if (durationMode === "AUTO") {
+      if (exceptionalOneTick) {
+        return {
+          ...base,
+          duration: 1,
+          durationUnit: "t",
+          fastEntry: true,
+          displayDuration: "1 TICK",
+        };
+      }
+
+      if (!mtfAligned) {
+        return {
+          blocked: true,
+          reason:
+            "Timeframes disagree. Switching market before risking an entry.",
+          requestMarketSwitch: true,
+        };
+      }
+
+      if (
+        multiTimeframe.recommendedDuration &&
+        multiTimeframe.recommendedDurationUnit &&
+        multiTimeframe.qualified
+      ) {
+        return {
+          ...base,
+          duration: multiTimeframe.recommendedDuration,
+          durationUnit: multiTimeframe.recommendedDurationUnit,
+          fastEntry: multiTimeframe.recommendedDurationUnit === "t",
+          displayDuration: multiTimeframe.displayDuration,
+        };
+      }
+
       if (twoTickQualified) {
         return {
           ...base,
@@ -1860,13 +2073,25 @@ export default function RiseFallAnalysis() {
       return;
     }
 
-    if (
-      selectedAccountType === "real" &&
-      !allowReal
-    ) {
+    if (!connected) {
+      setManualStatus("Connect the authenticated Deriv feed before buying.");
+      return;
+    }
+
+    if (!selectedAccountId) {
+      setManualStatus("Choose a Demo or Real Deriv account before buying.");
+      return;
+    }
+
+    if (selectedAccountType !== "demo" && !allowReal) {
       setManualStatus(
-        "Enable Real-account execution before buying on the Real account."
+        "Real execution is locked. Tick the Real-account confirmation first."
       );
+      return;
+    }
+
+    if (typeof placeTrade !== "function") {
+      setManualStatus("Trade execution is unavailable.");
       return;
     }
 
@@ -1908,6 +2133,7 @@ export default function RiseFallAnalysis() {
       setManualStatus(`Sending ${signal} contract…`);
 
       const response = await placeTrade({
+        symbol,
         contractType,
         amount,
         basis: "stake",
@@ -1919,11 +2145,19 @@ export default function RiseFallAnalysis() {
             : String(barrier),
       });
 
-      const contractId =
-        response?.buy?.contract_id ||
-        response?.contract_id ||
-        response?.proposal_open_contract?.contract_id ||
-        Date.now();
+      const contractId = String(
+        response?.contractId ||
+          response?.buy?.contract_id ||
+          response?.contract_id ||
+          response?.proposal_open_contract?.contract_id ||
+          ""
+      );
+
+      if (!contractId) {
+        throw new Error(
+          "Deriv accepted no contract ID. The trade was not added to the session."
+        );
+      }
 
       setSessionTrades((current) => [
         {
@@ -1948,9 +2182,7 @@ export default function RiseFallAnalysis() {
       );
     } catch (error) {
       setManualStatus(
-        error instanceof Error
-          ? error.message
-          : "Manual trade failed."
+        executionErrorMessage(error, "Manual Rise/Fall trade failed.")
       );
     }
   }
@@ -1961,12 +2193,6 @@ export default function RiseFallAnalysis() {
     executionBusyRef.current = false;
     marketSwitchingRef.current = false;
     nextAutoEntryAtRef.current = Number.POSITIVE_INFINITY;
-    recoveryRequiredRef.current = false;
-    setRecoveryRequired(false);
-    setRecoveryPhase("STOPPED");
-    setRecoveryTicks(0);
-    setRecoveryConfirmations(0);
-    setRecoveryDirection("WAIT");
     lastExecutedSignalRef.current = "";
     setAutoRunning(false);
     setExecutionMessage(message || "STOPPED MANUALLY");
@@ -1975,11 +2201,11 @@ export default function RiseFallAnalysis() {
   async function executeConfirmedSignal(signal, analysis) {
     if (
       executionBusyRef.current ||
-      recoveryRequiredRef.current ||
+      freshScanRequired ||
       !autoRunningRef.current ||
       executionRunsRef.current >= Math.max(1, Number(sessionRunTarget) || 100) ||
       Date.now() < nextAutoEntryAtRef.current ||
-      burstRunsRef.current >= 5 ||
+      burstRunsRef.current >= 2 ||
       hasOpenSessionTrade ||
       !signal ||
       signal === "WAIT" ||
@@ -2070,6 +2296,9 @@ export default function RiseFallAnalysis() {
       });
 
       const contractId = String(result?.contractId || "");
+
+      announceTradeEntry(signal, parameters.displayDuration);
+
       const nextRuns = executionRunsRef.current + 1;
       const stoppedDuringPurchase =
         executionGeneration !== stopGenerationRef.current ||
@@ -2122,10 +2351,7 @@ export default function RiseFallAnalysis() {
         setBurstRuns(1);
       }
 
-      recoveryRequiredRef.current = false;
-      setRecoveryRequired(false);
-      setRecoveryPhase("TRADE OPEN");
-      nextAutoEntryAtRef.current = Date.now() + 1200;
+      nextAutoEntryAtRef.current = Number.POSITIVE_INFINITY;
 
       if (nextRuns >= Math.max(1, Number(sessionRunTarget) || 100)) {
         stopAuto(`Session target completed: ${nextRuns} runs.`);
@@ -2142,51 +2368,60 @@ export default function RiseFallAnalysis() {
     } catch (error) {
       lastExecutedSignalRef.current = "";
       setExecutionMessage(
-        error instanceof Error
-          ? error.message
-          : "Trade execution failed."
+        executionErrorMessage(error, "Automatic Rise/Fall trade failed.")
       );
     } finally {
       executionBusyRef.current = false;
     }
   }
 
-  function toggleAutoExecution() {
+  async function toggleAutoExecution() {
     if (autoRunning) {
       stopAuto("Auto execution stopped manually.");
       return;
     }
 
+    if (!selectedAccountId) {
+      setExecutionMessage("Choose a Demo or Real Deriv account first.");
+      return;
+    }
+
     if (selectedAccountType !== "demo" && !allowReal) {
       setExecutionMessage(
-        "Enable Real execution explicitly or switch to Demo."
+        "Real execution is locked. Tick the Real-account confirmation before START."
       );
       return;
     }
 
-    if (consecutiveLossesRef.current >= 3) {
+    if (consecutiveLossesRef.current >= 2) {
       setExecutionMessage(
-        "Reset transactions before restarting after 3 consecutive losses."
+        "Reset transactions before restarting after 2 consecutive losses."
+      );
+      return;
+    }
+
+    try {
+      if (!connected && typeof connect === "function") {
+        setExecutionMessage("Connecting the authenticated Deriv feed…");
+        await Promise.resolve(connect());
+      }
+    } catch (error) {
+      setExecutionMessage(
+        executionErrorMessage(error, "Unable to connect the selected account.")
       );
       return;
     }
 
     stopGenerationRef.current += 1;
-    recoveryRequiredRef.current = false;
-    setRecoveryRequired(false);
-    setRecoveryPhase("SCANNING");
-    setRecoveryTicks(0);
-    setRecoveryConfirmations(0);
-    setRecoveryDirection("WAIT");
     lastExecutedSignalRef.current = "";
-    nextAutoEntryAtRef.current = 0;
     waitStartedAtRef.current = Date.now();
+    nextAutoEntryAtRef.current = 0;
     setAutoRunning(true);
     autoRunningRef.current = true;
     setExecutionMessage(
-      allowOneTick
-        ? "Running continuously. A valid entry executes immediately; weak markets switch automatically."
-        : "Running continuously until STOP. Confirmed entries execute immediately."
+      selectedAccountType === "demo"
+        ? "Demo scanner running. Confirmed entries execute automatically."
+        : `REAL scanner running on ${selectedAccountId}. Confirmed entries execute automatically.`
     );
   }
 
@@ -2247,6 +2482,25 @@ export default function RiseFallAnalysis() {
       );
       utterance.rate = 1.05;
       utterance.pitch = isWin ? 1.2 : 0.8;
+      utterance.volume = 0.9;
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
+  function announceTradeEntry(signal, durationLabel) {
+    if (!soundEnabled || typeof window === "undefined") return;
+
+    if ("vibrate" in navigator) {
+      navigator.vibrate([70, 45, 70]);
+    }
+
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(
+        `${signal} trade opened. ${durationLabel}`
+      );
+      utterance.rate = 1.08;
+      utterance.pitch = signal === "RISE" ? 1.12 : 0.92;
       utterance.volume = 0.9;
       window.speechSynthesis.speak(utterance);
     }
@@ -2336,10 +2590,9 @@ export default function RiseFallAnalysis() {
   useEffect(() => {
     if (
       !autoRunning ||
-      recoveryRequired ||
       !immediateEntryReady ||
       hasOpenSessionTrade ||
-      consecutiveLosses >= 3 ||
+      consecutiveLosses >= 2 ||
       executionRuns >= Math.max(1, Number(sessionRunTarget) || 100)
     ) {
       return;
@@ -2349,7 +2602,6 @@ export default function RiseFallAnalysis() {
     void executeConfirmedSignal(active.signal, active);
   }, [
     autoRunning,
-    recoveryRequired,
     immediateEntryReady,
     hasOpenSessionTrade,
     consecutiveLosses,
@@ -2373,11 +2625,10 @@ export default function RiseFallAnalysis() {
     if (
       !autoRunning ||
       !autoSwitchMarket ||
-      (recoveryRequired && recoveryTicks < 5) ||
       hasOpenSessionTrade ||
       tradeBusy ||
       marketSymbols.length < 2 ||
-      consecutiveLosses >= 3
+      consecutiveLosses >= 2
     ) {
       return;
     }
@@ -2406,10 +2657,10 @@ export default function RiseFallAnalysis() {
       const now = Date.now();
       const waitedMs = now - waitStartedAtRef.current;
       const switchDelay = Math.max(
-        3,
+        2,
         weakMarket
-          ? 3
-          : Number(switchAfterSeconds) || 4
+          ? 2
+          : Number(switchAfterSeconds) || 3
       ) * 1000;
 
       if (
@@ -2427,8 +2678,6 @@ export default function RiseFallAnalysis() {
   }, [
     autoRunning,
     autoSwitchMarket,
-    recoveryRequired,
-    recoveryTicks,
     hasOpenSessionTrade,
     tradeBusy,
     marketSymbols,
@@ -2603,23 +2852,7 @@ export default function RiseFallAnalysis() {
       );
     });
 
-    const latestClosed = [...closedSessionContracts]
-      .sort((left, right) => {
-        const leftId = contractIdOf(left);
-        const rightId = contractIdOf(right);
-        const leftTrade = sessionTrades.find(
-          (trade) => String(trade.contractId || "") === leftId
-        );
-        const rightTrade = sessionTrades.find(
-          (trade) => String(trade.contractId || "") === rightId
-        );
-
-        return Number(
-          rightTrade?.openedAt ?? rightTrade?.time ?? 0
-        ) - Number(
-          leftTrade?.openedAt ?? leftTrade?.time ?? 0
-        );
-      })[0];
+    const latestClosed = closedSessionContracts[0];
 
     if (latestClosed) {
       const latestId = contractIdOf(latestClosed);
@@ -2628,29 +2861,30 @@ export default function RiseFallAnalysis() {
         (trade) => String(trade.contractId || "") === latestId
       );
 
-      if (
-        latestTrade &&
-        latestId &&
-        !processedSettlementIdsRef.current.has(latestId)
-      ) {
-        processedSettlementIdsRef.current.add(latestId);
-
+      if (latestTrade && !latestTrade.lossStreakProcessed) {
         setSessionTrades((current) =>
           current.map((trade) =>
             String(trade.contractId || "") === latestId
-              ? {
-                  ...trade,
-                  lossStreakProcessed: true,
-                  status: latestStatus,
-                  profit: profitOf(latestClosed),
-                }
+              ? { ...trade, lossStreakProcessed: true }
               : trade
           )
         );
 
-        executionBusyRef.current = false;
         lastExecutedSignalRef.current = "";
         waitStartedAtRef.current = Date.now();
+
+        // Every completed contract invalidates the previous signal.
+        // A new trade cannot open until fresh ticks and a fresh MTF direction
+        // have been confirmed after this settlement.
+        settlementResetAtRef.current = Date.now();
+        freshScanStartedAtRef.current = Date.now();
+        freshSwitchAttemptRef.current = 0;
+        freshTickKeyRef.current = "";
+        setFreshTicksAfterSettlement(0);
+        setFreshSignalConfirmations(0);
+        setFreshSignalDirection("WAIT");
+        setFreshScanRequired(true);
+        nextAutoEntryAtRef.current = Number.POSITIVE_INFINITY;
         burstRunsRef.current = 0;
         setBurstRuns(0);
         burstDirectionRef.current = "WAIT";
@@ -2661,57 +2895,40 @@ export default function RiseFallAnalysis() {
           playResultFeedback(latestStatus);
         }
 
-        const won = latestStatus === "WON";
-        const cooldownMs = won ? 2500 : 9000;
-
-        recoveryResultRef.current = won ? "WIN" : "LOSS";
-        recoveryStartedAtRef.current = Date.now();
-        recoveryCooldownUntilRef.current = Date.now() + cooldownMs;
-        recoveryTickKeyRef.current = "";
-        recoveryRequiredRef.current = true;
-
-        setRecoveryRequired(true);
-        setRecoveryTicks(0);
-        setRecoveryConfirmations(0);
-        setRecoveryDirection("WAIT");
-        setRecoveryPhase("COLLECTING FRESH TICKS 0/5");
-        nextAutoEntryAtRef.current = Number.POSITIVE_INFINITY;
-
-        if (won) {
+        if (latestStatus === "WON") {
           consecutiveLossesRef.current = 0;
           setConsecutiveLosses(0);
+          nextAutoEntryAtRef.current = Date.now() + 1500;
+
+          if (burstRunsRef.current >= 2) {
+            burstRunsRef.current = 0;
+            setBurstRuns(0);
+            burstDirectionRef.current = "WAIT";
+            waitStartedAtRef.current = 0;
+          }
+        } else if (latestStatus === "LOST") {
+          waitStartedAtRef.current = 0;
           setExecutionMessage(
-            "WIN settled. Trade closed; collecting 5 fresh ticks before scanning the next entry."
+            `LOSS settled. Previous signal cleared. Switching market and rebuilding analysis from fresh ticks.`
           );
-        } else {
           const nextLosses = consecutiveLossesRef.current + 1;
           consecutiveLossesRef.current = nextLosses;
           setConsecutiveLosses(nextLosses);
-          setExecutionMessage(
-            "LOSS settled. Trade closed; cooling down, rebuilding analysis and preparing a market switch."
-          );
 
-          if (
-            autoRunningRef.current &&
-            autoSwitchMarket &&
-            marketSymbols.length > 1
-          ) {
-            window.setTimeout(() => {
-              if (
-                autoRunningRef.current &&
-                !hasOpenSessionTrade
-              ) {
-                void switchToNextMarket(
-                  "Loss recovery: rebuilding analysis on a fresh market"
-                );
-              }
-            }, 1200);
-          }
-
-          if (nextLosses >= 3 && autoRunningRef.current) {
+          if (nextLosses >= 2 && autoRunningRef.current) {
             stopAuto(
               `Hard stop: ${nextLosses} consecutive losses. Press RESET TRANSACTIONS before starting again.`
             );
+          } else if (
+            autoRunningRef.current &&
+            autoSwitchMarket &&
+            !marketSwitchingRef.current
+          ) {
+            window.setTimeout(() => {
+              if (autoRunningRef.current) {
+                void switchToNextMarket("Fresh market required after a loss");
+              }
+            }, 350);
           }
         }
       }
@@ -2721,9 +2938,8 @@ export default function RiseFallAnalysis() {
     symbol,
     durationMode,
     sessionTrades,
+    requiredFreshTicks,
     autoSwitchMarket,
-    marketSymbols,
-    hasOpenSessionTrade,
   ]);
 
   return (
@@ -2732,8 +2948,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V108 · Continuous Rise/Fall Trader"
-          subtitle="Automatic settlement recovery · fresh-tick rearming · continuous qualified entries"
+          title="EdgePilot V81 · Compact Mobile Trader"
+          subtitle="Compact phone controls, account visibility, result sound/vibration and adaptive execution"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -2765,7 +2981,11 @@ export default function RiseFallAnalysis() {
               className={`rfSideStartButton ${
                 autoRunning ? "running" : "stopped"
               }`}
-              disabled={tradeBusy}
+              disabled={
+                tradeBusy ||
+                !selectedAccountId ||
+                (selectedAccountType !== "demo" && !allowReal)
+              }
               onClick={toggleAutoExecution}
             >
               {tradeBusy
@@ -2837,7 +3057,15 @@ export default function RiseFallAnalysis() {
             <div>
               <small>RISE/FALL AUTO EXECUTION</small>
               <h2>{autoRunning ? "RUNNING" : "STOPPED"}</h2>
-              <p>{executionMessage || tradeError}</p>
+              <p>{executionMessage || tradeError || realExecutionStatus}</p>
+              {tradeError ? (
+                <div className="rfExecutionError">
+                  {executionErrorMessage(
+                    { message: tradeError },
+                    "Deriv execution error."
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="rfAutoPanelButtons">
@@ -2852,7 +3080,11 @@ export default function RiseFallAnalysis() {
               <button
                 type="button"
                 className={autoRunning ? "stop" : "start"}
-                disabled={tradeBusy}
+                disabled={
+                  tradeBusy ||
+                  !selectedAccountId ||
+                  (selectedAccountType !== "demo" && !allowReal)
+                }
                 onClick={toggleAutoExecution}
               >
                 {tradeBusy
@@ -2957,7 +3189,7 @@ export default function RiseFallAnalysis() {
                 disabled={autoRunning}
                 onChange={(event) => setBurstMode(event.target.checked)}
               />
-              Strong-signal burst mode · maximum 5 trades before a fresh reset
+              Strong-signal continuation · maximum 2 trades, with a fresh scan after every settlement
             </label>
 
             <label>
@@ -3008,20 +3240,121 @@ export default function RiseFallAnalysis() {
               Direction probability: <strong>{pct(activeDirectionProbability)}</strong>
             </span>
 
-            <label className={selectedAccountType === "demo" ? "disabled" : ""}>
+            <label
+              className={`rfRealExecutionLock ${
+                selectedAccountType === "demo"
+                  ? "disabled"
+                  : allowReal
+                    ? "enabled"
+                    : "locked"
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={allowReal}
                 disabled={selectedAccountType === "demo" || autoRunning}
-                onChange={(event) => setAllowReal(event.target.checked)}
+                onChange={(event) =>
+                  updateRealExecutionPermission(event.target.checked)
+                }
               />
-              I understand and enable Real-account execution
+              {selectedAccountType === "demo"
+                ? "Demo execution enabled"
+                : allowReal
+                  ? "REAL EXECUTION ENABLED"
+                  : "ENABLE REAL-ACCOUNT EXECUTION"}
+              <small>{realExecutionStatus}</small>
             </label>
 
             <span>
               Account: <strong>{String(selectedAccountType).toUpperCase()}</strong>
             </span>
           </div>
+        </section>
+
+        <section className="rfCompactMonitor">
+          <div className="rfCompactMonitorHead">
+            <div>
+              <small>LIVE MULTI-TIMEFRAME COMMAND CENTER</small>
+              <strong>
+                {multiTimeframe.direction} · {pct(multiTimeframe.agreement)} agreement
+              </strong>
+            </div>
+            <div className={`rfMonitorDecision ${signalClass(multiTimeframe.direction)}`}>
+              {multiTimeframe.qualified ? "ENTRY READY" : "SCANNING"}
+            </div>
+          </div>
+
+          <div className="rfTimeframeStrip">
+            {multiTimeframe.frames.map((frame) => (
+              <article
+                key={frame.key}
+                className={`${signalClass(frame.signal)} ${
+                  frame.risk === "HIGH" ? "highRisk" : ""
+                }`}
+              >
+                <small>{frame.key}</small>
+                <strong>{frame.signal}</strong>
+                <span>{pct(frame.confidence)}</span>
+                <em>{Number(frame.score || 0).toFixed(0)}</em>
+              </article>
+            ))}
+          </div>
+
+          <div className="rfLiveTradeMonitor">
+            <div>
+              <small>Recommended</small>
+              <strong>{multiTimeframe.displayDuration}</strong>
+            </div>
+            <div>
+              <small>Model confidence</small>
+              <strong>{pct(multiTimeframe.confidence)}</strong>
+            </div>
+            <div>
+              <small>Direction probability</small>
+              <strong>{pct(multiTimeframe.probability)}</strong>
+            </div>
+            <div>
+              <small>Noise</small>
+              <strong>{pct(multiTimeframe.noise)}</strong>
+            </div>
+            <div>
+              <small>Open trades</small>
+              <strong>
+                {sessionTrades.filter(
+                  (trade) => String(trade.status || "OPEN").toUpperCase() === "OPEN"
+                ).length}
+              </strong>
+            </div>
+            <div>
+              <small>Session W/L</small>
+              <strong>
+                {sessionTrades.filter((trade) => trade.status === "WON").length}/
+                {sessionTrades.filter((trade) => trade.status === "LOST").length}
+              </strong>
+            </div>
+            <div>
+              <small>Fresh ticks</small>
+              <strong>
+                {freshScanRequired
+                  ? `${freshTicksAfterSettlement}/${requiredFreshTicks}`
+                  : "READY"}
+              </strong>
+            </div>
+            <div>
+              <small>Fresh signal</small>
+              <strong>
+                {freshScanRequired
+                  ? `${freshSignalDirection} ${freshSignalConfirmations}/3`
+                  : "CONFIRMED"}
+              </strong>
+            </div>
+          </div>
+
+          <p>
+            {freshScanRequired
+              ? "Previous signal is cleared. The bot is collecting fresh ticks and will change market automatically until a new entry qualifies."
+              : multiTimeframe.reason}
+          </p>
         </section>
 
         <section
@@ -3751,7 +4084,7 @@ export default function RiseFallAnalysis() {
           <article>
             <small>LEARNING FILTER</small>
             <strong>
-              {consecutiveLosses >= 3
+              {consecutiveLosses >= 2
                 ? "HARD STOP"
                 : learningProfile.setupRejected
                   ? "REJECT SETUP"
@@ -4439,40 +4772,6 @@ export default function RiseFallAnalysis() {
           </div>
         </section>
 
-
-
-        <section className={`rfRecoveryStatus ${recoveryRequired ? "active" : "ready"}`}>
-          <div>
-            <small>CONTINUOUS EXECUTION</small>
-            <h2>{recoveryPhase}</h2>
-            <p>
-              {recoveryRequired
-                ? "The previous contract is settled. The bot is rebuilding a fresh signal instead of reusing the old entry."
-                : autoRunning
-                  ? "Scanner is armed and will continue after every settled trade."
-                  : "Press START to begin continuous scanning."}
-            </p>
-          </div>
-
-          <div className="rfRecoveryMetrics">
-            <span>
-              <small>Fresh ticks</small>
-              <strong>{recoveryTicks}/5</strong>
-            </span>
-            <span>
-              <small>Confirmations</small>
-              <strong>{recoveryConfirmations}/2</strong>
-            </span>
-            <span>
-              <small>Direction</small>
-              <strong>{recoveryDirection}</strong>
-            </span>
-            <span>
-              <small>Bot</small>
-              <strong>{autoRunning ? "RUNNING" : "STOPPED"}</strong>
-            </span>
-          </div>
-        </section>
 
         <section className="rfTradeViewer">
           <div className="rfPanelHead">
