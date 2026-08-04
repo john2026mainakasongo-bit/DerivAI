@@ -14,6 +14,7 @@ import "../styles/V102BotTargetFix.css";
 import "../styles/V103TargetTenVisibilityFix.css";
 import "../styles/V104TargetTenRunFix.css";
 import "../styles/V105TargetTenEntryQuality.css";
+import "../styles/V106TargetTenFinal.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
 
@@ -99,6 +100,8 @@ export default function TargetTenBot() {
   const [trades, setTrades] = useState([]);
   const [manualBarrier, setManualBarrier] = useState(1);
   const [sessionStartBalance, setSessionStartBalance] = useState(null);
+  const [recentContracts, setRecentContracts] = useState([]);
+  const [blockedContracts, setBlockedContracts] = useState([]);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -112,6 +115,8 @@ export default function TargetTenBot() {
     firstSeenAt: 0,
   });
   const lastLossAtRef = useRef(0);
+  const lastPlacedSetupRef = useRef(null);
+  const blockedExpiryRef = useRef(new Map());
 
   const accounts = useMemo(() => {
     const list =
@@ -143,21 +148,27 @@ export default function TargetTenBot() {
   const decision = useMemo(
     () =>
       buildTargetTenDecision(prices, {
-        minimumSamples: 100,
-        minimumScore: 92,
-        minimumProbability: 90,
-        minimumTransition: 90,
-        maximumExactRisk: 7,
+        minimumSamples: 120,
+        minimumScore: 76,
+        minimumEdge: 2.5,
+        minimumFastEdge: 0.5,
+        minimumTransitionEdge: -1,
+        minimumConsistency: 58,
+        maximumExactRisk: 15,
+        maximumConsecutiveUses: 2,
+        recentContracts,
+        blockedContracts,
       }),
-    [prices]
+    [prices, recentContracts, blockedContracts]
   );
 
   const strictEntryQualified =
     Boolean(decision?.qualified) &&
-    Number(decision?.best?.score || 0) >= 92 &&
-    Number(decision?.best?.probability || 0) >= 90 &&
-    Number(decision?.best?.transition || 0) >= 90 &&
-    Number(decision?.best?.exactRisk || 100) <= 7;
+    Number(decision?.best?.score || 0) >= 76 &&
+    Number(decision?.best?.expectedEdge || -100) >= 2.5 &&
+    Number(decision?.best?.consistency || 0) >= 58 &&
+    Number(decision?.best?.exactRisk || 100) <= 15 &&
+    !decision?.best?.blocked;
 
   const setupKey = `${decision?.best?.side || "WAIT"}-${decision?.best?.barrier ?? "X"}`;
 
@@ -185,7 +196,7 @@ export default function TargetTenBot() {
 
     confirmationRef.current = {
       ...previous,
-      count: Math.min(3, previous.count + 1),
+      count: Math.min(4, previous.count + 1),
     };
   }, [
     strictEntryQualified,
@@ -199,7 +210,7 @@ export default function TargetTenBot() {
   const confirmedEntry =
     strictEntryQualified &&
     confirmationRef.current.key === setupKey &&
-    confirmationRef.current.count >= 2;
+    confirmationRef.current.count >= 3;
 
   const hasOpenTrade = trades.some((trade) => trade.status === "OPEN");
 
@@ -210,6 +221,26 @@ export default function TargetTenBot() {
   useEffect(() => {
     latestTickCountRef.current = Array.isArray(prices) ? prices.length : 0;
   }, [prices]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+
+      for (const [key, expiry] of blockedExpiryRef.current.entries()) {
+        if (expiry <= now) {
+          blockedExpiryRef.current.delete(key);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        setBlockedContracts(Array.from(blockedExpiryRef.current.keys()));
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!connected && typeof connect === "function") {
@@ -294,6 +325,16 @@ export default function TargetTenBot() {
       });
 
       const contractId = String(result?.contractId || "");
+      const placedSetup = {
+        key: decision.best.key,
+        side: decision.best.side,
+        barrier: decision.best.barrier,
+        symbol,
+      };
+      lastPlacedSetupRef.current = placedSetup;
+      setRecentContracts((current) =>
+        [...current, decision.best.key].slice(-8)
+      );
       setRuns((value) => value + 1);
       setTrades((current) => [
         {
@@ -417,10 +458,26 @@ export default function TargetTenBot() {
 
     if (settlement.status === "WON" || settlement.profit > 0) {
       setWins((value) => value + 1);
-      setMessage("Trade won. Checking the next stage and scanning again.");
+      confirmationRef.current = { key: "", count: 0, firstSeenAt: 0 };
+      setMessage("Trade won. Rotating contracts and scanning all 14 setups again.");
     } else {
+      const lostKey = lastPlacedSetupRef.current?.key;
+      lastLossAtRef.current = Date.now();
+
+      if (lostKey) {
+        const expiry = Date.now() + 60_000;
+        blockedExpiryRef.current.set(lostKey, expiry);
+        setBlockedContracts((current) =>
+          Array.from(new Set([...current, lostKey]))
+        );
+      }
+
       setLosses((value) => value + 1);
-      stopBot("One loss recorded. Bot stopped to protect the account.");
+      stopBot(
+        lostKey
+          ? `${lostKey.replace("-", " ")} lost and is blocked for 60 seconds. Bot stopped to protect the account.`
+          : "One loss recorded. Bot stopped to protect the account."
+      );
     }
   }, [openContracts]);
 
@@ -516,6 +573,8 @@ export default function TargetTenBot() {
       setLosses(0);
       setSessionProfit(0);
       setTrades([]);
+      setRecentContracts([]);
+      confirmationRef.current = { key: "", count: 0, firstSeenAt: 0 };
       processedRef.current = new Set();
       setSessionStartBalance(balance);
       lastEntryRef.current = 0;
@@ -556,8 +615,8 @@ export default function TargetTenBot() {
 
       <main className="mainContent targetTenPage">
         <Topbar
-          title="EdgePilot V105 · High-EV Target 10 Bot"
-          subtitle="High-EV gate · two-step confirmation · loss cooldown · faster market rotation"
+          title="EdgePilot V106 · Final Multi-Contract Target 10"
+          subtitle="Scans OVER/UNDER 1–7 · edge-ranked entries · contract rotation · loss memory"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -704,18 +763,50 @@ export default function TargetTenBot() {
           <div>
             <small>LIVE DECISION</small>
             <h1>
-              {decision.qualified
+              {confirmedEntry
                 ? `BUY ${decision.best.side} ${decision.best.barrier}`
-                : "SCANNING"}
+                : strictEntryQualified
+                  ? `CONFIRMING ${decision.best.side} ${decision.best.barrier}`
+                  : "SCANNING 14 CONTRACTS"}
             </h1>
             <p>{decision.reason}</p>
           </div>
 
           <div className="targetMetrics">
             <span><small>Score</small><strong>{pct(decision.best.score)}</strong></span>
-            <span><small>Probability</small><strong>{pct(decision.best.probability)}</strong></span>
-            <span><small>Transition</small><strong>{pct(decision.best.transition)}</strong></span>
+            <span><small>Edge</small><strong>{Number(decision.best.expectedEdge || 0).toFixed(1)}</strong></span>
+            <span><small>Consistency</small><strong>{pct(decision.best.consistency)}</strong></span>
             <span><small>Exact risk</small><strong>{pct(decision.best.exactRisk)}</strong></span>
+          </div>
+        </section>
+
+
+        <section className="targetFinalRanking">
+          <div className="targetTradesHead">
+            <div>
+              <small>LIVE CONTRACT RANKING</small>
+              <h2>Best OVER and UNDER setups</h2>
+            </div>
+            <strong>14 scanned</strong>
+          </div>
+
+          <div className="targetFinalRankingGrid">
+            {decision.candidates.slice(0, 8).map((candidate) => (
+              <article
+                key={candidate.key}
+                className={
+                  candidate.key === decision.best.key ? "best" : ""
+                }
+              >
+                <small>{candidate.side} {candidate.barrier}</small>
+                <strong>{candidate.score.toFixed(1)}</strong>
+                <span>
+                  Edge {candidate.expectedEdge.toFixed(1)} ·
+                  Risk {candidate.exactRisk.toFixed(1)}%
+                </span>
+                {candidate.blocked ? <b>BLOCKED</b> : null}
+              </article>
+            ))}
           </div>
         </section>
 
@@ -724,12 +815,18 @@ export default function TargetTenBot() {
           <article><small>CONTRACT</small><strong>{decision.best.side} {decision.best.barrier}</strong></article>
           <article><small>WINNING DIGITS</small><strong>{Array.isArray(decision.winningDigits) ? decision.winningDigits.join(" · ") || "—" : "—"}</strong></article>
           <article><small>ACCOUNT MODE</small><strong>{accountType.toUpperCase()}</strong></article>
-          <article><small>MARTINGALE</small><strong>OFF</strong></article>
+          <article><small>ROTATION</small><strong>{recentContracts.length}/8</strong></article>
           <article><small>STATUS</small><strong>{running ? "RUNNING" : "STOPPED"}</strong></article>
         </section>
 
         <section className="targetMessage">
-          {message || tradeError}
+          <strong>{running ? "SCANNING" : "STOPPED"}</strong>
+          <span>{message || tradeError}</span>
+          <small>
+            Best: {decision.best.side} {decision.best.barrier} ·
+            Edge {Number(decision.best.expectedEdge || 0).toFixed(1)} ·
+            Confirm {confirmationRef.current.count}/3
+          </small>
         </section>
 
         <section className="targetTrades">

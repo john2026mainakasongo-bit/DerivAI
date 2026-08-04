@@ -1,0 +1,78 @@
+/* V106 final Target 10 scanner */
+
+.targetFinalRanking {
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #16566d;
+  border-radius: 12px;
+  background: #061f31;
+}
+
+.targetFinalRankingGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.targetFinalRankingGrid article {
+  position: relative;
+  min-height: 74px;
+  padding: 10px;
+  border: 1px solid #174b63;
+  border-radius: 9px;
+  background: #041a29;
+}
+
+.targetFinalRankingGrid article.best {
+  border-color: #27d8ad;
+  box-shadow: inset 0 0 0 1px rgba(39, 216, 173, .18);
+}
+
+.targetFinalRankingGrid small,
+.targetFinalRankingGrid span {
+  display: block;
+}
+
+.targetFinalRankingGrid small {
+  color: #36dfbc;
+  font-weight: 900;
+}
+
+.targetFinalRankingGrid strong {
+  display: block;
+  margin: 3px 0;
+  font-size: 20px;
+}
+
+.targetFinalRankingGrid span {
+  color: #8fbdd0;
+  font-size: 11px;
+}
+
+.targetFinalRankingGrid b {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  color: #ff617d;
+  font-size: 10px;
+}
+
+.targetMessage {
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+}
+
+@media (max-width: 1000px) {
+  .targetFinalRankingGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .targetFinalRankingGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .targetMessage {
+    grid-template-columns: 1fr !important;
+  }
+}
