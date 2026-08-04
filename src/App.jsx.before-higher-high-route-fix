@@ -41,7 +41,7 @@ export default function App() {
 
         <Route path="/bot" element={<Bot />} />
         <Route path="/quantum-ai-bot" element={<QuantumAIBot />
-} />
+        <Route path="/higher-high-ai" element={<HigherHighBot />} />
         <Route path="/differs-one-shot" element={<DiffersOneShotBot />} />
         <Route path="/settings" element={<Settings />} />
 
@@ -49,12 +49,10 @@ export default function App() {
           path="*"
           element={<Navigate to="/dashboard" replace />}
         />
-              <Route path="/higher-high-ai" element={<HigherHighBot />} />
       </Routes>
     </BrowserRouter>
   );
 }
-
 
 
 
