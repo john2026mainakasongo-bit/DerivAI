@@ -1,1 +1,163 @@
-.ouPage{min-height:100vh;padding-bottom:24px}.ouToolbar,.ouExecution,.ouHero,.ouPanel,.ouCandidateGrid article{border:1px solid #154e66;border-radius:13px;background:linear-gradient(145deg,#082638,#061b2a)}.ouToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px}.ouToolbar>div{display:flex;gap:8px}.ouToolbar button{border:0;border-radius:9px;padding:10px 16px;font-weight:900;cursor:pointer}.ouStart{background:#159e79;color:#fff}.ouStop{background:#e64c69;color:#fff}.ouReset{background:#3a2b08;color:#ffd167;border:1px solid #a77c22!important}.ouExecution{margin-top:12px;padding:15px}.ouExecution.running{border-color:#1dc99a}.ouExecution small,.ouHero small,.ouPanelHead small,.ouCandidateGrid small{color:#2ee2b3;font-size:8px;font-weight:900;letter-spacing:.08em}.ouExecution h2,.ouHero h1,.ouPanelHead h2{margin:4px 0}.ouExecution p,.ouHero p{margin:0;color:#86a7b5;font-size:10px}.ouControlGrid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;margin-top:12px}.ouControlGrid label,.ouControlGrid>div{border:1px solid #184a60;border-radius:9px;padding:8px;background:#061d2c}.ouControlGrid span{display:block;color:#7ea2b1;font-size:8px}.ouControlGrid input,.ouControlGrid select{width:100%;margin-top:5px;border:1px solid #23566b;border-radius:7px;padding:7px;color:#fff;background:#071927}.ouHero{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin-top:12px;padding:18px}.ouHero.ready{border-color:#20d4a0}.ouHero.prepare{border-color:#c79b34}.ouHeroStats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.ouHeroStats span{border:1px solid #1a4d63;border-radius:9px;padding:10px;background:#061c2b}.ouHeroStats small,.ouHeroStats strong{display:block}.ouCandidateGrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:12px 0}.ouCandidateGrid article{padding:12px}.ouCandidateGrid strong,.ouCandidateGrid span{display:block}.ouCandidateGrid strong{margin:5px 0;font-size:17px}.ouCandidateGrid span{color:#7ca0ae;font-size:8px}.ouMainGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.ouPanel{margin-top:10px;padding:13px}.ouPanelHead{display:flex;justify-content:space-between;align-items:center}.ouDigitBars>div{display:grid;grid-template-columns:24px 1fr 50px;gap:8px;align-items:center;margin:8px 0}.ouDigitBars i{height:8px;border-radius:999px;background:#0c3448;overflow:hidden}.ouDigitBars b{display:block;height:100%;background:linear-gradient(90deg,#19c99a,#2ce2bd)}.ouRecentDigits{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}.ouRecentDigits span{display:grid;place-items:center;width:28px;height:28px;border:1px solid #23566b;border-radius:50%;background:#071c2a;font-weight:900}.ouRecentDigits span.latest{border-color:#26dbae;background:#0b4c3c}.ouBarrierTable>div,.ouTradeTable>div{display:grid;align-items:center;gap:8px;border-bottom:1px solid #164358;padding:9px 7px;font-size:9px}.ouBarrierTable>div{grid-template-columns:.5fr 1fr 1fr 1fr}.ouTradeTable>div{grid-template-columns:1fr 1fr 1fr .8fr .7fr .8fr .9fr .8fr .7fr}.ouBarrierTable .head,.ouTradeTable .head{color:#2ee2b3;font-weight:900}.ouBarrierTable .selected{background:#0a3a32;border:1px solid #22c99b;border-radius:8px}.ouTradeTable .won{color:#2ee2b3}.ouTradeTable .lost{color:#ff6b82}.ouDisclaimer{margin-top:12px;border:1px solid #725c1d;border-radius:8px;padding:9px;color:#d0aa48;background:#2b2409;font-size:8px}@media(max-width:1100px){.ouControlGrid,.ouCandidateGrid{grid-template-columns:repeat(4,1fr)}.ouHeroStats{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.ouToolbar,.ouHero,.ouMainGrid{grid-template-columns:1fr;display:grid}.ouControlGrid,.ouCandidateGrid{grid-template-columns:repeat(2,1fr)}.ouTradeTable{overflow-x:auto}.ouTradeTable>div{min-width:900px}}
+* { box-sizing: border-box; }
+.ouPage { min-width: 0; padding-bottom: 16px; }
+.ouPage button, .ouPage input, .ouPage select { font: inherit; touch-action: manipulation; }
+.ouPage input, .ouPage select { font-size: 16px; }
+
+.ouTopStrip {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(310px, .9fr) auto;
+  gap: 10px;
+  align-items: stretch;
+  margin: 10px 0;
+}
+.ouAccountCard, .ouTopActions, .ouExecution, .ouHero, .ouPanel,
+.ouCandidateGrid article, .ouSignalGrid article {
+  background: #061f31;
+  border: 1px solid #12465f;
+  border-radius: 12px;
+}
+.ouAccountCard {
+  display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+  padding: 8px 10px;
+}
+.ouAccountCard.demo { border-color: #14a889; }
+.ouAccountCard.real { border-color: #f0a72f; }
+.ouAccountCard label span, .ouControlGrid span, .ouAccountCard small,
+.ouHero small, .ouPanel small, .ouCandidateGrid small, .ouSignalGrid small {
+  color: #42d8b4; font-size: 10px; font-weight: 800; letter-spacing: .06em;
+}
+.ouAccountCard select, .ouControlGrid input, .ouControlGrid select {
+  width: 100%; height: 36px; border: 1px solid #1a4d66; border-radius: 8px;
+  background: #041827; color: #fff; padding: 0 10px;
+}
+.ouAccountCard strong { display: block; white-space: nowrap; font-size: 17px; color: #fff; }
+.ouTopActions { display: flex; gap: 8px; padding: 8px; }
+.ouTopActions button, .ouManualBuy {
+  min-height: 38px; border: 0; border-radius: 9px; padding: 0 15px;
+  color: white; font-weight: 900; cursor: pointer;
+}
+.ouReset { background: #765514; }
+.ouStart { background: #0aa27f; }
+.ouStop { background: #c93d5a; }
+
+.ouExecution {
+  display: grid; grid-template-columns: minmax(220px, .7fr) 2fr;
+  gap: 10px; padding: 10px; margin-bottom: 10px;
+}
+.ouExecution.running { border-color: #16c5a0; }
+.ouExecutionStatus h2 { margin: 2px 0; font-size: 19px; color: #fff; }
+.ouExecutionStatus p { margin: 0; color: #87a9bc; font-size: 12px; }
+.ouControlGrid {
+  display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)); gap: 7px;
+}
+.ouControlGrid label, .ouControlGrid > div {
+  min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px;
+}
+.ouControlGrid > div {
+  min-height: 52px; padding: 6px 9px; background: #041827; border: 1px solid #153f55; border-radius: 8px;
+}
+.ouControlGrid strong { color: #fff; font-size: 14px; }
+.ouManualBuy { align-self: end; height: 36px; background: #147fc1; }
+.ouRealToggle input { width: 22px; height: 22px; }
+
+.ouHero {
+  display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; padding: 12px;
+  margin-bottom: 10px; border-color: #b08625;
+}
+.ouHero.ready { border-color: #13c79b; }
+.ouHero.prepare { border-color: #d59d26; }
+.ouHero h1 { margin: 2px 0; color: #fff; font-size: clamp(23px, 3vw, 36px); }
+.ouHero p { margin: 0; color: #88aabd; font-size: 12px; }
+.ouHeroStats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ouHeroStats span { background: #041827; border: 1px solid #174861; border-radius: 8px; padding: 8px; }
+.ouHeroStats strong { display: block; margin-top: 4px; color: #fff; }
+
+.ouSignalGrid, .ouCandidateGrid {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px;
+}
+.ouSignalGrid article, .ouCandidateGrid article { min-height: 83px; padding: 10px; }
+.ouSignalGrid strong, .ouCandidateGrid strong { display: block; color: #fff; font-size: 16px; margin: 5px 0; overflow-wrap: anywhere; }
+.ouSignalGrid span, .ouCandidateGrid span { color: #7396aa; font-size: 10px; }
+
+.ouMainGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.ouPanel { min-width: 0; padding: 10px; margin-bottom: 10px; }
+.ouPanelHead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ouPanelHead h2 { margin: 2px 0 0; color: #fff; font-size: 18px; }
+.ouPanelHead > strong { color: #fff; white-space: nowrap; }
+
+.ouDigitBars { display: grid; gap: 5px; }
+.ouDigitBars > div { display: grid; grid-template-columns: 18px 1fr 44px; align-items: center; gap: 7px; color: #fff; }
+.ouDigitBars i { height: 8px; background: #0b3850; border-radius: 99px; overflow: hidden; }
+.ouDigitBars b { display: block; height: 100%; background: linear-gradient(90deg, #22c8a2, #30e0bd); }
+
+.ouRecentDigits { display: flex; flex-wrap: wrap; gap: 5px; }
+.ouRecentDigits span {
+  width: 29px; height: 29px; display: grid; place-items: center;
+  border: 1px solid #1b5069; border-radius: 50%; color: #fff; background: #082235;
+}
+.ouRecentDigits .lower { border-color: #1686c2; }
+.ouRecentDigits .upper { border-color: #23b88e; }
+.ouRecentDigits .latest { background: #10a781; border-color: #42f0c6; font-weight: 900; }
+
+.ouDiffersList { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 9px; }
+.ouDiffersList div { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 7px; border-radius: 7px; background: #041827; color: #fff; font-size: 11px; }
+.ouDiffersList span { color: #86a7ba; }
+
+.ouBarrierTable, .ouTradeTable { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ouBarrierTable > div, .ouBarrierTable > button {
+  min-width: 520px; width: 100%; display: grid; grid-template-columns: .7fr repeat(3, 1fr);
+  align-items: center; border: 0; border-bottom: 1px solid #123d52;
+  background: transparent; color: #d9edf5; text-align: left; padding: 7px 9px;
+}
+.ouBarrierTable .head, .ouTradeTable .head { color: #32d7ae; font-size: 10px; font-weight: 900; }
+.ouBarrierTable button.selected { background: rgba(18, 173, 130, .18); outline: 1px solid #18b58e; border-radius: 7px; }
+
+.ouTradeTable > div {
+  min-width: 760px; display: grid; grid-template-columns: .9fr 1fr 1fr .7fr .7fr .8fr .7fr;
+  gap: 8px; padding: 7px 5px; border-bottom: 1px solid #123d52; color: #cfe3ed; font-size: 11px;
+}
+.ouTradeTable p { color: #8aa9bb; padding: 10px; }
+.ouTradeTable .won { color: #35d6a9; }
+.ouTradeTable .lost { color: #ff6f88; }
+.ouDisclaimer { margin-top: 8px; padding: 8px 10px; border-radius: 8px; color: #d6b55a; background: #3a2d0b; font-size: 11px; }
+
+@media (max-width: 1100px) {
+  .ouTopStrip { grid-template-columns: 1fr 1fr; }
+  .ouTopActions { grid-column: 1 / -1; }
+  .ouControlGrid { grid-template-columns: repeat(4, minmax(90px, 1fr)); }
+  .ouSignalGrid, .ouCandidateGrid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 720px) {
+  .ouPage { padding: 6px 7px 14px !important; overflow-x: hidden; }
+  .ouPage .topbar { margin: -6px -7px 6px; }
+  .ouTopStrip, .ouExecution, .ouHero, .ouMainGrid { grid-template-columns: 1fr; gap: 7px; }
+  .ouTopStrip { margin: 6px 0; }
+  .ouTopActions { grid-column: auto; padding: 6px; }
+  .ouTopActions button { flex: 1; min-height: 36px; padding: 0 9px; }
+  .ouAccountCard { grid-template-columns: minmax(0, 1fr) auto; padding: 7px; }
+  .ouAccountCard strong { font-size: 14px; }
+  .ouExecution { padding: 7px; margin-bottom: 7px; }
+  .ouExecutionStatus { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; }
+  .ouExecutionStatus p { grid-column: 1 / -1; }
+  .ouControlGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .ouControlGrid label, .ouControlGrid > div { min-width: 0; }
+  .ouControlGrid input, .ouControlGrid select { height: 38px; min-width: 0; }
+  .ouManualBuy { height: 38px; align-self: end; }
+  .ouHero { padding: 8px; margin-bottom: 7px; }
+  .ouHeroStats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ouHeroStats span { padding: 6px 5px; min-width: 0; }
+  .ouHeroStats strong { font-size: 12px; overflow-wrap: anywhere; }
+  .ouSignalGrid, .ouCandidateGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 7px; }
+  .ouSignalGrid article, .ouCandidateGrid article { min-height: 72px; padding: 8px; }
+  .ouSignalGrid strong, .ouCandidateGrid strong { font-size: 13px; }
+  .ouPanel { padding: 8px; margin-bottom: 7px; }
+  .ouPanelHead h2 { font-size: 15px; }
+  .ouRecentDigits span { width: 27px; height: 27px; }
+  .ouDiffersList { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 390px) {
+  .ouHeroStats { grid-template-columns: repeat(2, 1fr); }
+  .ouSignalGrid, .ouCandidateGrid { grid-template-columns: 1fr 1fr; }
+}
