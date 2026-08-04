@@ -79,10 +79,10 @@ export function analyzeDiffersOneShot(digitHistory = []) {
     )
     .slice(-120);
 
-  if (digits.length < 30) {
+  if (digits.length < 18) {
     return {
       ready: false,
-      reason: `Collecting digits ${digits.length}/30`,
+      reason: `Collecting fresh digits ${digits.length}/18`,
       samples: digits.length,
       selectedDigit: null,
       confidence: 0,
@@ -199,23 +199,23 @@ export function analyzeDiffersOneShot(digitHistory = []) {
     reasons.push("Digit distribution is highly random.");
   }
 
-  if (confidence < 78) {
-    reasons.push("Confidence is below the one-shot threshold.");
+  if (confidence < 91) {
+    reasons.push("Fresh-scan confidence is below 91%.");
   }
 
-  if (separation < 1.2) {
-    reasons.push("Best digit is not clearly separated from alternatives.");
+  if (separation < 3) {
+    reasons.push("The best digit has not stayed clearly separated.");
   }
 
-  if (Number(best?.weightedMatchProbability || 100) > 13.5) {
-    reasons.push("Selected digit has an elevated estimated match rate.");
+  if (Number(best?.weightedMatchProbability || 100) > 8.5) {
+    reasons.push("Estimated match rate is above the strict 8.5% limit.");
   }
 
   const ready =
-    confidence >= 78 &&
-    separation >= 1.2 &&
-    Number(best?.weightedMatchProbability || 100) <= 13.5 &&
-    distributionEntropy <= 98.5;
+    confidence >= 91 &&
+    separation >= 3 &&
+    Number(best?.weightedMatchProbability || 100) <= 8.5 &&
+    distributionEntropy <= 96;
 
   return {
     ready,
