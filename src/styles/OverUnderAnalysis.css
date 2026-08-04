@@ -474,3 +474,37 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* V82: remove duplicate inline account card from Over/Under page */
+.ouTopStrip {
+  grid-template-columns: minmax(260px, 1fr) auto !important;
+  align-items: stretch;
+}
+
+.ouTopStrip .derivVolatilitySelector {
+  min-width: 0;
+}
+
+.ouTopStrip .ouTopActions {
+  grid-column: auto;
+  min-width: 220px;
+}
+
+@media (max-width: 900px) {
+  .ouTopStrip {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ouTopStrip .ouTopActions {
+    min-width: 0;
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .ouTopStrip .ouTopActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}

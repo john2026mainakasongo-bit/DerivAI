@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
-import DerivAccountSelector, { accountId, accountType } from "../components/DerivAccountSelector";
+import { accountId, accountType } from "../components/DerivAccountSelector";
 import DerivVolatilitySelector, { DERIV_VOLATILITY_MARKETS } from "../components/DerivVolatilitySelector";
 import "../components/DerivSelectors.css";
 import useDerivTicks from "../hooks/useDerivTicks";
@@ -442,8 +442,8 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V81 · Deriv Market & Account Fix"
-          subtitle="Clean non-overlapping layout, compact quick buttons and direct selected-duration manual trading"
+          title="EdgePilot V82 · Clean Header Account Layout"
+          subtitle="Single account selector in the top header · compact market and execution controls"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -456,16 +456,7 @@ export default function OverUnderAnalysis() {
             disabled={loadingMarket || autoRunning}
             onChange={changeSymbol}
           />
-
-          <DerivAccountSelector
-            accounts={accounts}
-            selectedAccountId={selectedId}
-            selectedAccount={selectedAccount}
-            currency={currency}
-            onChange={(nextId) => void switchAccount(nextId)}
-          />
-
-          <div className="ouTopActions">
+<div className="ouTopActions">
             <button type="button" className="ouReset" onClick={resetTransactions}>
               RESET
             </button>
