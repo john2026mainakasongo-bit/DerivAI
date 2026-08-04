@@ -129,9 +129,48 @@ export default function QuantumAIBot() {
   const processedContractsRef = useRef(new Set());
   const buyingRef = useRef(false);
   const autoConnectStartedRef = useRef(false);
+  const marketWarmupStartedRef = useRef(Date.now());
+  const previousSymbolRef = useRef("");
   const adaptiveMarketBlockRef = useRef(new Map());
 
   const connecting = status === "CONNECTING" || loadingMarket;
+
+  useEffect(() => {
+    if (!symbol) return;
+
+    if (previousSymbolRef.current !== symbol) {
+      previousSymbolRef.current = symbol;
+      marketWarmupStartedRef.current = Date.now();
+      scanStartedAtRef.current = Date.now();
+      setMessage(`Warming ${market?.label || symbol} before scoring all five AI models...`);
+    }
+  }, [symbol, market?.label]);
+
+  const marketWarmup = useMemo(() => {
+    const sampleCount = Array.isArray(prices) ? prices.length : 0;
+    const elapsedSeconds =
+      (Date.now() - marketWarmupStartedRef.current) / 1000;
+
+    const oneSecondMarket =
+      String(symbol || "").includes("1HZ") ||
+      String(market?.label || "").includes("(1s)");
+
+    const minimumSamples = oneSecondMarket ? 45 : 70;
+    const minimumSeconds = oneSecondMarket ? 8 : 18;
+
+    const ready =
+      sampleCount >= minimumSamples &&
+      elapsedSeconds >= minimumSeconds;
+
+    return {
+      ready,
+      sampleCount,
+      minimumSamples,
+      elapsedSeconds,
+      minimumSeconds,
+      oneSecondMarket,
+    };
+  }, [prices, symbol, market?.label]);
 
   useEffect(() => {
     if (connected || connecting || autoConnectStartedRef.current) return;
@@ -443,7 +482,21 @@ export default function QuantumAIBot() {
   }, [running, stats.profit, settings.takeProfit, settings.stopLoss]);
 
   useEffect(() => {
-    if (!running || loadingMarket || activeTrades.length > 0 || markets.length < 2) return;
+    if (
+      !running ||
+      loadingMarket ||
+      activeTrades.length > 0 ||
+      markets.length < 2 ||
+      !marketWarmup.ready
+    ) {
+      if (running && !marketWarmup.ready) {
+        setMessage(
+          `Warming ${market?.label || symbol}: ${marketWarmup.sampleCount}/${marketWarmup.minimumSamples} ticks, ` +
+          `${Math.floor(marketWarmup.elapsedSeconds)}/${marketWarmup.minimumSeconds}s.`
+        );
+      }
+      return;
+    }
     if (adaptiveLossGuard.ready) {
       scanStartedAtRef.current = Date.now();
       return;
@@ -487,16 +540,27 @@ export default function QuantumAIBot() {
     adaptiveLossGuard.shouldSwitchMarket,
     settings.marketSwitchSeconds,
     changeSymbol,
+    marketWarmup.ready,
+    marketWarmup.sampleCount,
+    marketWarmup.minimumSamples,
+    marketWarmup.elapsedSeconds,
+    marketWarmup.minimumSeconds,
+    market?.label,
   ]);
 
   useEffect(() => {
     if (
       !running ||
+      !marketWarmup.ready ||
       !adaptiveLossGuard.ready ||
       buyingRef.current ||
       tradeBusy
     ) {
-      if (running && analysis.ready && !adaptiveLossGuard.ready) {
+      if (running && !marketWarmup.ready) {
+        setMessage(
+          `Warming ${market?.label || symbol}: ${marketWarmup.sampleCount}/${marketWarmup.minimumSamples} ticks.`
+        );
+      } else if (running && analysis.ready && !adaptiveLossGuard.ready) {
         setMessage(adaptiveLossGuard.reason);
       }
       return;
@@ -881,6 +945,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 

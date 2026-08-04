@@ -65,7 +65,19 @@ export function analyzeQuantumFiveAI(prices=[],options={}){
     aiConfidence >= 72 &&
     responsiveRisk;
 
-  const ready = strictReady || responsiveReady;
+  const balancedRisk =
+    Number(base.noiseScore || 100) <= 44 &&
+    Number(base.reversalRisk || 100) <= 34 &&
+    Number(base.consistency || 0) >= 42 &&
+    Number(base.confidence || 0) >= 74 &&
+    Number(base.metrics?.voteConsensus || 0) >= 72;
+
+  const balancedReady =
+    agreement === 2 &&
+    aiConfidence >= 78 &&
+    balancedRisk;
+
+  const ready = strictReady || responsiveReady || balancedReady;
 
   const short =
     agreement === 5 &&
@@ -82,6 +94,8 @@ export function analyzeQuantumFiveAI(prices=[],options={}){
     ? { duration: 3, durationUnit: "t", displayDuration: "3 TICKS" }
     : medium
     ? { duration: 5, durationUnit: "t", displayDuration: "5 TICKS" }
+    : balancedReady
+    ? { duration: 10, durationUnit: "s", displayDuration: "10 SECONDS" }
     : responsiveReady
     ? { duration: 15, durationUnit: "s", displayDuration: "15 SECONDS" }
     : { duration: 20, durationUnit: "s", displayDuration: "20 SECONDS" };
@@ -97,13 +111,19 @@ export function analyzeQuantumFiveAI(prices=[],options={}){
     entryMode: ready
       ? agreement === 5
         ? "FIVE-AI"
+        : balancedReady
+        ? "BALANCED"
         : responsiveReady
         ? "RESPONSIVE"
         : "ENSEMBLE"
       : "WAIT",
     reason: ready
       ? `${agreement}/5 AI models confirm ${candidate} through ${
-          responsiveReady ? "responsive" : "strict"
+          balancedReady
+            ? "balanced"
+            : responsiveReady
+            ? "responsive"
+            : "strict"
         } lane.`
       : `WAIT: ${agreement}/5 AI models agree, but entry quality is still below the active lane.`,
     checks: [
@@ -136,4 +156,5 @@ export function analyzeQuantumFiveAI(prices=[],options={}){
     },
   };
 }
+
 
