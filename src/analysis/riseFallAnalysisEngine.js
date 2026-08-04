@@ -2684,4 +2684,134 @@ export function analyzeRiseFall(
   };
 }
 
+export function analyzeRiseFallMultiTimeframe(prices = []) {
+  const source = Array.isArray(prices) ? prices : [];
+
+  const definitions = [
+    { key: "1T", label: "1 tick", size: 12, mode: "10ticks", weight: 1.00, duration: { duration: 1, durationUnit: "t", displayDuration: "1 TICK" } },
+    { key: "2T", label: "2 ticks", size: 18, mode: "10ticks", weight: 1.10, duration: { duration: 2, durationUnit: "t", displayDuration: "2 TICKS" } },
+    { key: "5T", label: "5 ticks", size: 30, mode: "10ticks", weight: 1.25, duration: { duration: 5, durationUnit: "t", displayDuration: "5 TICKS" } },
+    { key: "10T", label: "10 ticks", size: 55, mode: "10ticks", weight: 1.35, duration: { duration: 10, durationUnit: "t", displayDuration: "10 TICKS" } },
+    { key: "15S", label: "15 seconds", size: 80, mode: "15s", weight: 1.45, duration: { duration: 15, durationUnit: "s", displayDuration: "15 SECONDS" } },
+    { key: "30S", label: "30 seconds", size: 120, mode: "15s", weight: 1.20, duration: { duration: 30, durationUnit: "s", displayDuration: "30 SECONDS" } },
+    { key: "1M", label: "1 minute", size: 180, mode: "15s", weight: 1.00, duration: { duration: 60, durationUnit: "s", displayDuration: "1 MINUTE" } },
+  ];
+
+  const frames = definitions.map((definition) => {
+    const sample = source.slice(-Math.min(definition.size, source.length));
+    const result = analyzeRiseFall(sample, definition.mode);
+    const score = Number(result?.scores?.final || result?.opportunityScore || 0);
+    const confidence = Number(result?.smartConfidence ?? result?.confidence ?? 0);
+    const probability =
+      result?.signal === "RISE"
+        ? Number(result?.probabilityRise || 0)
+        : result?.signal === "FALL"
+          ? Number(result?.probabilityFall || 0)
+          : 0;
+
+    return {
+      ...definition,
+      signal: result?.signal || "WAIT",
+      confidence,
+      score,
+      probability,
+      risk: result?.risk || "HIGH",
+      regime: result?.regime || "UNKNOWN",
+      noise: Number(result?.noiseRatio ?? result?.noise ?? 100),
+      analysis: result,
+    };
+  });
+
+  const directional = frames.filter((frame) =>
+    ["RISE", "FALL"].includes(frame.signal)
+  );
+
+  const riseWeight = directional
+    .filter((frame) => frame.signal === "RISE")
+    .reduce((sum, frame) => sum + frame.weight, 0);
+
+  const fallWeight = directional
+    .filter((frame) => frame.signal === "FALL")
+    .reduce((sum, frame) => sum + frame.weight, 0);
+
+  const totalWeight = Math.max(0.0001, riseWeight + fallWeight);
+  const direction =
+    riseWeight > fallWeight
+      ? "RISE"
+      : fallWeight > riseWeight
+        ? "FALL"
+        : "WAIT";
+
+  const aligned = directional.filter((frame) => frame.signal === direction);
+  const alignedWeight = aligned.reduce((sum, frame) => sum + frame.weight, 0);
+  const agreement = direction === "WAIT"
+    ? 0
+    : clamp((alignedWeight / totalWeight) * 100);
+
+  const weightedAverage = (field) => {
+    const weight = aligned.reduce((sum, frame) => sum + frame.weight, 0);
+    if (!weight) return 0;
+    return aligned.reduce(
+      (sum, frame) => sum + Number(frame[field] || 0) * frame.weight,
+      0
+    ) / weight;
+  };
+
+  const confidence = weightedAverage("confidence");
+  const score = weightedAverage("score");
+  const probability = weightedAverage("probability");
+  const noise = weightedAverage("noise");
+  const lowRiskFrames = aligned.filter((frame) => frame.risk !== "HIGH").length;
+
+  const durationFrame =
+    aligned
+      .filter(
+        (frame) =>
+          frame.confidence >= 72 &&
+          frame.score >= 70 &&
+          frame.probability >= 74 &&
+          frame.risk !== "HIGH"
+      )
+      .sort((a, b) => {
+        const qualityA =
+          a.confidence * 0.35 +
+          a.score * 0.30 +
+          a.probability * 0.25 +
+          (100 - a.noise) * 0.10;
+        const qualityB =
+          b.confidence * 0.35 +
+          b.score * 0.30 +
+          b.probability * 0.25 +
+          (100 - b.noise) * 0.10;
+        return qualityB - qualityA;
+      })[0] || null;
+
+  const qualified =
+    direction !== "WAIT" &&
+    agreement >= 64 &&
+    confidence >= 70 &&
+    score >= 69 &&
+    probability >= 73 &&
+    noise <= 72 &&
+    lowRiskFrames >= 2;
+
+  return {
+    frames,
+    direction,
+    agreement,
+    confidence,
+    score,
+    probability,
+    noise,
+    lowRiskFrames,
+    qualified,
+    recommendedDuration: durationFrame?.duration || null,
+    recommendedDurationUnit: durationFrame?.durationUnit || null,
+    displayDuration: durationFrame?.displayDuration || "WAIT",
+    reason: qualified
+      ? `${direction} confirmed across ${aligned.length}/${frames.length} timeframes.`
+      : "Timeframes are mixed or signal quality is below the execution threshold.",
+  };
+}
+
 export default analyzeRiseFall;

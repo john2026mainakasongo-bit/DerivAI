@@ -10,9 +10,13 @@ import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
 import useDerivTicks from "../hooks/useDerivTicks";
-import { analyzeRiseFall } from "../analysis/riseFallAnalysisEngine";
+import {
+  analyzeRiseFall,
+  analyzeRiseFallMultiTimeframe,
+} from "../analysis/riseFallAnalysisEngine";
 import "../styles/RiseFallAnalysis.css";
 import "../styles/V103RiseFallRealExecution.css";
+import "../styles/RiseFallCompactV4.css";
 
 function clamp(value, minimum = 0, maximum = 100) {
   const numeric = Number(value);
@@ -120,8 +124,8 @@ function currentLossStreak(records = []) {
 }
 
 
-const RF_HISTORY_STORAGE_KEY = "edgepilot-rf-price-history-v73";
-const RF_MARKET_SNAPSHOT_KEY = "edgepilot-rf-market-snapshots-v73";
+const RF_HISTORY_STORAGE_KEY = "edgepilot-rf-price-history-v90";
+const RF_MARKET_SNAPSHOT_KEY = "edgepilot-rf-market-snapshots-v90";
 const RF_MAX_HISTORY_POINTS = 2400;
 const RF_MAX_MARKET_SNAPSHOTS = 40;
 
@@ -932,7 +936,7 @@ export default function RiseFallAnalysis() {
     "Real execution is locked."
   );
   const [autoSwitchMarket, setAutoSwitchMarket] = useState(true);
-  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(4);
+  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(6);
   const [marketSwitches, setMarketSwitches] = useState(0);
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [durationMode, setDurationMode] = useState("AUTO");
@@ -943,7 +947,7 @@ export default function RiseFallAnalysis() {
     "Auto execution is stopped."
   );
   const [executionRuns, setExecutionRuns] = useState(0);
-  const [sessionRunTarget, setSessionRunTarget] = useState(100);
+  const [sessionRunTarget, setSessionRunTarget] = useState(20);
   const [burstMode, setBurstMode] = useState(true);
   const [burstRuns, setBurstRuns] = useState(0);
   const [sessionTrades, setSessionTrades] = useState([]);
@@ -1082,6 +1086,10 @@ export default function RiseFallAnalysis() {
   useEffect(() => {
     if (!symbol) return;
 
+    setDisplayedCandles([]);
+    setPersistentHistory([]);
+    lastLiveTickRef.current = { symbol: "", key: "" };
+
     const stored = readStoredMap(RF_HISTORY_STORAGE_KEY);
     const saved = Array.isArray(stored[symbol]) ? stored[symbol] : [];
     setPersistentHistory(saved);
@@ -1179,6 +1187,10 @@ export default function RiseFallAnalysis() {
   const active =
     mode === "15s" ? analysis15 : analysis10;
 
+  const multiTimeframe = useMemo(
+    () => analyzeRiseFallMultiTimeframe(combinedPriceHistory),
+    [combinedPriceHistory]
+  );
 
   const syntheticScore = useMemo(
     () =>
@@ -1437,7 +1449,7 @@ export default function RiseFallAnalysis() {
 
   const burstEntryReady =
     burstMode &&
-    burstRunsRef.current < 5 &&
+    burstRunsRef.current < 3 &&
     learnedEntryAllowed &&
     active.signal !== "WAIT" &&
     activeDirectionProbability >= 78 &&
@@ -1613,7 +1625,24 @@ export default function RiseFallAnalysis() {
       label: rise ? "RISE" : "FALL",
     };
 
-    const exceptionalOneTick = false;
+    const mtfAligned =
+      multiTimeframe.direction === signal &&
+      multiTimeframe.agreement >= 64 &&
+      multiTimeframe.lowRiskFrames >= 2;
+
+    const exceptionalOneTick =
+      allowOneTick &&
+      mtfAligned &&
+      multiTimeframe.agreement >= 84 &&
+      multiTimeframe.confidence >= 88 &&
+      multiTimeframe.score >= 86 &&
+      multiTimeframe.probability >= 90 &&
+      multiTimeframe.noise <= 34 &&
+      probability >= 92 &&
+      confidence >= 90 &&
+      finalScore >= 88 &&
+      reversal <= 14 &&
+      analysis?.risk === "LOW";
 
     const twoTickQualified =
       probability >= 94 &&
@@ -1677,6 +1706,39 @@ export default function RiseFallAnalysis() {
     }
 
     if (durationMode === "AUTO") {
+      if (exceptionalOneTick) {
+        return {
+          ...base,
+          duration: 1,
+          durationUnit: "t",
+          fastEntry: true,
+          displayDuration: "1 TICK",
+        };
+      }
+
+      if (!mtfAligned) {
+        return {
+          blocked: true,
+          reason:
+            "Timeframes disagree. Switching market before risking an entry.",
+          requestMarketSwitch: true,
+        };
+      }
+
+      if (
+        multiTimeframe.recommendedDuration &&
+        multiTimeframe.recommendedDurationUnit &&
+        multiTimeframe.qualified
+      ) {
+        return {
+          ...base,
+          duration: multiTimeframe.recommendedDuration,
+          durationUnit: multiTimeframe.recommendedDurationUnit,
+          fastEntry: multiTimeframe.recommendedDurationUnit === "t",
+          displayDuration: multiTimeframe.displayDuration,
+        };
+      }
+
       if (twoTickQualified) {
         return {
           ...base,
@@ -1932,7 +1994,7 @@ export default function RiseFallAnalysis() {
       !autoRunningRef.current ||
       executionRunsRef.current >= Math.max(1, Number(sessionRunTarget) || 100) ||
       Date.now() < nextAutoEntryAtRef.current ||
-      burstRunsRef.current >= 5 ||
+      burstRunsRef.current >= 3 ||
       hasOpenSessionTrade ||
       !signal ||
       signal === "WAIT" ||
@@ -2023,6 +2085,9 @@ export default function RiseFallAnalysis() {
       });
 
       const contractId = String(result?.contractId || "");
+
+      announceTradeEntry(signal, parameters.displayDuration);
+
       const nextRuns = executionRunsRef.current + 1;
       const stoppedDuringPurchase =
         executionGeneration !== stopGenerationRef.current ||
@@ -2206,6 +2271,25 @@ export default function RiseFallAnalysis() {
       );
       utterance.rate = 1.05;
       utterance.pitch = isWin ? 1.2 : 0.8;
+      utterance.volume = 0.9;
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
+  function announceTradeEntry(signal, durationLabel) {
+    if (!soundEnabled || typeof window === "undefined") return;
+
+    if ("vibrate" in navigator) {
+      navigator.vibrate([70, 45, 70]);
+    }
+
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(
+        `${signal} trade opened. ${durationLabel}`
+      );
+      utterance.rate = 1.08;
+      utterance.pitch = signal === "RISE" ? 1.12 : 0.92;
       utterance.volume = 0.9;
       window.speechSynthesis.speak(utterance);
     }
@@ -2589,7 +2673,7 @@ export default function RiseFallAnalysis() {
           setConsecutiveLosses(0);
           nextAutoEntryAtRef.current = Date.now() + 1500;
 
-          if (burstRunsRef.current >= 5) {
+          if (burstRunsRef.current >= 3) {
             burstRunsRef.current = 0;
             setBurstRuns(0);
             burstDirectionRef.current = "WAIT";
@@ -2867,7 +2951,7 @@ export default function RiseFallAnalysis() {
                 disabled={autoRunning}
                 onChange={(event) => setBurstMode(event.target.checked)}
               />
-              Strong-signal burst mode · maximum 5 trades before a fresh reset
+              Strong-signal burst mode · maximum 3 trades before a fresh reset
             </label>
 
             <label>
@@ -2947,6 +3031,72 @@ export default function RiseFallAnalysis() {
               Account: <strong>{String(selectedAccountType).toUpperCase()}</strong>
             </span>
           </div>
+        </section>
+
+        <section className="rfCompactMonitor">
+          <div className="rfCompactMonitorHead">
+            <div>
+              <small>LIVE MULTI-TIMEFRAME COMMAND CENTER</small>
+              <strong>
+                {multiTimeframe.direction} · {pct(multiTimeframe.agreement)} agreement
+              </strong>
+            </div>
+            <div className={`rfMonitorDecision ${signalClass(multiTimeframe.direction)}`}>
+              {multiTimeframe.qualified ? "ENTRY READY" : "SCANNING"}
+            </div>
+          </div>
+
+          <div className="rfTimeframeStrip">
+            {multiTimeframe.frames.map((frame) => (
+              <article
+                key={frame.key}
+                className={`${signalClass(frame.signal)} ${
+                  frame.risk === "HIGH" ? "highRisk" : ""
+                }`}
+              >
+                <small>{frame.key}</small>
+                <strong>{frame.signal}</strong>
+                <span>{pct(frame.confidence)}</span>
+                <em>{Number(frame.score || 0).toFixed(0)}</em>
+              </article>
+            ))}
+          </div>
+
+          <div className="rfLiveTradeMonitor">
+            <div>
+              <small>Recommended</small>
+              <strong>{multiTimeframe.displayDuration}</strong>
+            </div>
+            <div>
+              <small>Model confidence</small>
+              <strong>{pct(multiTimeframe.confidence)}</strong>
+            </div>
+            <div>
+              <small>Direction probability</small>
+              <strong>{pct(multiTimeframe.probability)}</strong>
+            </div>
+            <div>
+              <small>Noise</small>
+              <strong>{pct(multiTimeframe.noise)}</strong>
+            </div>
+            <div>
+              <small>Open trades</small>
+              <strong>
+                {sessionTrades.filter(
+                  (trade) => String(trade.status || "OPEN").toUpperCase() === "OPEN"
+                ).length}
+              </strong>
+            </div>
+            <div>
+              <small>Session W/L</small>
+              <strong>
+                {sessionTrades.filter((trade) => trade.status === "WON").length}/
+                {sessionTrades.filter((trade) => trade.status === "LOST").length}
+              </strong>
+            </div>
+          </div>
+
+          <p>{multiTimeframe.reason}</p>
         </section>
 
         <section

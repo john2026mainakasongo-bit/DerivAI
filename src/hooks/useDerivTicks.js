@@ -155,6 +155,9 @@ export default function useDerivTicks() {
     setSymbol(nextSymbol);
     setLoadingMarket(true);
 
+    // Never display or analyse ticks from the previous market.
+    setTicks([]);
+
     try {
       const history = await derivPublicClient.getHistory(nextSymbol, 160);
       if (!mountedRef.current) return;
