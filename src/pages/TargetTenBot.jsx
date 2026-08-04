@@ -13,6 +13,7 @@ import "../styles/TargetTenBot.css";
 import "../styles/V102BotTargetFix.css";
 import "../styles/V103TargetTenVisibilityFix.css";
 import "../styles/V104TargetTenRunFix.css";
+import "../styles/V105TargetTenEntryQuality.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
 
@@ -89,7 +90,7 @@ export default function TargetTenBot() {
   const [stake, setStake] = useState(0.35);
   const [target, setTarget] = useState(10);
   const [duration, setDuration] = useState(1);
-  const [switchSeconds, setSwitchSeconds] = useState(20);
+  const [switchSeconds, setSwitchSeconds] = useState(8);
   const [runs, setRuns] = useState(0);
   const [wins, setWins] = useState(0);
   const [losses, setLosses] = useState(0);
@@ -105,6 +106,12 @@ export default function TargetTenBot() {
   const lastEntryRef = useRef(0);
   const processedRef = useRef(new Set());
   const latestTickCountRef = useRef(0);
+  const confirmationRef = useRef({
+    key: "",
+    count: 0,
+    firstSeenAt: 0,
+  });
+  const lastLossAtRef = useRef(0);
 
   const accounts = useMemo(() => {
     const list =
@@ -136,14 +143,63 @@ export default function TargetTenBot() {
   const decision = useMemo(
     () =>
       buildTargetTenDecision(prices, {
-        minimumSamples: 70,
-        minimumScore: 80,
-        minimumProbability: 78,
-        minimumTransition: 65,
-        maximumExactRisk: 13,
+        minimumSamples: 100,
+        minimumScore: 92,
+        minimumProbability: 90,
+        minimumTransition: 90,
+        maximumExactRisk: 7,
       }),
     [prices]
   );
+
+  const strictEntryQualified =
+    Boolean(decision?.qualified) &&
+    Number(decision?.best?.score || 0) >= 92 &&
+    Number(decision?.best?.probability || 0) >= 90 &&
+    Number(decision?.best?.transition || 0) >= 90 &&
+    Number(decision?.best?.exactRisk || 100) <= 7;
+
+  const setupKey = `${decision?.best?.side || "WAIT"}-${decision?.best?.barrier ?? "X"}`;
+
+  useEffect(() => {
+    if (!strictEntryQualified) {
+      confirmationRef.current = {
+        key: "",
+        count: 0,
+        firstSeenAt: 0,
+      };
+      return;
+    }
+
+    const now = Date.now();
+    const previous = confirmationRef.current;
+
+    if (previous.key !== setupKey || now - previous.firstSeenAt > 5000) {
+      confirmationRef.current = {
+        key: setupKey,
+        count: 1,
+        firstSeenAt: now,
+      };
+      return;
+    }
+
+    confirmationRef.current = {
+      ...previous,
+      count: Math.min(3, previous.count + 1),
+    };
+  }, [
+    strictEntryQualified,
+    setupKey,
+    decision?.best?.score,
+    decision?.best?.probability,
+    decision?.best?.transition,
+    decision?.best?.exactRisk,
+  ]);
+
+  const confirmedEntry =
+    strictEntryQualified &&
+    confirmationRef.current.key === setupKey &&
+    confirmationRef.current.count >= 2;
 
   const hasOpenTrade = trades.some((trade) => trade.status === "OPEN");
 
@@ -204,10 +260,11 @@ export default function TargetTenBot() {
     if (
       busyRef.current ||
       !runningRef.current ||
-      !decision.qualified ||
+      !confirmedEntry ||
       hasOpenTrade ||
       tradeBusy ||
-      Date.now() - lastEntryRef.current < 1800
+      Date.now() - lastEntryRef.current < 3500 ||
+      Date.now() - lastLossAtRef.current < 12000
     ) {
       return;
     }
@@ -266,15 +323,18 @@ export default function TargetTenBot() {
   }
 
   useEffect(() => {
-    if (running && decision.qualified && !hasOpenTrade) {
+    if (running && confirmedEntry && !hasOpenTrade) {
       void placeTargetTrade();
     }
   }, [
     running,
-    decision.qualified,
+    confirmedEntry,
     decision.best.side,
     decision.best.barrier,
     decision.best.score,
+    decision.best.probability,
+    decision.best.transition,
+    decision.best.exactRisk,
     hasOpenTrade,
     symbol,
     accountId,
@@ -283,7 +343,7 @@ export default function TargetTenBot() {
   const marketSymbols = DERIV_VOLATILITY_MARKETS.map((item) => item.id);
 
   useEffect(() => {
-    if (!running || decision.qualified || hasOpenTrade || tradeBusy || marketSymbols.length < 2) {
+    if (!running || confirmedEntry || hasOpenTrade || tradeBusy || marketSymbols.length < 2) {
       return;
     }
 
@@ -311,7 +371,7 @@ export default function TargetTenBot() {
     return () => window.clearInterval(timer);
   }, [
     running,
-    decision.qualified,
+    confirmedEntry,
     hasOpenTrade,
     tradeBusy,
     marketSymbols,
@@ -496,8 +556,8 @@ export default function TargetTenBot() {
 
       <main className="mainContent targetTenPage">
         <Topbar
-          title="EdgePilot V104 · Target 10 Profit Bot"
-          subtitle="Profit-based target · live tick warm-up · automatic analysis + manual execution"
+          title="EdgePilot V105 · High-EV Target 10 Bot"
+          subtitle="High-EV gate · two-step confirmation · loss cooldown · faster market rotation"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
