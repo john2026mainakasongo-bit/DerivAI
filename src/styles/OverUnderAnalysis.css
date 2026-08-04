@@ -508,3 +508,33 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* V88 ADAPTIVE MEMORY */
+.ouAdaptivePanel { margin-top: 10px; }
+.ouAdaptiveRuns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+.ouAdaptiveRuns > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #16465d;
+  border-radius: 8px;
+  background: #041827;
+}
+.ouAdaptiveRuns b { font-size: 10px; }
+.ouAdaptiveRuns b.won { color: #37d7aa; }
+.ouAdaptiveRuns b.lost { color: #ff6680; }
+.ouAdaptiveRuns strong { color: #fff; }
+.ouAdaptiveRuns span,
+.ouAdaptiveRuns p { color: #83a5b6; font-size: 10px; }
+
+@media (max-width: 720px) {
+  .ouAdaptiveRuns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -89,7 +89,7 @@ export default function OverUnderAnalysis() {
   const [stake, setStake] = useState(0.35);
   const [durationTicks, setDurationTicks] = useState(1);
   const [autoSwitch, setAutoSwitch] = useState(true);
-  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(12);
+  const [switchAfterSeconds, setSwitchAfterSeconds] = useState(8);
   const [runs, setRuns] = useState(0);
   const [switches, setSwitches] = useState(0);
   const [losses, setLosses] = useState(0);
@@ -98,6 +98,9 @@ export default function OverUnderAnalysis() {
   const [allowReal, setAllowReal] = useState(false);
   const [manualSide, setManualSide] = useState("OVER");
   const [manualBarrier, setManualBarrier] = useState(1);
+  const [strategyStats, setStrategyStats] = useState({});
+  const [settledRuns, setSettledRuns] = useState([]);
+  const [freshTicksAfterSettlement, setFreshTicksAfterSettlement] = useState(99);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -107,6 +110,8 @@ export default function OverUnderAnalysis() {
   const lastSwitchRef = useRef(0);
   const processedRef = useRef(new Set());
   const nextEntryAtRef = useRef(0);
+  const lastContractRef = useRef("");
+  const lastPriceCountRef = useRef(0);
 
   const accounts = useMemo(() => {
     const values =
@@ -166,11 +171,68 @@ export default function OverUnderAnalysis() {
   const analysis = useMemo(() => analyzeOverUnder(prices), [prices]);
 
   useEffect(() => {
-    if (analysis.best.side !== "WAIT") {
-      setManualSide(analysis.best.side);
-      setManualBarrier(analysis.best.barrier);
+    const count = Array.isArray(prices) ? prices.length : 0;
+    if (count > lastPriceCountRef.current) {
+      setFreshTicksAfterSettlement((value) => Math.min(99, value + 1));
     }
-  }, [analysis.best.side, analysis.best.barrier]);
+    lastPriceCountRef.current = count;
+  }, [prices]);
+
+  const adaptiveAnalysis = useMemo(() => {
+    const ranked = Array.isArray(analysis.candidates)
+      ? analysis.candidates
+      : [analysis.best].filter(Boolean);
+
+    const scored = ranked.map((candidate) => {
+      const key = `${candidate.side}-${candidate.barrier}`;
+      const stat = strategyStats[key] || { wins: 0, losses: 0 };
+      const samples = stat.wins + stat.losses;
+      const winRate = samples ? (stat.wins / samples) * 100 : 50;
+      const learningBonus =
+        samples >= 2 ? Math.max(-7, Math.min(7, (winRate - 50) * 0.14)) : 0;
+      const repeatPenalty = lastContractRef.current === key ? 8 : 0;
+
+      return {
+        ...candidate,
+        adaptiveScore: candidate.score + learningBonus - repeatPenalty,
+        learnedSamples: samples,
+        learnedWinRate: winRate,
+      };
+    }).sort((a, b) => b.adaptiveScore - a.adaptiveScore);
+
+    const best = scored[0] || analysis.best;
+    const qualified =
+      analysis.total >= 60 &&
+      best.adaptiveScore >= 72 &&
+      best.probability >= 72 &&
+      best.transitionScore >= 52 &&
+      best.exactRisk <= 16 &&
+      freshTicksAfterSettlement >= 2;
+
+    return {
+      ...analysis,
+      best,
+      candidates: scored,
+      tradeNow: qualified,
+      decision: qualified
+        ? `BUY ${best.side} ${best.barrier}`
+        : freshTicksAfterSettlement < 2
+          ? "FRESH RESCAN"
+          : "SCANNING ALL BARRIERS",
+      reason: qualified
+        ? `${best.side} ${best.barrier} is currently the highest adaptive setup.`
+        : freshTicksAfterSettlement < 2
+          ? "Waiting for two fresh ticks after the previous settlement."
+          : "Comparing OVER and UNDER barriers across the current market.",
+    };
+  }, [analysis, strategyStats, freshTicksAfterSettlement]);
+
+  useEffect(() => {
+    if (adaptiveAnalysis.best.side !== "WAIT") {
+      setManualSide(adaptiveAnalysis.best.side);
+      setManualBarrier(adaptiveAnalysis.best.barrier);
+    }
+  }, [adaptiveAnalysis.best.side, adaptiveAnalysis.best.barrier]);
 
   const marketSymbols = DERIV_VOLATILITY_MARKETS.map((item) => item.id);
 
@@ -290,14 +352,15 @@ export default function OverUnderAnalysis() {
           duration: `${durationTicks} TICK`,
           stake: Math.max(0.35, Number(stake) || 0.35),
           confidence: analysis.confidence,
-          score: analysis.best.score,
+          score: adaptiveAnalysis.best.adaptiveScore ?? adaptiveAnalysis.best.score,
           status: "OPEN",
           profit: 0,
         },
         ...current,
       ].slice(0, 40));
 
-      setMessage(`${source}: ${side} ${barrier} opened.`);
+      lastContractRef.current = `${side}-${barrier}`;
+      setMessage(`${source}: ${side} ${barrier} opened. Fresh scan will run after settlement.`);
       nextEntryAtRef.current = Date.now() + 1500;
       waitRef.current = Date.now();
     } catch (error) {
@@ -310,10 +373,10 @@ export default function OverUnderAnalysis() {
   async function executeAutoTrade() {
     if (
       !runningRef.current ||
-      !analysis.tradeNow ||
-      analysis.best.side === "WAIT"
+      !adaptiveAnalysis.tradeNow ||
+      adaptiveAnalysis.best.side === "WAIT"
     ) return;
-    await sendTrade(analysis.best.side, analysis.best.barrier, "AUTO");
+    await sendTrade(adaptiveAnalysis.best.side, adaptiveAnalysis.best.barrier, "AUTO");
   }
 
   function toggleAuto() {
@@ -334,15 +397,15 @@ export default function OverUnderAnalysis() {
   }
 
   useEffect(() => {
-    if (autoRunning && analysis.tradeNow && !hasOpenTrade && losses < 3) {
+    if (autoRunning && adaptiveAnalysis.tradeNow && !hasOpenTrade && losses < 3) {
       void executeAutoTrade();
     }
   }, [
     autoRunning,
-    analysis.tradeNow,
-    analysis.best.side,
-    analysis.best.barrier,
-    analysis.best.score,
+    adaptiveAnalysis.tradeNow,
+    adaptiveAnalysis.best.side,
+    adaptiveAnalysis.best.barrier,
+    adaptiveAnalysis.best.adaptiveScore ?? adaptiveAnalysis.best.score,
     hasOpenTrade,
     losses,
     symbol,
@@ -358,20 +421,20 @@ export default function OverUnderAnalysis() {
       losses >= 3
     ) return;
 
-    if (analysis.tradeNow) {
+    if (adaptiveAnalysis.tradeNow) {
       waitRef.current = Date.now();
       return;
     }
 
     const timer = window.setInterval(() => {
-      const delay = Math.max(5, Number(switchAfterSeconds) || 12) * 1000;
+      const delay = Math.max(5, Number(switchAfterSeconds) || 8) * 1000;
       const now = Date.now();
 
       if (
         now - waitRef.current >= delay &&
         now - lastSwitchRef.current >= delay
       ) {
-        void switchMarket(analysis.reason);
+        void switchMarket(adaptiveAnalysis.reason);
       }
     }, 500);
 
@@ -383,8 +446,8 @@ export default function OverUnderAnalysis() {
     tradeBusy,
     marketSymbols,
     symbol,
-    analysis.tradeNow,
-    analysis.reason,
+    adaptiveAnalysis.tradeNow,
+    adaptiveAnalysis.reason,
     switchAfterSeconds,
     losses,
   ]);
@@ -419,11 +482,53 @@ export default function OverUnderAnalysis() {
     );
 
     if (result === "WON") {
+      const settled = trades.find(
+        (trade) =>
+          trade.contractId &&
+          processedRef.current.has(trade.contractId) &&
+          trade.status === "OPEN"
+      );
+      const contract = settled?.contract || "";
+      const key = contract.replace(" ", "-");
+
+      if (key) {
+        setStrategyStats((current) => {
+          const old = current[key] || { wins: 0, losses: 0 };
+          return { ...current, [key]: { ...old, wins: old.wins + 1 } };
+        });
+      }
+
+      setSettledRuns((current) =>
+        [{ result: "WON", contract, market: symbol }, ...current].slice(0, 5)
+      );
+      setFreshTicksAfterSettlement(0);
       lossRef.current = 0;
       setLosses(0);
-      nextEntryAtRef.current = Date.now() + 1500;
+      nextEntryAtRef.current = Date.now() + 1200;
       waitRef.current = Date.now();
+      setMessage("WIN settled. Re-scanning every OVER and UNDER setup.");
     } else if (result === "LOST") {
+      const settled = trades.find(
+        (trade) =>
+          trade.contractId &&
+          processedRef.current.has(trade.contractId) &&
+          trade.status === "OPEN"
+      );
+      const contract = settled?.contract || "";
+      const key = contract.replace(" ", "-");
+
+      if (key) {
+        setStrategyStats((current) => {
+          const old = current[key] || { wins: 0, losses: 0 };
+          return { ...current, [key]: { ...old, losses: old.losses + 1 } };
+        });
+      }
+
+      setSettledRuns((current) =>
+        [{ result: "LOST", contract, market: symbol }, ...current].slice(0, 5)
+      );
+      setFreshTicksAfterSettlement(0);
+
       const next = lossRef.current + 1;
       lossRef.current = next;
       setLosses(next);
@@ -442,8 +547,8 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V82 · Clean Header Account Layout"
-          subtitle="Single account selector in the top header · compact market and execution controls"
+          title="EdgePilot V88 · Adaptive Over/Under Scanner"
+          subtitle="Scans OVER and UNDER barriers, changes contract after every settlement and adapts from recent runs"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -524,11 +629,11 @@ export default function OverUnderAnalysis() {
           stake and duration ({durationTicks} tick{Number(durationTicks) === 1 ? "" : "s"}).
         </div>
 
-        <section className={`ouHero ${analysis.tradeNow ? "ready" : analysis.prepare ? "prepare" : ""}`}>
+        <section className={`ouHero ${adaptiveAnalysis.tradeNow ? "ready" : analysis.prepare ? "prepare" : ""}`}>
           <div className="ouHeroDecision">
             <small>NEXT ENTRY</small>
-            <h1>{analysis.decision}</h1>
-            <p>{analysis.reason}</p>
+            <h1>{adaptiveAnalysis.decision}</h1>
+            <p>{adaptiveAnalysis.reason}</p>
           </div>
           <div className="ouHeroStats">
             <span><small>Grade</small><strong>{analysis.grade}</strong></span>
@@ -548,11 +653,11 @@ export default function OverUnderAnalysis() {
         </section>
 
         <section className="ouCandidateGrid">
-          <article><small>CONTRACT</small><strong>{analysis.best.side} {analysis.best.barrier}</strong><span>Best ranked setup.</span></article>
-          <article><small>PROBABILITY</small><strong>{pct(analysis.best.probability)}</strong><span>Observed distribution.</span></article>
-          <article><small>EXACT RISK</small><strong>{pct(analysis.best.exactRisk)}</strong><span>Barrier landing risk.</span></article>
-          <article><small>TRANSITION</small><strong>{pct(analysis.best.transitionScore)}</strong><span>Recent continuation support.</span></article>
-          <article><small>ENTRY SCORE</small><strong>{pct(analysis.best.score)}</strong><span>Weighted opportunity.</span></article>
+          <article><small>CONTRACT</small><strong>{adaptiveAnalysis.best.side} {adaptiveAnalysis.best.barrier}</strong><span>Best ranked setup.</span></article>
+          <article><small>PROBABILITY</small><strong>{pct(adaptiveAnalysis.best.probability)}</strong><span>Observed distribution.</span></article>
+          <article><small>EXACT RISK</small><strong>{pct(adaptiveAnalysis.best.exactRisk)}</strong><span>Barrier landing risk.</span></article>
+          <article><small>TRANSITION</small><strong>{pct(adaptiveAnalysis.best.transitionScore)}</strong><span>Recent continuation support.</span></article>
+          <article><small>ENTRY SCORE</small><strong>{pct(adaptiveAnalysis.best.adaptiveScore ?? adaptiveAnalysis.best.score)}</strong><span>Weighted opportunity.</span></article>
           <article><small>ENTROPY</small><strong>{pct(analysis.entropy)}</strong><span>Higher means more random.</span></article>
         </section>
 
@@ -582,7 +687,7 @@ export default function OverUnderAnalysis() {
           <div className="ouPanelHead"><div><small>BARRIER COMPARISON</small><h2>Over and Under probability</h2></div></div>
           <div className="ouBarrierTable">
             <div className="head"><span>Barrier</span><span>Over</span><span>Under</span><span>Exact risk</span></div>
-            {analysis.rows.map((row) => <button type="button" key={row.barrier} className={row.barrier === analysis.best.barrier ? "selected" : ""} onClick={() => setManualBarrier(row.barrier)}><strong>{row.barrier}</strong><span>{pct(row.over)}</span><span>{pct(row.under)}</span><span>{pct(row.exact)}</span></button>)}
+            {analysis.rows.map((row) => <button type="button" key={row.barrier} className={row.barrier === adaptiveAnalysis.best.barrier ? "selected" : ""} onClick={() => setManualBarrier(row.barrier)}><strong>{row.barrier}</strong><span>{pct(row.over)}</span><span>{pct(row.under)}</span><span>{pct(row.exact)}</span></button>)}
           </div>
         </section>
 
@@ -592,6 +697,29 @@ export default function OverUnderAnalysis() {
             <div className="head"><span>Time</span><span>Market</span><span>Contract</span><span>Mode</span><span>Stake</span><span>Status</span><span>P/L</span></div>
             {trades.map((trade) => <div key={trade.id}><span>{new Date(trade.time).toLocaleTimeString()}</span><span>{trade.symbol}</span><strong>{trade.contract}</strong><span>{trade.source}</span><span>{Number(trade.stake).toFixed(2)}</span><b className={String(trade.status).toLowerCase()}>{trade.status}</b><b className={trade.profit >= 0 ? "won" : "lost"}>{Number(trade.profit).toFixed(2)}</b></div>)}
             {!trades.length ? <p>No trades in this session.</p> : null}
+          </div>
+        </section>
+
+        <section className="ouPanel ouAdaptivePanel">
+          <div className="ouPanelHead">
+            <div>
+              <small>ADAPTIVE MEMORY</small>
+              <h2>Last 5 settled runs</h2>
+            </div>
+            <strong>{settledRuns.length}/5 learned</strong>
+          </div>
+
+          <div className="ouAdaptiveRuns">
+            {settledRuns.map((run, index) => (
+              <div key={`${run.contract}-${index}`}>
+                <b className={run.result.toLowerCase()}>{run.result}</b>
+                <strong>{run.contract || "—"}</strong>
+                <span>{run.market}</span>
+              </div>
+            ))}
+            {!settledRuns.length ? (
+              <p>Warm-up uses the live Deriv tick history already loaded before START.</p>
+            ) : null}
           </div>
         </section>
 

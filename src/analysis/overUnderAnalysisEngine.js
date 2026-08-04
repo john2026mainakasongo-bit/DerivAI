@@ -231,6 +231,7 @@ export function analyzeOverUnder(prices = []) {
     latestDigit,
     entropy: entropyScore,
     rowPressure,
+    candidates,
     best,
     confidence,
     quality,
