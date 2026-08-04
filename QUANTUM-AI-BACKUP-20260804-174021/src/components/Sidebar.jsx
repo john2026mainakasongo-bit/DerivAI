@@ -40,16 +40,6 @@ export default function Sidebar() {
             {link.label}
           </NavLink>
         ))}
-      
-        <a
-          href="/quantum-ai-bot"
-          className={`navLink quantumNavLink ${
-            window.location.pathname === "/quantum-ai-bot" ? "active" : ""
-          }`}
-        >
-          <span aria-hidden="true">ðŸ§ </span>
-          <span>Quantum AI</span>
-        </a>
       </nav>
 
       <div className="sidebarFooter">
@@ -59,6 +49,5 @@ export default function Sidebar() {
     </aside>
   );
 }
-
 
 

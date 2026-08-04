@@ -599,16 +599,3 @@ button {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
-
-/* MetaBinary Quantum AI sidebar entry */
-.quantumNavLink {
-  border: 1px solid rgba(45, 224, 180, .28) !important;
-  background: linear-gradient(90deg, rgba(24, 194, 151, .13), rgba(7, 31, 47, .2)) !important;
-}
-.quantumNavLink:hover,
-.quantumNavLink.active {
-  color: #ffffff !important;
-  border-color: #2de0b4 !important;
-  background: linear-gradient(90deg, #0e8f72, #145fd2) !important;
-  box-shadow: 0 0 16px rgba(45, 224, 180, .16);
-}
