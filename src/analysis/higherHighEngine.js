@@ -545,11 +545,128 @@ export function analyzeHigherHigh(prices = [], options = {}) {
     transitionScore >= minimumProbability,
   ].filter(Boolean).length;
 
+  const minimumTrendRegimeScore = clamp(
+    Number(options.minimumTrendRegimeScore ?? 42),
+    20,
+    80
+  );
+
+  const maximumRangeEntropy = clamp(
+    Number(options.maximumRangeEntropy ?? 0.96),
+    0.80,
+    1
+  );
+
+  const minimumBreakoutEfficiency = clamp(
+    Number(options.minimumBreakoutEfficiency ?? 0.10),
+    0.02,
+    0.40
+  );
+
+  const trendRegimeScore = Math.round(
+    clamp(
+      trendScore * 0.40 +
+        momentumScore * 0.25 +
+        patternScore * 0.20 +
+        volatilityScore * 0.15,
+      0,
+      100
+    )
+  );
+
+  const isRangeMarket =
+    entropy18 >= maximumRangeEntropy &&
+    efficiency28 < minimumBreakoutEfficiency &&
+    patternScore < 45;
+
+  const isTrendMarket =
+    trendRegimeScore >= minimumTrendRegimeScore &&
+    !isRangeMarket;
+
+  const isVolatileMarket =
+    spikeRatio > 1.25 ||
+    entropy18 > 0.94;
+
+  const marketRegime = isRangeMarket
+    ? "RANGE"
+    : isVolatileMarket
+    ? "VOLATILE"
+    : isTrendMarket
+    ? "TREND"
+    : "MIXED";
+
+  const decisionCodes = [];
+
+  if (marketRegime === "TREND") {
+    decisionCodes.push({
+      code: "TREND_OK",
+      label: "Trend direction is usable.",
+      passed: true,
+    });
+  } else if (marketRegime === "RANGE") {
+    decisionCodes.push({
+      code: "RANGE_MARKET",
+      label: "Market is moving sideways; Higher strategy is blocked.",
+      passed: false,
+    });
+  } else if (marketRegime === "VOLATILE") {
+    decisionCodes.push({
+      code: "SPIKE_RISK",
+      label: "Market is noisy or stretched; wait for stabilization.",
+      passed: false,
+    });
+  } else {
+    decisionCodes.push({
+      code: "REGIME_MIXED",
+      label: "Trend and range signals are mixed.",
+      passed: false,
+    });
+  }
+
+  decisionCodes.push({
+    code: emaAligned ? "EMA_OK" : "EMA_WAIT",
+    label: emaAligned
+      ? "EMA 9, 21 and 50 support the Higher direction."
+      : "EMA direction is not fully aligned.",
+    passed: emaAligned,
+  });
+
+  decisionCodes.push({
+    code: momentum3 > 0 && momentum5 > 0
+      ? "MOMENTUM_OK"
+      : "MOMENTUM_WEAK",
+    label:
+      momentum3 > 0 && momentum5 > 0
+        ? "Short momentum is positive."
+        : "Short momentum is not strong enough.",
+    passed: momentum3 > 0 && momentum5 > 0,
+  });
+
+  decisionCodes.push({
+    code: structureBullish || cleanBreakout
+      ? "STRUCTURE_OK"
+      : "STRUCTURE_WAIT",
+    label:
+      structureBullish || cleanBreakout
+        ? "HH/HL or breakout structure is confirmed."
+        : "Higher High / Higher Low structure is incomplete.",
+    passed: structureBullish || cleanBreakout,
+  });
+
+  decisionCodes.push({
+    code: hardRiskBlock ? "RISK_BLOCK" : "RISK_OK",
+    label: hardRiskBlock
+      ? "Risk filter rejected the setup."
+      : "No hard risk block detected.",
+    passed: !hardRiskBlock,
+  });
+
   const ready =
     !hardRiskBlock &&
+    !isRangeMarket &&
     confidence >= minimumVoteScore &&
     probability >= minimumProbability &&
-    votePasses >= 3 &&
+    votePasses >= 2 &&
     (structureBullish || cleanBreakout) &&
     momentum3 > 0 &&
     momentum5 > 0;
@@ -564,21 +681,32 @@ export function analyzeHigherHigh(prices = [], options = {}) {
   ];
 
   let reason = "AI voting engine is waiting for a qualified majority.";
+  let primaryCode = "WAIT_ANALYSIS";
 
   if (hardRiskBlock) {
+    primaryCode = "RISK_BLOCK";
     reason = "Risk AI blocked the setup because noise, spike or efficiency is unsafe.";
+  } else if (isRangeMarket) {
+    primaryCode = "RANGE_MARKET";
+    reason = "Market is sideways; Higher entries are disabled.";
   } else if (confidence < minimumVoteScore) {
+    primaryCode = "SCORE_LOW";
     reason = `Vote score ${confidence}% is below ${minimumVoteScore}%.`;
   } else if (probability < minimumProbability) {
+    primaryCode = "PROBABILITY_LOW";
     reason = `Probability ${probability}% is below ${minimumProbability}%.`;
-  } else if (votePasses < 3) {
-    reason = `Only ${votePasses}/5 analysis agents agree; at least 3 are required.`;
+  } else if (votePasses < 2) {
+    primaryCode = "VOTES_LOW";
+    reason = `Only ${votePasses}/5 analysis agents agree; at least 2 are required.`;
   } else if (!(structureBullish || cleanBreakout)) {
+    primaryCode = "STRUCTURE_WAIT";
     reason = "Structure AI has not confirmed HH/HL or breakout.";
   } else if (!(momentum3 > 0 && momentum5 > 0)) {
+    primaryCode = "MOMENTUM_WEAK";
     reason = "Micro momentum is not positive enough for entry.";
   } else {
-    reason = "AI voting majority passed. Hold signal for confirmation ticks.";
+    primaryCode = "ENTRY_READY";
+    reason = "AI voting majority passed. Entry is ready after confirmation ticks.";
   }
 
   const regime =
@@ -600,6 +728,9 @@ export function analyzeHigherHigh(prices = [], options = {}) {
     structure: structureBullish ? "HH + HL" : "WAIT",
     pullback: pullbackConfirmed ? "CONFIRMED" : "FORMING",
     regime,
+    marketRegime,
+    primaryCode,
+    decisionCodes,
     probability,
     checks,
     metrics: {
@@ -642,6 +773,10 @@ export function analyzeHigherHigh(prices = [], options = {}) {
       minimumVoteScore,
       minimumProbability,
       hardRiskBlock,
+      trendRegimeScore,
+      isRangeMarket,
+      isTrendMarket,
+      isVolatileMarket,
       probabilityComponents,
       rawProbabilityScore: cappedProbability,
       learningWeights: {

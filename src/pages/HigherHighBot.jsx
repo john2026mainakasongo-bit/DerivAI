@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
@@ -60,7 +60,7 @@ function number(value, digits = 4) {
   const parsed = Number(value);
   return Number.isFinite(parsed)
     ? parsed.toFixed(digits)
-    : "â€”";
+    : "—";
 }
 
 function nextAvailableMarket(markets, symbol, blockedMarkets) {
@@ -175,7 +175,7 @@ export default function HigherHighBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "Higher High AI PRO V9 is ready."
+    "Higher High AI PRO V10 is ready."
   );
 
   const [settings, setSettings] = useState({
@@ -186,11 +186,11 @@ export default function HigherHighBot() {
     minimumTransition: 0.50,
     maximumSpikeRatio: 1.55,
     minimumTicks: 120,
-    confirmationTicks: 3,
+    confirmationTicks: 2,
     duration: 10,
     durationUnit: "t",
     cooldownSeconds: 25,
-    marketSwitchSeconds: 12,
+    marketSwitchSeconds: 10,
     lossMarketBlockSeconds: 120,
     takeProfit: 3,
     stopLoss: 1.5,
@@ -212,17 +212,21 @@ export default function HigherHighBot() {
     minimumProbabilityEdge: 5,
     minimumExpectedValue: 0.015,
     probabilityCalibrationStrength: 0.25,
-    tierAProbability: 72,
-    tierAScore: 74,
-    tierAVotes: 4,
-    tierBStartSeconds: 45,
-    tierBProbability: 64,
-    tierBScore: 68,
-    tierBVotes: 3,
-    tierCStartSeconds: 90,
-    tierCProbability: 58,
-    tierCScore: 62,
+    tierAProbability: 68,
+    tierAScore: 70,
+    tierAVotes: 3,
+    tierBStartSeconds: 25,
+    tierBProbability: 61,
+    tierBScore: 65,
+    tierBVotes: 2,
+    tierCStartSeconds: 65,
+    tierCProbability: 57,
+    tierCScore: 60,
     tierCVotes: 2,
+    minimumTrendRegimeScore: 42,
+    maximumRangeEntropy: 0.96,
+    minimumBreakoutEfficiency: 0.10,
+    earlyEntryEnabled: true,
     recoveryEnabled: true,
     recoveryConfidenceBonus: 6,
     recoveryProbabilityMinimum: 60,
@@ -384,10 +388,6 @@ export default function HigherHighBot() {
     (1 - calibratedProbability) *
       Number(settings.assumedLossAmount);
 
-  const elapsedScanSeconds = Math.max(
-    0,
-    (Date.now() - Number(scanCycle.startedAt || Date.now())) / 1000
-  );
   const currentVotes = Number(
     analysis.metrics?.votePasses || 0
   );
@@ -429,8 +429,22 @@ export default function HigherHighBot() {
   const tierReady =
     tierAReady || tierBReady || tierCReady;
 
+  const earlyQualifiedEntry =
+    settings.earlyEntryEnabled &&
+    elapsedScanSeconds < Number(settings.tierBStartSeconds) &&
+    Number(analysis.confidence || 0) >=
+      Number(settings.tierAScore) &&
+    calibratedProbability * 100 >=
+      Number(settings.tierAProbability) &&
+    currentVotes >= Math.max(
+      2,
+      Number(settings.tierAVotes)
+    ) &&
+    analysis.marketRegime === "TREND" &&
+    analysis.primaryCode === "ENTRY_READY";
+
   const probabilityGuardPass =
-    tierReady &&
+    (tierReady || earlyQualifiedEntry) &&
     probabilityEdge * 100 >=
       Number(settings.minimumProbabilityEdge) &&
     expectedValue >=
@@ -450,6 +464,10 @@ export default function HigherHighBot() {
         Number(settings.recoveryProbabilityMinimum)
     );
 
+  const elapsedScanSeconds = Math.max(
+    0,
+    (Date.now() - Number(scanCycle.startedAt || Date.now())) / 1000
+  );
 
   const fallbackWindow =
     elapsedScanSeconds >= Number(settings.fallbackStartSeconds);
@@ -572,6 +590,7 @@ export default function HigherHighBot() {
     expectedValue,
     breakEvenProbability,
     activeTier,
+    earlyQualifiedEntry,
   ]);
 
   useEffect(() => {
@@ -891,7 +910,7 @@ export default function HigherHighBot() {
         scanStartedAtRef.current = Date.now();
         setReadyStreak(0);
         setMessage(
-          `No V9 tiered probability engine setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
+          `No V10 early-entry regime engine setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
         );
         void changeSymbol(next.id);
       }
@@ -1087,7 +1106,7 @@ export default function HigherHighBot() {
     void (async () => {
       try {
         setMessage(
-          `${recovery.active ? "Recovery" : `Tier ${activeTier}`} signal held ${readyStreak}/${requiredHoldTicks} ticks. Calibrated probability ${(calibratedProbability * 100).toFixed(1)}%, edge ${(probabilityEdge * 100).toFixed(1)}%, EV ${expectedValue.toFixed(3)}.`
+          `${recovery.active ? "Recovery" : earlyQualifiedEntry ? "Early qualified" : `Tier ${activeTier}`} signal held ${readyStreak}/${requiredHoldTicks} ticks. Calibrated probability ${(calibratedProbability * 100).toFixed(1)}%, edge ${(probabilityEdge * 100).toFixed(1)}%, EV ${expectedValue.toFixed(3)}.`
         );
 
         const response = await placeTrade({
@@ -1176,6 +1195,9 @@ export default function HigherHighBot() {
               probabilityEdge * 100,
             expectedValue,
             activeTier,
+            primaryCode: analysis.primaryCode,
+            marketRegime: analysis.marketRegime,
+            decisionCodes: analysis.decisionCodes,
           },
         };
 
@@ -1276,8 +1298,8 @@ export default function HigherHighBot() {
 
       <main className="mainContent hhPage">
         <Topbar
-          title="Higher High AI PRO V9"
-          subtitle="Fixed probability Â· Tier A/B/C entries Â· hard risk block Â· CALL execution"
+          title="Higher High AI PRO V10"
+          subtitle="Early qualified entry · market regime · readable codes · CALL execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1291,10 +1313,10 @@ export default function HigherHighBot() {
         >
           <div>
             <small>STRICT CONFIRMATION BOT</small>
-            <h1>Higher High AI PRO V9</h1>
+            <h1>Higher High AI PRO V10</h1>
             <p>
-              Uses corrected multi-agent probability, time-based entry tiers and a hard
-              risk block. It never treats a weak 0/5 vote setup as 100% probability.
+              Enters immediately when a qualified early setup appears, explains every
+              decision in readable codes and blocks unsuitable market regimes.
             </p>
           </div>
 
@@ -1435,6 +1457,8 @@ export default function HigherHighBot() {
               <strong>
                 {scanCycle.finalCandidate
                   ? "FINAL CONFIRM"
+                  : earlyQualifiedEntry
+                  ? "EARLY ENTRY"
                   : activeTier === "WAIT"
                   ? "SCANNING"
                   : `TIER ${activeTier}`}
@@ -1577,6 +1601,9 @@ export default function HigherHighBot() {
             ["Tier C prob", "tierCProbability", 1],
             ["Tier C score", "tierCScore", 1],
             ["Tier C votes", "tierCVotes", 1],
+            ["Regime score", "minimumTrendRegimeScore", 1],
+            ["Range entropy", "maximumRangeEntropy", 0.01],
+            ["Breakout eff", "minimumBreakoutEfficiency", 0.01],
           ].map(([label, key, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -1735,25 +1762,62 @@ export default function HigherHighBot() {
             <span>Votes passed</span>
             <strong>{metrics.votePasses || 0}/5</strong>
           </article>
+
+          <article>
+            <span>Market regime</span>
+            <strong>{analysis.marketRegime || "MIXED"}</strong>
+          </article>
+
+          <article>
+            <span>Primary code</span>
+            <strong>{analysis.primaryCode || "WAIT_ANALYSIS"}</strong>
+          </article>
+
+          <article>
+            <span>Regime score</span>
+            <strong>{metrics.trendRegimeScore || 0}%</strong>
+          </article>
+        </section>
+
+        <section className="hhCodePanel">
+          <header>
+            <div>
+              <small>READABLE DECISION CODES</small>
+              <h3>{analysis.primaryCode || "WAIT_ANALYSIS"}</h3>
+            </div>
+            <strong>{analysis.marketRegime || "MIXED"}</strong>
+          </header>
+
+          <div>
+            {(analysis.decisionCodes || []).map((item) => (
+              <article
+                key={item.code}
+                className={item.passed ? "passed" : "failed"}
+              >
+                <span>{item.code}</span>
+                <strong>{item.label}</strong>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className="hhTierPanel">
           <article className={activeTier === "A" ? "active" : ""}>
             <span>Tier A</span>
             <strong>
-              {settings.tierAProbability}% P Â· {settings.tierAScore}% score Â· {settings.tierAVotes} votes
+              {settings.tierAProbability}% P · {settings.tierAScore}% score · {settings.tierAVotes} votes
             </strong>
           </article>
           <article className={activeTier === "B" ? "active" : ""}>
             <span>Tier B after {settings.tierBStartSeconds}s</span>
             <strong>
-              {settings.tierBProbability}% P Â· {settings.tierBScore}% score Â· {settings.tierBVotes} votes
+              {settings.tierBProbability}% P · {settings.tierBScore}% score · {settings.tierBVotes} votes
             </strong>
           </article>
           <article className={activeTier === "C" ? "active" : ""}>
             <span>Tier C after {settings.tierCStartSeconds}s</span>
             <strong>
-              {settings.tierCProbability}% P Â· {settings.tierCScore}% score Â· {settings.tierCVotes} votes
+              {settings.tierCProbability}% P · {settings.tierCScore}% score · {settings.tierCVotes} votes
             </strong>
           </article>
         </section>
@@ -1915,14 +1979,15 @@ export default function HigherHighBot() {
                         <strong>{item.market}</strong>
                         <small>
                           {item.recoveryTrade
-                            ? "RECOVERY Â· "
+                            ? "RECOVERY · "
                             : item.fallbackTrade
-                            ? "2-MIN FALLBACK Â· "
+                            ? "2-MIN FALLBACK · "
                             : ""}
-                          {snapshot.activeTier ? `TIER ${snapshot.activeTier} Â· ` : ""}
-                          C {item.confidence}% Â· P{" "}
-                          {item.probability}% Â· CP{" "}
-                          {number(snapshot.calibratedProbability, 1)}% Â· TF{" "}
+                          {snapshot.activeTier ? `TIER ${snapshot.activeTier} · ` : ""}
+                          {snapshot.primaryCode ? `${snapshot.primaryCode} · ` : ""}
+                          C {item.confidence}% · P{" "}
+                          {item.probability}% · CP{" "}
+                          {number(snapshot.calibratedProbability, 1)}% · TF{" "}
                           {snapshot.timeframeAgreement || 0}/3
                         </small>
                       </div>
@@ -1930,7 +1995,7 @@ export default function HigherHighBot() {
                       <div>
                         <span>
                           Ent{" "}
-                          {number(snapshot.entropy18, 2)} Â·
+                          {number(snapshot.entropy18, 2)} ·
                           Eff{" "}
                           {number(snapshot.efficiency28, 2)}
                         </span>
@@ -1941,10 +2006,15 @@ export default function HigherHighBot() {
                               100,
                             0
                           )}
-                          % Â· Spike{" "}
-                          {number(snapshot.spikeRatio, 2)} Â· EV{" "}
+                          % · Spike{" "}
+                          {number(snapshot.spikeRatio, 2)} · EV{" "}
                           {number(snapshot.expectedValue, 3)}
                         </small>
+                        {snapshot.marketRegime ? (
+                          <small>
+                            REGIME: {snapshot.marketRegime}
+                          </small>
+                        ) : null}
                         {item.lossCause ? (
                           <small className="hhLossCause">
                             {item.lossCause.code}:{" "}
@@ -1982,4 +2052,3 @@ export default function HigherHighBot() {
     </div>
   );
 }
-
