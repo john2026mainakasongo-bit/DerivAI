@@ -437,3 +437,92 @@ html:has(.quantumShell),
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* QUANTUM AI V13 — fast adaptive scanner */
+.quantumFastScanner {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #1d6379;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumFastScanner.fast {
+  border-color: #28cda4;
+}
+
+.quantumFastScanner.balanced {
+  border-color: #cfac38;
+}
+
+.quantumFastScanner.selective {
+  border-color: #8e6ed5;
+}
+
+.quantumFastScanner header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumFastScanner small {
+  color: #37ddb5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.quantumFastScanner h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumFastScanner header > strong {
+  color: #f0cf68;
+  font-size: 11px;
+}
+
+.quantumFastGrid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumFastGrid article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumFastGrid span {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumFastGrid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .quantumFastGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumFastGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

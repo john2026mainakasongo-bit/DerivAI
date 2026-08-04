@@ -101,9 +101,16 @@ function readLearningModel() {
         parsed?.markets && typeof parsed.markets === "object"
           ? parsed.markets
           : {},
+      recent: Array.isArray(parsed?.recent)
+        ? parsed.recent.slice(-500)
+        : [],
     };
   } catch {
-    return { totalTrades: 0, markets: {} };
+    return {
+      totalTrades: 0,
+      markets: {},
+      recent: [],
+    };
   }
 }
 
@@ -200,26 +207,57 @@ function classifyTradeOutcome(trade, result) {
 }
 
 function marketLearningStats(model, symbol, direction) {
-  const row =
-    model?.markets?.[learningKey(symbol, direction)] || {};
+  const key = learningKey(symbol, direction);
+  const row = model?.markets?.[key] || {};
 
   const trades = Number(row.trades || 0);
   const wins = Number(row.wins || 0);
   const losses = Number(row.losses || 0);
 
-  // Bayesian smoothing prevents 1 or 2 trades from creating fake certainty.
-  const smoothedWinRate = (wins + 2) / (trades + 4);
+  const rows = (Array.isArray(model?.recent)
+    ? model.recent
+    : []
+  ).filter((item) => item.key === key);
+
+  const rateFor = (count) => {
+    const sample = rows.slice(-count);
+    const sampleWins = sample.filter(
+      (item) => item.result === "WON"
+    ).length;
+
+    // Bayesian smoothing: two virtual wins and two virtual losses.
+    return (sampleWins + 2) / (sample.length + 4);
+  };
+
+  const recent10 = rateFor(10);
+  const recent30 = rateFor(30);
+  const recent100 = rateFor(100);
+  const lifetime = (wins + 2) / (trades + 4);
+
+  const weightedWinRate =
+    recent10 * 0.50 +
+    recent30 * 0.30 +
+    recent100 * 0.15 +
+    lifetime * 0.05;
 
   const adjustment =
     trades >= 3
-      ? clampNumber((smoothedWinRate - 0.5) * 24, -7, 7)
+      ? clampNumber(
+          (weightedWinRate - 0.5) * 26,
+          -7,
+          7
+        )
       : 0;
 
   return {
     trades,
     wins,
     losses,
-    smoothedWinRate,
+    smoothedWinRate: weightedWinRate,
+    recent10,
+    recent30,
+    recent100,
+    lifetime,
     adjustment,
     lastCause: row.lastCause || null,
   };
@@ -257,7 +295,7 @@ export default function QuantumAIBot() {
     maxNoise: 66,
     maxReversalRisk: 60,
     maxOpenTrades: 2,
-    marketSwitchSeconds: 12,
+    marketSwitchSeconds: 7,
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
@@ -272,6 +310,16 @@ export default function QuantumAIBot() {
     recoveryConfidenceBonus: 6,
     recoveryCooldownSeconds: 30,
     recoveryStakeMultiplier: 1,
+    scanCycleSeconds: 60,
+    fastLaneSeconds: 20,
+    balancedLaneSeconds: 40,
+    fastConfidence: 72,
+    balancedConfidence: 74,
+    selectiveConfidence: 76,
+    entryQueueTicks: 2,
+    minimumVoteConsensus: 56,
+    maximumFastNoise: 72,
+    maximumFastReversal: 68,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -283,6 +331,11 @@ export default function QuantumAIBot() {
     attempts: 0,
     previousLoss: null,
   });
+  const [scanClock, setScanClock] = useState(0);
+  const [entryQueue, setEntryQueue] = useState({
+    key: "",
+    ticks: 0,
+  });
 
   const lastTradeAtRef = useRef(0);
   const scanStartedAtRef = useRef(Date.now());
@@ -290,6 +343,7 @@ export default function QuantumAIBot() {
   const buyingRef = useRef(false);
   const autoConnectStartedRef = useRef(false);
   const adaptiveMarketBlockRef = useRef(new Map());
+  const scanCycleStartedAtRef = useRef(Date.now());
 
   useEffect(() => {
     try {
@@ -301,6 +355,29 @@ export default function QuantumAIBot() {
       // Browser storage may be unavailable in private mode.
     }
   }, [learningModel]);
+
+  useEffect(() => {
+    if (!running) {
+      setScanClock(0);
+      return;
+    }
+
+    const update = () => {
+      setScanClock(
+        Math.max(
+          0,
+          (Date.now() -
+            scanCycleStartedAtRef.current) /
+            1000
+        )
+      );
+    };
+
+    update();
+    const timer = window.setInterval(update, 250);
+
+    return () => window.clearInterval(timer);
+  }, [running]);
 
   const connecting = status === "CONNECTING" || loadingMarket;
 
@@ -364,8 +441,83 @@ export default function QuantumAIBot() {
       ? Number(settings.recoveryConfidenceBonus || 6)
       : 0);
 
+  const scanPhase =
+    scanClock < Number(settings.fastLaneSeconds)
+      ? "FAST"
+      : scanClock < Number(settings.balancedLaneSeconds)
+      ? "BALANCED"
+      : "SELECTIVE";
+
+  const phaseConfidence =
+    scanPhase === "FAST"
+      ? Number(settings.fastConfidence)
+      : scanPhase === "BALANCED"
+      ? Number(settings.balancedConfidence)
+      : Number(settings.selectiveConfidence);
+
+  const dynamicRequiredConfidence = recovery.active
+    ? recoveryRequiredConfidence
+    : Math.max(
+        Number(settings.minConfidence || 72),
+        phaseConfidence
+      );
+
+  const fastVoteConsensus = Number(
+    analysis.metrics?.voteConsensus || 0
+  );
+
+  const phaseSignalPass =
+    learnedConfidence >= dynamicRequiredConfidence &&
+    fastVoteConsensus >=
+      Number(settings.minimumVoteConsensus) &&
+    Number(analysis.noiseScore || 100) <=
+      Number(settings.maximumFastNoise) &&
+    Number(analysis.reversalRisk || 100) <=
+      Number(settings.maximumFastReversal);
+
+  const queueKey = `${symbol}|${currentCandidate}`;
+
+  useEffect(() => {
+    if (
+      !running ||
+      !analysis.ready ||
+      !phaseSignalPass ||
+      currentCandidate === "WAIT"
+    ) {
+      setEntryQueue({ key: "", ticks: 0 });
+      return;
+    }
+
+    setEntryQueue((current) => ({
+      key: queueKey,
+      ticks:
+        current.key === queueKey
+          ? Math.min(
+              Number(settings.entryQueueTicks),
+              current.ticks + 1
+            )
+          : 1,
+    }));
+  }, [
+    running,
+    analysis.ready,
+    phaseSignalPass,
+    currentCandidate,
+    queueKey,
+    currentPrice,
+    settings.entryQueueTicks,
+  ]);
+
+  const entryQueuePass =
+    entryQueue.key === queueKey &&
+    entryQueue.ticks >=
+      Number(settings.entryQueueTicks);
+
+
   const learningEntryPass =
-    learnedConfidence >= recoveryRequiredConfidence;
+    learnedConfidence >= dynamicRequiredConfidence &&
+    phaseSignalPass &&
+    entryQueuePass;
 
   const recoveryMarketPass =
     !recovery.active ||
@@ -478,16 +630,18 @@ export default function QuantumAIBot() {
       !learningEntryPass
     ) {
       reason =
-        `Recovery needs ${recoveryRequiredConfidence.toFixed(
+        `Recovery needs ${dynamicRequiredConfidence.toFixed(
           1
-        )}% learned confidence. Current: ${learnedConfidence.toFixed(
+        )}% learned confidence plus ${settings.entryQueueTicks} confirming ticks. Current: ${learnedConfidence.toFixed(
           1
         )}%.`;
     } else if (!learningEntryPass) {
       reason =
-        `Learned confidence ${learnedConfidence.toFixed(
+        `${scanPhase} lane needs ${dynamicRequiredConfidence.toFixed(
           1
-        )}% is below the entry gate.`;
+        )}% confidence and ${settings.entryQueueTicks} confirming ticks. Current: ${learnedConfidence.toFixed(
+          1
+        )}%.`;
     }
 
     const ready =
@@ -536,6 +690,11 @@ export default function QuantumAIBot() {
     learnedConfidence,
     learningEntryPass,
     recoveryRequiredConfidence,
+    dynamicRequiredConfidence,
+    phaseSignalPass,
+    entryQueuePass,
+    scanPhase,
+    settings.entryQueueTicks,
     recovery.active,
     recovery.previousLoss,
     recoveryMarketPass,
@@ -675,6 +834,22 @@ export default function QuantumAIBot() {
                 lastSettledAt: Date.now(),
               },
             },
+            recent: [
+              ...(Array.isArray(current.recent)
+                ? current.recent
+                : []),
+              {
+                key,
+                symbol: original.symbol,
+                direction: original.direction,
+                result,
+                profit: Number(profit || 0),
+                confidence: Number(
+                  original.confidence || 0
+                ),
+                settledAt: Date.now(),
+              },
+            ].slice(-500),
           };
         });
       }
@@ -831,17 +1006,73 @@ export default function QuantumAIBot() {
     }
 
     const timer = window.setInterval(() => {
-      const elapsed = (Date.now() - scanStartedAtRef.current) / 1000;
-      if (elapsed < Number(settings.marketSwitchSeconds || 12)) return;
+      const marketElapsed =
+        (Date.now() - scanStartedAtRef.current) / 1000;
 
-      const index = Math.max(0, markets.findIndex((item) => item.id === symbol));
-      const next = markets[(index + 1) % markets.length];
+      const cycleElapsed =
+        (Date.now() -
+          scanCycleStartedAtRef.current) /
+        1000;
+
+      if (
+        cycleElapsed >=
+        Number(settings.scanCycleSeconds || 60)
+      ) {
+        scanCycleStartedAtRef.current = Date.now();
+
+        const ranked = Object.values(marketScores)
+          .filter(
+            (item) =>
+              item?.symbol &&
+              Date.now() -
+                Number(item.updatedAt || 0) <
+                120000
+          )
+          .sort((a, b) => b.score - a.score);
+
+        const best = ranked[0];
+
+        if (
+          best?.symbol &&
+          best.symbol !== symbol
+        ) {
+          setMessage(
+            `60s scan complete. Re-checking best recent market ${best.label} at ${Number(
+              best.confidence || 0
+            ).toFixed(1)}% learned confidence.`
+          );
+          scanStartedAtRef.current = Date.now();
+          void changeSymbol(best.symbol);
+          return;
+        }
+      }
+
+      if (
+        marketElapsed <
+        Number(settings.marketSwitchSeconds || 7)
+      ) {
+        return;
+      }
+
+      const index = Math.max(
+        0,
+        markets.findIndex(
+          (item) => item.id === symbol
+        )
+      );
+
+      const next =
+        markets[(index + 1) % markets.length];
+
       if (next?.id && next.id !== symbol) {
-        setMessage(`Market unclear. Switching to ${next.label}...`);
+        setMessage(
+          `${scanPhase} scan: switching to ${next.label} after ${settings.marketSwitchSeconds}s.`
+        );
         scanStartedAtRef.current = Date.now();
+        setEntryQueue({ key: "", ticks: 0 });
         void changeSymbol(next.id);
       }
-    }, 1000);
+    }, 500);
 
     return () => window.clearInterval(timer);
   }, [
@@ -855,6 +1086,9 @@ export default function QuantumAIBot() {
     adaptiveLossGuard.reason,
     adaptiveLossGuard.shouldSwitchMarket,
     settings.marketSwitchSeconds,
+    settings.scanCycleSeconds,
+    marketScores,
+    scanPhase,
     changeSymbol,
   ]);
 
@@ -1040,8 +1274,13 @@ export default function QuantumAIBot() {
     }
 
     scanStartedAtRef.current = Date.now();
+    scanCycleStartedAtRef.current = Date.now();
+    setScanClock(0);
+    setEntryQueue({ key: "", ticks: 0 });
     setRunning(true);
-    setMessage("Quantum AI is scanning all conditions. It will trade only confirmed entries.");
+    setMessage(
+      "V13 fast scanner started: 7-second market rotation, 60-second ranking cycle and two-tick entry queue."
+    );
   }
 
   function stopBot() {
@@ -1058,6 +1297,8 @@ export default function QuantumAIBot() {
       attempts: 0,
       previousLoss: null,
     });
+    setScanClock(0);
+    setEntryQueue({ key: "", ticks: 0 });
     setMessage(
       "Session reset. Learned market memory has been preserved."
     );
@@ -1072,8 +1313,8 @@ export default function QuantumAIBot() {
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
-          title="MetaBinary Quantum AI V12"
-          subtitle="Win/loss diagnosis · market learning · two-step safe recovery"
+          title="MetaBinary Quantum AI V13"
+          subtitle="Fast adaptive scanner · recent market memory · recovery x2"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1083,11 +1324,11 @@ export default function QuantumAIBot() {
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
             <small>METABINARY SYNTHETIC INTELLIGENCE</small>
-            <h1>MetaBinary Quantum AI V12</h1>
+            <h1>MetaBinary Quantum AI V13</h1>
             <p>
-              Diagnoses every settled trade, learns each
-              market/direction and permits up to two controlled
-              recovery attempts without Martingale.
+              Reads every tick, rotates markets quickly, learns recent
+              market behaviour and keeps two controlled recovery
+              attempts without Martingale.
             </p>
           </div>
           <div className="quantumHeroStatus">
@@ -1113,6 +1354,70 @@ export default function QuantumAIBot() {
           <button className="quantumStart" onClick={startBot} disabled={running}>RUN AI</button>
           <button className="quantumStop" onClick={stopBot} disabled={!running}>STOP</button>
           <button className="quantumReset" onClick={resetSession} disabled={running || activeTrades.length > 0}>RESET</button>
+        </section>
+
+        <section className={`quantumFastScanner ${scanPhase.toLowerCase()}`}>
+          <header>
+            <div>
+              <small>V13 MULTI-SPEED SCANNER</small>
+              <h3>{scanPhase} LANE</h3>
+            </div>
+            <strong>
+              {scanClock.toFixed(1)}s /
+              {settings.scanCycleSeconds}s
+            </strong>
+          </header>
+
+          <div className="quantumFastGrid">
+            <article>
+              <span>Market rotation</span>
+              <strong>{settings.marketSwitchSeconds}s</strong>
+            </article>
+            <article>
+              <span>Required confidence</span>
+              <strong>
+                {dynamicRequiredConfidence.toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Learned confidence</span>
+              <strong>{learnedConfidence.toFixed(1)}%</strong>
+            </article>
+            <article>
+              <span>Vote consensus</span>
+              <strong>{fastVoteConsensus.toFixed(0)}%</strong>
+            </article>
+            <article>
+              <span>Entry queue</span>
+              <strong>
+                {entryQueue.ticks}/{settings.entryQueueTicks}
+              </strong>
+            </article>
+            <article>
+              <span>Recent 10</span>
+              <strong>
+                {(currentLearning.recent10 * 100).toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Recent 30</span>
+              <strong>
+                {(currentLearning.recent30 * 100).toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Entry gate</span>
+              <strong
+                className={
+                  learningEntryPass
+                    ? "positive"
+                    : "negative"
+                }
+              >
+                {learningEntryPass ? "READY" : "SCANNING"}
+              </strong>
+            </article>
+          </div>
         </section>
 
         <section className={`quantumDecision ${analysis.ready ? "ready" : "wait"}`}>
@@ -1154,6 +1459,14 @@ export default function QuantumAIBot() {
             ["Recovery stake x", "recoveryStakeMultiplier", 0.5, 1.15, 0.05],
             ["Learn after", "learningMinimumTrades", 1, 50, 1],
             ["Learning cap", "learningMaxAdjustment", 0, 12, 1],
+            ["Scan cycle sec", "scanCycleSeconds", 30, 180, 5],
+            ["Fast lane sec", "fastLaneSeconds", 5, 40, 1],
+            ["Balanced sec", "balancedLaneSeconds", 15, 55, 1],
+            ["Fast confidence", "fastConfidence", 60, 90, 1],
+            ["Balanced confidence", "balancedConfidence", 60, 92, 1],
+            ["Selective confidence", "selectiveConfidence", 60, 95, 1],
+            ["Queue ticks", "entryQueueTicks", 1, 5, 1],
+            ["Min vote", "minimumVoteConsensus", 40, 90, 1],
           ].map(([label, key, min, max, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -1257,7 +1570,7 @@ export default function QuantumAIBot() {
               <strong>{currentLearning.trades}</strong>
             </article>
             <article>
-              <span>Smoothed win rate</span>
+              <span>Weighted recent rate</span>
               <strong>
                 {(currentLearning.smoothedWinRate * 100).toFixed(1)}%
               </strong>
@@ -1445,7 +1758,7 @@ export default function QuantumAIBot() {
         </section>
 
         <p className="quantumRiskNote">
-          V12 learns from settled trades and diagnoses outcomes,
+          V13 learns from recent settled trades and diagnoses outcomes,
           but past performance cannot guarantee future wins.
           Test on Demo before Real execution.
         </p>
