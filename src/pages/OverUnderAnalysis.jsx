@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
-import MarketSelector from "../components/MarketSelector";
+import DerivAccountSelector, { accountId, accountType } from "../components/DerivAccountSelector";
+import DerivVolatilitySelector, { DERIV_VOLATILITY_MARKETS } from "../components/DerivVolatilitySelector";
+import "../components/DerivSelectors.css";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
@@ -10,7 +12,7 @@ import "../styles/OverUnderAnalysis.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
 
-function accountId(account = {}) {
+function legacyAccountId(account = {}) {
   return String(
     account.id ||
     account.account_id ||
@@ -31,7 +33,7 @@ function accountBalance(account = {}) {
   return Number.isFinite(value) ? value : 0;
 }
 
-function accountType(account = {}) {
+function legacyAccountType(account = {}) {
   const id = accountId(account).toUpperCase();
   const type = String(account.type || account.account_type || "").toLowerCase();
   return type.includes("demo") || id.startsWith("VRTC") ? "demo" : "real";
@@ -170,13 +172,7 @@ export default function OverUnderAnalysis() {
     }
   }, [analysis.best.side, analysis.best.barrier]);
 
-  const marketSymbols = useMemo(
-    () =>
-      markets
-        .map((item) => String(item.symbol ?? item.value ?? item.id ?? ""))
-        .filter(Boolean),
-    [markets]
-  );
+  const marketSymbols = DERIV_VOLATILITY_MARKETS.map((item) => item.id);
 
   const hasOpenTrade = trades.some((trade) => trade.status === "OPEN");
 
@@ -446,7 +442,7 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V78 · Over/Under Layout Fix"
+          title="EdgePilot V81 · Deriv Market & Account Fix"
           subtitle="Clean non-overlapping layout, compact quick buttons and direct selected-duration manual trading"
           connected={connected}
           connecting={loadingMarket}
@@ -455,31 +451,19 @@ export default function OverUnderAnalysis() {
         />
 
         <section className="ouTopStrip">
-          <MarketSelector
-            markets={markets}
+          <DerivVolatilitySelector
             value={symbol}
             disabled={loadingMarket || autoRunning}
             onChange={changeSymbol}
           />
 
-          <div className={`ouAccountCard ${currentType}`}>
-            <label>
-              <span>Account</span>
-              <select value={selectedId} onChange={(event) => void switchAccount(event.target.value)}>
-                {accounts.length ? accounts.map((account) => (
-                  <option key={accountId(account)} value={accountId(account)}>
-                    {accountType(account).toUpperCase()} · {accountId(account)}
-                  </option>
-                )) : (
-                  <option value={selectedId}>{currentType.toUpperCase()} · {selectedId || "Not selected"}</option>
-                )}
-              </select>
-            </label>
-            <div>
-              <small>LIVE BALANCE</small>
-              <strong>{balance.toFixed(2)} {currency}</strong>
-            </div>
-          </div>
+          <DerivAccountSelector
+            accounts={accounts}
+            selectedAccountId={selectedId}
+            selectedAccount={selectedAccount}
+            currency={currency}
+            onChange={(nextId) => void switchAccount(nextId)}
+          />
 
           <div className="ouTopActions">
             <button type="button" className="ouReset" onClick={resetTransactions}>

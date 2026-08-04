@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
-import MarketSelector from "../components/MarketSelector";
+import DerivAccountSelector from "../components/DerivAccountSelector";
+import DerivVolatilitySelector, { DERIV_VOLATILITY_MARKETS } from "../components/DerivVolatilitySelector";
+import "../components/DerivSelectors.css";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
@@ -266,13 +268,7 @@ export default function TargetTenBot() {
     accountId,
   ]);
 
-  const marketSymbols = useMemo(
-    () =>
-      markets
-        .map((item) => String(item.symbol ?? item.value ?? item.id ?? ""))
-        .filter(Boolean),
-    [markets]
-  );
+  const marketSymbols = DERIV_VOLATILITY_MARKETS.map((item) => item.id);
 
   useEffect(() => {
     if (!running || decision.qualified || hasOpenTrade || tradeBusy || marketSymbols.length < 2) {
@@ -387,7 +383,7 @@ export default function TargetTenBot() {
 
       <main className="mainContent targetTenPage">
         <Topbar
-          title="EdgePilot V80 · Target 10 Bot"
+          title="EdgePilot V81 · Target 10 Bot"
           subtitle="Separate staged-growth bot · same strategy for Demo and Real · no martingale"
           connected={connected}
           connecting={loadingMarket}
@@ -396,30 +392,19 @@ export default function TargetTenBot() {
         />
 
         <section className="targetTopbar">
-          <MarketSelector
-            markets={markets}
+          <DerivVolatilitySelector
             value={symbol}
             disabled={loadingMarket || running}
             onChange={changeSymbol}
           />
 
-          <label className={`targetAccount ${accountType}`}>
-            <span>ACCOUNT</span>
-            <select
-              value={accountId}
-              onChange={(event) => void switchAccount(event.target.value)}
-            >
-              {accounts.map((account) => (
-                <option
-                  key={getAccountId(account)}
-                  value={getAccountId(account)}
-                >
-                  {getAccountType(account).toUpperCase()} · {getAccountId(account)}
-                </option>
-              ))}
-            </select>
-            <strong>{balance.toFixed(2)} {currency}</strong>
-          </label>
+          <DerivAccountSelector
+            accounts={accounts}
+            selectedAccountId={accountId}
+            selectedAccount={selectedAccount}
+            currency={currency}
+            onChange={(nextId) => void switchAccount(nextId)}
+          />
 
           <button
             type="button"

@@ -1,4 +1,4 @@
-import {
+﻿import {
   useEffect,
   useMemo,
   useState,
@@ -34,6 +34,7 @@ import {
 
 import "../styles/AnalysisEngine.css";
 import "../styles/ProfessionalDecision.css";
+import BotDashboardCatalog from "../components/BotDashboardCatalog";
 
 function buildPath(
   prices,
@@ -255,7 +256,7 @@ export default function Dashboard() {
       ? currentPrice.toFixed(
           market.decimals
         )
-      : "—";
+      : "â€”";
 
   const signals = [
     {
@@ -357,7 +358,7 @@ export default function Dashboard() {
                 : "liveBadge"
             }
           >
-            ●{" "}
+            â—{" "}
             {connected
               ? "DERIV LIVE"
               : status}
@@ -393,7 +394,7 @@ export default function Dashboard() {
               </div>
 
               <span className="priceDigit">
-                {lastDigit ?? "—"}
+                {lastDigit ?? "â€”"}
               </span>
             </div>
 
@@ -536,7 +537,7 @@ export default function Dashboard() {
             <Stat
               label="Current digit"
               value={
-                lastDigit ?? "—"
+                lastDigit ?? "â€”"
               }
             />
 
@@ -555,7 +556,8 @@ export default function Dashboard() {
             />
           </div>
         </section>
-      </main>
+              <BotDashboardCatalog />
+</main>
     </div>
   );
 }

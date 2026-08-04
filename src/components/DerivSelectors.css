@@ -1,0 +1,92 @@
+.derivAccountSelector,
+.derivVolatilitySelector {
+  min-width: 0;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 1px solid #18536b;
+  border-radius: 10px;
+  background: #041827;
+}
+
+.derivAccountSelector.demo { border-color: #18aa88; }
+.derivAccountSelector.real { border-color: #d39a2b; }
+
+.derivAccountBadge {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: #0c8a70;
+  font-weight: 900;
+}
+
+.derivAccountSelector.real .derivAccountBadge {
+  background: #bf8320;
+}
+
+.derivAccountMain {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.derivAccountMain small,
+.derivAccountBalance small,
+.derivVolatilitySelector small {
+  color: #3ed8b0;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.derivAccountMain select,
+.derivVolatilitySelector select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  color: white;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.derivAccountBalance {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.derivAccountBalance strong {
+  color: white;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.derivVolatilitySelector {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+@media (max-width: 720px) {
+  .derivAccountSelector {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .derivAccountBalance {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    padding-left: 39px;
+  }
+}
