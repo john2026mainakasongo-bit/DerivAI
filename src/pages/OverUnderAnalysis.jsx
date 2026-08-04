@@ -446,8 +446,8 @@ export default function OverUnderAnalysis() {
 
       <main className="mainContent ouPage">
         <Topbar
-          title="EdgePilot V76 · Over/Under Compact Pro"
-          subtitle="Fast row-pressure analysis, manual entries, account balance and responsive mobile layout"
+          title="EdgePilot V77 · Over/Under Quick Trader"
+          subtitle="Dedicated OVER and UNDER buttons, fast row-pressure analysis and compact mobile trading"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -508,7 +508,33 @@ export default function OverUnderAnalysis() {
             <label><span>Duration</span><select value={durationTicks} onChange={(event) => setDurationTicks(event.target.value)}><option value="1">1 TICK</option><option value="2">2 TICKS</option><option value="3">3 TICKS</option><option value="5">5 TICKS</option></select></label>
             <label><span>Manual side</span><select value={manualSide} onChange={(event) => setManualSide(event.target.value)}><option value="OVER">OVER</option><option value="UNDER">UNDER</option></select></label>
             <label><span>Barrier</span><select value={manualBarrier} onChange={(event) => setManualBarrier(Number(event.target.value))}>{[1,2,3,4,5,6,7].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-            <button type="button" className="ouManualBuy" disabled={tradeBusy || hasOpenTrade} onClick={() => void sendTrade(manualSide, manualBarrier, "MANUAL")}>BUY MANUAL</button>
+            <div className="ouQuickTradeButtons">
+              <button
+                type="button"
+                className="ouQuickOver"
+                disabled={tradeBusy || hasOpenTrade}
+                onClick={() => {
+                  setManualSide("OVER");
+                  void sendTrade("OVER", manualBarrier, "MANUAL OVER");
+                }}
+              >
+                <span>BUY</span>
+                <strong>OVER {manualBarrier}</strong>
+              </button>
+
+              <button
+                type="button"
+                className="ouQuickUnder"
+                disabled={tradeBusy || hasOpenTrade}
+                onClick={() => {
+                  setManualSide("UNDER");
+                  void sendTrade("UNDER", manualBarrier, "MANUAL UNDER");
+                }}
+              >
+                <span>BUY</span>
+                <strong>UNDER {manualBarrier}</strong>
+              </button>
+            </div>
             <label><span>Auto switch</span><select value={autoSwitch ? "ON" : "OFF"} onChange={(event) => setAutoSwitch(event.target.value === "ON")}><option>ON</option><option>OFF</option></select></label>
             <label><span>Switch after</span><input type="number" inputMode="numeric" min="5" max="60" value={switchAfterSeconds} onChange={(event) => setSwitchAfterSeconds(event.target.value)} /></label>
             <div><span>Runs</span><strong>{runs}</strong></div>
@@ -530,6 +556,59 @@ export default function OverUnderAnalysis() {
             <span><small>Quality</small><strong>{pct(analysis.quality)}</strong></span>
             <span><small>Risk</small><strong>{analysis.risk}</strong></span>
           </div>
+        </section>
+
+        <section className="ouRecommendedActions">
+          <div>
+            <small>QUICK MANUAL ENTRY</small>
+            <strong>
+              Selected barrier: {manualBarrier}
+            </strong>
+          </div>
+
+          <button
+            type="button"
+            className={
+              analysis.best.side === "OVER"
+                ? "recommended"
+                : ""
+            }
+            disabled={tradeBusy || hasOpenTrade}
+            onClick={() => {
+              setManualSide("OVER");
+              void sendTrade("OVER", manualBarrier, "QUICK OVER");
+            }}
+          >
+            OVER {manualBarrier}
+            <span>
+              Wins on {Array.from(
+                { length: Math.max(0, 9 - manualBarrier) },
+                (_, index) => manualBarrier + index + 1
+              ).join(" · ") || "—"}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={
+              analysis.best.side === "UNDER"
+                ? "recommended"
+                : ""
+            }
+            disabled={tradeBusy || hasOpenTrade}
+            onClick={() => {
+              setManualSide("UNDER");
+              void sendTrade("UNDER", manualBarrier, "QUICK UNDER");
+            }}
+          >
+            UNDER {manualBarrier}
+            <span>
+              Wins on {Array.from(
+                { length: Math.max(0, manualBarrier) },
+                (_, index) => index
+              ).join(" · ") || "—"}
+            </span>
+          </button>
         </section>
 
         <section className="ouSignalGrid">
