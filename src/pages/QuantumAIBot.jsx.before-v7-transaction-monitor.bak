@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
@@ -19,61 +19,22 @@ function money(value) {
 }
 
 function contractIdOf(value) {
-  return String(
-    value?.contract_id ||
-      value?.contractId ||
-      value?.id ||
-      value?.buy?.contract_id ||
-      value?.proposal_open_contract?.contract_id ||
-      value?.data?.contract_id ||
-      value?.data?.contractId ||
-      ""
-  );
+  return String(value?.contract_id || value?.id || "");
 }
 
 function settled(contract) {
-  const status = String(
-    contract?.status ||
-      contract?.contract_status ||
-      contract?.action ||
-      ""
-  ).toLowerCase();
-
   return Boolean(
     contract?.is_sold ||
       contract?.is_expired ||
-      contract?.is_settleable === false ||
-      ["won", "lost", "sold", "expired", "settled"].includes(status)
+      ["won", "lost", "sold"].includes(String(contract?.status || "").toLowerCase())
   );
 }
 
 function contractProfit(contract) {
-  const candidates = [
-    contract?.profit,
-    contract?.profit_loss,
-    contract?.pnl,
-    contract?.data?.profit,
-  ];
-
-  for (const candidate of candidates) {
-    const value = Number(candidate);
-    if (Number.isFinite(value)) return value;
-  }
-
-  const payout = Number(
-    contract?.payout ??
-      contract?.sell_price ??
-      contract?.sellPrice ??
-      0
-  );
-
-  const buy = Number(
-    contract?.buy_price ??
-      contract?.purchase_price ??
-      contract?.buyPrice ??
-      0
-  );
-
+  const direct = Number(contract?.profit);
+  if (Number.isFinite(direct)) return direct;
+  const payout = Number(contract?.payout || contract?.sell_price || 0);
+  const buy = Number(contract?.buy_price || contract?.purchase_price || 0);
   return payout - buy;
 }
 
@@ -90,7 +51,6 @@ export default function QuantumAIBot() {
     prices,
     currentPrice,
     openContracts,
-    transactions,
     tradeBusy,
     tradeError,
     selectedAccountType,
@@ -98,7 +58,6 @@ export default function QuantumAIBot() {
     disconnect,
     changeSymbol,
     placeTrade,
-    refreshContract,
   } = useDerivTicks();
 
   const [running, setRunning] = useState(false);
@@ -166,113 +125,39 @@ export default function QuantumAIBot() {
   }, [symbol, market?.label, analysis.confidence, analysis.decision, analysis.reversalRisk]);
 
   useEffect(() => {
-    const contractRows = Array.isArray(openContracts) ? openContracts : [];
-    const transactionRows = Array.isArray(transactions) ? transactions : [];
-
-    const combined = [...contractRows, ...transactionRows];
     const updates = [];
 
-    for (const contract of combined) {
+    for (const contract of openContracts) {
       const id = contractIdOf(contract);
-
-      if (
-        !id ||
-        !settled(contract) ||
-        processedContractsRef.current.has(id)
-      ) {
-        continue;
-      }
-
-      const original = activeTrades.find(
-        (item) => String(item.contractId) === id
-      );
-
-      if (!original) continue;
+      if (!id || !settled(contract) || processedContractsRef.current.has(id)) continue;
+      if (!activeTrades.some((item) => item.contractId === id)) continue;
 
       processedContractsRef.current.add(id);
-
       const profit = contractProfit(contract);
-      const rawStatus = String(
-        contract?.status ||
-          contract?.contract_status ||
-          ""
-      ).toUpperCase();
-
-      const result =
-        rawStatus === "WON" || profit > 0
-          ? "WON"
-          : "LOST";
-
-      updates.push({
-        ...original,
-        result,
-        profit,
-        settledAt: Date.now(),
-      });
+      const result = profit >= 0 ? "WON" : "LOST";
+      const original = activeTrades.find((item) => item.contractId === id);
+      updates.push({ ...original, result, profit, settledAt: Date.now() });
     }
 
     if (!updates.length) return;
 
     setActiveTrades((current) =>
-      current.filter(
-        (item) =>
-          !updates.some(
-            (done) =>
-              String(done.contractId) === String(item.contractId)
-          )
-      )
+      current.filter((item) => !updates.some((done) => done.contractId === item.contractId))
     );
 
     setStats((current) => {
-      const wins = updates.filter(
-        (item) => item.result === "WON"
-      ).length;
-
+      const wins = updates.filter((item) => item.result === "WON").length;
       const losses = updates.length - wins;
-
-      const profit = updates.reduce(
-        (sum, item) => sum + Number(item.profit || 0),
-        0
-      );
-
+      const profit = updates.reduce((sum, item) => sum + Number(item.profit || 0), 0);
       return {
         runs: current.runs,
         wins: current.wins + wins,
         losses: current.losses + losses,
         profit: current.profit + profit,
-        history: [
-          ...updates.reverse(),
-          ...current.history,
-        ].slice(0, 40),
+        history: [...updates.reverse(), ...current.history].slice(0, 40),
       };
     });
-  }, [openContracts, transactions, activeTrades]);
-
-  useEffect(() => {
-    if (
-      !activeTrades.length ||
-      typeof refreshContract !== "function"
-    ) {
-      return;
-    }
-
-    const refreshAll = () => {
-      activeTrades.forEach((trade) => {
-        if (!trade.contractId) return;
-
-        Promise.resolve(
-          refreshContract(trade.contractId)
-        ).catch(() => {
-          // Subscription may still deliver the settlement.
-        });
-      });
-    };
-
-    refreshAll();
-    const timer = window.setInterval(refreshAll, 2000);
-
-    return () => window.clearInterval(timer);
-  }, [activeTrades, refreshContract]);
+  }, [openContracts, activeTrades]);
 
   useEffect(() => {
     if (!running) return;
@@ -339,7 +224,7 @@ export default function QuantumAIBot() {
         });
 
         if (cancelled) return;
-        const contractId = contractIdOf(response);
+        const contractId = String(response?.contractId || response?.buy?.contract_id || "");
         if (!contractId) throw new Error("Deriv did not return a contract ID.");
 
         const trade = {
@@ -408,7 +293,7 @@ export default function QuantumAIBot() {
       <main className="mainContent quantumPage">
         <Topbar
           title="MetaBinary Quantum AI"
-          subtitle="Adaptive Rise/Fall scanner Â· smart seconds Â· two-run execution"
+          subtitle="Adaptive Rise/Fall scanner · smart seconds · two-run execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -422,7 +307,7 @@ export default function QuantumAIBot() {
             <p>Rise/Fall sharp-entry scanner with smart seconds, market switching and two live trade slots.</p>
           </div>
           <div className="quantumHeroStatus">
-            <span>{running ? "â— LIVE" : "â—‹ IDLE"}</span>
+            <span>{running ? "● LIVE" : "○ IDLE"}</span>
             <strong>{running ? (analysis.ready ? "ENTRY READY" : "SCANNING") : "STOPPED"}</strong>
           </div>
         </section>
@@ -454,7 +339,7 @@ export default function QuantumAIBot() {
           </div>
           <div className="quantumDecisionStats">
             <article><span>Confidence</span><strong>{analysis.confidence.toFixed(1)}%</strong></article>
-            <article><span>Candidate</span><strong>{analysis.candidate || "â€”"}</strong></article>
+            <article><span>Candidate</span><strong>{analysis.candidate || "—"}</strong></article>
             <article><span>Smart duration</span><strong>{analysis.duration}s</strong></article>
             <article><span>Active slots</span><strong>{activeTrades.length}/{settings.maxOpenTrades}</strong></article>
           </div>
@@ -494,7 +379,7 @@ export default function QuantumAIBot() {
           <article><span>Volatility</span><strong>{analysis.volatility.toFixed(0)}%</strong></article>
           <article><span>Consistency</span><strong>{analysis.consistency.toFixed(0)}%</strong></article>
           <article><span>Reversal risk</span><strong>{analysis.reversalRisk.toFixed(0)}%</strong></article>
-          <article><span>Price</span><strong>{currentPrice ?? "â€”"}</strong></article>
+          <article><span>Price</span><strong>{currentPrice ?? "—"}</strong></article>
         </section>
 
         <section className="quantumToolsPanel">
@@ -508,13 +393,13 @@ export default function QuantumAIBot() {
 
           <div className="quantumToolGrid">
             {[
-              ["RSI 14", analysis.metrics?.rsi?.toFixed?.(1) ?? "â€”"],
-              ["EMA 6", analysis.metrics?.fastEma?.toFixed?.(5) ?? "â€”"],
-              ["EMA 14", analysis.metrics?.mediumEma?.toFixed?.(5) ?? "â€”"],
-              ["EMA 30", analysis.metrics?.slowEma?.toFixed?.(5) ?? "â€”"],
-              ["Fast slope", analysis.metrics?.fastSlope?.toFixed?.(6) ?? "â€”"],
-              ["Medium slope", analysis.metrics?.mediumSlope?.toFixed?.(6) ?? "â€”"],
-              ["Slow slope", analysis.metrics?.slowSlope?.toFixed?.(6) ?? "â€”"],
+              ["RSI 14", analysis.metrics?.rsi?.toFixed?.(1) ?? "—"],
+              ["EMA 6", analysis.metrics?.fastEma?.toFixed?.(5) ?? "—"],
+              ["EMA 14", analysis.metrics?.mediumEma?.toFixed?.(5) ?? "—"],
+              ["EMA 30", analysis.metrics?.slowEma?.toFixed?.(5) ?? "—"],
+              ["Fast slope", analysis.metrics?.fastSlope?.toFixed?.(6) ?? "—"],
+              ["Medium slope", analysis.metrics?.mediumSlope?.toFixed?.(6) ?? "—"],
+              ["Slow slope", analysis.metrics?.slowSlope?.toFixed?.(6) ?? "—"],
               ["Impulse", `${Number(analysis.metrics?.impulse || 0).toFixed(0)}%`],
               ["Trend strength", `${Number(analysis.metrics?.trendStrength || 0).toFixed(0)}%`],
               ["Vote consensus", `${Number(analysis.metrics?.voteConsensus || 0).toFixed(0)}%`],
@@ -605,4 +490,3 @@ export default function QuantumAIBot() {
     </div>
   );
 }
-
