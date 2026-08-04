@@ -158,8 +158,14 @@ export default function QuantumAIBot() {
     const minimumSamples = oneSecondMarket ? 45 : 70;
     const minimumSeconds = oneSecondMarket ? 8 : 18;
 
+    /*
+     * V15: release warmup as soon as either enough live ticks OR enough
+     * wall-clock time has been collected. Previously both conditions were
+     * required, which could leave fast 1-second markets showing
+     * "Warming 168/45 ticks" even though the sample requirement had passed.
+     */
     const ready =
-      sampleCount >= minimumSamples &&
+      sampleCount >= minimumSamples ||
       elapsedSeconds >= minimumSeconds;
 
     return {
@@ -491,8 +497,10 @@ export default function QuantumAIBot() {
     ) {
       if (running && !marketWarmup.ready) {
         setMessage(
-          `Warming ${market?.label || symbol}: ${marketWarmup.sampleCount}/${marketWarmup.minimumSamples} ticks, ` +
-          `${Math.floor(marketWarmup.elapsedSeconds)}/${marketWarmup.minimumSeconds}s.`
+          marketWarmup.sampleCount >= marketWarmup.minimumSamples
+            ? `${market?.label || symbol} has enough ticks. Finalizing Five-AI score...`
+            : `Warming ${market?.label || symbol}: ${marketWarmup.sampleCount}/${marketWarmup.minimumSamples} ticks, ` +
+              `${Math.floor(marketWarmup.elapsedSeconds)}/${marketWarmup.minimumSeconds}s.`
         );
       }
       return;
@@ -558,7 +566,9 @@ export default function QuantumAIBot() {
     ) {
       if (running && !marketWarmup.ready) {
         setMessage(
-          `Warming ${market?.label || symbol}: ${marketWarmup.sampleCount}/${marketWarmup.minimumSamples} ticks.`
+          marketWarmup.sampleCount >= marketWarmup.minimumSamples
+            ? `${market?.label || symbol} tick sample is ready. Final entry vote is being calculated.`
+            : `Warming ${market?.label || symbol}: ${marketWarmup.sampleCount}/${marketWarmup.minimumSamples} ticks.`
         );
       } else if (running && analysis.ready && !adaptiveLossGuard.ready) {
         setMessage(adaptiveLossGuard.reason);
@@ -945,6 +955,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 
