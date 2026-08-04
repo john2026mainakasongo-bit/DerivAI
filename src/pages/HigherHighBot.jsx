@@ -175,7 +175,7 @@ export default function HigherHighBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "Higher High AI PRO V8 is ready."
+    "Higher High AI PRO V9 is ready."
   );
 
   const [settings, setSettings] = useState({
@@ -190,7 +190,7 @@ export default function HigherHighBot() {
     duration: 10,
     durationUnit: "t",
     cooldownSeconds: 25,
-    marketSwitchSeconds: 18,
+    marketSwitchSeconds: 12,
     lossMarketBlockSeconds: 120,
     takeProfit: 3,
     stopLoss: 1.5,
@@ -198,7 +198,7 @@ export default function HigherHighBot() {
     minimumVoteScore: 78,
     minimumProbability: 54,
     maximumWaitSeconds: 120,
-    fallbackStartSeconds: 105,
+    fallbackStartSeconds: 75,
     fallbackVoteScore: 68,
     fallbackProbability: 51,
     fallbackMinimumVotes: 2,
@@ -211,7 +211,18 @@ export default function HigherHighBot() {
     assumedLossAmount: 0.35,
     minimumProbabilityEdge: 5,
     minimumExpectedValue: 0.015,
-    probabilityCalibrationStrength: 0.35,
+    probabilityCalibrationStrength: 0.25,
+    tierAProbability: 72,
+    tierAScore: 74,
+    tierAVotes: 4,
+    tierBStartSeconds: 45,
+    tierBProbability: 64,
+    tierBScore: 68,
+    tierBVotes: 3,
+    tierCStartSeconds: 90,
+    tierCProbability: 58,
+    tierCScore: 62,
+    tierCVotes: 2,
     recoveryEnabled: true,
     recoveryConfidenceBonus: 6,
     recoveryProbabilityMinimum: 60,
@@ -345,12 +356,24 @@ export default function HigherHighBot() {
         )
       : 0;
 
+  const modelProbability =
+    Math.max(
+      0.05,
+      Math.min(
+        0.96,
+        Number(analysis.probability || 0) / 100
+      )
+    );
+
   const calibratedProbability =
-    (
-      Number(analysis.probability || 0) / 100
-    ) *
-      (1 - calibrationStrength) +
-    historicalWinRate * calibrationStrength;
+    Math.max(
+      0.05,
+      Math.min(
+        0.96,
+        modelProbability * (1 - calibrationStrength) +
+          historicalWinRate * calibrationStrength
+      )
+    );
 
   const probabilityEdge =
     calibratedProbability - breakEvenProbability;
@@ -361,7 +384,49 @@ export default function HigherHighBot() {
     (1 - calibratedProbability) *
       Number(settings.assumedLossAmount);
 
+  const currentVotes = Number(
+    analysis.metrics?.votePasses || 0
+  );
+
+  const tierAReady =
+    calibratedProbability * 100 >=
+      Number(settings.tierAProbability) &&
+    Number(analysis.confidence || 0) >=
+      Number(settings.tierAScore) &&
+    currentVotes >= Number(settings.tierAVotes);
+
+  const tierBReady =
+    elapsedScanSeconds >=
+      Number(settings.tierBStartSeconds) &&
+    calibratedProbability * 100 >=
+      Number(settings.tierBProbability) &&
+    Number(analysis.confidence || 0) >=
+      Number(settings.tierBScore) &&
+    currentVotes >= Number(settings.tierBVotes);
+
+  const tierCReady =
+    elapsedScanSeconds >=
+      Number(settings.tierCStartSeconds) &&
+    calibratedProbability * 100 >=
+      Number(settings.tierCProbability) &&
+    Number(analysis.confidence || 0) >=
+      Number(settings.tierCScore) &&
+    currentVotes >= Number(settings.tierCVotes);
+
+  const activeTier =
+    tierAReady
+      ? "A"
+      : tierBReady
+      ? "B"
+      : tierCReady
+      ? "C"
+      : "WAIT";
+
+  const tierReady =
+    tierAReady || tierBReady || tierCReady;
+
   const probabilityGuardPass =
+    tierReady &&
     probabilityEdge * 100 >=
       Number(settings.minimumProbabilityEdge) &&
     expectedValue >=
@@ -432,6 +497,7 @@ export default function HigherHighBot() {
         calibratedProbability * 100,
       expectedValue,
       probabilityEdge: probabilityEdge * 100,
+      activeTier,
       votes: Number(analysis.metrics?.votePasses || 0),
       hardRiskBlock: Boolean(analysis.metrics?.hardRiskBlock),
       momentum3: Number(analysis.metrics?.momentum3 || 0),
@@ -505,6 +571,7 @@ export default function HigherHighBot() {
     probabilityEdge,
     expectedValue,
     breakEvenProbability,
+    activeTier,
   ]);
 
   useEffect(() => {
@@ -824,7 +891,7 @@ export default function HigherHighBot() {
         scanStartedAtRef.current = Date.now();
         setReadyStreak(0);
         setMessage(
-          `No V8 probability guard setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
+          `No V9 tiered probability engine setup after ${settings.marketSwitchSeconds}s. Switching to ${next.label}.`
         );
         void changeSymbol(next.id);
       }
@@ -1020,7 +1087,7 @@ export default function HigherHighBot() {
     void (async () => {
       try {
         setMessage(
-          `${recovery.active ? "Recovery" : fallbackWindow && !analysis.ready ? "Two-minute fallback" : "Normal"} signal held ${readyStreak}/${requiredHoldTicks} ticks. Calibrated probability ${(calibratedProbability * 100).toFixed(1)}%, edge ${(probabilityEdge * 100).toFixed(1)}%, EV ${expectedValue.toFixed(3)}.`
+          `${recovery.active ? "Recovery" : `Tier ${activeTier}`} signal held ${readyStreak}/${requiredHoldTicks} ticks. Calibrated probability ${(calibratedProbability * 100).toFixed(1)}%, edge ${(probabilityEdge * 100).toFixed(1)}%, EV ${expectedValue.toFixed(3)}.`
         );
 
         const response = await placeTrade({
@@ -1108,6 +1175,7 @@ export default function HigherHighBot() {
             probabilityEdge:
               probabilityEdge * 100,
             expectedValue,
+            activeTier,
           },
         };
 
@@ -1208,8 +1276,8 @@ export default function HigherHighBot() {
 
       <main className="mainContent hhPage">
         <Topbar
-          title="Higher High AI PRO V8"
-          subtitle="Probability guard · expected value · hard 2-minute cycle · CALL execution"
+          title="Higher High AI PRO V9"
+          subtitle="Fixed probability · Tier A/B/C entries · hard risk block · CALL execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -1223,10 +1291,10 @@ export default function HigherHighBot() {
         >
           <div>
             <small>STRICT CONFIRMATION BOT</small>
-            <h1>Higher High AI PRO V8</h1>
+            <h1>Higher High AI PRO V9</h1>
             <p>
-              Uses calibrated probability, break-even margin and expected value before
-              buying. The hard two-minute cycle and adaptive learning remain active.
+              Uses corrected multi-agent probability, time-based entry tiers and a hard
+              risk block. It never treats a weak 0/5 vote setup as 100% probability.
             </p>
           </div>
 
@@ -1367,9 +1435,16 @@ export default function HigherHighBot() {
               <strong>
                 {scanCycle.finalCandidate
                   ? "FINAL CONFIRM"
-                  : fallbackWindow
-                  ? "FALLBACK SAFE"
-                  : "NORMAL"}
+                  : activeTier === "WAIT"
+                  ? "SCANNING"
+                  : `TIER ${activeTier}`}
+              </strong>
+            </article>
+
+            <article>
+              <span>Active tier</span>
+              <strong>
+                {activeTier}
               </strong>
             </article>
 
@@ -1491,6 +1566,17 @@ export default function HigherHighBot() {
             ["Min P edge %", "minimumProbabilityEdge", 1],
             ["Min EV", "minimumExpectedValue", 0.005],
             ["P calibration", "probabilityCalibrationStrength", 0.05],
+            ["Tier A prob", "tierAProbability", 1],
+            ["Tier A score", "tierAScore", 1],
+            ["Tier A votes", "tierAVotes", 1],
+            ["Tier B start", "tierBStartSeconds", 1],
+            ["Tier B prob", "tierBProbability", 1],
+            ["Tier B score", "tierBScore", 1],
+            ["Tier B votes", "tierBVotes", 1],
+            ["Tier C start", "tierCStartSeconds", 1],
+            ["Tier C prob", "tierCProbability", 1],
+            ["Tier C score", "tierCScore", 1],
+            ["Tier C votes", "tierCVotes", 1],
           ].map(([label, key, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -1648,6 +1734,27 @@ export default function HigherHighBot() {
           <article>
             <span>Votes passed</span>
             <strong>{metrics.votePasses || 0}/5</strong>
+          </article>
+        </section>
+
+        <section className="hhTierPanel">
+          <article className={activeTier === "A" ? "active" : ""}>
+            <span>Tier A</span>
+            <strong>
+              {settings.tierAProbability}% P · {settings.tierAScore}% score · {settings.tierAVotes} votes
+            </strong>
+          </article>
+          <article className={activeTier === "B" ? "active" : ""}>
+            <span>Tier B after {settings.tierBStartSeconds}s</span>
+            <strong>
+              {settings.tierBProbability}% P · {settings.tierBScore}% score · {settings.tierBVotes} votes
+            </strong>
+          </article>
+          <article className={activeTier === "C" ? "active" : ""}>
+            <span>Tier C after {settings.tierCStartSeconds}s</span>
+            <strong>
+              {settings.tierCProbability}% P · {settings.tierCScore}% score · {settings.tierCVotes} votes
+            </strong>
           </article>
         </section>
 
@@ -1812,6 +1919,7 @@ export default function HigherHighBot() {
                             : item.fallbackTrade
                             ? "2-MIN FALLBACK · "
                             : ""}
+                          {snapshot.activeTier ? `TIER ${snapshot.activeTier} · ` : ""}
                           C {item.confidence}% · P{" "}
                           {item.probability}% · CP{" "}
                           {number(snapshot.calibratedProbability, 1)}% · TF{" "}

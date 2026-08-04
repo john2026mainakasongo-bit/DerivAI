@@ -190,3 +190,49 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* HIGHER HIGH AI PRO V9 — tiered entry engine */
+.hhTierPanel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.hhTierPanel article {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #1b536a;
+  border-radius: 8px;
+  background: #041a28;
+}
+
+.hhTierPanel article.active {
+  border-color: #2cddb0;
+  box-shadow: 0 0 0 1px rgba(44, 221, 176, .16);
+}
+
+.hhTierPanel span {
+  display: block;
+  color: #78a9bd;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.hhTierPanel strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.hhTierPanel article.active strong {
+  color: #3ce4b8;
+}
+
+@media (max-width: 760px) {
+  .hhTierPanel {
+    grid-template-columns: 1fr;
+  }
+}

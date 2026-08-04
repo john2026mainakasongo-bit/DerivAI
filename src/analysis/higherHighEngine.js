@@ -493,18 +493,30 @@ export function analyzeHigherHigh(prices = [], options = {}) {
     )
   );
 
-  const probability = Math.round(
-    clamp(
-      transition * 38 +
-        micro.upRatio * 20 +
-        short.upRatio * 16 +
-        mediumWindow.upRatio * 10 +
-        efficiency12 * 8 +
-        efficiency28 * 8,
-      0,
-      1
-    ) * 100
+  const probabilityComponents = {
+    transition: clamp(transition, 0, 1),
+    trend: clamp(trendScore / 100, 0, 1),
+    momentum: clamp(momentumScore / 100, 0, 1),
+    volatility: clamp(volatilityScore / 100, 0, 1),
+    pattern: clamp(patternScore / 100, 0, 1),
+    timeframe: clamp(timeframeAgreement / 3, 0, 1),
+  };
+
+  const rawProbability =
+    probabilityComponents.transition * 0.20 +
+    probabilityComponents.trend * 0.20 +
+    probabilityComponents.momentum * 0.20 +
+    probabilityComponents.volatility * 0.12 +
+    probabilityComponents.pattern * 0.18 +
+    probabilityComponents.timeframe * 0.10;
+
+  const cappedProbability = clamp(
+    rawProbability * 100 - riskPenalty * 0.45,
+    5,
+    96
   );
+
+  const probability = Math.round(cappedProbability);
 
   const minimumVoteScore = clamp(
     Number(options.minimumVoteScore ?? 78),
@@ -630,6 +642,8 @@ export function analyzeHigherHigh(prices = [], options = {}) {
       minimumVoteScore,
       minimumProbability,
       hardRiskBlock,
+      probabilityComponents,
+      rawProbabilityScore: cappedProbability,
       learningWeights: {
         trend: weightTrend,
         momentum: weightMomentum,
