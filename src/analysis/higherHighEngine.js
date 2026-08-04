@@ -16,7 +16,7 @@ function ema(values, period) {
   return result;
 }
 
-function slope(values, lookback = 12) {
+function linearSlope(values, lookback = 12) {
   const rows = values.slice(-lookback);
   if (rows.length < 3) return 0;
   const n = rows.length;
@@ -67,6 +67,60 @@ function directionalEntropy(values, lookback = 32) {
   return -probabilities.reduce((sum, value) => sum + value * Math.log2(value), 0);
 }
 
+function directionStats(values, lookback) {
+  const rows = values.slice(-(lookback + 1));
+  let up = 0;
+  let down = 0;
+  let flat = 0;
+  let run = 0;
+  let bestRun = 0;
+  for (let index = 1; index < rows.length; index += 1) {
+    const delta = rows[index] - rows[index - 1];
+    if (delta > 0) {
+      up += 1;
+      run += 1;
+      bestRun = Math.max(bestRun, run);
+    } else {
+      run = 0;
+      if (delta < 0) down += 1;
+      else flat += 1;
+    }
+  }
+  const directional = up + down;
+  return {
+    up,
+    down,
+    flat,
+    upRatio: directional ? up / directional : 0.5,
+    bestUpRun: bestRun,
+  };
+}
+
+function transitionProbability(values, lookback = 60) {
+  const rows = values.slice(-(lookback + 1));
+  if (rows.length < 12) return 0.5;
+  let upAfterUp = 0;
+  let upContexts = 0;
+  let upAfterDown = 0;
+  let downContexts = 0;
+  for (let index = 2; index < rows.length; index += 1) {
+    const previous = rows[index - 1] - rows[index - 2];
+    const current = rows[index] - rows[index - 1];
+    if (previous > 0) {
+      upContexts += 1;
+      if (current > 0) upAfterUp += 1;
+    } else if (previous < 0) {
+      downContexts += 1;
+      if (current > 0) upAfterDown += 1;
+    }
+  }
+  const lastDelta = rows.at(-1) - rows.at(-2);
+  if (lastDelta > 0 && upContexts) return upAfterUp / upContexts;
+  if (lastDelta < 0 && downContexts) return upAfterDown / downContexts;
+  const total = upContexts + downContexts;
+  return total ? (upAfterUp + upAfterDown) / total : 0.5;
+}
+
 function pivots(values, wing = 2) {
   const highs = [];
   const lows = [];
@@ -84,119 +138,214 @@ function pivots(values, wing = 2) {
   return { highs, lows };
 }
 
-function pct(value) {
-  return `${Math.round(Number(value || 0))}%`;
+function scoreBand(value) {
+  if (value >= 82) return "STRONG";
+  if (value >= 74) return "GOOD";
+  if (value >= 64) return "WATCH";
+  return "WEAK";
 }
 
 export function analyzeHigherHigh(prices = [], options = {}) {
-  const values = finiteSeries(prices).slice(-220);
-  const minimumConfidence = Number(options.minimumConfidence ?? 86);
-  const minimumEfficiency = Number(options.minimumEfficiency ?? 0.46);
-  const maximumEntropy = Number(options.maximumEntropy ?? 0.92);
+  const values = finiteSeries(prices).slice(-260);
+  const minimumTicks = Math.max(100, Number(options.minimumTicks ?? 140));
+  const userMinimumConfidence = clamp(Number(options.minimumConfidence ?? 80), 70, 95);
+  const minimumEfficiency = clamp(Number(options.minimumEfficiency ?? 0.18), 0.08, 0.8);
+  const maximumEntropy = clamp(Number(options.maximumEntropy ?? 0.99), 0.7, 1);
 
-  if (values.length < 80) {
+  if (values.length < minimumTicks) {
     return {
       ready: false,
       decision: "COLLECTING",
       confidence: 0,
-      reason: `Collecting ticks ${values.length}/80`,
+      adaptiveThreshold: userMinimumConfidence,
+      reason: `Collecting ticks ${values.length}/${minimumTicks}`,
       structure: "WAIT",
       pullback: "WAIT",
-      metrics: {},
+      regime: "COLLECTING",
+      probability: 50,
+      metrics: { ticksCollected: values.length },
       checks: [],
     };
   }
 
   const last = values.at(-1);
-  const fast = ema(values.slice(-60), 9);
-  const medium = ema(values.slice(-100), 21);
+  const prior = values.at(-2);
+  const returns = values.slice(-70).map((value, index, rows) => index ? value - rows[index - 1] : 0).slice(1);
+  const volatility = standardDeviation(returns);
+  const safeVolatility = Math.max(volatility, Number.EPSILON);
+  const recentMove = Math.abs(last - prior);
+  const spikeRatio = recentMove / safeVolatility;
+
+  const fast = ema(values.slice(-80), 9);
+  const medium = ema(values.slice(-120), 21);
   const slow = ema(values, 50);
-  const fastBefore = ema(values.slice(-61, -1), 9);
+  const fastBefore = ema(values.slice(-81, -1), 9);
+  const mediumBefore = ema(values.slice(-121, -1), 21);
   const fastSlope = fast - fastBefore;
-  const regressionSlope = slope(values, 18);
+  const mediumSlope = medium - mediumBefore;
+
+  const slope8 = linearSlope(values, 8);
+  const slope20 = linearSlope(values, 20);
+  const slope50 = linearSlope(values, 50);
+  const normalizedSlope8 = slope8 / safeVolatility;
+  const normalizedSlope20 = slope20 / safeVolatility;
+  const normalizedSlope50 = slope50 / safeVolatility;
+
+  const momentum3 = last - values.at(-4);
   const momentum5 = last - values.at(-6);
   const momentum12 = last - values.at(-13);
-  const returns = values.slice(-40).map((value, index, rows) => index ? value - rows[index - 1] : 0).slice(1);
-  const volatility = standardDeviation(returns);
-  const recentMove = Math.abs(last - values.at(-2));
-  const spikeRatio = volatility > 0 ? recentMove / volatility : 0;
-  const efficiency = efficiencyRatio(values, 28);
-  const entropy = directionalEntropy(values, 36);
-  const { highs, lows } = pivots(values.slice(-100), 2);
-  const recentHighs = highs.slice(-2);
-  const recentLows = lows.slice(-2);
+  const momentum24 = last - values.at(-25);
+  const acceleration = (momentum5 / 5) - ((values.at(-6) - values.at(-11)) / 5);
 
-  const higherHigh = recentHighs.length === 2 && recentHighs[1].value > recentHighs[0].value;
-  const higherLow = recentLows.length === 2 && recentLows[1].value > recentLows[0].value;
-  const structureBullish = higherHigh && higherLow;
-  const emaAligned = fast > medium && medium > slow;
-  const slopePositive = fastSlope > 0 && regressionSlope > 0;
-  const momentumPositive = momentum5 > 0 && momentum12 > 0;
-  const normalVolatility = volatility > 0 && spikeRatio < 2.6;
-  const efficient = efficiency >= minimumEfficiency;
-  const lowNoise = entropy <= maximumEntropy;
+  const micro = directionStats(values, 8);
+  const short = directionStats(values, 15);
+  const mediumWindow = directionStats(values, 35);
+  const transition = transitionProbability(values, 60);
+  const efficiency12 = efficiencyRatio(values, 12);
+  const efficiency28 = efficiencyRatio(values, 28);
+  const entropy18 = directionalEntropy(values, 18);
+  const entropy36 = directionalEntropy(values, 36);
 
-  const lastSwingHigh = recentHighs.at(-1)?.value ?? Math.max(...values.slice(-25));
-  const lastSwingLow = recentLows.at(-1)?.value ?? Math.min(...values.slice(-25));
-  const range = Math.max(Number.EPSILON, lastSwingHigh - lastSwingLow);
+  const pivotRows = values.slice(-130);
+  const { highs, lows } = pivots(pivotRows, 2);
+  const recentHighs = highs.slice(-3);
+  const recentLows = lows.slice(-3);
+  const lastTwoHighs = recentHighs.slice(-2);
+  const lastTwoLows = recentLows.slice(-2);
+
+  const higherHigh = lastTwoHighs.length === 2 && lastTwoHighs[1].value > lastTwoHighs[0].value;
+  const higherLow = lastTwoLows.length === 2 && lastTwoLows[1].value > lastTwoLows[0].value;
+  const softHigherHigh = last > Math.max(...values.slice(-18, -2));
+  const structureScore = (higherHigh ? 1 : 0) + (higherLow ? 1 : 0) + (softHigherHigh ? 0.5 : 0);
+  const structureBullish = higherLow && (higherHigh || softHigherHigh);
+
+  const emaAligned = fast > medium && medium >= slow;
+  const emaBullishSoft = fast > medium && fastSlope > 0;
+  const slopeVotes = [normalizedSlope8 > 0.05, normalizedSlope20 > 0.02, normalizedSlope50 > -0.01];
+  const slopeVoteCount = slopeVotes.filter(Boolean).length;
+  const multiTrend = slopeVoteCount >= 2;
+
+  const momentumVotes = [momentum3 > 0, momentum5 > 0, momentum12 > 0, momentum24 > 0];
+  const momentumVoteCount = momentumVotes.filter(Boolean).length;
+  const momentumBullish = momentumVoteCount >= 3 || (momentumVoteCount >= 2 && acceleration > 0);
+
+  const lastSwingHigh = lastTwoHighs.at(-1)?.value ?? Math.max(...values.slice(-30));
+  const lastSwingLow = lastTwoLows.at(-1)?.value ?? Math.min(...values.slice(-30));
+  const range = Math.max(safeVolatility * 2, lastSwingHigh - lastSwingLow, Number.EPSILON);
   const retracement = (lastSwingHigh - last) / range;
   const heldHigherLow = last > lastSwingLow;
-  const validPullback = retracement >= 0.08 && retracement <= 0.55 && heldHigherLow;
-  const continuation = last > values.at(-2) && values.at(-2) >= values.at(-3);
-  const pullbackConfirmed = validPullback && continuation;
+  const shallowPullback = retracement >= -0.10 && retracement <= 0.58 && heldHigherLow;
+  const continuation = last > prior && (prior >= values.at(-3) || momentum3 > 0);
+  const breakoutContinuation = softHigherHigh && micro.upRatio >= 0.6 && momentum5 > 0;
+  const pullbackConfirmed = (shallowPullback && continuation) || breakoutContinuation;
+
+  const noSpike = spikeRatio <= 2.25;
+  const efficiencyGood = efficiency12 >= minimumEfficiency || efficiency28 >= minimumEfficiency;
+  const noiseAcceptable = entropy18 <= maximumEntropy || entropy36 <= maximumEntropy;
+  const microBullish = micro.upRatio >= 0.58 && micro.bestUpRun >= 2;
+  const shortBullish = short.upRatio >= 0.54;
+  const mediumBullish = mediumWindow.upRatio >= 0.51;
+  const timeframeAgreement = [microBullish, shortBullish, mediumBullish].filter(Boolean).length;
+  const transitionGood = transition >= 0.52;
+
+  const strongTrend = emaAligned && multiTrend && timeframeAgreement >= 2;
+  const mediumTrend = (emaBullishSoft || multiTrend) && timeframeAgreement >= 2;
+  const regime = strongTrend ? "STRONG TREND" : mediumTrend ? "TREND" : efficiency28 < 0.12 ? "CHOPPY" : "MIXED";
+
+  const adaptiveThreshold = clamp(
+    userMinimumConfidence
+      - (strongTrend ? 5 : mediumTrend ? 2 : 0)
+      + (spikeRatio > 1.7 ? 4 : 0)
+      + (entropy36 > 0.995 ? 2 : 0),
+    74,
+    92
+  );
 
   const checks = [
-    { label: "Higher High", passed: higherHigh, weight: 14 },
-    { label: "Higher Low", passed: higherLow, weight: 14 },
-    { label: "EMA 9/21/50", passed: emaAligned, weight: 14 },
-    { label: "Positive slope", passed: slopePositive, weight: 10 },
-    { label: "Momentum 5/12", passed: momentumPositive, weight: 12 },
-    { label: "Pullback held", passed: validPullback, weight: 12 },
-    { label: "Continuation", passed: continuation, weight: 8 },
-    { label: "Efficiency", passed: efficient, weight: 7 },
-    { label: "Low entropy", passed: lowNoise, weight: 5 },
-    { label: "No spike", passed: normalVolatility, weight: 4 },
+    { label: "HH / breakout", passed: higherHigh || softHigherHigh, weight: 10 },
+    { label: "Higher Low", passed: higherLow, weight: 11 },
+    { label: "EMA trend", passed: emaAligned || emaBullishSoft, weight: 11 },
+    { label: "3-window slope", passed: multiTrend, weight: 10 },
+    { label: "Momentum vote", passed: momentumBullish, weight: 11 },
+    { label: "Acceleration", passed: acceleration > 0, weight: 7 },
+    { label: "Micro trend", passed: microBullish, weight: 8 },
+    { label: "Timeframe 2/3", passed: timeframeAgreement >= 2, weight: 9 },
+    { label: "Pullback / break", passed: pullbackConfirmed, weight: 10 },
+    { label: "Transition", passed: transitionGood, weight: 5 },
+    { label: "Efficiency", passed: efficiencyGood, weight: 4 },
+    { label: "No spike", passed: noSpike, weight: 4 },
   ];
 
   const rawScore = checks.reduce((sum, check) => sum + (check.passed ? check.weight : 0), 0);
-  const confidence = clamp(rawScore, 0, 100);
-  const hardGate = structureBullish && emaAligned && slopePositive && momentumPositive && pullbackConfirmed && normalVolatility;
-  const ready = hardGate && efficient && lowNoise && confidence >= minimumConfidence;
+  const structureBonus = structureScore >= 2 ? 3 : 0;
+  const probability = clamp(
+    50
+      + (micro.upRatio - 0.5) * 45
+      + (short.upRatio - 0.5) * 30
+      + (transition - 0.5) * 22
+      + clamp(normalizedSlope20, -1, 1) * 8,
+    35,
+    88
+  );
+  const confidence = clamp(Math.round(rawScore + structureBonus), 0, 100);
 
-  let reason = "Waiting for a clean Higher High setup.";
-  if (!structureBullish) reason = "Market structure has not confirmed Higher High + Higher Low.";
-  else if (!emaAligned) reason = "EMA 9/21/50 trend alignment is incomplete.";
-  else if (!momentumPositive) reason = "Short and medium momentum do not agree.";
-  else if (!validPullback) reason = "Waiting for a controlled pullback above the Higher Low.";
-  else if (!continuation) reason = "Pullback found; waiting for bullish continuation ticks.";
-  else if (!normalVolatility) reason = "Current tick is a volatility spike; entry skipped.";
-  else if (!efficient) reason = "Trend efficiency is below the entry threshold.";
-  else if (!lowNoise) reason = "Direction entropy is too high; market is choppy.";
-  else if (confidence < minimumConfidence) reason = `Setup score ${pct(confidence)} is below ${pct(minimumConfidence)}.`;
-  else reason = "Confirmed Higher High continuation. CALL entry is ready.";
+  const hardRiskGate = noSpike && heldHigherLow && regime !== "CHOPPY";
+  const directionalGate = (structureBullish || (softHigherHigh && emaBullishSoft)) && multiTrend;
+  const timingGate = pullbackConfirmed && momentumBullish && timeframeAgreement >= 2;
+  const qualityGate = efficiencyGood || (strongTrend && micro.upRatio >= 0.62);
+  const ready = hardRiskGate && directionalGate && timingGate && qualityGate && confidence >= adaptiveThreshold;
+
+  let reason = "Waiting for a higher-probability continuation.";
+  if (!noSpike) reason = "Volatility spike detected. Entry blocked for safety.";
+  else if (regime === "CHOPPY") reason = "Market is choppy. Waiting for directional efficiency.";
+  else if (!directionalGate) reason = "Structure and multi-window trend are not aligned yet.";
+  else if (timeframeAgreement < 2) reason = "Micro, short and medium trend need at least 2/3 agreement.";
+  else if (!momentumBullish) reason = "Momentum vote is not bullish enough.";
+  else if (!pullbackConfirmed) reason = "Waiting for shallow pullback continuation or clean breakout.";
+  else if (!qualityGate) reason = "Market quality is still below the adaptive entry gate.";
+  else if (confidence < adaptiveThreshold) reason = `Score ${confidence}% is below adaptive threshold ${adaptiveThreshold}%.`;
+  else reason = "Adaptive HH continuation confirmed. CALL entry is ready.";
 
   return {
     ready,
-    decision: ready ? "BUY HIGHER" : pullbackConfirmed ? "WATCH" : "WAIT",
+    decision: ready ? "BUY HIGHER" : confidence >= adaptiveThreshold - 6 ? "WATCH" : "WAIT",
     confidence,
+    adaptiveThreshold,
+    probability: Math.round(probability),
+    quality: scoreBand(confidence),
     reason,
-    structure: structureBullish ? "HH + HL" : higherHigh ? "HH ONLY" : higherLow ? "HL ONLY" : "UNCONFIRMED",
-    pullback: pullbackConfirmed ? "CONFIRMED" : validPullback ? "FORMING" : "WAIT",
+    structure: structureBullish ? "HH + HL" : softHigherHigh && higherLow ? "BREAK + HL" : higherHigh ? "HH ONLY" : higherLow ? "HL ONLY" : "UNCONFIRMED",
+    pullback: pullbackConfirmed ? "CONFIRMED" : shallowPullback ? "FORMING" : "WAIT",
+    regime,
     duration: Number(options.duration ?? 5),
     durationUnit: String(options.durationUnit ?? "t"),
     checks,
     metrics: {
+      ticksCollected: values.length,
       fastEma: fast,
       mediumEma: medium,
       slowEma: slow,
       fastSlope,
-      regressionSlope,
+      mediumSlope,
+      normalizedSlope8,
+      normalizedSlope20,
+      normalizedSlope50,
+      momentum3,
       momentum5,
       momentum12,
+      momentum24,
+      acceleration,
+      microUpRatio: micro.upRatio,
+      shortUpRatio: short.upRatio,
+      mediumUpRatio: mediumWindow.upRatio,
+      timeframeAgreement,
+      transitionProbability: transition,
       volatility,
       spikeRatio,
-      efficiency,
-      entropy,
+      efficiency12,
+      efficiency28,
+      entropy18,
+      entropy36,
       retracement,
       lastSwingHigh,
       lastSwingLow,

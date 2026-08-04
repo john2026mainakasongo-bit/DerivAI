@@ -37,16 +37,17 @@ export default function HigherHighBot() {
   } = useDerivTicks();
 
   const [running, setRunning] = useState(false);
-  const [message, setMessage] = useState("Higher High AI PRO is ready.");
+  const [message, setMessage] = useState("Higher High AI PRO V2 is ready.");
   const [settings, setSettings] = useState({
     stake: 0.35,
-    minimumConfidence: 86,
-    minimumEfficiency: 0.46,
-    maximumEntropy: 0.92,
+    minimumConfidence: 80,
+    minimumEfficiency: 0.18,
+    maximumEntropy: 0.99,
+    minimumTicks: 140,
     duration: 5,
     durationUnit: "t",
     cooldownSeconds: 15,
-    marketSwitchSeconds: 25,
+    marketSwitchSeconds: 45,
     takeProfit: 3,
     stopLoss: 1.5,
     maxConsecutiveLosses: 2,
@@ -122,12 +123,13 @@ export default function HigherHighBot() {
       return;
     }
     const timer = window.setInterval(() => {
+      if (Number(analysis.metrics?.ticksCollected || 0) < Number(settings.minimumTicks || 140)) return;
       if ((Date.now() - scanStartedAtRef.current) / 1000 < Number(settings.marketSwitchSeconds)) return;
       const currentIndex = Math.max(0, markets.findIndex((item) => item.id === symbol));
       const next = markets[(currentIndex + 1) % markets.length];
       if (next?.id && next.id !== symbol) {
         scanStartedAtRef.current = Date.now();
-        setMessage(`No clean HH setup. Switching to ${next.label}...`);
+        setMessage(`Adaptive scan found no qualified setup. Switching to ${next.label}...`);
         void changeSymbol(next.id);
       }
     }, 1000);
@@ -146,7 +148,7 @@ export default function HigherHighBot() {
     buyingRef.current = true;
     void (async () => {
       try {
-        setMessage(`HH + HL confirmed at ${analysis.confidence}%. Buying HIGHER...`);
+        setMessage(`Adaptive entry ${analysis.confidence}% / gate ${analysis.adaptiveThreshold}%. Buying HIGHER...`);
         const response = await placeTrade({
           contractType: "CALL",
           amount: Math.max(0.35, Number(settings.stake)),
@@ -193,7 +195,7 @@ export default function HigherHighBot() {
     }
     scanStartedAtRef.current = Date.now();
     setRunning(true);
-    setMessage("Scanning Higher High + Higher Low structures. No martingale.");
+    setMessage("Adaptive V2 scanning micro, short and medium trend. No martingale.");
   }
 
   const winRate = stats.wins + stats.losses ? (stats.wins / (stats.wins + stats.losses)) * 100 : 0;
@@ -204,8 +206,8 @@ export default function HigherHighBot() {
       <Sidebar />
       <main className="mainContent hhPage">
         <Topbar
-          title="Higher High AI PRO"
-          subtitle="HH + HL structure · pullback continuation · CALL execution"
+          title="Higher High AI PRO V2"
+          subtitle="Adaptive HH/HL · multi-window trend · probability-gated CALL execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -213,7 +215,7 @@ export default function HigherHighBot() {
         />
 
         <section className={`hhHero ${running ? "running" : ""}`}>
-          <div><small>STRUCTURE BOT</small><h1>Higher High AI PRO</h1><p>Trades HIGHER only after structure, trend, pullback and continuation agree.</p></div>
+          <div><small>ADAPTIVE STRUCTURE BOT</small><h1>Higher High AI PRO V2</h1><p>Faster qualified entries using HH/HL, breakout, 3-window trend, acceleration and transition probability.</p></div>
           <div className="hhHeroStatus"><span>{running ? "RUNNING" : "STOPPED"}</span><strong>{analysis.decision}</strong></div>
         </section>
 
@@ -225,21 +227,23 @@ export default function HigherHighBot() {
           <button className="hhReset" onClick={() => { if (!running && !activeTrades.length) { setStats(INITIAL_STATS); processedRef.current.clear(); setMessage("Session reset."); } }} disabled={running || activeTrades.length > 0}>Reset</button>
         </section>
 
-        <section className={`hhDecision ${analysis.ready ? "ready" : ""}`}>
+        <section className={`hhDecision ${analysis.ready ? "ready" : analysis.decision === "WATCH" ? "watch" : ""}`}>
           <div><small>AI DECISION</small><h2>{analysis.decision}</h2><p>{analysis.reason}</p></div>
           <div className="hhDecisionGrid">
             <article><span>Confidence</span><strong>{analysis.confidence}%</strong></article>
+            <article><span>Adaptive gate</span><strong>{analysis.adaptiveThreshold}%</strong></article>
+            <article><span>Probability</span><strong>{analysis.probability}%</strong></article>
+            <article><span>Regime</span><strong>{analysis.regime}</strong></article>
             <article><span>Structure</span><strong>{analysis.structure}</strong></article>
-            <article><span>Pullback</span><strong>{analysis.pullback}</strong></article>
             <article><span>Price</span><strong>{number(currentPrice, market?.decimals ?? 3)}</strong></article>
           </div>
         </section>
 
         <section className="hhSettings">
           {[
-            ["Stake", "stake", 0.01], ["Min confidence", "minimumConfidence", 1], ["Min efficiency", "minimumEfficiency", 0.01],
-            ["Max entropy", "maximumEntropy", 0.01], ["Duration", "duration", 1], ["Cooldown sec", "cooldownSeconds", 1],
-            ["Take profit", "takeProfit", 0.1], ["Stop loss", "stopLoss", 0.1],
+            ["Stake", "stake", 0.01], ["Base confidence", "minimumConfidence", 1], ["Min efficiency", "minimumEfficiency", 0.01],
+            ["Max entropy", "maximumEntropy", 0.01], ["Min ticks", "minimumTicks", 1], ["Duration", "duration", 1],
+            ["Cooldown sec", "cooldownSeconds", 1], ["Switch sec", "marketSwitchSeconds", 1],
           ].map(([label, key, step]) => <label key={key}><span>{label}</span><input type="number" step={step} value={settings[key]} disabled={running} onChange={(event) => setSettings((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
         </section>
 
@@ -249,9 +253,20 @@ export default function HigherHighBot() {
           <article><span>EMA 50</span><strong>{number(metrics.slowEma)}</strong></article>
           <article><span>Momentum 5</span><strong>{number(metrics.momentum5, 5)}</strong></article>
           <article><span>Momentum 12</span><strong>{number(metrics.momentum12, 5)}</strong></article>
-          <article><span>Efficiency</span><strong>{number(metrics.efficiency, 2)}</strong></article>
-          <article><span>Entropy</span><strong>{number(metrics.entropy, 2)}</strong></article>
+          <article><span>Acceleration</span><strong>{number(metrics.acceleration, 5)}</strong></article>
+          <article><span>Efficiency 12</span><strong>{number(metrics.efficiency12, 2)}</strong></article>
           <article><span>Spike ratio</span><strong>{number(metrics.spikeRatio, 2)}</strong></article>
+        </section>
+
+        <section className="hhAdaptiveStrip">
+          <article><span>Micro up</span><strong>{number(Number(metrics.microUpRatio || 0) * 100, 0)}%</strong></article>
+          <article><span>Short up</span><strong>{number(Number(metrics.shortUpRatio || 0) * 100, 0)}%</strong></article>
+          <article><span>Medium up</span><strong>{number(Number(metrics.mediumUpRatio || 0) * 100, 0)}%</strong></article>
+          <article><span>TF agreement</span><strong>{metrics.timeframeAgreement || 0}/3</strong></article>
+          <article><span>Transition up</span><strong>{number(Number(metrics.transitionProbability || 0) * 100, 0)}%</strong></article>
+          <article><span>Entropy 18</span><strong>{number(metrics.entropy18, 2)}</strong></article>
+          <article><span>Efficiency 28</span><strong>{number(metrics.efficiency28, 2)}</strong></article>
+          <article><span>Ticks</span><strong>{metrics.ticksCollected || 0}</strong></article>
         </section>
 
         <section className="hhChecks">
@@ -270,7 +285,7 @@ export default function HigherHighBot() {
             {stats.history.length ? stats.history.slice(0, 8).map((item) => <article key={`${item.contractId}-${item.settledAt}`}><strong>{item.market}</strong><span>{item.result}</span><b className={item.profit >= 0 ? "positive" : "negative"}>{Number(item.profit).toFixed(2)}</b></article>) : <p>No settled Higher trades yet.</p>}
           </div></div>
         </section>
-        <p className="hhRisk">Demo test first. This strategy filters entries but cannot guarantee a fixed win rate.</p>
+        <p className="hhRisk">Demo test first. V2 seeks faster qualified entries, but no model can guarantee a fixed win rate.</p>
       </main>
     </div>
   );
