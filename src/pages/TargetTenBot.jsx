@@ -12,6 +12,7 @@ import {
 } from "../analysis/targetTenStrategyEngine";
 import "../styles/TargetTenBot.css";
 import "../styles/V102BotTargetFix.css";
+import "../styles/V103TargetTenVisibilityFix.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
 
@@ -95,7 +96,6 @@ export default function TargetTenBot() {
   const [sessionProfit, setSessionProfit] = useState(0);
   const [message, setMessage] = useState("Target 10 bot is stopped.");
   const [trades, setTrades] = useState([]);
-  const [manualSide, setManualSide] = useState("OVER");
   const [manualBarrier, setManualBarrier] = useState(1);
 
   const runningRef = useRef(false);
@@ -560,26 +560,17 @@ export default function TargetTenBot() {
           <div><span>Protection</span><strong>STOP AFTER 1 LOSS</strong></div>
         </section>
 
-
-        <section className="v102TargetManual">
-          <div>
+        <section className="v103TargetManual">
+          <div className="v103ManualIntro">
             <small>MANUAL EXECUTION</small>
             <h2>Direct Over/Under trade</h2>
-            <p>Uses the stake and duration selected above.</p>
+            <p>
+              Uses the stake and duration selected above. Choose the barrier,
+              then press OVER or UNDER.
+            </p>
           </div>
 
-          <label>
-            <span>Side</span>
-            <select
-              value={manualSide}
-              onChange={(event) => setManualSide(event.target.value)}
-            >
-              <option value="OVER">OVER</option>
-              <option value="UNDER">UNDER</option>
-            </select>
-          </label>
-
-          <label>
+          <label className="v103Barrier">
             <span>Barrier</span>
             <select
               value={manualBarrier}
@@ -593,11 +584,20 @@ export default function TargetTenBot() {
 
           <button
             type="button"
-            className={manualSide === "OVER" ? "v102Buy" : "v102Sell"}
+            className="v103BuyOver"
             disabled={tradeBusy || hasOpenTrade}
-            onClick={() => void placeManualTrade(manualSide)}
+            onClick={() => void placeManualTrade("OVER")}
           >
-            {tradeBusy ? "SENDING…" : `BUY ${manualSide} ${manualBarrier}`}
+            {tradeBusy ? "SENDING…" : `BUY OVER ${manualBarrier}`}
+          </button>
+
+          <button
+            type="button"
+            className="v103BuyUnder"
+            disabled={tradeBusy || hasOpenTrade}
+            onClick={() => void placeManualTrade("UNDER")}
+          >
+            {tradeBusy ? "SENDING…" : `BUY UNDER ${manualBarrier}`}
           </button>
         </section>
 
