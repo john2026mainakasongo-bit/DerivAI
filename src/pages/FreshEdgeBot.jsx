@@ -410,6 +410,54 @@ function freshEdgeRecoveryPolicy(code, settings) {
   }
 }
 
+function freshEdgeAdaptiveDuration(
+  analysis,
+  settings,
+  recoveryPolicy
+) {
+  const confidence = Number(analysis.confidence || 0);
+  const quality = Number(analysis.quality || 0);
+  const momentum = Number(
+    analysis.componentScores?.momentum || 0
+  );
+  const continuation = Number(
+    analysis.continuation || 0
+  );
+  const noise = Number(analysis.noise || 0);
+  const reversal = Number(
+    analysis.reversalRisk || 0
+  );
+
+  const strongImpulse =
+    confidence >= 82 &&
+    quality >= 76 &&
+    momentum >= 78 &&
+    continuation >= 80 &&
+    noise <= 48 &&
+    reversal <= 38;
+
+  const patientSetup =
+    recoveryPolicy?.action === "LONGER_EXPIRY" ||
+    continuation < 78 ||
+    momentum < 72 ||
+    reversal > 42;
+
+  if (strongImpulse) {
+    return Number(
+      settings.durationFastSeconds || 12
+    );
+  }
+
+  if (patientSetup) {
+    return Number(
+      settings.durationPatientSeconds || 30
+    );
+  }
+
+  return Number(
+    settings.durationNormalSeconds || 20
+  );
+}
 export default function FreshEdgeBot() {
   const {
     markets,
@@ -446,6 +494,11 @@ export default function FreshEdgeBot() {
     maximumSpikeRatio: 6,
     confirmationTicks: 3,
     maximumMarketSeconds: 18,
+    decisionCycleSeconds: 55,
+    durationFastSeconds: 12,
+    durationNormalSeconds: 20,
+    durationPatientSeconds: 30,
+    latencyEntryLimitMs: 1800,
     hardRiskHoldSeconds: 12,
     weakSetupHoldSeconds: 10,
     strongerMarketDelaySeconds: 6,
@@ -943,6 +996,28 @@ export default function FreshEdgeBot() {
     [recoveryState.cause, settings]
   );
 
+  const adaptiveDuration = useMemo(
+    () =>
+      Math.max(
+        10,
+        Math.min(
+          30,
+          freshEdgeAdaptiveDuration(
+            analysis,
+            settings,
+            recoveryState.active
+              ? recoveryPolicy
+              : null
+          )
+        )
+      ),
+    [
+      analysis,
+      settings,
+      recoveryState.active,
+      recoveryPolicy,
+    ]
+  );
   const recoveryReady =
     !recoveryState.active ||
     (
@@ -1337,6 +1412,16 @@ export default function FreshEdgeBot() {
           "Confidence and quality remained weak."
         );
       } else if (
+        elapsed >=
+          Number(settings.decisionCycleSeconds || 55)
+      ) {
+        hardRiskStartedAtRef.current = 0;
+        weakSetupStartedAtRef.current = 0;
+
+        void switchMarket(
+          "55-second fresh decision cycle ended without a safe entry."
+        );
+      } else if (
         elapsed >= Number(settings.maximumMarketSeconds)
       ) {
         hardRiskStartedAtRef.current = 0;
@@ -1376,6 +1461,7 @@ export default function FreshEdgeBot() {
     settings.maximumReversal,
     settings.maximumSpikeRatio,
     settings.maximumMarketSeconds,
+    settings.decisionCycleSeconds,
     settings.hardRiskHoldSeconds,
     settings.weakSetupHoldSeconds,
     settings.strongerMarketDelaySeconds,
@@ -1392,6 +1478,13 @@ export default function FreshEdgeBot() {
       !authenticatedFeed ||
       !recoveryReady ||
       !confidenceStability.ready ||
+      (
+        Number(stats.history[0]?.orderLatencyMs || 0) >
+          Number(settings.latencyEntryLimitMs || 1800) &&
+        Date.now() -
+          Number(stats.history[0]?.settledAt || 0) <
+          30000
+      ) ||
       tradeBusy ||
       buyingRef.current ||
       activeBotTrades.length >=
@@ -1430,13 +1523,7 @@ export default function FreshEdgeBot() {
             Number(settings.stake || 0.35)
           ),
           basis: "stake",
-          duration:
-            Number(settings.duration || 20) +
-            (
-              recoveryState.active
-                ? Number(recoveryPolicy.durationExtra || 0)
-                : 0
-            ),
+          duration: adaptiveDuration,
           durationUnit: settings.durationUnit || "s",
           symbol,
         });
@@ -1487,6 +1574,9 @@ export default function FreshEdgeBot() {
             rankedMarkets.findIndex(
               (item) => item.symbol === symbol
             ) + 1,
+          adaptiveDurationAtEntry: adaptiveDuration,
+          decisionAgeSeconds:
+            (Date.now() - marketStartedAt) / 1000,
           entryPrice: Number(currentPrice),
           entryTickSnapshot: prices
             .slice(
@@ -2420,6 +2510,10 @@ export default function FreshEdgeBot() {
             ["Max reversal", "maximumReversal", 40, 95, 1],
             ["Confirm ticks", "confirmationTicks", 1, 5, 1],
             ["Market seconds", "maximumMarketSeconds", 5, 60, 1],
+            ["Cycle deadline", "decisionCycleSeconds", 30, 59, 1],
+            ["Fast expiry", "durationFastSeconds", 10, 30, 1],
+            ["Normal expiry", "durationNormalSeconds", 10, 30, 1],
+            ["Patient expiry", "durationPatientSeconds", 10, 30, 1],
             ["Risk hold", "hardRiskHoldSeconds", 5, 30, 1],
             ["Weak hold", "weakSetupHoldSeconds", 5, 30, 1],
             ["Take profit", "takeProfit", 0.5, 100, 0.5],
@@ -2839,6 +2933,7 @@ export default function FreshEdgeBot() {
     </div>
   );
 }
+
 
 
 
