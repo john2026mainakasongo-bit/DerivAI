@@ -27,7 +27,7 @@ const RAPID_EDGE_LOCK_KEY =
 
 function createRapidEdgeSessionId() {
   return [
-    "ou",
+    "rapid",
     Date.now().toString(36),
     Math.random().toString(36).slice(2, 10),
   ].join("-");
@@ -2001,7 +2001,7 @@ export default function RapidEdgeAI() {
   });
   const [message, setMessage] =
     useState(
-      "Adaptive RapidEdge bot is ready."
+      "RapidEdge AI isolated engine is ready."
     );
   const [consecutiveLosses, setConsecutiveLosses] =
     useState(0);
@@ -5838,7 +5838,7 @@ export default function RapidEdgeAI() {
     const anchor = document.createElement("a");
 
     anchor.href = url;
-    anchor.download = `over-under-transactions-${Date.now()}.csv`;
+    anchor.download = `rapidedge-transactions-${Date.now()}.csv`;
     anchor.click();
 
     URL.revokeObjectURL(url);
@@ -5852,7 +5852,7 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V1"
+          title="RapidEdge AI V1.1"
           subtitle="Fast multi-entry scanner · rolling one-minute run control · isolated engine"
           connected={connected}
           connecting={loadingMarket}
