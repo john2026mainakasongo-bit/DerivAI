@@ -1399,20 +1399,58 @@ function universalCandidateDecision({
     const qualified =
       eliteQualified ||
       goodQualified;
+    const lowPayoutOverOne =
+      String(candidate?.side || "") === "OVER" &&
+      Number(candidate?.barrier ?? -1) === 1;
+
+    const overOneAllowed =
+      !lowPayoutOverOne ||
+      (
+        probability >= 94 &&
+        expectedValue >= 0.03 &&
+        votes >= 6 &&
+        risk <= 24
+      );
+
+    const evScore = Math.max(
+      -35,
+      Math.min(45, expectedValue * 180)
+    );
+
+    const payoutDiversityBonus =
+      lowPayoutOverOne
+        ? -18
+        : Number(candidate?.barrier ?? -1) >= 2 &&
+          Number(candidate?.barrier ?? -1) <= 7
+        ? 7
+        : 0;
+
     const universalScore =
-      Number(candidate?.adaptiveScore || 0) * 0.40 +
-      probability * 0.30 +
-      votes * 3.5 +
-      Math.max(
-        -20,
-        Math.min(20, expectedValue * 100)
-      ) -
-      risk * 0.20;
+      Number(candidate?.adaptiveScore || 0) * 0.26 +
+      probability * 0.23 +
+      votes * 3.2 +
+      evScore +
+      payoutDiversityBonus -
+      risk * 0.24;
+
+    const evQualified =
+      expectedValue >= Math.max(
+        Number(minimumEV || 0),
+        lowPayoutOverOne ? 0.03 : 0.015
+      );
+
+    const finalQualified =
+      qualified &&
+      evQualified &&
+      overOneAllowed;
 
     return {
       candidate,
-      qualified,
-      eliteQualified,
+      qualified: finalQualified,
+      eliteQualified:
+        eliteQualified &&
+        evQualified &&
+        overOneAllowed,
       goodQualified,
       tier:
         eliteQualified
@@ -1436,11 +1474,24 @@ function universalCandidateDecision({
     };
   });
 
-  const sorted = evaluated.sort(
-    (a, b) =>
-      b.universalScore -
-      a.universalScore
-  );
+  const sorted = evaluated.sort((a, b) => {
+    if (a.qualified !== b.qualified) {
+      return Number(b.qualified) - Number(a.qualified);
+    }
+
+    const evLead =
+      Number(b.expectedValue || 0) -
+      Number(a.expectedValue || 0);
+
+    if (Math.abs(evLead) >= 0.008) {
+      return evLead;
+    }
+
+    return (
+      Number(b.universalScore || 0) -
+      Number(a.universalScore || 0)
+    );
+  });
   const selected =
     sorted.find((item) => item.qualified) ||
     null;
@@ -2985,10 +3036,40 @@ export default function RapidEdgeAI() {
             return recoveryB - recoveryA;
           }
 
-          return (
-            Number(b.adaptiveScore || 0) -
-            Number(a.adaptiveScore || 0)
+          const evA = Number(
+            a?.layered?.simulation?.expectedValue ??
+              a?.payoutEdge ??
+              -1
           );
+          const evB = Number(
+            b?.layered?.simulation?.expectedValue ??
+              b?.payoutEdge ??
+              -1
+          );
+
+          const overOnePenaltyA =
+            String(a?.side || "") === "OVER" &&
+            Number(a?.barrier ?? -1) === 1
+              ? 16
+              : 0;
+
+          const overOnePenaltyB =
+            String(b?.side || "") === "OVER" &&
+            Number(b?.barrier ?? -1) === 1
+              ? 16
+              : 0;
+
+          const valueScoreA =
+            Number(a.adaptiveScore || 0) * 0.42 +
+            evA * 180 -
+            overOnePenaltyA;
+
+          const valueScoreB =
+            Number(b.adaptiveScore || 0) * 0.42 +
+            evB * 180 -
+            overOnePenaltyB;
+
+          return valueScoreB - valueScoreA;
         }),
     [
       analysis.candidates,
@@ -3366,7 +3447,21 @@ export default function RapidEdgeAI() {
             candidate?.adaptiveScore || 0
           );
 
+        const isLowPayoutOverOne =
+          String(candidate?.side || "") === "OVER" &&
+          Number(candidate?.barrier ?? -1) === 1;
+
+        const overOneStrongEnough =
+          !isLowPayoutOverOne ||
+          (
+            probability >= 94 &&
+            expectedValue >= 0.03 &&
+            votes >= 6 &&
+            risk <= 24
+          );
+
         return (
+          overOneStrongEnough &&
           ["OVER", "UNDER"].includes(
             String(candidate?.side || "")
           ) &&
@@ -5852,8 +5947,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V1.4 · Quality Speed"
-          subtitle="Up to 20 qualified entries per minute · stronger probability gate · fast loss rotation · OVER + UNDER"
+          title="RapidEdge AI V1.5 · EV Ranked"
+          subtitle="Expected-value contract ranking · OVER 1 only when exceptional · diversified OVER + UNDER selection"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
