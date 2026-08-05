@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v1";
+const MEMORY_KEY = "edgepilot:over-under-learning:v2";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -117,6 +117,32 @@ function memoryKey(symbol, side, barrier) {
   return `${symbol}|${side}|${barrier}`;
 }
 
+function defaultProfitRatio(side, barrier) {
+  const numericBarrier = Number(barrier);
+
+  const winDigits =
+    side === "OVER"
+      ? Math.max(1, 9 - numericBarrier)
+      : Math.max(1, numericBarrier);
+
+  const fairProbability = winDigits / 10;
+
+  // Conservative payout estimate after house edge.
+  return Math.max(
+    0.05,
+    0.94 / Math.max(0.1, fairProbability) - 1
+  );
+}
+
+function breakEvenProbability(profitRatio) {
+  return 100 / (1 + Math.max(0.01, profitRatio));
+}
+
+function setupCooldownRemaining(row) {
+  const blockedUntil = Number(row?.blockedUntil || 0);
+  return Math.max(0, blockedUntil - Date.now());
+}
+
 function loadMemory() {
   try {
     const parsed = JSON.parse(
@@ -144,12 +170,29 @@ function memoryStats(memory, symbol, side, barrier) {
   const probability =
     (wins + 2) / (trades + 4);
 
+  const observedProfitRatio =
+    wins > 0
+      ? Number(row.totalWinProfit || 0) /
+        Math.max(
+          0.01,
+          Number(row.totalWinningStake || 0)
+        )
+      : 0;
+
+  const profitRatio =
+    observedProfitRatio > 0
+      ? observedProfitRatio
+      : defaultProfitRatio(side, barrier);
+
+  const breakEven =
+    breakEvenProbability(profitRatio);
+
   const adjustment =
     trades >= 3
       ? clamp(
-          (probability - 0.5) * 24,
-          -8,
-          8
+          (probability * 100 - breakEven) * 0.45,
+          -10,
+          10
         )
       : 0;
 
@@ -159,6 +202,13 @@ function memoryStats(memory, symbol, side, barrier) {
     losses,
     probability,
     adjustment,
+    profitRatio,
+    breakEven,
+    requiredProbability: breakEven + 4,
+    blocked:
+      setupCooldownRemaining(row) > 0,
+    cooldownMs:
+      setupCooldownRemaining(row),
     lastResult: row.lastResult || "—",
   };
 }
@@ -171,6 +221,7 @@ function updateMemory(
     barrier,
     result,
     profit,
+    stake,
     confidence,
     score,
   }
@@ -181,6 +232,12 @@ function updateMemory(
     barrier
   );
   const previous = memory[key] || {};
+  const won = result === "WON";
+  const lost = result === "LOST";
+  const consecutiveLosses =
+    lost
+      ? Number(previous.consecutiveLosses || 0) + 1
+      : 0;
 
   return {
     ...memory,
@@ -191,13 +248,28 @@ function updateMemory(
       trades: Number(previous.trades || 0) + 1,
       wins:
         Number(previous.wins || 0) +
-        (result === "WON" ? 1 : 0),
+        (won ? 1 : 0),
       losses:
         Number(previous.losses || 0) +
-        (result === "LOST" ? 1 : 0),
+        (lost ? 1 : 0),
       totalProfit:
         Number(previous.totalProfit || 0) +
         Number(profit || 0),
+      totalWinProfit:
+        Number(previous.totalWinProfit || 0) +
+        (won ? Math.max(0, Number(profit || 0)) : 0),
+      totalWinningStake:
+        Number(previous.totalWinningStake || 0) +
+        (won ? Math.max(0.01, Number(stake || 0)) : 0),
+      consecutiveLosses,
+      blockedUntil:
+        lost
+          ? Date.now() +
+            Math.min(
+              180000,
+              45000 * consecutiveLosses
+            )
+          : 0,
       lastResult: result,
       lastConfidence: Number(confidence || 0),
       lastScore: Number(score || 0),
@@ -207,20 +279,30 @@ function updateMemory(
 }
 
 function candidateScore(candidate, memoryRow) {
+  const probability = Number(
+    candidate?.probability || 0
+  );
+
+  const edge =
+    probability -
+    Number(memoryRow.requiredProbability || 100);
+
+  const evScore = clamp(
+    50 + edge * 2.5,
+    0,
+    100
+  );
+
   return clamp(
-    Number(candidate?.score || 0) * 0.52 +
-      Number(candidate?.probability || 0) *
-        0.20 +
-      Number(
-        candidate?.probabilityEdge || 0
-      ) *
-        0.12 +
-      Number(
-        candidate?.transitionEdge || 0
-      ) *
-        0.08 +
+    Number(candidate?.score || 0) * 0.38 +
+      probability * 0.18 +
+      Number(candidate?.probabilityEdge || 0) *
+        0.10 +
+      Number(candidate?.transitionEdge || 0) *
+        0.07 +
       Number(candidate?.consistency || 0) *
-        0.08 +
+        0.07 +
+      evScore * 0.20 +
       Number(memoryRow.adjustment || 0),
     0,
     100
@@ -275,6 +357,8 @@ export default function OverUnderLearningBot() {
     useState(
       "Adaptive Over/Under bot is ready."
     );
+  const [consecutiveLosses, setConsecutiveLosses] =
+    useState(0);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -371,7 +455,10 @@ export default function OverUnderLearningBot() {
           (item) =>
             ["OVER", "UNDER"].includes(
               item.side
-            )
+            ) &&
+            !item.learned.blocked &&
+            Number(item.probability || 0) >=
+              Number(item.learned.requiredProbability || 100)
         )
         .sort(
           (a, b) =>
@@ -411,7 +498,9 @@ export default function OverUnderLearningBot() {
       Number(minimumConfidence) &&
     Number(best.adaptiveScore || 0) >=
       Number(minimumScore) &&
-    Number(best.probability || 0) >= 55 &&
+    Number(best.probability || 0) >=
+      Number(best.learned.requiredProbability || 100) &&
+    !best.learned.blocked &&
     !blockedByLastLoss;
 
   useEffect(() => {
@@ -747,7 +836,9 @@ export default function OverUnderLearningBot() {
         return {
           ...trade,
           status,
-          profit: profitOf(match),
+          profit: closed
+            ? profitOf(match)
+            : 0,
         };
       })
     );
@@ -766,10 +857,33 @@ export default function OverUnderLearningBot() {
         barrier: settled.barrier,
         result,
         profit: settled.profit,
+        stake: settled.stake,
         confidence:
           settled.confidence,
         score: settled.score,
       })
+    );
+
+    const updatedSetupTrades =
+      Number(
+        memoryStats(
+          memory,
+          settled.symbol,
+          settled.side,
+          settled.barrier
+        ).trades
+      ) + 1;
+
+    setTrades((current) =>
+      current.map((trade) =>
+        trade.id === settled.id
+          ? {
+              ...trade,
+              learnedTrades:
+                updatedSetupTrades,
+            }
+          : trade
+      )
     );
 
     setStats((current) => ({
@@ -786,11 +900,13 @@ export default function OverUnderLearningBot() {
     }));
 
     if (result === "WON") {
+      setConsecutiveLosses(0);
       lastLossKeyRef.current = "";
       setMessage(
         `WIN ${settled.contract}. Learning updated; scanning continues.`
       );
     } else {
+      setConsecutiveLosses((current) => current + 1);
       lastLossKeyRef.current =
         memoryKey(
           settled.symbol,
@@ -803,8 +919,18 @@ export default function OverUnderLearningBot() {
       );
     }
 
+    if (
+      result === "LOST" &&
+      consecutiveLosses >= 2
+    ) {
+      stop(
+        "Three consecutive losses reached. Bot paused for review."
+      );
+      return;
+    }
+
     nextEntryAtRef.current =
-      Date.now() + 3000;
+      Date.now() + 5000;
     scanStartedAtRef.current =
       Date.now();
     confirmationRef.current = {
@@ -853,6 +979,7 @@ export default function OverUnderLearningBot() {
 
   function reset() {
     setTrades([]);
+    setConsecutiveLosses(0);
     setStats({
       runs: 0,
       wins: 0,
@@ -879,8 +1006,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot"
-          subtitle="Continuous digit reading · market + barrier memory · automatic next-entry search"
+          title="Over/Under Adaptive Learning Bot V2"
+          subtitle="EV-aware barrier selection · loss cooldown · continuous market learning"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -977,6 +1104,20 @@ export default function OverUnderLearningBot() {
                   : ""}
                 {best.learned.adjustment.toFixed(
                   1
+                )}
+              </strong>
+            </article>
+            <article>
+              <span>Break-even</span>
+              <strong>
+                {pct(best.learned.breakEven)}
+              </strong>
+            </article>
+            <article>
+              <span>Required probability</span>
+              <strong>
+                {pct(
+                  best.learned.requiredProbability
                 )}
               </strong>
             </article>
@@ -1193,6 +1334,16 @@ export default function OverUnderLearningBot() {
                         candidate.learned
                           .probability * 100
                       )}
+                    </span>
+                    <span>
+                      Need{" "}
+                      {pct(
+                        candidate.learned
+                          .requiredProbability
+                      )} ·{" "}
+                      {candidate.learned.blocked
+                        ? "COOLDOWN"
+                        : "EV PASS"}
                     </span>
                   </div>
                 ))}
