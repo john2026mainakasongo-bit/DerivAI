@@ -1165,9 +1165,9 @@ function marketHealthMap(trades, minimumSample = 3) {
     row.weak =
       row.trades >= Number(minimumSample || 3) &&
       (
-        row.lossStreak >= 2 ||
-        row.winRate < 48 ||
-        row.profit < -0.5
+        row.lossStreak >= 3 ||
+        row.winRate < 35 ||
+        row.profit < -1.2
       );
   }
 
@@ -1882,8 +1882,8 @@ function updateMemory(
         lost
           ? Date.now() +
             Math.min(
-              180000,
-              45000 * consecutiveLosses
+              12000,
+              3000 * consecutiveLosses
             )
           : 0,
       lastResult: result,
@@ -2030,7 +2030,7 @@ export default function RapidEdgeAI() {
   const [recoveryMultiplier, setRecoveryMultiplier] =
     useState(1.5);
   const [maximumRecoveryAttempts, setMaximumRecoveryAttempts] =
-    useState(2);
+    useState(3);
   const [tradesOnCurrentMarket, setTradesOnCurrentMarket] =
     useState(0);
   const [proactiveRotationTrades, setProactiveRotationTrades] =
@@ -2040,7 +2040,7 @@ export default function RapidEdgeAI() {
   const [predictiveGuardEnabled, setPredictiveGuardEnabled] =
     useState(true);
   const [guardThreshold, setGuardThreshold] =
-    useState(58);
+    useState(66);
   const [multiLayerEnabled, setMultiLayerEnabled] =
     useState(true);
   const [minimumLayerAgreement, setMinimumLayerAgreement] =
@@ -2052,11 +2052,11 @@ export default function RapidEdgeAI() {
   const [protectionEnabled, setProtectionEnabled] =
     useState(true);
   const [minimumRecentWinRate, setMinimumRecentWinRate] =
-    useState(58);
+    useState(45);
   const [maximumLossCascade, setMaximumLossCascade] =
-    useState(2);
+    useState(4);
   const [protectionPauseSeconds, setProtectionPauseSeconds] =
-    useState(18);
+    useState(5);
   const [protectionUntil, setProtectionUntil] =
     useState(0);
   const [dynamicMarketBlacklist, setDynamicMarketBlacklist] =
@@ -2064,9 +2064,9 @@ export default function RapidEdgeAI() {
   const [globalSelectionEnabled, setGlobalSelectionEnabled] =
     useState(true);
   const [minimumQualifiedProbability, setMinimumQualifiedProbability] =
-    useState(88);
+    useState(82);
   const [minimumQualifiedVotes, setMinimumQualifiedVotes] =
-    useState(6);
+    useState(5);
   const [maximumQualifiedRisk, setMaximumQualifiedRisk] =
     useState(45);
   const [globalMarketScores, setGlobalMarketScores] =
@@ -2080,7 +2080,7 @@ export default function RapidEdgeAI() {
   const [rotateAfterEverySettlement, setRotateAfterEverySettlement] =
     useState(false);
   const [freshTicksRequired, setFreshTicksRequired] =
-    useState(4);
+    useState(3);
   const [lastTradeByMarket, setLastTradeByMarket] =
     useState({});
   const [lastSetupKeyByMarket, setLastSetupKeyByMarket] =
@@ -2102,13 +2102,13 @@ export default function RapidEdgeAI() {
   const [universalPoolEnabled, setUniversalPoolEnabled] =
     useState(true);
   const [universalMinimumProbability, setUniversalMinimumProbability] =
-    useState(78);
+    useState(74);
   const [universalMinimumVotes, setUniversalMinimumVotes] =
     useState(5);
   const [universalMaximumRisk, setUniversalMaximumRisk] =
-    useState(35);
+    useState(42);
   const [setupBlacklistSeconds, setSetupBlacklistSeconds] =
-    useState(90);
+    useState(12);
   const [dynamicSetupBlacklist, setDynamicSetupBlacklist] =
     useState({});
   const [globalPortfolioEnabled, setGlobalPortfolioEnabled] =
@@ -2116,23 +2116,23 @@ export default function RapidEdgeAI() {
   const [portfolioMinimumLead, setPortfolioMinimumLead] =
     useState(2);
   const [portfolioSwitchCooldownMs, setPortfolioSwitchCooldownMs] =
-    useState(700);
+    useState(220);
   const [portfolioWatchEnabled, setPortfolioWatchEnabled] =
     useState(true);
   const [watchRefreshMilliseconds, setWatchRefreshMilliseconds] =
-    useState(300);
+    useState(150);
   const [readyLiveConfirmationTicks, setReadyLiveConfirmationTicks] =
     useState(1);
   const [idleRescanSeconds, setIdleRescanSeconds] =
-    useState(4);
+    useState(1);
   const [marketRearmSeconds, setMarketRearmSeconds] =
     useState(2);
   const [postSettlementRearmMs, setPostSettlementRearmMs] =
-    useState(100);
+    useState(150);
   const [adaptiveArmingEnabled, setAdaptiveArmingEnabled] =
     useState(true);
   const [adaptiveMinimumProbability, setAdaptiveMinimumProbability] =
-    useState(70);
+    useState(68);
   const [adaptiveMinimumVotes, setAdaptiveMinimumVotes] =
     useState(4);
   const [adaptiveMaximumRisk, setAdaptiveMaximumRisk] =
@@ -2144,7 +2144,7 @@ export default function RapidEdgeAI() {
   const [oneMinuteEngineEnabled, setOneMinuteEngineEnabled] =
     useState(true);
   const [oneMinuteMinimumSamples, setOneMinuteMinimumSamples] =
-    useState(15);
+    useState(12);
   const [negativeEvRotateSeconds, setNegativeEvRotateSeconds] =
     useState(2);
   const [regimeResetSensitivity, setRegimeResetSensitivity] =
@@ -4596,8 +4596,8 @@ export default function RapidEdgeAI() {
         [symbol]:
           now +
           Math.max(
-            25,
-            Number(protectionPauseSeconds || 18) + 12
+            6,
+            Number(protectionPauseSeconds || 5) + 2
           ) *
             1000,
       }));
@@ -5485,7 +5485,7 @@ export default function RapidEdgeAI() {
       setMarketBlocks((current) => ({
         ...current,
         [settled.symbol]:
-          Date.now() + 60000,
+          Date.now() + 5000,
       }));
       playTradeSound("RECOVERY");
 
@@ -5525,7 +5525,7 @@ export default function RapidEdgeAI() {
     if (
       result === "LOST" &&
       (
-        consecutiveLosses >= 2 ||
+        consecutiveLosses >= 4 ||
         (
           settled.recoveryMode &&
           Number(settled.recoveryAttempt || 0) >=
@@ -5852,8 +5852,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V1.2 · Rapid 20"
-          subtitle="Fast multi-entry scanner · rolling one-minute run control · isolated engine"
+          title="RapidEdge AI V1.3.1 · Fast Adaptive"
+          subtitle="Up to 20 qualified sequential entries per 60 seconds · fast recovery scan · OVER + UNDER"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
