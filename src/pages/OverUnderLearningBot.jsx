@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v5";
+const MEMORY_KEY = "edgepilot:over-under-learning:v6";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -24,7 +24,9 @@ const pct = (value) =>
   `${Number(value || 0).toFixed(1)}%`;
 
 
-function playTradeSound(type) {
+function playTradeSound(type, enabled = true) {
+  if (!enabled) return;
+
   try {
     const AudioContextClass =
       window.AudioContext ||
@@ -33,69 +35,130 @@ function playTradeSound(type) {
     if (!AudioContextClass) return;
 
     const context = new AudioContextClass();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
 
-    const settings = {
-      OPEN: {
-        frequency: 440,
-        secondFrequency: 560,
-        duration: 0.14,
-      },
-      WON: {
-        frequency: 620,
-        secondFrequency: 880,
-        duration: 0.24,
-      },
-      LOST: {
-        frequency: 240,
-        secondFrequency: 160,
+    function tone({
+      start,
+      frequency,
+      endFrequency = frequency,
+      duration,
+      volume = 0.08,
+      wave = "sine",
+    }) {
+      const oscillator =
+        context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = wave;
+      oscillator.frequency.setValueAtTime(
+        frequency,
+        context.currentTime + start
+      );
+      oscillator.frequency.exponentialRampToValueAtTime(
+        Math.max(1, endFrequency),
+        context.currentTime + start + duration
+      );
+
+      gain.gain.setValueAtTime(
+        0.0001,
+        context.currentTime + start
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        volume,
+        context.currentTime + start + 0.015
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        context.currentTime + start + duration
+      );
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(
+        context.currentTime + start
+      );
+      oscillator.stop(
+        context.currentTime + start + duration
+      );
+    }
+
+    if (type === "WON") {
+      // Bright celebratory commerce-style chime.
+      tone({
+        start: 0,
+        frequency: 659,
+        endFrequency: 784,
+        duration: 0.16,
+        volume: 0.075,
+      });
+      tone({
+        start: 0.11,
+        frequency: 784,
+        endFrequency: 1046,
+        duration: 0.22,
+        volume: 0.085,
+      });
+      tone({
+        start: 0.24,
+        frequency: 1046,
+        endFrequency: 1318,
+        duration: 0.28,
+        volume: 0.07,
+      });
+    } else if (type === "LOST") {
+      tone({
+        start: 0,
+        frequency: 260,
+        endFrequency: 150,
+        duration: 0.34,
+        volume: 0.10,
+        wave: "triangle",
+      });
+      tone({
+        start: 0.08,
+        frequency: 180,
+        endFrequency: 110,
         duration: 0.30,
-      },
-    }[type] || {
-      frequency: 400,
-      secondFrequency: 400,
-      duration: 0.12,
-    };
-
-    oscillator.type =
-      type === "LOST" ? "sawtooth" : "sine";
-
-    oscillator.frequency.setValueAtTime(
-      settings.frequency,
-      context.currentTime
-    );
-    oscillator.frequency.exponentialRampToValueAtTime(
-      settings.secondFrequency,
-      context.currentTime + settings.duration
-    );
-
-    gain.gain.setValueAtTime(
-      0.0001,
-      context.currentTime
-    );
-    gain.gain.exponentialRampToValueAtTime(
-      type === "LOST" ? 0.11 : 0.08,
-      context.currentTime + 0.02
-    );
-    gain.gain.exponentialRampToValueAtTime(
-      0.0001,
-      context.currentTime + settings.duration
-    );
-
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-
-    oscillator.start();
-    oscillator.stop(
-      context.currentTime + settings.duration
-    );
+        volume: 0.065,
+        wave: "sawtooth",
+      });
+    } else if (type === "RECOVERY") {
+      tone({
+        start: 0,
+        frequency: 420,
+        endFrequency: 520,
+        duration: 0.12,
+        volume: 0.06,
+      });
+      tone({
+        start: 0.15,
+        frequency: 420,
+        endFrequency: 520,
+        duration: 0.12,
+        volume: 0.06,
+      });
+    } else if (type === "SWITCH") {
+      tone({
+        start: 0,
+        frequency: 520,
+        endFrequency: 620,
+        duration: 0.08,
+        volume: 0.045,
+      });
+    } else {
+      tone({
+        start: 0,
+        frequency: 440,
+        endFrequency: 560,
+        duration: 0.12,
+        volume: 0.055,
+      });
+    }
 
     window.setTimeout(() => {
       context.close().catch(() => {});
-    }, 500);
+    }, 900);
   } catch {
-    // Sound must never interrupt trading.
+    // Audio should never interrupt trading.
   }
 }
 
@@ -536,6 +599,10 @@ export default function OverUnderLearningBot() {
     useState("ALL");
   const [expandedTradeId, setExpandedTradeId] =
     useState("");
+  const [soundEnabled, setSoundEnabled] =
+    useState(true);
+  const [journalSearch, setJournalSearch] =
+    useState("");
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -805,6 +872,8 @@ export default function OverUnderLearningBot() {
         changeSymbol(next)
       );
 
+      playTradeSound("SWITCH", soundEnabled);
+
       setStats((current) => ({
         ...current,
         switches: current.switches + 1,
@@ -916,7 +985,7 @@ export default function OverUnderLearningBot() {
         [trade, ...current].slice(0, 50)
       );
 
-      playTradeSound("OPEN");
+      playTradeSound("OPEN", soundEnabled);
 
       setStats((current) => ({
         ...current,
@@ -1097,7 +1166,7 @@ export default function OverUnderLearningBot() {
         ? "WON"
         : "LOST";
 
-    playTradeSound(result);
+    playTradeSound(result, soundEnabled);
 
     setMemory((current) =>
       updateMemory(current, {
@@ -1172,6 +1241,8 @@ export default function OverUnderLearningBot() {
         [settled.symbol]:
           Date.now() + 60000,
       }));
+      playTradeSound("RECOVERY", soundEnabled);
+
       setRecovery((current) => ({
         active: true,
         attempts: Math.min(
@@ -1363,6 +1434,105 @@ export default function OverUnderLearningBot() {
     return Object.fromEntries(rows);
   })();
 
+  const startingBalance = Number(
+    selectedAccountType === "demo"
+      ? 10000
+      : 0
+  );
+
+  const liveBalance =
+    startingBalance + netProfit;
+
+  const equityPoints = (() => {
+    let running = startingBalance;
+
+    return [...settledTrades]
+      .reverse()
+      .map((trade) => {
+        running += Number(trade.profit || 0);
+
+        return {
+          id: trade.id,
+          balance: running,
+        };
+      });
+  })();
+
+  const filteredAndSearchedTrades =
+    filteredTrades.filter((trade) => {
+      const query = journalSearch
+        .trim()
+        .toLowerCase();
+
+      if (!query) return true;
+
+      return [
+        trade.symbol,
+        trade.contract,
+        trade.status,
+        trade.recoveryMode
+          ? `recovery ${trade.recoveryAttempt}`
+          : "normal",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
+
+  function exportTransactionsCsv() {
+    const headers = [
+      "Time",
+      "Market",
+      "Contract",
+      "Mode",
+      "Stake",
+      "Status",
+      "Trade P/L",
+      "Running P/L",
+    ];
+
+    const rows = filteredAndSearchedTrades.map(
+      (trade) => [
+        new Date(trade.time).toISOString(),
+        trade.symbol,
+        trade.contract,
+        trade.recoveryMode
+          ? `RECOVERY ${trade.recoveryAttempt}/2`
+          : "NORMAL",
+        Number(trade.stake || 0).toFixed(2),
+        String(trade.status || "").toUpperCase(),
+        Number(trade.profit || 0).toFixed(2),
+        Number(
+          runningProfitById[trade.id] || 0
+        ).toFixed(2),
+      ]
+    );
+
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((cell) =>
+            `"${String(cell).replaceAll('"', '""')}"`
+          )
+          .join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = `over-under-transactions-${Date.now()}.csv`;
+    anchor.click();
+
+    URL.revokeObjectURL(url);
+  }
+
+
 
   return (
     <div className="appShell">
@@ -1370,8 +1540,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V5"
-          subtitle="Transaction monitor · win/loss sounds · smart market recovery"
+          title="Over/Under Adaptive Learning Bot V6"
+          subtitle="Smart dashboard · Shopify-style win chime · equity tracking"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1621,6 +1791,86 @@ export default function OverUnderLearningBot() {
           </label>
         </section>
 
+        <section className="oulSmartDashboard">
+          <article className="balance">
+            <span>Live balance</span>
+            <strong>
+              {liveBalance.toFixed(2)} USD
+            </strong>
+            <small>
+              Start {startingBalance.toFixed(2)}
+            </small>
+          </article>
+
+          <article>
+            <span>Current market</span>
+            <strong>
+              {market?.label || symbol || "—"}
+            </strong>
+            <small>
+              {running ? "SCANNING" : "STOPPED"}
+            </small>
+          </article>
+
+          <article>
+            <span>Current entry</span>
+            <strong>
+              {best.side !== "WAIT"
+                ? `${best.side} ${best.barrier}`
+                : "WAIT"}
+            </strong>
+            <small>
+              Score {pct(best.adaptiveScore)}
+            </small>
+          </article>
+
+          <article>
+            <span>Recovery</span>
+            <strong>
+              {recovery.active
+                ? `ACTIVE ${recovery.attempts}/2`
+                : "OFF"}
+            </strong>
+            <small>
+              Target {recoveryTarget.toFixed(2)}
+            </small>
+          </article>
+
+          <article>
+            <span>Sound</span>
+            <button
+              type="button"
+              className={
+                soundEnabled ? "soundOn" : ""
+              }
+              onClick={() =>
+                setSoundEnabled((current) => !current)
+              }
+            >
+              {soundEnabled
+                ? "🔊 SOUNDS ON"
+                : "🔇 SOUNDS OFF"}
+            </button>
+            <small>
+              Win, loss, open and switch alerts
+            </small>
+          </article>
+
+          <article>
+            <span>Next action</span>
+            <strong>
+              {hasOpenTrade
+                ? "MONITORING"
+                : confirmed
+                ? "ENTRY READY"
+                : "SEARCHING"}
+            </strong>
+            <small>
+              {confirmationRef.current.ticks}/2 confirms
+            </small>
+          </article>
+        </section>
+
         <section className="oulMoneySummary">
           <article>
             <span>Total transactions</span>
@@ -1676,6 +1926,68 @@ export default function OverUnderLearningBot() {
             </strong>
           </article>
         </section>
+
+        <section className="oulEquityPanel">
+          <header>
+            <div>
+              <small>ACCOUNT GROWTH</small>
+              <h2>Live equity curve</h2>
+            </div>
+            <strong>
+              {netProfit >= 0 ? "+" : "-"}
+              {Math.abs(netProfit).toFixed(2)} USD
+            </strong>
+          </header>
+
+          <div className="oulEquityChart">
+            {equityPoints.length ? (
+              <svg
+                viewBox={`0 0 ${Math.max(
+                  300,
+                  equityPoints.length * 28
+                )} 120`}
+                preserveAspectRatio="none"
+              >
+                <polyline
+                  points={equityPoints
+                    .map((point, index) => {
+                      const values =
+                        equityPoints.map(
+                          (item) => item.balance
+                        );
+                      const minimum =
+                        Math.min(...values);
+                      const maximum =
+                        Math.max(...values);
+                      const range =
+                        Math.max(
+                          0.01,
+                          maximum - minimum
+                        );
+
+                      const x = index * 28;
+                      const y =
+                        105 -
+                        ((point.balance - minimum) /
+                          range) *
+                          85;
+
+                      return `${x},${y}`;
+                    })
+                    .join(" ")}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                />
+              </svg>
+            ) : (
+              <p>
+                Equity curve appears after settled trades.
+              </p>
+            )}
+          </div>
+        </section>
+
 
         <section className="oulRotation">
           <header>
@@ -1823,7 +2135,26 @@ export default function OverUnderLearningBot() {
               </h2>
             </div>
 
-            <div className="oulJournalFilters">
+            <div className="oulJournalTools">
+              <input
+                type="search"
+                placeholder="Search market or contract"
+                value={journalSearch}
+                onChange={(event) =>
+                  setJournalSearch(
+                    event.target.value
+                  )
+                }
+              />
+
+              <button
+                type="button"
+                onClick={exportTransactionsCsv}
+              >
+                EXPORT CSV
+              </button>
+
+              <div className="oulJournalFilters">
               {["ALL", "WON", "LOST", "OPEN"].map(
                 (filter) => (
                   <button
@@ -1842,6 +2173,7 @@ export default function OverUnderLearningBot() {
                   </button>
                 )
               )}
+              </div>
             </div>
           </header>
 
@@ -1857,7 +2189,7 @@ export default function OverUnderLearningBot() {
               <span>Running P/L</span>
             </div>
 
-            {filteredTrades.map((trade) => {
+            {filteredAndSearchedTrades.map((trade) => {
               const status = String(
                 trade.status || ""
               ).toUpperCase();
@@ -1968,7 +2300,7 @@ export default function OverUnderLearningBot() {
               );
             })}
 
-            {!filteredTrades.length ? (
+            {!filteredAndSearchedTrades.length ? (
               <div className="oulNoTransactions">
                 No {journalFilter.toLowerCase()} transactions.
               </div>

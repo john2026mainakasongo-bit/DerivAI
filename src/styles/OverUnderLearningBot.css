@@ -581,3 +581,185 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* V6 smart dashboard */
+.oulSmartDashboard {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.oulSmartDashboard article {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #174b63;
+  border-radius: 12px;
+  background: #061b2a;
+}
+
+.oulSmartDashboard article.balance {
+  border-color: #2ec79d;
+}
+
+.oulSmartDashboard span,
+.oulSmartDashboard small {
+  display: block;
+}
+
+.oulSmartDashboard span {
+  color: #7ba5b6;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.oulSmartDashboard strong {
+  display: block;
+  margin-top: 6px;
+  color: #fff;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.oulSmartDashboard small {
+  margin-top: 5px;
+  color: #79a2b2;
+  font-size: 8px;
+}
+
+.oulSmartDashboard button {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #37596a;
+  border-radius: 8px;
+  background: #102531;
+  color: #d7e8ee;
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.oulSmartDashboard button.soundOn {
+  border-color: #2ec79d;
+  background: #0a3d38;
+  color: #fff;
+}
+
+.oulEquityPanel {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #174b63;
+  border-radius: 14px;
+  background: #061b2a;
+}
+
+.oulEquityPanel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.oulEquityPanel small {
+  color: #39d9af;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.oulEquityPanel h2 {
+  margin: 4px 0;
+  color: #fff;
+}
+
+.oulEquityPanel header strong {
+  color: #38d8a8;
+}
+
+.oulEquityChart {
+  height: 130px;
+  margin-top: 8px;
+  overflow-x: auto;
+  border: 1px solid #143f51;
+  border-radius: 9px;
+  background:
+    linear-gradient(
+      rgba(42, 124, 151, .08) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(42, 124, 151, .08) 1px,
+      transparent 1px
+    ),
+    #041521;
+  background-size: 32px 32px;
+  color: #38d8a8;
+}
+
+.oulEquityChart svg {
+  width: 100%;
+  min-width: 320px;
+  height: 120px;
+  padding: 8px;
+}
+
+.oulEquityChart p {
+  padding: 42px 12px;
+  color: #7ea7b7;
+  text-align: center;
+}
+
+.oulJournalTools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.oulJournalTools > input {
+  width: 210px;
+  padding: 7px 9px;
+  border: 1px solid #24566b;
+  border-radius: 7px;
+  background: #071925;
+  color: #fff;
+  font-size: 9px;
+}
+
+.oulJournalTools > button {
+  padding: 7px 10px;
+  border: 1px solid #2ec79d;
+  border-radius: 7px;
+  background: #0a3d38;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+@media (max-width: 1200px) {
+  .oulSmartDashboard {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .oulSmartDashboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .oulJournalTools {
+    display: block;
+    margin-top: 8px;
+  }
+
+  .oulJournalTools > input {
+    width: 100%;
+    margin-bottom: 6px;
+  }
+
+  .oulJournalTools > button {
+    width: 100%;
+    margin-bottom: 6px;
+  }
+}
