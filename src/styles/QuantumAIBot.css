@@ -644,3 +644,401 @@ html:has(.quantumShell),
   }
 }
 
+
+
+
+/* QUANTUM AI V20.1 â€” TDZ stable runtime */
+.quantumTdzStable {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #23866e;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumTdzStable header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumTdzStable small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.quantumTdzStable h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumTdzStable header > strong {
+  color: #3de0b4;
+  font-size: 11px;
+}
+
+.quantumTdzStableGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumTdzStableGrid article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumTdzStableGrid span {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumTdzStableGrid strong {
+  display: block;
+  margin-top: 4px;
+  color: #3de0b4;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .quantumTdzStableGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* QUANTUM AI V21 â€” 30-second Market DNA */
+.quantumV21Dna {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #327d8f;
+  border-radius: 12px;
+  background: #062235;
+}
+.quantumV21Dna header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.quantumV21Dna small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+}
+.quantumV21Dna h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+.quantumV21Dna header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+.quantumV21Summary {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+.quantumV21Summary article,
+.quantumV21Windows article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+.quantumV21Summary span,
+.quantumV21Windows span,
+.quantumV21Windows small {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+.quantumV21Summary strong,
+.quantumV21Windows strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+}
+.quantumV21Windows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 6px;
+}
+@media (max-width: 1200px) {
+  .quantumV21Summary {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .quantumV21Summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .quantumV21Windows {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* QUANTUM AI V22 â€” clean balanced entry */
+.quantumV22Status {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #348097;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumV22Status header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.quantumV22Status small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.quantumV22Status h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumV22Status header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.quantumV22Grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumV22Grid article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumV22Grid span {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumV22Grid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+}
+
+@media (max-width: 1100px) {
+  .quantumV22Grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumV22Grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* QUANTUM AI V23 â€” adaptive market memory */
+.quantumV23Memory {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #39859a;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumV23Memory header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.quantumV23Memory small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.quantumV23Memory h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumV23Memory header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.quantumV23Grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumV23Grid article,
+.quantumV23Markets article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumV23Grid span,
+.quantumV23Markets span,
+.quantumV23Markets small {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumV23Grid strong,
+.quantumV23Markets strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.quantumV23Markets {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 6px;
+}
+
+@media (max-width: 1100px) {
+  .quantumV23Grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .quantumV23Markets {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumV23Grid,
+  .quantumV23Markets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* QUANTUM AI V24 â€” fresh one-minute engine */
+.quantumV24Fresh {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #3d879b;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumV24Fresh header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumV24Fresh small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.quantumV24Fresh h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumV24Fresh header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.quantumV24Grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumV24Grid article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumV24Grid span {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumV24Grid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.quantumV24Fresh p {
+  margin: 7px 0 0;
+  color: #89b4c4;
+  font-size: 9px;
+}
+
+@media (max-width: 1200px) {
+  .quantumV24Grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumV24Grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
