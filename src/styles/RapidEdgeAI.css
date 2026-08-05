@@ -1430,3 +1430,23 @@
     max-height: 360px;
   }
 }
+
+
+/* RapidEdge V4.1 direct execution diagnostics */
+.oulDecisionGrid article strong[title] {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oulDecision.ready::after {
+  content: "DIRECT BUY LOOP ARMED";
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  color: #31f2ba;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}

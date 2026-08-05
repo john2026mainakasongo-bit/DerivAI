@@ -306,9 +306,11 @@ export default function RapidEdgeAI() {
     markets = [],
     symbol = "",
     connected = false,
+    authenticatedFeed = false,
     loadingMarket = false,
     prices = [],
     selectedAccountType = "demo",
+    selectedAccountId = "",
     openContracts = [],
     tradeBusy = false,
     tradeError = "",
@@ -316,6 +318,7 @@ export default function RapidEdgeAI() {
     disconnect,
     changeSymbol,
     placeTrade,
+    refreshContract,
   } = useDerivTicks();
 
   const [running, setRunning] = useState(false);
@@ -336,11 +339,15 @@ export default function RapidEdgeAI() {
     useState(Date.now());
   const [switches, setSwitches] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [executionAttempts, setExecutionAttempts] = useState(0);
+  const [lastExecutionError, setLastExecutionError] = useState("");
+  const [lastBuyRequestAt, setLastBuyRequestAt] = useState(0);
 
   const busyRef = useRef(false);
   const processedRef = useRef(new Set());
   const recentRunTimesRef = useRef([]);
   const audioRef = useRef(null);
+  const executeTradeRef = useRef(null);
 
   const marketSymbols = useMemo(
     () =>
@@ -561,7 +568,26 @@ export default function RapidEdgeAI() {
         tradeBusy ||
         busyRef.current
       ) {
-        return;
+        return false;
+      }
+
+      const now = Date.now();
+
+      if (now - lastBuyRequestAt < 650) {
+        return false;
+      }
+
+      if (
+        !authenticatedFeed ||
+        !selectedAccountId
+      ) {
+        setLastExecutionError(
+          "Choose a connected Deriv Demo or Real account."
+        );
+        setMessage(
+          "EXECUTION BLOCKED · authenticated Deriv account is not ready."
+        );
+        return false;
       }
 
       if (
@@ -569,13 +595,14 @@ export default function RapidEdgeAI() {
         !allowReal
       ) {
         setRunning(false);
+        setLastExecutionError(
+          "Real execution is locked."
+        );
         setMessage(
           "Real execution is locked. Enable it manually."
         );
-        return;
+        return false;
       }
-
-      const now = Date.now();
 
       recentRunTimesRef.current =
         recentRunTimesRef.current.filter(
@@ -588,40 +615,74 @@ export default function RapidEdgeAI() {
         setMessage(
           "20-runs-per-minute cap reached."
         );
-        return;
+        return false;
       }
 
       if (now - lastEntryAt < 2200) {
-        return;
+        return false;
       }
 
       busyRef.current = true;
+      setLastBuyRequestAt(now);
+      setExecutionAttempts((value) => value + 1);
+      setLastExecutionError("");
+      setMessage(
+        `BUY REQUEST · ${best.contract} · ${pct(
+          best.probability
+        )} · ${ladder.stage}`
+      );
 
       try {
-        const result = await placeTrade({
-          symbol,
-          contractType:
-            best.side === "OVER"
-              ? "DIGITOVER"
-              : "DIGITUNDER",
-          amount: Math.max(
-            0.35,
-            Number(stake || 0.35)
-          ),
-          basis: "stake",
-          duration: Math.max(
-            1,
-            Number(durationTicks || 1)
-          ),
-          durationUnit: "t",
-          barrier: String(best.barrier),
+        const request = Promise.resolve(
+          placeTrade({
+            symbol,
+            contractType:
+              best.side === "OVER"
+                ? "DIGITOVER"
+                : "DIGITUNDER",
+            amount: Math.max(
+              0.35,
+              Number(stake || 0.35)
+            ),
+            basis: "stake",
+            duration: Math.max(
+              1,
+              Number(durationTicks || 1)
+            ),
+            durationUnit: "t",
+            barrier: String(best.barrier),
+          })
+        );
+
+        const timeout = new Promise((_, reject) => {
+          window.setTimeout(() => {
+            reject(
+              new Error(
+                "Deriv buy request timed out after 12 seconds."
+              )
+            );
+          }, 12000);
         });
+
+        const result = await Promise.race([
+          request,
+          timeout,
+        ]);
 
         const contractId = String(
           result?.contractId ||
+            result?.contract_id ||
             result?.buy?.contract_id ||
-            Date.now()
+            result?.raw?.buy?.contract_id ||
+            result?.raw?.data?.buy?.contract_id ||
+            ""
         );
+
+        if (!contractId) {
+          throw new Error(
+            "Deriv purchase returned no contract ID."
+          );
+        }
 
         const trade = {
           id: contractId,
@@ -646,15 +707,26 @@ export default function RapidEdgeAI() {
           ...current,
         ].slice(0, 100));
         setMessage(
-          `OPENED ${best.contract} · ${pct(best.probability)} · ${ladder.stage}`
+          `OPENED ${best.contract} · contract ${contractId} · ${ladder.stage}`
         );
+
+        if (typeof refreshContract === "function") {
+          Promise.resolve(
+            refreshContract(contractId)
+          ).catch(() => {});
+        }
+
         void playTone("OPEN");
+        return true;
       } catch (error) {
-        setMessage(
-          error?.message ||
-            tradeError ||
-            "Trade failed."
-        );
+        const failure =
+          error instanceof Error
+            ? error.message
+            : tradeError || "Trade failed.";
+
+        setLastExecutionError(failure);
+        setMessage(`BUY FAILED · ${failure}`);
+        return false;
       } finally {
         busyRef.current = false;
       }
@@ -662,6 +734,8 @@ export default function RapidEdgeAI() {
     [
       running,
       connected,
+      authenticatedFeed,
+      selectedAccountId,
       best,
       ladder,
       hasOpenTrade,
@@ -669,7 +743,9 @@ export default function RapidEdgeAI() {
       selectedAccountType,
       allowReal,
       lastEntryAt,
+      lastBuyRequestAt,
       placeTrade,
+      refreshContract,
       symbol,
       stake,
       durationTicks,
@@ -677,6 +753,33 @@ export default function RapidEdgeAI() {
       playTone,
     ]
   );
+
+  useEffect(() => {
+    executeTradeRef.current = executeTrade;
+  }, [executeTrade]);
+
+  useEffect(() => {
+    if (!running) return undefined;
+
+    const executionTimer = window.setInterval(() => {
+      if (
+        ladder.qualified &&
+        !hasOpenTrade &&
+        !tradeBusy &&
+        !busyRef.current
+      ) {
+        void executeTradeRef.current?.();
+      }
+    }, 200);
+
+    return () =>
+      window.clearInterval(executionTimer);
+  }, [
+    running,
+    ladder.qualified,
+    hasOpenTrade,
+    tradeBusy,
+  ]);
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -697,16 +800,10 @@ export default function RapidEdgeAI() {
     if (!running) return;
 
     if (
-      ladder.qualified &&
-      !hasOpenTrade
-    ) {
-      void executeTrade();
-      return;
-    }
-
-    if (
+      !ladder.qualified &&
       scanAgeMs >= 8000 &&
-      !hasOpenTrade
+      !hasOpenTrade &&
+      !busyRef.current
     ) {
       void rotateMarket(
         "8s watchdog found no acceptable entry"
@@ -718,7 +815,6 @@ export default function RapidEdgeAI() {
     ladder.qualified,
     hasOpenTrade,
     scanAgeMs,
-    executeTrade,
     rotateMarket,
     clock,
   ]);
@@ -787,14 +883,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4 started · scanning every tick."
+      "RapidEdge V4.1 started · direct execution loop armed."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4 stopped.");
+    setMessage("RapidEdge V4.1 stopped.");
   }
 
   function reset() {
@@ -805,7 +901,10 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     recentRunTimesRef.current = [];
     processedRef.current.clear();
-    setMessage("RapidEdge V4 session reset.");
+    setExecutionAttempts(0);
+    setLastExecutionError("");
+    setLastBuyRequestAt(0);
+    setMessage("RapidEdge V4.1 session reset.");
   }
 
   return (
@@ -814,8 +913,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4 · Speed Core"
-          subtitle="Short 60-tick analysis · 3s/6s/8s ladder · one open trade · up to 20 runs/min"
+          title="RapidEdge AI V4.1 · Direct Execution"
+          subtitle="200ms direct execution loop · authenticated buy diagnostics · one open trade · up to 20 runs/min"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -863,7 +962,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4 SPEED DECISION</small>
+            <small>V4.1 DIRECT EXECUTION</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -921,6 +1020,24 @@ export default function RapidEdgeAI() {
               <span>Open Trade</span>
               <strong>
                 {hasOpenTrade ? "YES" : "NO"}
+              </strong>
+            </article>
+            <article>
+              <span>Auth</span>
+              <strong>
+                {authenticatedFeed && selectedAccountId
+                  ? "READY"
+                  : "BLOCKED"}
+              </strong>
+            </article>
+            <article>
+              <span>Buy Attempts</span>
+              <strong>{executionAttempts}</strong>
+            </article>
+            <article>
+              <span>Last Buy Error</span>
+              <strong title={lastExecutionError}>
+                {lastExecutionError || "NONE"}
               </strong>
             </article>
           </div>
@@ -1025,6 +1142,14 @@ export default function RapidEdgeAI() {
               {connected ? "LIVE" : "OFFLINE"}
             </strong>
           </article>
+          <article>
+            <span>Trading Auth</span>
+            <strong>
+              {authenticatedFeed && selectedAccountId
+                ? "READY"
+                : "BLOCKED"}
+            </strong>
+          </article>
         </section>
 
         <section className="oulMainGrid">
@@ -1086,7 +1211,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4 Trades</h2>
+              <h2>RapidEdge V4.1 Trades</h2>
             </div>
           </header>
 
@@ -1130,7 +1255,7 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4 transactions yet.
+                No RapidEdge V4.1 transactions yet.
               </p>
             )}
           </div>
