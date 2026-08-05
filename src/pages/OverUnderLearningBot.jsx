@@ -12,8 +12,50 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v25";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v25";
+const MEMORY_KEY = "edgepilot:isolated:over-under:v26:learning";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v26:market-cache";
+const OVER_UNDER_NAMESPACE =
+  "edgepilot:isolated:over-under:v26";
+const OVER_UNDER_SESSION_KEY =
+  `${OVER_UNDER_NAMESPACE}:session`;
+const OVER_UNDER_AUDIO_KEY =
+  `${OVER_UNDER_NAMESPACE}:audio`;
+const OVER_UNDER_JOURNAL_KEY =
+  `${OVER_UNDER_NAMESPACE}:journal`;
+const OVER_UNDER_LOCK_KEY =
+  `${OVER_UNDER_NAMESPACE}:locks`;
+
+function createOverUnderSessionId() {
+  return [
+    "ou",
+    Date.now().toString(36),
+    Math.random().toString(36).slice(2, 10),
+  ].join("-");
+}
+
+function readOverUnderSessionId() {
+  try {
+    const existing =
+      window.sessionStorage.getItem(
+        OVER_UNDER_SESSION_KEY
+      );
+
+    if (existing) return existing;
+
+    const created =
+      createOverUnderSessionId();
+
+    window.sessionStorage.setItem(
+      OVER_UNDER_SESSION_KEY,
+      created
+    );
+
+    return created;
+  } catch {
+    return createOverUnderSessionId();
+  }
+}
+
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1905,7 +1947,13 @@ function candidateScore(candidate, memoryRow) {
   );
 }
 
+// HARD ISOLATION CONTRACT:
+// This bot does not share FreshEdge memory, cache,
+// recovery, journal, execution locks or audio state.
 export default function OverUnderLearningBot() {
+  const overUnderSessionIdRef =
+    useRef(readOverUnderSessionId());
+  const hardIsolationEnabled = true;
   const {
     markets = [],
     market = null,
@@ -2412,6 +2460,84 @@ export default function OverUnderLearningBot() {
       // Browser storage may be unavailable.
     }
   }, [memory]);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        OVER_UNDER_SESSION_KEY,
+        overUnderSessionIdRef.current
+      );
+
+      window.localStorage.setItem(
+        OVER_UNDER_JOURNAL_KEY,
+        JSON.stringify({
+          namespace:
+            OVER_UNDER_NAMESPACE,
+          botType:
+            "OVER_UNDER_ONLY",
+          sessionId:
+            overUnderSessionIdRef.current,
+          trades:
+            Array.isArray(trades)
+              ? trades
+              : [],
+          updatedAt:
+            Date.now(),
+        })
+      );
+    } catch {
+      // Browser storage may be unavailable.
+    }
+  }, [trades]);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        OVER_UNDER_LOCK_KEY,
+        JSON.stringify({
+          namespace:
+            OVER_UNDER_NAMESPACE,
+          botType:
+            "OVER_UNDER_ONLY",
+          sessionId:
+            overUnderSessionIdRef.current,
+          lastTradeByMarket,
+          lastSetupKeyByMarket,
+          dynamicMarketBlacklist,
+          dynamicSetupBlacklist,
+          updatedAt:
+            Date.now(),
+        })
+      );
+    } catch {
+      // Browser storage may be unavailable.
+    }
+  }, [
+    lastTradeByMarket,
+    lastSetupKeyByMarket,
+    dynamicMarketBlacklist,
+    dynamicSetupBlacklist,
+  ]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        OVER_UNDER_AUDIO_KEY,
+        JSON.stringify({
+          namespace:
+            OVER_UNDER_NAMESPACE,
+          botType:
+            "OVER_UNDER_ONLY",
+          enabled:
+            soundEnabled,
+          updatedAt:
+            Date.now(),
+        })
+      );
+    } catch {
+      // Browser storage may be unavailable.
+    }
+  }, [soundEnabled]);
 
   useEffect(() => {
     if (cacheWriteTimerRef.current) {
@@ -4926,7 +5052,7 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
     setMessage(
-      "V25 running: unified portfolio metrics, live candidate bridge, auto-unlock and continuous rescan."
+      "V26 running: hard-isolated Over/Under state, live bridge, auto-unlock and continuous rescan."
     );
   }
 
@@ -4941,6 +5067,17 @@ export default function OverUnderLearningBot() {
       window.localStorage.removeItem(
         MARKET_BROWSER_CACHE_KEY
       );
+      window.localStorage.removeItem(
+        OVER_UNDER_JOURNAL_KEY
+      );
+      window.localStorage.removeItem(
+        OVER_UNDER_AUDIO_KEY
+      );
+      window.sessionStorage.removeItem(
+        OVER_UNDER_LOCK_KEY
+      );
+
+      // FreshEdge storage is intentionally untouched.
     } catch {
       // Ignore unavailable storage.
     }
@@ -5158,8 +5295,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V25"
-          subtitle="Unified live entry bridge · portfolio and candidate engine synchronized"
+          title="Over/Under Adaptive Learning Bot V26"
+          subtitle="Hard-isolated Over/Under engine · independent from FreshEdge"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -6706,6 +6843,38 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 NONE / WAIT can never execute
+              </small>
+            </article>
+
+            <article>
+              <span>Hard isolation</span>
+              <strong>
+                {hardIsolationEnabled
+                  ? "ACTIVE"
+                  : "OFF"}
+              </strong>
+              <small>
+                No state is shared with FreshEdge
+              </small>
+            </article>
+
+            <article>
+              <span>Bot namespace</span>
+              <strong>
+                OVER_UNDER_ONLY
+              </strong>
+              <small>
+                Separate cache, journal, locks, recovery and audio
+              </small>
+            </article>
+
+            <article>
+              <span>Session isolation</span>
+              <strong>
+                {overUnderSessionIdRef.current.slice(-8)}
+              </strong>
+              <small>
+                Execution locks belong to this session only
               </small>
             </article>
 
