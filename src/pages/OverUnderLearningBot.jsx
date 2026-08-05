@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v10";
+const MEMORY_KEY = "edgepilot:over-under-learning:v11";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -339,6 +339,139 @@ function barrierLaneScore(side, barrier, recoveryActive) {
 
   return 30;
 }
+
+function recentResultRisk(trades, symbol) {
+  const recent = (Array.isArray(trades) ? trades : [])
+    .filter(
+      (trade) =>
+        String(trade.symbol || "") === String(symbol || "") &&
+        ["WON", "LOST"].includes(
+          String(trade.status || "").toUpperCase()
+        )
+    )
+    .slice(0, 12);
+
+  if (!recent.length) {
+    return {
+      sample: 0,
+      lossRate: 0,
+      lossStreak: 0,
+      winStreak: 0,
+      decay: 0,
+      risk: 0,
+    };
+  }
+
+  const losses = recent.filter(
+    (trade) =>
+      String(trade.status || "").toUpperCase() === "LOST"
+  ).length;
+
+  let lossStreak = 0;
+  let winStreak = 0;
+
+  for (const trade of recent) {
+    const status = String(trade.status || "").toUpperCase();
+
+    if (status === "LOST" && winStreak === 0) {
+      lossStreak += 1;
+    } else if (status === "WON" && lossStreak === 0) {
+      winStreak += 1;
+    } else {
+      break;
+    }
+  }
+
+  const split = Math.ceil(recent.length / 2);
+  const newestHalf = recent.slice(0, split);
+  const oldestHalf = recent.slice(split);
+
+  const winRateOf = (rows) =>
+    rows.length
+      ? rows.filter(
+          (trade) =>
+            String(trade.status || "").toUpperCase() === "WON"
+        ).length / rows.length
+      : 0.5;
+
+  const newestRate = winRateOf(newestHalf);
+  const oldestRate = oldestHalf.length
+    ? winRateOf(oldestHalf)
+    : newestRate;
+
+  const decay = clamp(
+    (oldestRate - newestRate) * 100,
+    0,
+    100
+  );
+
+  const lossRate = (losses / recent.length) * 100;
+
+  const risk = clamp(
+    lossRate * 0.35 +
+      lossStreak * 18 +
+      decay * 0.45 +
+      (winStreak >= 5 ? 14 : 0),
+    0,
+    100
+  );
+
+  return {
+    sample: recent.length,
+    lossRate,
+    lossStreak,
+    winStreak,
+    decay,
+    risk,
+  };
+}
+
+function predictiveGuard({
+  regime,
+  resultRisk,
+  candidate,
+  tradesOnCurrentMarket,
+  proactiveRotationTrades,
+}) {
+  const score = Number(candidate?.adaptiveScore || 0);
+  const probability = Number(candidate?.probability || 0);
+  const edge = Number(candidate?.payoutEdge || 0);
+  const consistency = Number(candidate?.consistency || 0);
+  const regimeRisk = Number(regime?.riskPenalty || 0);
+
+  const marketFatigue = clamp(
+    (
+      Number(tradesOnCurrentMarket || 0) /
+      Math.max(1, Number(proactiveRotationTrades || 5))
+    ) * 100,
+    0,
+    140
+  );
+
+  const risk = clamp(
+    regimeRisk * 1.15 +
+      Number(resultRisk?.risk || 0) * 0.85 +
+      Math.max(0, 72 - score) * 0.7 +
+      Math.max(0, 80 - probability) * 0.45 +
+      Math.max(0, 2 - edge) * 4 +
+      Math.max(0, 72 - consistency) * 0.25 +
+      Math.max(0, marketFatigue - 85) * 0.35,
+    0,
+    100
+  );
+
+  return {
+    risk,
+    state:
+      risk >= 72
+        ? "BLOCK"
+        : risk >= 52
+        ? "CAUTION"
+        : "CLEAR",
+    marketFatigue,
+  };
+}
+
 
 function setupCooldownRemaining(row) {
   const blockedUntil = Number(row?.blockedUntil || 0);
@@ -687,6 +820,10 @@ export default function OverUnderLearningBot() {
     useState(5);
   const [recoveryDebt, setRecoveryDebt] =
     useState(0);
+  const [predictiveGuardEnabled, setPredictiveGuardEnabled] =
+    useState(true);
+  const [guardThreshold, setGuardThreshold] =
+    useState(58);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -1038,6 +1175,11 @@ export default function OverUnderLearningBot() {
     [analysis.recentDigits]
   );
 
+  const resultRisk = useMemo(
+    () => recentResultRisk(trades, symbol),
+    [trades, symbol]
+  );
+
   const marketSymbols = useMemo(
     () =>
       (Array.isArray(markets)
@@ -1102,7 +1244,8 @@ export default function OverUnderLearningBot() {
               learned
             ) +
               regimeAnalysis.qualityBonus -
-              regimeAnalysis.riskPenalty +
+              regimeAnalysis.riskPenalty -
+              Number(resultRisk.risk || 0) * 0.18 +
               (
                 smartRecoveryActive
                   ? safetyScore * 0.08 +
@@ -1170,6 +1313,7 @@ export default function OverUnderLearningBot() {
       symbol,
       marketBlocks,
       regimeAnalysis,
+      resultRisk,
       recovery.active,
       recoveryMode,
       smartRecoveryActive,
@@ -1189,6 +1333,24 @@ export default function OverUnderLearningBot() {
         2
       ),
     };
+
+  const activeGuard = useMemo(
+    () =>
+      predictiveGuard({
+        regime: regimeAnalysis,
+        resultRisk,
+        candidate: best,
+        tradesOnCurrentMarket,
+        proactiveRotationTrades,
+      }),
+    [
+      regimeAnalysis,
+      resultRisk,
+      best,
+      tradesOnCurrentMarket,
+      proactiveRotationTrades,
+    ]
+  );
 
   const bestKey = memoryKey(
     symbol,
@@ -1226,6 +1388,14 @@ export default function OverUnderLearningBot() {
     Number(regimeAnalysis.riskPenalty || 0) <=
       (smartRecoveryActive ? 18 : 25) &&
     Number(regimeAnalysis.sample || 0) >= 30 &&
+    (
+      !predictiveGuardEnabled ||
+      (
+        activeGuard.state !== "BLOCK" &&
+        Number(activeGuard.risk || 0) <
+          Number(guardThreshold || 58)
+      )
+    ) &&
     !best.learned.blocked &&
     !blockedByLastLoss &&
     recoverySetupPass;
@@ -1523,6 +1693,45 @@ export default function OverUnderLearningBot() {
     confirmed,
     hasOpenTrade,
     bestKey,
+    symbol,
+  ]);
+
+  useEffect(() => {
+    if (
+      !running ||
+      hasOpenTrade ||
+      tradeBusy ||
+      !predictiveGuardEnabled ||
+      marketSymbols.length < 2
+    ) {
+      return undefined;
+    }
+
+    if (
+      activeGuard.state !== "BLOCK" &&
+      Number(activeGuard.risk || 0) <
+        Number(guardThreshold || 58)
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      void switchMarket(
+        `Predictive guard blocked ${symbol} at ${Number(
+          activeGuard.risk || 0
+        ).toFixed(1)} risk`
+      );
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    running,
+    hasOpenTrade,
+    tradeBusy,
+    predictiveGuardEnabled,
+    activeGuard,
+    guardThreshold,
+    marketSymbols,
     symbol,
   ]);
 
@@ -2118,8 +2327,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V10.1"
-          subtitle="TDZ hotfix · recovery state · proactive market rotation"
+          title="Over/Under Adaptive Learning Bot V11"
+          subtitle="Predictive guard · adaptive barriers · proactive loss avoidance"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -2183,7 +2392,12 @@ export default function OverUnderLearningBot() {
                 : `WATCH ${best.side} ${best.barrier}`}
             </h1>
             <p>
-              {recovery.active
+              {predictiveGuardEnabled &&
+              activeGuard.state === "BLOCK"
+                ? `Predictive guard blocked this market at ${Number(
+                    activeGuard.risk || 0
+                  ).toFixed(1)} risk. Switching before another weak entry.`
+                : recovery.active
                 ? confirmed
                   ? "Fresh recovery setup passed stricter EV, confidence and confirmation gates."
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
@@ -2347,6 +2561,39 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Predictive guard</span>
+            <select
+              value={predictiveGuardEnabled ? "ON" : "OFF"}
+              onChange={(event) =>
+                setPredictiveGuardEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — avoid weakening setups
+              </option>
+              <option value="OFF">OFF</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Guard risk threshold</span>
+            <input
+              type="number"
+              min="40"
+              max="80"
+              step="1"
+              value={guardThreshold}
+              onChange={(event) =>
+                setGuardThreshold(
+                  clamp(event.target.value, 40, 80)
                 )
               }
             />
@@ -2555,6 +2802,9 @@ export default function OverUnderLearningBot() {
             <strong>
               {hasOpenTrade
                 ? "MONITORING"
+                : predictiveGuardEnabled &&
+                  activeGuard.state === "BLOCK"
+                ? "SWITCHING"
                 : confirmed
                 ? "ENTRY READY"
                 : "SEARCHING"}
@@ -2772,6 +3022,40 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Predictive guard</span>
+              <strong>{activeGuard.state}</strong>
+              <small>
+                Risk {pct(activeGuard.risk)}
+              </small>
+            </article>
+
+            <article>
+              <span>Confidence decay</span>
+              <strong>{pct(resultRisk.decay)}</strong>
+              <small>
+                Recent performance weakening
+              </small>
+            </article>
+
+            <article>
+              <span>Current loss rate</span>
+              <strong>{pct(resultRisk.lossRate)}</strong>
+              <small>
+                Last {resultRisk.sample} settled trades
+              </small>
+            </article>
+
+            <article>
+              <span>Streak condition</span>
+              <strong>
+                W{resultRisk.winStreak} / L{resultRisk.lossStreak}
+              </strong>
+              <small>
+                Long win streaks can signal exhaustion
               </small>
             </article>
 
