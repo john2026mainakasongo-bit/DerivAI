@@ -1037,3 +1037,147 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* FreshEdge AI V7 — telemetry and deep replay */
+.freshEdgeV7Telemetry,
+.freshEdgeV7DeepReplay {
+  margin: 8px 14px;
+  padding: 10px;
+  border: 1px solid #2a6c7f;
+  border-radius: 12px;
+  background: #052034;
+}
+
+.freshEdgeV7Telemetry header,
+.freshEdgeV7DeepReplay header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.freshEdgeV7Telemetry small,
+.freshEdgeV7DeepReplay small {
+  color: #39dfb5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.freshEdgeV7Telemetry h3,
+.freshEdgeV7DeepReplay h3 {
+  margin: 3px 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.freshEdgeV7Telemetry header > strong,
+.freshEdgeV7DeepReplay header > strong {
+  color: #f0c952;
+  font-size: 10px;
+}
+
+.freshEdgeV7Telemetry > div,
+.freshEdgeV7ReplaySummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.freshEdgeV7Telemetry article,
+.freshEdgeV7ReplaySummary article {
+  padding: 8px;
+  border: 1px solid #174d65;
+  border-radius: 8px;
+  background: #031827;
+}
+
+.freshEdgeV7Telemetry span,
+.freshEdgeV7ReplaySummary span {
+  display: block;
+  color: #82adbf;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.freshEdgeV7Telemetry strong,
+.freshEdgeV7ReplaySummary strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 10px;
+}
+
+.freshEdgeV7Telemetry p,
+.freshEdgeRecoveryPanel > p {
+  margin: 7px 0 0;
+  color: #8fb6c8;
+  font-size: 9px;
+}
+
+.freshEdgeV7Ticks {
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 7px;
+  border: 1px solid #174d65;
+  border-radius: 8px;
+  background: #031827;
+}
+
+.freshEdgeV7Ticks article {
+  display: grid;
+  grid-template-columns: 100px 1fr repeat(3, 80px);
+  gap: 7px;
+  padding: 7px 9px;
+  border-top: 1px solid #174d65;
+  font-size: 9px;
+}
+
+.freshEdgeV7Ticks article.entry {
+  background: #07372f;
+}
+
+.freshEdgeV7Ticks time {
+  color: #82adbf;
+}
+
+.freshEdgeV7Ticks strong {
+  color: #fff;
+}
+
+.freshEdgeV7Ticks span {
+  color: #9bc5d5;
+}
+
+.freshEdgeV7Ticks p {
+  margin: 0;
+  padding: 10px;
+  color: #8fb6c8;
+  font-size: 9px;
+}
+
+.freshEdgeRecoveryPanel > div {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .freshEdgeV7Telemetry > div,
+  .freshEdgeV7ReplaySummary,
+  .freshEdgeRecoveryPanel > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  .freshEdgeV7Telemetry > div,
+  .freshEdgeV7ReplaySummary,
+  .freshEdgeRecoveryPanel > div {
+    grid-template-columns: 1fr;
+  }
+
+  .freshEdgeV7Ticks article {
+    grid-template-columns: 80px 1fr;
+  }
+}

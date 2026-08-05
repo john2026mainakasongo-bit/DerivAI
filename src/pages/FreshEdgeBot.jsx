@@ -13,7 +13,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeFreshEdge } from "../analysis/freshEdgeEngine";
 import "../styles/FreshEdgeBot.css";
 
-const STORAGE_KEY = "fresh-edge-ai-v6-learning-history";
+const STORAGE_KEY = "fresh-edge-ai-v7-learning-history";
 
 const INITIAL_STATS = {
   runs: 0,
@@ -325,6 +325,91 @@ function buildFreshEdgeLearning(history = []) {
   };
 }
 
+
+function freshEdgeRecoveryPolicy(code, settings) {
+  switch (code) {
+    case "SPIKE_ENTRY":
+      return {
+        action: "RAISE_CONFIRMATION",
+        extraTicks: Number(
+          settings.spikeRecoveryConfirmExtra || 1
+        ),
+        freshTicks: Number(settings.freshRecoveryTicks || 12) + 3,
+        durationExtra: 0,
+        description:
+          "Require one more confirmation tick and rebuild on a new market.",
+      };
+
+    case "HIGH_NOISE":
+      return {
+        action: "WAIT_FOR_CALMER_MARKET",
+        extraTicks: 0,
+        freshTicks:
+          Number(settings.freshRecoveryTicks || 12) +
+          Number(settings.noiseRecoveryTickExtra || 4),
+        durationExtra: 0,
+        description:
+          "Collect more fresh ticks and reject markets with elevated noise.",
+      };
+
+    case "REVERSAL_PRESSURE":
+      return {
+        action: "BLOCK_SAME_DIRECTION",
+        extraTicks: 1,
+        freshTicks:
+          Number(settings.freshRecoveryTicks || 12) +
+          Number(settings.reversalRecoveryTickExtra || 3),
+        durationExtra: 0,
+        description:
+          "Avoid repeating the losing direction until a new market confirms.",
+      };
+
+    case "WEAK_FOLLOW_THROUGH":
+      return {
+        action: "RAISE_CONTINUATION",
+        extraTicks: 1,
+        freshTicks:
+          Number(settings.freshRecoveryTicks || 12) +
+          Number(settings.weakFollowRecoveryTickExtra || 2),
+        durationExtra: 0,
+        description:
+          "Require stronger continuation and a fresh confirmation sequence.",
+      };
+
+    case "MARGINAL_EDGE":
+      return {
+        action: "RAISE_ENTRY_GATE",
+        extraTicks: 1,
+        freshTicks: Number(settings.freshRecoveryTicks || 12) + 2,
+        durationExtra: 0,
+        description:
+          "Wait for a wider confidence and quality margin.",
+      };
+
+    case "EXPIRY_VARIANCE":
+      return {
+        action: "LONGER_EXPIRY",
+        extraTicks: 0,
+        freshTicks: Number(settings.freshRecoveryTicks || 12),
+        durationExtra: Number(
+          settings.expiryRecoveryDurationExtra || 10
+        ),
+        description:
+          "Use fresh analysis and a slightly longer expiry only if requalified.",
+      };
+
+    default:
+      return {
+        action: "FRESH_REBUILD",
+        extraTicks: 0,
+        freshTicks: Number(settings.freshRecoveryTicks || 12),
+        durationExtra: 0,
+        description:
+          "Forget the previous setup and rebuild from current ticks.",
+      };
+  }
+}
+
 export default function FreshEdgeBot() {
   const {
     markets,
@@ -345,7 +430,7 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge V6.1 is ready with corrected initialization order."
+    "FreshEdge V7 is ready with deep replay and latency telemetry."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
@@ -380,6 +465,14 @@ export default function FreshEdgeBot() {
     scannerBoardMarkets: 8,
     scannerSnapshotSeconds: 45,
     lossLearningWindow: 20,
+    replayTickLimit: 40,
+    entryTickSnapshot: 12,
+    latencyWarningMs: 800,
+    spikeRecoveryConfirmExtra: 1,
+    noiseRecoveryTickExtra: 4,
+    reversalRecoveryTickExtra: 3,
+    weakFollowRecoveryTickExtra: 2,
+    expiryRecoveryDurationExtra: 10,
   });
   const [stats, setStats] = useState(() => {
     try {
@@ -407,11 +500,14 @@ export default function FreshEdgeBot() {
     requiredTicks: 0,
     freshTicks: 0,
     cause: "",
+    sourceDirection: "",
   });
 
   const buyingRef = useRef(false);
   const processedRef = useRef(new Set());
   const botContractsRef = useRef(new Map());
+  const activeReplayTicksRef = useRef(new Map());
+  const lastObservedPriceRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -423,6 +519,55 @@ export default function FreshEdgeBot() {
       // Storage can be unavailable in private mode.
     }
   }, [stats]);
+
+
+  useEffect(() => {
+    const numericPrice = Number(currentPrice);
+
+    if (!Number.isFinite(numericPrice)) return;
+    if (lastObservedPriceRef.current === numericPrice) return;
+
+    lastObservedPriceRef.current = numericPrice;
+
+    for (const [contractId, trade] of botContractsRef.current.entries()) {
+      if (trade.symbol !== symbol) continue;
+
+      const current =
+        activeReplayTicksRef.current.get(contractId) || [];
+
+      activeReplayTicksRef.current.set(
+        contractId,
+        [
+          ...current,
+          {
+            time: Date.now(),
+            price: numericPrice,
+            confidence: Number(analysis.confidence || 0),
+            quality: Number(analysis.quality || 0),
+            continuation: Number(analysis.continuation || 0),
+            noise: Number(analysis.noise || 0),
+            reversal: Number(analysis.reversalRisk || 0),
+            direction: analysis.direction || "WAIT",
+          },
+        ].slice(
+          -Math.max(
+            10,
+            Number(settings.replayTickLimit || 40)
+          )
+        )
+      );
+    }
+  }, [
+    currentPrice,
+    symbol,
+    analysis.confidence,
+    analysis.quality,
+    analysis.continuation,
+    analysis.noise,
+    analysis.reversalRisk,
+    analysis.direction,
+    settings.replayTickLimit,
+  ]);
 
   const appendTimeline = useCallback(
     (type, detail, extra = {}) => {
@@ -820,10 +965,25 @@ export default function FreshEdgeBot() {
     }));
   }, [currentPrice, symbol, recoveryState.active]);
 
+  const recoveryPolicy = useMemo(
+    () =>
+      freshEdgeRecoveryPolicy(
+        recoveryState.cause,
+        settings
+      ),
+    [recoveryState.cause, settings]
+  );
+
   const recoveryReady =
     !recoveryState.active ||
-    (symbol !== recoveryState.sourceSymbol &&
-      recoveryState.freshTicks >= recoveryState.requiredTicks);
+    (
+      symbol !== recoveryState.sourceSymbol &&
+      recoveryState.freshTicks >= recoveryState.requiredTicks &&
+      !(
+        recoveryPolicy.action === "BLOCK_SAME_DIRECTION" &&
+        analysis.direction === recoveryState.sourceDirection
+      )
+    );
 
 
 
@@ -1140,7 +1300,14 @@ export default function FreshEdgeBot() {
       activeBotTrades.length >=
         Number(settings.maximumOpenTrades) ||
       confirmation.ticks <
-        Number(settings.confirmationTicks) ||
+        (
+          Number(settings.confirmationTicks) +
+          (
+            recoveryState.active
+              ? Number(recoveryPolicy.extraTicks || 0)
+              : 0
+          )
+        ) ||
       analysis.decision !== "BUY" ||
       !analysis.direction
     ) {
@@ -1156,6 +1323,9 @@ export default function FreshEdgeBot() {
             ? "CALL"
             : "PUT";
 
+        const orderSentAt = performance.now();
+        const wallClockSentAt = Date.now();
+
         const response = await placeTrade({
           contractType,
           amount: Math.max(
@@ -1163,10 +1333,22 @@ export default function FreshEdgeBot() {
             Number(settings.stake || 0.35)
           ),
           basis: "stake",
-          duration: Number(settings.duration || 20),
+          duration:
+            Number(settings.duration || 20) +
+            (
+              recoveryState.active
+                ? Number(recoveryPolicy.durationExtra || 0)
+                : 0
+            ),
           durationUnit: settings.durationUnit || "s",
           symbol,
         });
+
+        const orderResponseAt = performance.now();
+        const orderLatencyMs = Math.max(
+          0,
+          orderResponseAt - orderSentAt
+        );
 
         const contractId = contractIdOf(response);
 
@@ -1208,14 +1390,39 @@ export default function FreshEdgeBot() {
             rankedMarkets.findIndex(
               (item) => item.symbol === symbol
             ) + 1,
+          entryPrice: Number(currentPrice),
+          entryTickSnapshot: prices
+            .slice(
+              -Math.max(
+                4,
+                Number(settings.entryTickSnapshot || 12)
+              )
+            )
+            .map((price, index) => ({
+              index,
+              price: Number(price),
+            })),
+          recoveryPolicyAtEntry:
+            recoveryState.active
+              ? { ...recoveryPolicy }
+              : null,
+          orderSentAt: wallClockSentAt,
+          orderLatencyMs,
           openedAt: Date.now(),
           stake: Number(settings.stake || 0.35),
         });
 
+        activeReplayTicksRef.current.set(
+          contractId,
+          []
+        );
+
         setMessage(
           `${analysis.direction} opened on ${market?.label || symbol} at ${analysis.confidence.toFixed(
             1
-          )}% confidence.`
+          )}% confidence · order response ${orderLatencyMs.toFixed(
+            0
+          )}ms.`
         );
         appendTimeline(
           "OPEN",
@@ -1223,7 +1430,9 @@ export default function FreshEdgeBot() {
             1
           )}% · Q ${analysis.quality.toFixed(
             1
-          )}% · ${settings.duration}${settings.durationUnit}.`,
+          )}% · order response ${orderLatencyMs.toFixed(
+            0
+          )}ms.`,
           {
             contractId,
             direction: analysis.direction,
@@ -1259,6 +1468,9 @@ export default function FreshEdgeBot() {
     recoveryReady,
     confidenceStability.ready,
     recoveryState,
+    recoveryPolicy,
+    currentPrice,
+    prices,
     timeline,
     confidenceTrail,
     waitReasons,
@@ -1286,10 +1498,29 @@ export default function FreshEdgeBot() {
 
       const result = resultOf(contract);
       const profit = profitOf(contract, original.stake);
+      const replayTicks =
+        activeReplayTicksRef.current.get(id) || [];
+
+      activeReplayTicksRef.current.delete(id);
+
       const diagnosis = diagnoseFreshEdgeTrade(
         original,
         result
       );
+
+      const exitAnalysis = replayTicks.at(-1) || null;
+      const confidenceChange = exitAnalysis
+        ? Number(exitAnalysis.confidence || 0) -
+          Number(original.confidence || 0)
+        : 0;
+      const continuationChange = exitAnalysis
+        ? Number(exitAnalysis.continuation || 0) -
+          Number(original.continuation || 0)
+        : 0;
+      const reversalChange = exitAnalysis
+        ? Number(exitAnalysis.reversal || 0) -
+          Number(original.reversalRisk || 0)
+        : 0;
 
       setStats((current) => ({
         runs: current.runs + 1,
@@ -1303,6 +1534,13 @@ export default function FreshEdgeBot() {
             result,
             profit,
             diagnosis,
+            replayTicks,
+            exitAnalysis,
+            replayDelta: {
+              confidence: confidenceChange,
+              continuation: continuationChange,
+              reversal: reversalChange,
+            },
             settledAt: Date.now(),
           },
           ...current.history,
@@ -1328,10 +1566,19 @@ export default function FreshEdgeBot() {
             profit,
           }
         );
+        const nextRecoveryPolicy =
+          freshEdgeRecoveryPolicy(
+            diagnosis.code,
+            settings
+          );
+
         setRecoveryState({
           active: true,
           sourceSymbol: original.symbol,
-          requiredTicks: Number(settings.freshRecoveryTicks || 12),
+          sourceDirection: original.direction,
+          requiredTicks: Number(
+            nextRecoveryPolicy.freshTicks
+          ),
           freshTicks: 0,
           cause: diagnosis.code,
         });
@@ -1361,6 +1608,7 @@ export default function FreshEdgeBot() {
           requiredTicks: 0,
           freshTicks: 0,
           cause: "",
+          sourceDirection: "",
         });
         setMarketStartedAt(Date.now());
       }
@@ -1405,6 +1653,7 @@ export default function FreshEdgeBot() {
       requiredTicks: 0,
       freshTicks: 0,
       cause: "",
+      sourceDirection: "",
     });
     processedRef.current.clear();
     botContractsRef.current.clear();
@@ -1421,9 +1670,9 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V6.1</h1>
+            <h1>FreshEdge AI V7</h1>
             <p>
-              Confidence stability · scanner reasons · learning changes · replay
+              Deep replay · latency telemetry · diagnosis-based recovery
             </p>
           </div>
 
@@ -1534,7 +1783,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeV5Decision">
           <header>
             <div>
-              <small>V6 LIVE DECISION</small>
+              <small>V7 LIVE DECISION</small>
               <h3>Confidence movement and WAIT reasons</h3>
             </div>
             <strong>
@@ -1617,17 +1866,62 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeRecoveryPanel">
           <header>
             <div>
-              <small>V6 FRESH RECOVERY</small>
+              <small>V7 DIAGNOSIS RECOVERY</small>
               <h3>No old-signal recovery</h3>
             </div>
             <strong>{recoveryState.active ? "REBUILDING" : "NORMAL"}</strong>
           </header>
           <div>
-            <article><span>Source market</span><strong>{recoveryState.sourceSymbol || "NONE"}</strong></article>
-            <article><span>Fresh ticks</span><strong>{recoveryState.freshTicks}/{recoveryState.requiredTicks || settings.freshRecoveryTicks}</strong></article>
-            <article><span>Cause</span><strong>{recoveryState.cause || "NONE"}</strong></article>
-            <article><span>Entry permission</span><strong>{recoveryReady ? "READY" : "WAIT"}</strong></article>
+            <article>
+              <span>Source market</span>
+              <strong>{recoveryState.sourceSymbol || "NONE"}</strong>
+            </article>
+            <article>
+              <span>Fresh ticks</span>
+              <strong>
+                {recoveryState.freshTicks}/
+                {recoveryState.requiredTicks ||
+                  settings.freshRecoveryTicks}
+              </strong>
+            </article>
+            <article>
+              <span>Cause</span>
+              <strong>{recoveryState.cause || "NONE"}</strong>
+            </article>
+            <article>
+              <span>Recovery action</span>
+              <strong>
+                {recoveryState.active
+                  ? recoveryPolicy.action
+                  : "NORMAL"}
+              </strong>
+            </article>
+            <article>
+              <span>Extra confirmations</span>
+              <strong>
+                {recoveryState.active
+                  ? recoveryPolicy.extraTicks
+                  : 0}
+              </strong>
+            </article>
+            <article>
+              <span>Duration adjustment</span>
+              <strong>
+                {recoveryState.active
+                  ? `+${recoveryPolicy.durationExtra}s`
+                  : "0s"}
+              </strong>
+            </article>
+            <article>
+              <span>Entry permission</span>
+              <strong>{recoveryReady ? "READY" : "WAIT"}</strong>
+            </article>
           </div>
+          <p>
+            {recoveryState.active
+              ? recoveryPolicy.description
+              : "Normal fresh-entry rules apply."}
+          </p>
         </section>
 
         <section className="freshEdgeV4Live">
@@ -1670,7 +1964,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeScannerBoard">
           <header>
             <div>
-              <small>V6 MARKET SCANNER</small>
+              <small>V7 MARKET SNAPSHOT SCANNER</small>
               <h3>Recent market decisions and rejection reasons</h3>
             </div>
             <strong>{scannerBoard.length} SNAPSHOTS</strong>
@@ -1775,7 +2069,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeLearningChanges">
           <header>
             <div>
-              <small>V6 SELF-CORRECTION</small>
+              <small>V7 SELF-CORRECTION</small>
               <h3>How settled trades changed the filters</h3>
             </div>
             <strong>
@@ -1992,6 +2286,8 @@ export default function FreshEdgeBot() {
             ["Rank min", "rankingMinimumScore", 30, 90, 1],
             ["Stability ticks", "stabilityTicks", 2, 8, 1],
             ["Max confidence drop", "maximumConfidenceDrop", 0.5, 15, 0.5],
+            ["Replay ticks", "replayTickLimit", 10, 100, 5],
+            ["Latency warning", "latencyWarningMs", 100, 5000, 100],
             ["Recovery ticks", "freshRecoveryTicks", 6, 40, 1],
             ["Wait estimate", "waitEstimateSeconds", 1, 15, 1],
           ].map(([label, key, min, max, step]) => (
@@ -2017,6 +2313,61 @@ export default function FreshEdgeBot() {
         <div className="freshEdgeMessage">
           {tradeError || message}
         </div>
+
+        <section className="freshEdgeV7Telemetry">
+          <header>
+            <div>
+              <small>V7 EXECUTION TELEMETRY</small>
+              <h3>Client-to-Deriv order response timing</h3>
+            </div>
+            <strong>
+              {stats.history[0]?.orderLatencyMs
+                ? `${Number(
+                    stats.history[0].orderLatencyMs
+                  ).toFixed(0)}ms`
+                : "NO SAMPLE"}
+            </strong>
+          </header>
+
+          <div>
+            <article>
+              <span>Latest response</span>
+              <strong>
+                {stats.history[0]?.orderLatencyMs
+                  ? `${Number(
+                      stats.history[0].orderLatencyMs
+                    ).toFixed(0)} ms`
+                  : "—"}
+              </strong>
+            </article>
+            <article>
+              <span>Latency status</span>
+              <strong>
+                {Number(
+                  stats.history[0]?.orderLatencyMs || 0
+                ) > Number(settings.latencyWarningMs)
+                  ? "SLOW"
+                  : stats.history[0]?.orderLatencyMs
+                  ? "NORMAL"
+                  : "WAITING"}
+              </strong>
+            </article>
+            <article>
+              <span>Replay ticks</span>
+              <strong>
+                {stats.history[0]?.replayTicks?.length || 0}
+              </strong>
+            </article>
+            <article>
+              <span>Measurement</span>
+              <strong>CLIENT → API RESPONSE</strong>
+            </article>
+          </div>
+          <p>
+            This is browser request-to-response time. It is not a
+            guaranteed broker execution timestamp.
+          </p>
+        </section>
 
         <section className="freshEdgeBottom">
           <div className="freshEdgeExecution">
@@ -2081,7 +2432,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeReplay">
           <header>
             <div>
-              <small>V6 TRADE REPLAY</small>
+              <small>V7 DEEP TRADE REPLAY</small>
               <h3>Open a settled trade to inspect its signal</h3>
             </div>
             <strong>{selectedReplayId ? "OPEN" : "SELECT TRADE"}</strong>
@@ -2120,6 +2471,145 @@ export default function FreshEdgeBot() {
             );
           })()}
         </section>
+
+        {selectedReplay && (
+          <section className="freshEdgeV7DeepReplay">
+            <header>
+              <div>
+                <small>V7 TICK-BY-TICK REPLAY</small>
+                <h3>
+                  {selectedReplay.market} ·{" "}
+                  {selectedReplay.direction}
+                </h3>
+              </div>
+              <strong>{selectedReplay.result}</strong>
+            </header>
+
+            <div className="freshEdgeV7ReplaySummary">
+              <article>
+                <span>Entry confidence</span>
+                <strong>
+                  {Number(
+                    selectedReplay.confidence || 0
+                  ).toFixed(1)}
+                  %
+                </strong>
+              </article>
+              <article>
+                <span>Confidence change</span>
+                <strong>
+                  {Number(
+                    selectedReplay.replayDelta?.confidence || 0
+                  ) >= 0
+                    ? "+"
+                    : ""}
+                  {Number(
+                    selectedReplay.replayDelta?.confidence || 0
+                  ).toFixed(1)}
+                  %
+                </strong>
+              </article>
+              <article>
+                <span>Continuation change</span>
+                <strong>
+                  {Number(
+                    selectedReplay.replayDelta
+                      ?.continuation || 0
+                  ) >= 0
+                    ? "+"
+                    : ""}
+                  {Number(
+                    selectedReplay.replayDelta
+                      ?.continuation || 0
+                  ).toFixed(1)}
+                  %
+                </strong>
+              </article>
+              <article>
+                <span>Reversal change</span>
+                <strong>
+                  {Number(
+                    selectedReplay.replayDelta?.reversal || 0
+                  ) >= 0
+                    ? "+"
+                    : ""}
+                  {Number(
+                    selectedReplay.replayDelta?.reversal || 0
+                  ).toFixed(1)}
+                  %
+                </strong>
+              </article>
+              <article>
+                <span>Order response</span>
+                <strong>
+                  {Number(
+                    selectedReplay.orderLatencyMs || 0
+                  ).toFixed(0)}
+                  ms
+                </strong>
+              </article>
+              <article>
+                <span>Recovery logic</span>
+                <strong>
+                  {selectedReplay.recoveryPolicyAtEntry
+                    ?.action || "NORMAL"}
+                </strong>
+              </article>
+            </div>
+
+            <div className="freshEdgeV7Ticks">
+              {(selectedReplay.replayTicks || []).length ? (
+                selectedReplay.replayTicks.map(
+                  (tick, index) => (
+                    <article
+                      key={`${tick.time}-${index}`}
+                      className={
+                        index === 0 ? "entry" : ""
+                      }
+                    >
+                      <time>
+                        {new Date(
+                          tick.time
+                        ).toLocaleTimeString()}
+                      </time>
+                      <strong>
+                        {Number(tick.price).toFixed(
+                          market?.decimals || 3
+                        )}
+                      </strong>
+                      <span>
+                        C{" "}
+                        {Number(
+                          tick.confidence || 0
+                        ).toFixed(1)}
+                        %
+                      </span>
+                      <span>
+                        K{" "}
+                        {Number(
+                          tick.continuation || 0
+                        ).toFixed(1)}
+                        %
+                      </span>
+                      <span>
+                        R{" "}
+                        {Number(
+                          tick.reversal || 0
+                        ).toFixed(1)}
+                        %
+                      </span>
+                    </article>
+                  )
+                )
+              ) : (
+                <p>
+                  No post-entry ticks were captured. This can happen
+                  when the bot switches away from the contract market.
+                </p>
+              )}
+            </div>
+          </section>
+        )}
 
         <section className="freshEdgeJournal">
           <header>
@@ -2201,7 +2691,7 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V6.1 fixes initialization order and blocks falling-confidence entries, explains scanner rejections and shows bounded learning changes. Recent snapshots are not simultaneous multi-market feeds. Test on Demo.
+          FreshEdge V7 records browser-to-API latency, tick replay and diagnosis-based recovery without increasing stake. Replay ticks are captured only while the selected market remains active. Test on Demo.
         </footer>
       </main>
     </div>
