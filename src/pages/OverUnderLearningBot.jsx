@@ -12,10 +12,10 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:isolated:over-under:v27:learning";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v27:market-cache";
+const MEMORY_KEY = "edgepilot:isolated:over-under:v28:learning";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v28:market-cache";
 const OVER_UNDER_NAMESPACE =
-  "edgepilot:isolated:over-under:v27";
+  "edgepilot:isolated:over-under:v28";
 const OVER_UNDER_SESSION_KEY =
   `${OVER_UNDER_NAMESPACE}:session`;
 const OVER_UNDER_AUDIO_KEY =
@@ -2090,7 +2090,7 @@ export default function OverUnderLearningBot() {
   const [cacheFreshnessSeconds, setCacheFreshnessSeconds] =
     useState(90);
   const [fastScanMilliseconds, setFastScanMilliseconds] =
-    useState(650);
+    useState(350);
   const [minimumLiveTicksAfterSwitch, setMinimumLiveTicksAfterSwitch] =
     useState(4);
   const [balancedSidesEnabled, setBalancedSidesEnabled] =
@@ -2120,11 +2120,11 @@ export default function OverUnderLearningBot() {
   const [portfolioWatchEnabled, setPortfolioWatchEnabled] =
     useState(true);
   const [watchRefreshMilliseconds, setWatchRefreshMilliseconds] =
-    useState(900);
+    useState(500);
   const [readyLiveConfirmationTicks, setReadyLiveConfirmationTicks] =
     useState(4);
   const [idleRescanSeconds, setIdleRescanSeconds] =
-    useState(10);
+    useState(7);
   const [marketRearmSeconds, setMarketRearmSeconds] =
     useState(8);
   const [postSettlementRearmMs, setPostSettlementRearmMs] =
@@ -2138,9 +2138,23 @@ export default function OverUnderLearningBot() {
   const [adaptiveMaximumRisk, setAdaptiveMaximumRisk] =
     useState(42);
   const [adaptiveStableTicks, setAdaptiveStableTicks] =
-    useState(3);
+    useState(2);
   const [adaptiveConfirmTicks, setAdaptiveConfirmTicks] =
-    useState(5);
+    useState(3);
+  const [oneMinuteEngineEnabled, setOneMinuteEngineEnabled] =
+    useState(true);
+  const [oneMinuteMinimumSamples, setOneMinuteMinimumSamples] =
+    useState(60);
+  const [negativeEvRotateSeconds, setNegativeEvRotateSeconds] =
+    useState(4);
+  const [regimeResetSensitivity, setRegimeResetSensitivity] =
+    useState(18);
+  const [regimeEpoch, setRegimeEpoch] =
+    useState(0);
+  const lastRegimeFingerprintRef =
+    useRef("");
+  const negativeEvStartedAtRef =
+    useRef(0);
   const [adaptiveArmState, setAdaptiveArmState] =
     useState({
       key: "",
@@ -3134,9 +3148,190 @@ export default function OverUnderLearningBot() {
   ]);
 
 
+  const cachedCurrentMarket =
+    marketBrowserCache?.[symbol] || {};
+
+  const oneMinuteEvidenceSamples =
+    Math.max(
+      Number(analysis.total || 0),
+      Number(
+        cachedCurrentMarket.analysisTotal || 0
+      ),
+      Array.isArray(
+        cachedCurrentMarket.recentDigits
+      )
+        ? cachedCurrentMarket.recentDigits.length
+        : 0
+    );
+
+  const oneMinuteEvidenceReady =
+    !oneMinuteEngineEnabled ||
+    oneMinuteEvidenceSamples >=
+      Number(
+        oneMinuteMinimumSamples || 60
+      );
+
+  const liveRegimeFingerprint = useMemo(() => {
+    const recent =
+      Array.isArray(analysis.recentDigits)
+        ? analysis.recentDigits.slice(-60)
+        : [];
+
+    if (recent.length < 20) {
+      return "WARMING";
+    }
+
+    const low =
+      recent.filter(
+        (digit) => Number(digit) <= 4
+      ).length;
+
+    const high =
+      recent.length - low;
+
+    const even =
+      recent.filter(
+        (digit) => Number(digit) % 2 === 0
+      ).length;
+
+    const concentration =
+      Math.max(
+        ...Array.from(
+          { length: 10 },
+          (_, digit) =>
+            recent.filter(
+              (value) =>
+                Number(value) === digit
+            ).length
+        )
+      );
+
+    const lowHighSkew =
+      Math.round(
+        (
+          Math.abs(low - high) /
+          recent.length
+        ) *
+          100
+      );
+
+    const paritySkew =
+      Math.round(
+        (
+          Math.abs(
+            even -
+              (recent.length - even)
+          ) /
+          recent.length
+        ) *
+          100
+      );
+
+    const concentrationPct =
+      Math.round(
+        (
+          concentration /
+          recent.length
+        ) *
+          100
+      );
+
+    return [
+      lowHighSkew,
+      paritySkew,
+      concentrationPct,
+      String(
+        regimeAnalysis?.regime ||
+          regimeAnalysis?.label ||
+          "UNKNOWN"
+      ),
+    ].join(":");
+  }, [
+    analysis.recentDigits,
+    regimeAnalysis,
+  ]);
+
+  useEffect(() => {
+    if (
+      !running ||
+      liveRegimeFingerprint === "WARMING"
+    ) {
+      return;
+    }
+
+    const previous =
+      lastRegimeFingerprintRef.current;
+
+    if (!previous) {
+      lastRegimeFingerprintRef.current =
+        liveRegimeFingerprint;
+      return;
+    }
+
+    const previousParts =
+      previous.split(":");
+    const currentParts =
+      liveRegimeFingerprint.split(":");
+
+    const numericShift =
+      [0, 1, 2].reduce(
+        (total, index) =>
+          total +
+          Math.abs(
+            Number(
+              currentParts[index] || 0
+            ) -
+              Number(
+                previousParts[index] || 0
+              )
+          ),
+        0
+      );
+
+    const namedRegimeChanged =
+      previousParts[3] !== currentParts[3];
+
+    if (
+      numericShift >=
+        Number(
+          regimeResetSensitivity || 18
+        ) ||
+      namedRegimeChanged
+    ) {
+      lastRegimeFingerprintRef.current =
+        liveRegimeFingerprint;
+      confirmationRef.current = {
+        key: "",
+        ticks: 0,
+      };
+      setAdaptiveArmState({
+        key: "",
+        stage: "WATCH",
+        ticks: 0,
+        score: 0,
+        probability: 0,
+      });
+      setRegimeEpoch(
+        (current) => current + 1
+      );
+      scanStartedAtRef.current =
+        Date.now();
+      nextEntryAtRef.current =
+        Date.now() + 500;
+      setStatusMessage(
+        "REGIME CHANGE DETECTED · Old setup cleared · rebuilding one-minute evidence"
+      );
+    }
+  }, [
+    running,
+    liveRegimeFingerprint,
+    regimeResetSensitivity,
+  ]);
+
   const adaptiveFallbackCandidate = useMemo(() => {
     if (
       !adaptiveArmingEnabled ||
+      !oneMinuteEvidenceReady ||
       universalDecision.selected ||
       portfolioBridgeCandidate
     ) {
@@ -3185,6 +3380,7 @@ export default function OverUnderLearningBot() {
     );
   }, [
     adaptiveArmingEnabled,
+    oneMinuteEvidenceReady,
     universalDecision.selected,
     portfolioBridgeCandidate,
     rankedCandidates,
@@ -3590,7 +3786,16 @@ export default function OverUnderLearningBot() {
 
   const recoverySetupPass =
     !smartRecoveryActive ||
-    bestKey !== recovery.previousLossKey;
+    (
+      bestKey !==
+        recovery.previousLossKey &&
+      Number(
+        best.layered?.simulation
+          ?.expectedValue || -1
+      ) > Number(evFloor || 0) &&
+      adaptiveArmState.key !==
+        recovery.previousLossKey
+    );
 
   const portfolioBridgeActive = Boolean(
     portfolioBridgeCandidate &&
@@ -3602,6 +3807,7 @@ export default function OverUnderLearningBot() {
   );
 
   const commonEntrySafety =
+    oneMinuteEvidenceReady &&
     marketWarmReady &&
     !protectionActive &&
     !marketRunLocked &&
@@ -3745,6 +3951,86 @@ export default function OverUnderLearningBot() {
     strictEntryReady ||
     bridgeEntryReady ||
     adaptiveEntryReady;
+
+  useEffect(() => {
+    if (
+      !running ||
+      hasOpenTrade ||
+      tradeBusy ||
+      switchBusyRef.current ||
+      !oneMinuteEvidenceReady
+    ) {
+      negativeEvStartedAtRef.current = 0;
+      return;
+    }
+
+    const topCandidate =
+      rankedCandidates[0] || null;
+
+    if (!topCandidate) {
+      negativeEvStartedAtRef.current = 0;
+      return;
+    }
+
+    const expectedValue =
+      Number(
+        topCandidate?.layered
+          ?.simulation?.expectedValue ||
+          -1
+      );
+
+    if (expectedValue > Number(evFloor || 0)) {
+      negativeEvStartedAtRef.current = 0;
+      return;
+    }
+
+    if (!negativeEvStartedAtRef.current) {
+      negativeEvStartedAtRef.current =
+        Date.now();
+      return;
+    }
+
+    const waited =
+      Date.now() -
+      negativeEvStartedAtRef.current;
+
+    if (
+      waited >=
+      Math.max(
+        2,
+        Number(
+          negativeEvRotateSeconds || 4
+        )
+      ) *
+        1000
+    ) {
+      negativeEvStartedAtRef.current =
+        Date.now();
+      confirmationRef.current = {
+        key: "",
+        ticks: 0,
+      };
+      setAdaptiveArmState({
+        key: "",
+        stage: "WATCH",
+        ticks: 0,
+        score: 0,
+        probability: 0,
+      });
+      void switchMarket(
+        `FAST REJECT · ${topCandidate.side} ${topCandidate.barrier} EV ${expectedValue.toFixed(3)} · rotating`
+      );
+    }
+  }, [
+    running,
+    hasOpenTrade,
+    tradeBusy,
+    oneMinuteEvidenceReady,
+    rankedCandidates,
+    evFloor,
+    negativeEvRotateSeconds,
+    symbol,
+  ]);
 
   useEffect(() => {
     if (!running || !entryReady) {
@@ -5258,7 +5544,7 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
     setMessage(
-      "V27 running: isolated adaptive arming scanner, live bridge, auto-unlock and continuous rescan."
+      "V28 running: one-minute cached evidence, regime reset, fast negative-EV rotation and isolated recovery."
     );
   }
 
@@ -5501,8 +5787,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V27"
-          subtitle="Adaptive arming scanner · WATCH → PREPARE → ARMED → CONFIRM"
+          title="Over/Under Adaptive Learning Bot V28"
+          subtitle="One-minute regime engine · cached evidence · fast negative-EV rotation"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -5584,6 +5870,8 @@ export default function OverUnderLearningBot() {
                     bestGlobalMarket.market !== symbol
                   )
                 ? "GLOBAL PORTFOLIO — Current market is not the top ELITE/GOOD market. Trade blocked while switching."
+                : !oneMinuteEvidenceReady
+                ? `ONE-MINUTE ENGINE — Building evidence ${oneMinuteEvidenceSamples}/${oneMinuteMinimumSamples}.`
                 : adaptiveEntryReady
                 ? `ADAPTIVE ARMED — ${best.side} ${best.barrier} remained stable for ${adaptiveArmState.ticks} ticks.`
                 : adaptiveFallbackCandidate
@@ -5776,6 +6064,89 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>One-minute evidence engine</span>
+            <select
+              value={
+                oneMinuteEngineEnabled
+                  ? "ON"
+                  : "OFF"
+              }
+              onChange={(event) =>
+                setOneMinuteEngineEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — cached 60-sample evidence
+              </option>
+              <option value="OFF">
+                OFF — live gates only
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Minimum evidence samples</span>
+            <input
+              type="number"
+              min="30"
+              max="180"
+              step="5"
+              value={oneMinuteMinimumSamples}
+              onChange={(event) =>
+                setOneMinuteMinimumSamples(
+                  clamp(
+                    event.target.value,
+                    30,
+                    180
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Negative EV rotate seconds</span>
+            <input
+              type="number"
+              min="2"
+              max="20"
+              step="1"
+              value={negativeEvRotateSeconds}
+              onChange={(event) =>
+                setNegativeEvRotateSeconds(
+                  clamp(
+                    event.target.value,
+                    2,
+                    20
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Regime reset sensitivity</span>
+            <input
+              type="number"
+              min="8"
+              max="60"
+              step="1"
+              value={regimeResetSensitivity}
+              onChange={(event) =>
+                setRegimeResetSensitivity(
+                  clamp(
+                    event.target.value,
+                    8,
+                    60
+                  )
                 )
               }
             />
@@ -7180,6 +7551,41 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 NONE / WAIT can never execute
+              </small>
+            </article>
+
+            <article>
+              <span>One-minute evidence</span>
+              <strong>
+                {oneMinuteEvidenceSamples}/
+                {oneMinuteMinimumSamples}
+              </strong>
+              <small>
+                {oneMinuteEvidenceReady
+                  ? "READY — cache/live sample accepted"
+                  : "BUILDING — no entry yet"}
+              </small>
+            </article>
+
+            <article>
+              <span>Regime epoch</span>
+              <strong>
+                {regimeEpoch}
+              </strong>
+              <small>
+                {liveRegimeFingerprint}
+              </small>
+            </article>
+
+            <article>
+              <span>Recovery state</span>
+              <strong>
+                {smartRecoveryActive
+                  ? `ACTIVE ${recovery.attempts || 1}/2`
+                  : "NORMAL"}
+              </strong>
+              <small>
+                Debt {Number(recoveryDebt || 0).toFixed(2)} · no stale-regime recovery
               </small>
             </article>
 
