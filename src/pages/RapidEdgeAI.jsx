@@ -236,6 +236,43 @@ function marketPerformance(trades, symbol) {
   };
 }
 
+function contractBarrierPenalty(candidate) {
+  const side = String(candidate?.side || "");
+  const barrier = Number(candidate?.barrier ?? -1);
+
+  if (side === "OVER") {
+    if (barrier >= 4) return 36;
+    if (barrier === 3) return 22;
+    if (barrier === 2) return 8;
+    return 0;
+  }
+
+  if (side === "UNDER") {
+    if (barrier <= 5) return 36;
+    if (barrier === 6) return 22;
+    if (barrier === 7) return 8;
+    return 0;
+  }
+
+  return 18;
+}
+
+function marketSnapshotScore(snapshot) {
+  if (!snapshot) return -999;
+
+  return (
+    Number(snapshot.bestQuality || 0) * 0.34 +
+    Number(snapshot.bestExecution || 0) * 0.26 +
+    Number(snapshot.bestProbability || 0) * 0.22 +
+    Math.max(
+      -20,
+      Math.min(20, Number(snapshot.bestEv || 0) * 100)
+    ) * 0.18 -
+    Number(snapshot.bestRisk || 100) * 0.30 -
+    Number(snapshot.lossStreak || 0) * 12
+  );
+}
+
 function enrichCandidate(
   candidate,
   trades,
@@ -283,8 +320,12 @@ function enrichCandidate(
     100
   );
 
+  const barrierPenalty =
+    contractBarrierPenalty(candidate);
+
   const adaptiveRisk = clamp(
     Number(candidate.risk || 100) +
+      barrierPenalty +
       contract.lossStreak * 13 +
       market.lossStreak * 10 +
       Math.max(0, 60 - contract.winRate) *
@@ -324,6 +365,7 @@ function enrichCandidate(
     marketQuality,
     executionConfidence,
     adaptiveRisk,
+    barrierPenalty,
     qualityScore,
     calibratedProbability,
     contractWinRate: contract.winRate,
@@ -561,6 +603,8 @@ export default function RapidEdgeAI() {
     useState(Date.now());
   const [switches, setSwitches] = useState(0);
   const [lastSwitchAt, setLastSwitchAt] = useState(0);
+  const [marketPortfolio, setMarketPortfolio] = useState({});
+  const [preferredMarket, setPreferredMarket] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [pauseUntil, setPauseUntil] = useState(0);
   const [marketBlocks, setMarketBlocks] = useState({});
@@ -684,11 +728,19 @@ export default function RapidEdgeAI() {
             now
         );
       })
-      .sort(
-        (a, b) =>
-          Number(b.qualityScore || 0) -
-          Number(a.qualityScore || 0)
-      );
+      .sort((a, b) => {
+        const scoreA =
+          Number(a.qualityScore || 0) +
+          Number(a.expectedValue || 0) * 80 -
+          Number(a.barrierPenalty || 0) * 0.75;
+
+        const scoreB =
+          Number(b.qualityScore || 0) +
+          Number(b.expectedValue || 0) * 80 -
+          Number(b.barrierPenalty || 0) * 0.75;
+
+        return scoreB - scoreA;
+      });
   }, [
     analysis.candidates,
     trades,
@@ -707,6 +759,98 @@ export default function RapidEdgeAI() {
     !marketBlocked
       ? rankedCandidates[0] || null
       : null;
+
+
+  useEffect(() => {
+    if (!symbol || !digitQuality.ready) return;
+
+    const memory = marketPerformance(trades, symbol);
+
+    const snapshot = {
+      symbol,
+      updatedAt: Date.now(),
+      sample: digits.length,
+      uniqueDigits: digitQuality.unique,
+      bestContract: best?.contract || "NONE",
+      bestProbability: Number(
+        best?.calibratedProbability || 0
+      ),
+      bestQuality: Number(best?.qualityScore || 0),
+      bestExecution: Number(
+        best?.executionConfidence || 0
+      ),
+      bestRisk: Number(best?.adaptiveRisk || 100),
+      bestEv: Number(best?.expectedValue || -1),
+      lossStreak: Number(memory.lossStreak || 0),
+      winRate: Number(memory.winRate || 50),
+    };
+
+    snapshot.score = marketSnapshotScore(snapshot);
+
+    setMarketPortfolio((current) => ({
+      ...current,
+      [symbol]: snapshot,
+    }));
+  }, [
+    symbol,
+    digitQuality.ready,
+    digitQuality.unique,
+    digits.length,
+    best?.contract,
+    best?.calibratedProbability,
+    best?.qualityScore,
+    best?.executionConfidence,
+    best?.adaptiveRisk,
+    best?.expectedValue,
+    trades,
+  ]);
+
+  const portfolioRanking = useMemo(() => {
+    const now = clock;
+
+    return marketSymbols
+      .map((marketSymbol) => {
+        const snapshot = marketPortfolio[marketSymbol];
+
+        if (!snapshot) {
+          return {
+            symbol: marketSymbol,
+            status: "UNSEEN",
+            score: -999,
+          };
+        }
+
+        const ageMs =
+          now - Number(snapshot.updatedAt || 0);
+
+        return {
+          ...snapshot,
+          ageMs,
+          status: ageMs <= 90000 ? "READY" : "STALE",
+          score:
+            marketSnapshotScore(snapshot) -
+            Math.min(25, ageMs / 10000),
+        };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.score || -999) -
+          Number(a.score || -999)
+      );
+  }, [marketSymbols, marketPortfolio, clock]);
+
+  const portfolioBest =
+    portfolioRanking.find(
+      (row) =>
+        row.status === "READY" &&
+        Number(row.bestRisk || 100) < 48 &&
+        Number(row.bestQuality || 0) >= 52 &&
+        Number(row.bestEv || -1) >= -0.03
+    ) || null;
+
+  useEffect(() => {
+    setPreferredMarket(portfolioBest?.symbol || "");
+  }, [portfolioBest?.symbol]);
 
   const scanAgeMs =
     clock -
@@ -748,7 +892,8 @@ export default function RapidEdgeAI() {
     postLossRevalidated &&
     Number(best.calibratedProbability || 0) >= 68 &&
     Number(best.expectedValue || -1) >= -0.05 &&
-    Number(best.adaptiveRisk || 100) < 58 &&
+    Number(best.adaptiveRisk || 100) < 48 &&
+    Number(best.barrierPenalty || 0) <= 20 &&
     Number(best.contractLossStreak || 0) < 2 &&
     Number(best.marketLossStreak || 0) < 2;
 
@@ -928,16 +1073,43 @@ export default function RapidEdgeAI() {
         return;
       }
 
-      const currentIndex = Math.max(
-        0,
-        marketSymbols.indexOf(symbol)
+      const unseen = marketSymbols.find(
+        (marketSymbol) =>
+          !marketPortfolio[marketSymbol] &&
+          marketSymbol !== symbol
       );
 
+      const oldest = marketSymbols
+        .filter(
+          (marketSymbol) =>
+            marketSymbol !== symbol
+        )
+        .map((marketSymbol) => ({
+          symbol: marketSymbol,
+          updatedAt: Number(
+            marketPortfolio[marketSymbol]
+              ?.updatedAt || 0
+          ),
+        }))
+        .sort(
+          (a, b) => a.updatedAt - b.updatedAt
+        )[0]?.symbol;
+
+      const preferred =
+        preferredMarket &&
+        preferredMarket !== symbol
+          ? preferredMarket
+          : "";
+
       const next =
-        marketSymbols[
-          (currentIndex + 1) %
-            marketSymbols.length
-        ];
+        unseen ||
+        preferred ||
+        oldest ||
+        marketSymbols.find(
+          (marketSymbol) =>
+            marketSymbol !== symbol
+        ) ||
+        symbol;
 
       if (!next || next === symbol) return;
 
@@ -962,6 +1134,8 @@ export default function RapidEdgeAI() {
       loadingMarket,
       hasOpenTrade,
       lastSwitchAt,
+      marketPortfolio,
+      preferredMarket,
       symbol,
       changeSymbol,
     ]
@@ -1467,6 +1641,58 @@ export default function RapidEdgeAI() {
     }
   }, [openContracts, playTone]);
 
+  useEffect(() => {
+    if (
+      !running ||
+      hasOpenTrade ||
+      busyRef.current ||
+      loadingMarket
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+
+      if (now - Number(lastSwitchAt || 0) < 12000) {
+        return;
+      }
+
+      const unseenExists = marketSymbols.some(
+        (marketSymbol) =>
+          !marketPortfolio[marketSymbol]
+      );
+
+      const currentSnapshot =
+        marketPortfolio[symbol];
+
+      const currentIsStrong =
+        Boolean(currentSnapshot) &&
+        Number(currentSnapshot.bestQuality || 0) >= 68 &&
+        Number(currentSnapshot.bestRisk || 100) < 35 &&
+        Number(currentSnapshot.bestEv || -1) > 0;
+
+      if (unseenExists || !currentIsStrong) {
+        void rotateMarket(
+          unseenExists
+            ? "Portfolio scan · collecting rolling market data"
+            : "Portfolio scan · searching stronger safer market"
+        );
+      }
+    }, 1500);
+
+    return () => window.clearInterval(timer);
+  }, [
+    running,
+    hasOpenTrade,
+    loadingMarket,
+    lastSwitchAt,
+    marketSymbols,
+    marketPortfolio,
+    symbol,
+    rotateMarket,
+  ]);
+
   async function testQualifiedBuy() {
     setMessage("MANUAL TEST BUY · checking current qualified candidate");
 
@@ -1486,14 +1712,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.8 started · 8s/16s/28s entry ladder active."
+      "RapidEdge V4.9 started · continuous multi-market portfolio scan active."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.8 stopped.");
+    setMessage("RapidEdge V4.9 stopped.");
   }
 
   function reset() {
@@ -1504,6 +1730,8 @@ export default function RapidEdgeAI() {
     setPauseUntil(0);
     setMarketBlocks({});
     setContractBlocks({});
+    setMarketPortfolio({});
+    setPreferredMarket("");
     setLastSwitchAt(0);
     setPostLossAnchorCount(null);
     setPostLossMarket("");
@@ -1517,7 +1745,7 @@ export default function RapidEdgeAI() {
     setLastExecutionError("");
     setLastBuyRequestAt(0);
     setLoopStatus("IDLE");
-    setMessage("RapidEdge V4.8 session reset.");
+    setMessage("RapidEdge V4.9 session reset.");
   }
 
   return (
@@ -1526,8 +1754,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.8 · Guaranteed Scan Attempt"
-          subtitle="Strict 8s · balanced 16s · guarded attempt by 28s · switch after 35s"
+          title="RapidEdge AI V4.9 · Portfolio Market Scanner"
+          subtitle="Cycles every market · retains rolling 60-digit evidence · trades the strongest safer setup"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1582,7 +1810,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.8 ENTRY LADDER</small>
+            <small>V4.9 PORTFOLIO SCANNER</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -1937,6 +2165,46 @@ export default function RapidEdgeAI() {
           </article>
         </section>
 
+        <section className="oulPortfolioPanel">
+          <div className="oulSectionTitle">
+            <div>
+              <small>LIVE MARKET PORTFOLIO</small>
+              <h2>Each market keeps rolling scan data</h2>
+            </div>
+            <strong>
+              Best: {preferredMarket || "SCANNING"}
+            </strong>
+          </div>
+
+          <div className="oulPortfolioGrid">
+            {portfolioRanking.map((row) => (
+              <article
+                key={row.symbol}
+                className={
+                  row.symbol === symbol
+                    ? "current"
+                    : row.symbol === preferredMarket
+                    ? "preferred"
+                    : ""
+                }
+              >
+                <span>{row.symbol}</span>
+                <b>{row.bestContract || row.status}</b>
+                <small>
+                  Q {pct(row.bestQuality)} · E{" "}
+                  {pct(row.bestExecution)} · R{" "}
+                  {pct(row.bestRisk)}
+                </small>
+                <small>
+                  EV {Number(row.bestEv || 0).toFixed(3)}
+                  {" · "}Score{" "}
+                  {Number(row.score || 0).toFixed(1)}
+                </small>
+              </article>
+            ))}
+          </div>
+        </section>
+
         <section className="oulMainGrid">
           <article className="oulPanel">
             <header>
@@ -2017,6 +2285,12 @@ export default function RapidEdgeAI() {
                         candidate.adaptiveRisk
                       )}
                     </span>
+                    <span>
+                      Barrier penalty{" "}
+                      {Number(
+                        candidate.barrierPenalty || 0
+                      ).toFixed(0)}
+                    </span>
                   </div>
                 ))}
             </div>
@@ -2027,7 +2301,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.8 Trades</h2>
+              <h2>RapidEdge V4.9 Trades</h2>
             </div>
           </header>
 
@@ -2071,14 +2345,14 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.8 transactions yet.
+                No RapidEdge V4.9 transactions yet.
               </p>
             )}
           </div>
         </section>
 
         <p className="oulDisclaimer">
-          V4.8 targets at least one guarded demo attempt within about 30 seconds when feed and auth are healthy. It does not guarantee profit. Keep Real Account locked while testing.
+          V4.9 continuously scans markets, remembers each market's rolling 60-digit data, and prefers safer positive-EV entries. OVER 4+ and UNDER 5- are heavily penalized. Profit is not guaranteed. Test on demo.
         </p>
       </main>
     </div>

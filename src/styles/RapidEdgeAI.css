@@ -1592,3 +1592,73 @@
 .oulDecision.ready::after {
   content: "ENTRY LADDER PASSED";
 }
+
+
+/* RapidEdge V4.9 portfolio market scanner */
+.oulPortfolioPanel {
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid #205d78;
+  border-radius: 14px;
+  background: #061d2a;
+}
+
+.oulPortfolioGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.oulPortfolioGrid article {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #174b63;
+  border-radius: 8px;
+  background: #041722;
+}
+
+.oulPortfolioGrid article.current {
+  border-color: #31f2ba;
+}
+
+.oulPortfolioGrid article.preferred {
+  border-color: #ffd56a;
+  box-shadow: 0 0 14px rgba(255, 213, 106, .09);
+}
+
+.oulPortfolioGrid span,
+.oulPortfolioGrid b,
+.oulPortfolioGrid small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oulPortfolioGrid span {
+  color: #31f2ba;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.oulPortfolioGrid b {
+  margin: 3px 0;
+  color: #fff;
+  font-size: 11px;
+}
+
+.oulPortfolioGrid small {
+  color: #86b7ca;
+  font-size: 8px;
+}
+
+.oulDecision.ready::after {
+  content: "PORTFOLIO ENTRY SELECTED";
+}
+
+@media (max-width: 900px) {
+  .oulPortfolioGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
