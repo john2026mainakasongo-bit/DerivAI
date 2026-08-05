@@ -1587,3 +1587,8 @@
 .oulCandidates > div {
   min-height: 102px;
 }
+
+/* RapidEdge V4.8 entry ladder */
+.oulDecision.ready::after {
+  content: "ENTRY LADDER PASSED";
+}

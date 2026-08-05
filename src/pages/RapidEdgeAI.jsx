@@ -723,63 +723,65 @@ export default function RapidEdgeAI() {
   const strictQualityReady =
     Boolean(best) &&
     Number(best.expectedValue || -1) > 0 &&
-    Number(best.marketQuality || 0) >= 75 &&
-    Number(
-      best.executionConfidence || 0
-    ) >= 80 &&
-    Number(best.adaptiveRisk || 100) < 20 &&
-    Number(best.qualityScore || 0) >= 78 &&
+    Number(best.marketQuality || 0) >= 70 &&
+    Number(best.executionConfidence || 0) >= 74 &&
+    Number(best.adaptiveRisk || 100) < 25 &&
+    Number(best.qualityScore || 0) >= 72 &&
     Number(best.contractLossStreak || 0) === 0 &&
     Number(best.marketLossStreak || 0) === 0 &&
     postLossRevalidated;
 
   const fastQualityReady =
     Boolean(best) &&
-    Number(best.expectedValue || -1) >= -0.005 &&
-    Number(best.marketQuality || 0) >= 65 &&
-    Number(
-      best.executionConfidence || 0
-    ) >= 72 &&
-    Number(best.adaptiveRisk || 100) < 30 &&
-    Number(best.qualityScore || 0) >= 68 &&
+    Number(best.expectedValue || -1) >= -0.02 &&
+    Number(best.marketQuality || 0) >= 50 &&
+    Number(best.executionConfidence || 0) >= 55 &&
+    Number(best.adaptiveRisk || 100) < 48 &&
+    Number(best.qualityScore || 0) >= 52 &&
     Number(best.contractLossStreak || 0) < 2 &&
     Number(best.marketLossStreak || 0) < 2 &&
     postLossRevalidated;
 
+  const guardedAttemptReady =
+    Boolean(best) &&
+    digitQuality.ready &&
+    postLossRevalidated &&
+    Number(best.calibratedProbability || 0) >= 68 &&
+    Number(best.expectedValue || -1) >= -0.05 &&
+    Number(best.adaptiveRisk || 100) < 58 &&
+    Number(best.contractLossStreak || 0) < 2 &&
+    Number(best.marketLossStreak || 0) < 2;
+
   const dynamicFastWindow =
-    scanAgeMs >= 10000;
+    scanAgeMs >= 8000;
+
+  const guardedAttemptWindow =
+    scanAgeMs >= 28000;
 
   const qualityReady =
     strictQualityReady ||
-    (dynamicFastWindow && fastQualityReady);
+    (dynamicFastWindow && fastQualityReady) ||
+    (guardedAttemptWindow && guardedAttemptReady);
 
   const immediateQualityEntry =
     strictQualityReady &&
-    Number(best.calibratedProbability || 0) >=
-      88 &&
-    Number(best.executionConfidence || 0) >=
-      84;
+    Number(best.calibratedProbability || 0) >= 84 &&
+    Number(best.executionConfidence || 0) >= 78;
 
   const confirmationRequired =
     Boolean(best) &&
     qualityReady &&
     !immediateQualityEntry &&
-    Number(best.calibratedProbability || 0) >=
-      76;
+    !guardedAttemptWindow &&
+    Number(best.calibratedProbability || 0) >= 70;
 
   const confirmedQualityEntry =
     confirmationRequired &&
-    confirmationTicksCollected >= 2;
+    confirmationTicksCollected >= 1;
 
   const oneMinuteFallback =
-    Boolean(best) &&
-    digitQuality.ready &&
-    fastQualityReady &&
-    scanAgeMs >= 45000 &&
-    Number(best.calibratedProbability || 0) >=
-      74 &&
-    Number(best.qualityScore || 0) >= 66 &&
-    confirmationTicksCollected >= 2;
+    guardedAttemptWindow &&
+    guardedAttemptReady;
 
   const ladder = {
     ...baseLadder,
@@ -790,16 +792,18 @@ export default function RapidEdgeAI() {
     stage: immediateQualityEntry
       ? "STRICT_FAST"
       : oneMinuteFallback
-      ? "60S_BALANCED"
+      ? "28S_GUARDED"
       : confirmedQualityEntry &&
         strictQualityReady
       ? "STRICT_CONFIRM"
       : confirmedQualityEntry
       ? "FAST_CONFIRM"
       : confirmationRequired
-      ? "WAIT_2_TICKS"
+      ? "WAIT_1_TICK"
       : postLossRevalidated
-      ? dynamicFastWindow
+      ? guardedAttemptWindow
+        ? "GUARDED_SCAN"
+        : dynamicFastWindow
         ? "FAST_SCAN"
         : "STRICT_SCAN"
       : "POST_LOSS_RECHECK",
@@ -1191,7 +1195,7 @@ export default function RapidEdgeAI() {
       confirmationRequired &&
       confirmationTicksCollected < 2
     ) {
-      return `CONFIRM_TICKS_${confirmationTicksCollected}_OF_2`;
+      return `CONFIRM_TICKS_${confirmationTicksCollected}_OF_1`;
     }
     if (!ladder.qualified) return "NOT_QUALIFIED";
     if (hasOpenTrade) return "OPEN_TRADE_EXISTS";
@@ -1316,12 +1320,12 @@ export default function RapidEdgeAI() {
     if (
       digitQuality.ready &&
       !ladder.qualified &&
-      scanAgeMs >= 20000 &&
+      scanAgeMs >= 35000 &&
       !hasOpenTrade &&
       !busyRef.current
     ) {
       void rotateMarket(
-        "20s dynamic gate found no acceptable entry"
+        "35s entry ladder found no usable candidate"
       );
       setLastSettlementAt(Date.now());
     }
@@ -1482,14 +1486,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.7 started · strict-to-fast dynamic gate active."
+      "RapidEdge V4.8 started · 8s/16s/28s entry ladder active."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.7 stopped.");
+    setMessage("RapidEdge V4.8 stopped.");
   }
 
   function reset() {
@@ -1513,7 +1517,7 @@ export default function RapidEdgeAI() {
     setLastExecutionError("");
     setLastBuyRequestAt(0);
     setLoopStatus("IDLE");
-    setMessage("RapidEdge V4.7 session reset.");
+    setMessage("RapidEdge V4.8 session reset.");
   }
 
   return (
@@ -1522,8 +1526,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.7 · Dynamic Speed Gate"
-          subtitle="Strict gate for 10s · balanced fast gate after 10s · market switch after 20s"
+          title="RapidEdge AI V4.8 · Guaranteed Scan Attempt"
+          subtitle="Strict 8s · balanced 16s · guarded attempt by 28s · switch after 35s"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1578,7 +1582,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.7 DYNAMIC SPEED GATE</small>
+            <small>V4.8 ENTRY LADDER</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -1599,7 +1603,9 @@ export default function RapidEdgeAI() {
             <article>
               <span>Gate Mode</span>
               <strong>
-                {dynamicFastWindow
+                {guardedAttemptWindow
+                  ? "GUARDED"
+                  : dynamicFastWindow
                   ? "FAST"
                   : "STRICT"}
               </strong>
@@ -1610,7 +1616,7 @@ export default function RapidEdgeAI() {
                 {Math.max(
                   0,
                   Math.ceil(
-                    (20000 - scanAgeMs) /
+                    (35000 - scanAgeMs) /
                       1000
                   )
                 )}s
@@ -1744,7 +1750,7 @@ export default function RapidEdgeAI() {
               <span>Confirm Ticks</span>
               <strong>
                 {confirmationRequired
-                  ? `${confirmationTicksCollected}/2`
+                  ? `${confirmationTicksCollected}/1`
                   : "NOT NEEDED"}
               </strong>
             </article>
@@ -2021,7 +2027,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.7 Trades</h2>
+              <h2>RapidEdge V4.8 Trades</h2>
             </div>
           </header>
 
@@ -2065,14 +2071,14 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.7 transactions yet.
+                No RapidEdge V4.8 transactions yet.
               </p>
             )}
           </div>
         </section>
 
         <p className="oulDisclaimer">
-          V4.7 starts with a strict gate, relaxes to a balanced fast gate after 10 seconds, and switches market after 20 seconds without an entry. Profit and win rate are not guaranteed. Test on demo first.
+          V4.8 targets at least one guarded demo attempt within about 30 seconds when feed and auth are healthy. It does not guarantee profit. Keep Real Account locked while testing.
         </p>
       </main>
     </div>
