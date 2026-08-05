@@ -175,7 +175,7 @@ export default function HigherHighBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "Higher High AI PRO V10 is ready."
+    "Higher High AI PRO V10.1 is ready."
   );
 
   const [settings, setSettings] = useState({
@@ -392,6 +392,11 @@ export default function HigherHighBot() {
     analysis.metrics?.votePasses || 0
   );
 
+  const elapsedScanSeconds = Math.max(
+    0,
+    (Date.now() - Number(scanCycle.startedAt || Date.now())) / 1000
+  );
+
   const tierAReady =
     calibratedProbability * 100 >=
       Number(settings.tierAProbability) &&
@@ -463,11 +468,6 @@ export default function HigherHighBot() {
       analysis.probability >=
         Number(settings.recoveryProbabilityMinimum)
     );
-
-  const elapsedScanSeconds = Math.max(
-    0,
-    (Date.now() - Number(scanCycle.startedAt || Date.now())) / 1000
-  );
 
   const fallbackWindow =
     elapsedScanSeconds >= Number(settings.fallbackStartSeconds);
@@ -1298,7 +1298,7 @@ export default function HigherHighBot() {
 
       <main className="mainContent hhPage">
         <Topbar
-          title="Higher High AI PRO V10"
+          title="Higher High AI PRO V10.1"
           subtitle="Early qualified entry · market regime · readable codes · CALL execution"
           connected={connected}
           connecting={connecting}
@@ -1313,7 +1313,7 @@ export default function HigherHighBot() {
         >
           <div>
             <small>STRICT CONFIRMATION BOT</small>
-            <h1>Higher High AI PRO V10</h1>
+            <h1>Higher High AI PRO V10.1</h1>
             <p>
               Enters immediately when a qualified early setup appears, explains every
               decision in readable codes and blocks unsuitable market regimes.
