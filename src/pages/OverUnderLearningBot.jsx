@@ -5544,7 +5544,7 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
     setMessage(
-      "V28.2 running: Start runtime hotfix, one-minute evidence, regime reset and fast negative-EV rotation."
+      "V28.2 running: Start runtime fixed, one-minute evidence, regime reset and fast negative-EV rotation."
     );
   }
 
@@ -5788,7 +5788,7 @@ export default function OverUnderLearningBot() {
       <main className="mainContent oulPage">
         <Topbar
           title="Over/Under Adaptive Learning Bot V28.2"
-          subtitle="V28.2 Start hotfix · one-minute regime engine · continuous scanner"
+          subtitle="V28.2 Start runtime hotfix · defined status setter · continuous scanner"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
