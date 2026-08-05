@@ -12,10 +12,10 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:isolated:over-under:v26:learning";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v26:market-cache";
+const MEMORY_KEY = "edgepilot:isolated:over-under:v27:learning";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v27:market-cache";
 const OVER_UNDER_NAMESPACE =
-  "edgepilot:isolated:over-under:v26";
+  "edgepilot:isolated:over-under:v27";
 const OVER_UNDER_SESSION_KEY =
   `${OVER_UNDER_NAMESPACE}:session`;
 const OVER_UNDER_AUDIO_KEY =
@@ -2124,11 +2124,31 @@ export default function OverUnderLearningBot() {
   const [readyLiveConfirmationTicks, setReadyLiveConfirmationTicks] =
     useState(4);
   const [idleRescanSeconds, setIdleRescanSeconds] =
-    useState(18);
+    useState(10);
   const [marketRearmSeconds, setMarketRearmSeconds] =
     useState(8);
   const [postSettlementRearmMs, setPostSettlementRearmMs] =
     useState(450);
+  const [adaptiveArmingEnabled, setAdaptiveArmingEnabled] =
+    useState(true);
+  const [adaptiveMinimumProbability, setAdaptiveMinimumProbability] =
+    useState(72);
+  const [adaptiveMinimumVotes, setAdaptiveMinimumVotes] =
+    useState(4);
+  const [adaptiveMaximumRisk, setAdaptiveMaximumRisk] =
+    useState(42);
+  const [adaptiveStableTicks, setAdaptiveStableTicks] =
+    useState(3);
+  const [adaptiveConfirmTicks, setAdaptiveConfirmTicks] =
+    useState(5);
+  const [adaptiveArmState, setAdaptiveArmState] =
+    useState({
+      key: "",
+      stage: "WATCH",
+      ticks: 0,
+      score: 0,
+      probability: 0,
+    });
   const lastPortfolioActivityRef =
     useRef(Date.now());
 
@@ -2913,7 +2933,18 @@ export default function OverUnderLearningBot() {
             ) <= 0 &&
             !item.learned.blocked &&
             Number(item.probability || 0) >=
-              Number(item.learned.requiredProbability || 100)
+              Math.max(
+                68,
+                Math.min(
+                  Number(
+                    item.learned
+                      .requiredProbability || 100
+                  ) - 10,
+                  Number(
+                    universalMinimumProbability || 78
+                  )
+                )
+              )
         )
         .sort((a, b) => {
           if (smartRecoveryActive) {
@@ -3102,9 +3133,150 @@ export default function OverUnderLearningBot() {
     rankedCandidates,
   ]);
 
+
+  const adaptiveFallbackCandidate = useMemo(() => {
+    if (
+      !adaptiveArmingEnabled ||
+      universalDecision.selected ||
+      portfolioBridgeCandidate
+    ) {
+      return null;
+    }
+
+    return (
+      rankedCandidates.find((candidate) => {
+        const probability =
+          Number(candidate?.probability || 0);
+        const votes =
+          Number(
+            candidate?.agreementVotes || 0
+          );
+        const risk =
+          Number(candidate?.guardRisk || 100);
+        const expectedValue =
+          Number(
+            candidate?.layered?.simulation
+              ?.expectedValue || -1
+          );
+        const score =
+          Number(
+            candidate?.adaptiveScore || 0
+          );
+
+        return (
+          ["OVER", "UNDER"].includes(
+            String(candidate?.side || "")
+          ) &&
+          Number(candidate?.barrier ?? -1) >= 0 &&
+          probability >=
+            Number(
+              adaptiveMinimumProbability || 72
+            ) &&
+          votes >=
+            Number(adaptiveMinimumVotes || 4) &&
+          risk <=
+            Number(adaptiveMaximumRisk || 42) &&
+          expectedValue >
+            Number(evFloor || 0) &&
+          score >= 58 &&
+          !candidate?.learned?.blocked
+        );
+      }) || null
+    );
+  }, [
+    adaptiveArmingEnabled,
+    universalDecision.selected,
+    portfolioBridgeCandidate,
+    rankedCandidates,
+    adaptiveMinimumProbability,
+    adaptiveMinimumVotes,
+    adaptiveMaximumRisk,
+    evFloor,
+  ]);
+
+  const adaptiveFallbackKey =
+    adaptiveFallbackCandidate
+      ? [
+          symbol,
+          adaptiveFallbackCandidate.side,
+          adaptiveFallbackCandidate.barrier,
+        ].join(":")
+      : "";
+
+  useEffect(() => {
+    if (
+      !running ||
+      !adaptiveArmingEnabled ||
+      !adaptiveFallbackCandidate
+    ) {
+      setAdaptiveArmState({
+        key: "",
+        stage: "WATCH",
+        ticks: 0,
+        score: 0,
+        probability: 0,
+      });
+      return;
+    }
+
+    setAdaptiveArmState((current) => {
+      const same =
+        current.key === adaptiveFallbackKey;
+
+      const ticks =
+        same
+          ? current.ticks + 1
+          : 1;
+
+      const required =
+        Math.max(
+          2,
+          Number(adaptiveStableTicks || 3)
+        );
+
+      return {
+        key: adaptiveFallbackKey,
+        stage:
+          ticks >= required
+            ? "ARMED"
+            : "PREPARE",
+        ticks,
+        score:
+          Number(
+            adaptiveFallbackCandidate
+              .adaptiveScore || 0
+          ),
+        probability:
+          Number(
+            adaptiveFallbackCandidate
+              .probability || 0
+          ),
+      };
+    });
+  }, [
+    running,
+    adaptiveArmingEnabled,
+    adaptiveFallbackCandidate,
+    adaptiveFallbackKey,
+    adaptiveStableTicks,
+    prices.length,
+  ]);
+
+  const adaptiveCandidateArmed = Boolean(
+    adaptiveFallbackCandidate &&
+    adaptiveArmState.key ===
+      adaptiveFallbackKey &&
+    adaptiveArmState.stage === "ARMED"
+  );
+
   const unifiedSelectedCandidate =
     universalDecision.selected ||
     portfolioBridgeCandidate ||
+    (
+      adaptiveCandidateArmed
+        ? adaptiveFallbackCandidate
+        : null
+    ) ||
     null;
 
 
@@ -3544,9 +3716,35 @@ export default function OverUnderLearningBot() {
         ) - 8
       );
 
+  const adaptiveEntryReady =
+    commonEntrySafety &&
+    adaptiveCandidateArmed &&
+    bestKey === adaptiveFallbackKey &&
+    Number(best.probability || 0) >=
+      Number(
+        adaptiveMinimumProbability || 72
+      ) &&
+    Number(best.agreementVotes || 0) >=
+      Number(adaptiveMinimumVotes || 4) &&
+    Number(best.guardRisk || 100) <=
+      Number(adaptiveMaximumRisk || 42) &&
+    Number(
+      best.layered?.simulation
+        ?.expectedValue || -1
+    ) > Number(evFloor || 0) &&
+    Number(best.adaptiveScore || 0) >= 58 &&
+    Number(analysis.confidence || 0) >= 50 &&
+    (
+      !globalPortfolioEnabled ||
+      !bestGlobalMarket ||
+      bestGlobalMarket.market === symbol ||
+      currentPortfolioRow?.market === symbol
+    );
+
   const entryReady =
     strictEntryReady ||
-    bridgeEntryReady;
+    bridgeEntryReady ||
+    adaptiveEntryReady;
 
   useEffect(() => {
     if (!running || !entryReady) {
@@ -3575,16 +3773,24 @@ export default function OverUnderLearningBot() {
     prices.length,
   ]);
 
+  const requiredConfirmationTicks =
+    adaptiveEntryReady
+      ? Math.max(
+          3,
+          Number(adaptiveConfirmTicks || 5)
+        )
+      : Math.max(
+          2,
+          Number(
+            readyLiveConfirmationTicks || 4
+          )
+        );
+
   const confirmed =
     entryReady &&
     confirmationRef.current.key === bestKey &&
     confirmationRef.current.ticks >=
-      Math.max(
-        2,
-        Number(
-          readyLiveConfirmationTicks || 4
-        )
-      );
+      requiredConfirmationTicks;
 
   const hasOpenTrade = trades.some(
     (trade) => trade.status === "OPEN"
@@ -5052,7 +5258,7 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
     setMessage(
-      "V26 running: hard-isolated Over/Under state, live bridge, auto-unlock and continuous rescan."
+      "V27 running: isolated adaptive arming scanner, live bridge, auto-unlock and continuous rescan."
     );
   }
 
@@ -5295,8 +5501,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V26"
-          subtitle="Hard-isolated Over/Under engine · independent from FreshEdge"
+          title="Over/Under Adaptive Learning Bot V27"
+          subtitle="Adaptive arming scanner · WATCH → PREPARE → ARMED → CONFIRM"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -5378,6 +5584,10 @@ export default function OverUnderLearningBot() {
                     bestGlobalMarket.market !== symbol
                   )
                 ? "GLOBAL PORTFOLIO — Current market is not the top ELITE/GOOD market. Trade blocked while switching."
+                : adaptiveEntryReady
+                ? `ADAPTIVE ARMED — ${best.side} ${best.barrier} remained stable for ${adaptiveArmState.ticks} ticks.`
+                : adaptiveFallbackCandidate
+                ? `ADAPTIVE ${adaptiveArmState.stage} — watching ${adaptiveFallbackCandidate.side} ${adaptiveFallbackCandidate.barrier} before confirmation.`
                 : portfolioBridgeActive
                 ? `LIVE BRIDGE — ${currentPortfolioRow.status} ${best.side} ${best.barrier} synchronized with portfolio metrics.`
                 : universalPoolEnabled &&
@@ -5566,6 +5776,129 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Adaptive arming scanner</span>
+            <select
+              value={
+                adaptiveArmingEnabled
+                  ? "ON"
+                  : "OFF"
+              }
+              onChange={(event) =>
+                setAdaptiveArmingEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — stable live fallback
+              </option>
+              <option value="OFF">
+                OFF — strict tiers only
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Adaptive minimum probability</span>
+            <input
+              type="number"
+              min="68"
+              max="90"
+              step="1"
+              value={adaptiveMinimumProbability}
+              onChange={(event) =>
+                setAdaptiveMinimumProbability(
+                  clamp(
+                    event.target.value,
+                    68,
+                    90
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Adaptive minimum votes</span>
+            <input
+              type="number"
+              min="3"
+              max="7"
+              step="1"
+              value={adaptiveMinimumVotes}
+              onChange={(event) =>
+                setAdaptiveMinimumVotes(
+                  clamp(
+                    event.target.value,
+                    3,
+                    7
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Adaptive maximum risk</span>
+            <input
+              type="number"
+              min="20"
+              max="55"
+              step="1"
+              value={adaptiveMaximumRisk}
+              onChange={(event) =>
+                setAdaptiveMaximumRisk(
+                  clamp(
+                    event.target.value,
+                    20,
+                    55
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Stable ticks before ARMED</span>
+            <input
+              type="number"
+              min="2"
+              max="10"
+              step="1"
+              value={adaptiveStableTicks}
+              onChange={(event) =>
+                setAdaptiveStableTicks(
+                  clamp(
+                    event.target.value,
+                    2,
+                    10
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Adaptive confirmation ticks</span>
+            <input
+              type="number"
+              min="3"
+              max="12"
+              step="1"
+              value={adaptiveConfirmTicks}
+              onChange={(event) =>
+                setAdaptiveConfirmTicks(
+                  clamp(
+                    event.target.value,
+                    3,
+                    12
+                  )
                 )
               }
             />
@@ -6464,6 +6797,10 @@ export default function OverUnderLearningBot() {
                     bestGlobalMarket.market !== symbol
                   )
                 ? "PORTFOLIO SWITCH"
+                : adaptiveEntryReady
+                ? "ADAPTIVE CONFIRM"
+                : adaptiveFallbackCandidate
+                ? adaptiveArmState.stage
                 : bridgeEntryReady
                 ? "LIVE BRIDGE CONFIRM"
                 : universalPoolEnabled &&
@@ -6843,6 +7180,47 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 NONE / WAIT can never execute
+              </small>
+            </article>
+
+            <article>
+              <span>Adaptive scanner</span>
+              <strong>
+                {adaptiveArmingEnabled
+                  ? adaptiveArmState.stage
+                  : "OFF"}
+              </strong>
+              <small>
+                WATCH → PREPARE → ARMED → CONFIRM
+              </small>
+            </article>
+
+            <article>
+              <span>Arming progress</span>
+              <strong>
+                {adaptiveArmState.ticks}/
+                {adaptiveStableTicks}
+              </strong>
+              <small>
+                {adaptiveFallbackCandidate
+                  ? `${adaptiveFallbackCandidate.side} ${adaptiveFallbackCandidate.barrier} · ${pct(adaptiveFallbackCandidate.probability)}`
+                  : "No stable fallback candidate"}
+              </small>
+            </article>
+
+            <article>
+              <span>Entry route</span>
+              <strong>
+                {strictEntryReady
+                  ? "STRICT"
+                  : bridgeEntryReady
+                  ? "BRIDGE"
+                  : adaptiveEntryReady
+                  ? "ADAPTIVE"
+                  : "WAIT"}
+              </strong>
+              <small>
+                Adaptive route still requires positive EV and live confirmation
               </small>
             </article>
 
