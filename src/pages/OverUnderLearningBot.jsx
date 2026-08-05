@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v9";
+const MEMORY_KEY = "edgepilot:over-under-learning:v10";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -315,6 +315,29 @@ function barrierSafetyScore(side, barrier) {
       : (numericBarrier / 10) * 100;
 
   return clamp(theoreticalWinRate, 0, 100);
+}
+
+
+function barrierLaneScore(side, barrier, recoveryActive) {
+  const value = Number(barrier);
+
+  if (recoveryActive) {
+    if (side === "OVER" && value === 4) return 100;
+    if (side === "UNDER" && value === 5) return 100;
+    if (side === "OVER" && value === 3) return 86;
+    if (side === "UNDER" && value === 6) return 86;
+    return 35;
+  }
+
+  if (side === "OVER" && [1, 2, 3].includes(value)) {
+    return 100 - (value - 1) * 8;
+  }
+
+  if (side === "UNDER" && [6, 7, 8].includes(value)) {
+    return 100 - (8 - value) * 8;
+  }
+
+  return 30;
 }
 
 function setupCooldownRemaining(row) {
@@ -658,6 +681,12 @@ export default function OverUnderLearningBot() {
     useState(1.5);
   const [maximumRecoveryAttempts, setMaximumRecoveryAttempts] =
     useState(2);
+  const [tradesOnCurrentMarket, setTradesOnCurrentMarket] =
+    useState(0);
+  const [proactiveRotationTrades, setProactiveRotationTrades] =
+    useState(5);
+  const [recoveryDebt, setRecoveryDebt] =
+    useState(0);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -1056,6 +1085,13 @@ export default function OverUnderLearningBot() {
               learned.requiredProbability || 100
             );
 
+          const laneScore =
+            barrierLaneScore(
+              side,
+              barrier,
+              smartRecoveryActive
+            );
+
           const regimeAdjustedScore = clamp(
             candidateScore(
               candidate,
@@ -1064,11 +1100,13 @@ export default function OverUnderLearningBot() {
               regimeAnalysis.qualityBonus -
               regimeAnalysis.riskPenalty +
               (
-                recovery.active
-                  ? safetyScore * 0.10 +
-                    payoutEdge * 0.35
+                smartRecoveryActive
+                  ? safetyScore * 0.08 +
+                    payoutEdge * 0.30 +
+                    laneScore * 0.22
                   : safetyScore * 0.04 +
-                    payoutEdge * 0.20
+                    payoutEdge * 0.18 +
+                    laneScore * 0.12
               ),
             0,
             100
@@ -1081,6 +1119,7 @@ export default function OverUnderLearningBot() {
             learned,
             safetyScore,
             payoutEdge,
+            laneScore,
             regimeAdjustedScore,
             adaptiveScore:
               regimeAdjustedScore,
@@ -1100,16 +1139,18 @@ export default function OverUnderLearningBot() {
               Number(item.learned.requiredProbability || 100)
         )
         .sort((a, b) => {
-          if (recovery.active) {
+          if (smartRecoveryActive) {
             const recoveryA =
               Number(a.adaptiveScore || 0) * 0.65 +
               Number(a.safetyScore || 0) * 0.25 +
-              Number(a.payoutEdge || 0) * 0.10;
+              Number(a.payoutEdge || 0) * 0.08 +
+              Number(a.laneScore || 0) * 0.12;
 
             const recoveryB =
               Number(b.adaptiveScore || 0) * 0.65 +
               Number(b.safetyScore || 0) * 0.25 +
-              Number(b.payoutEdge || 0) * 0.10;
+              Number(b.payoutEdge || 0) * 0.08 +
+              Number(b.laneScore || 0) * 0.12;
 
             return recoveryB - recoveryA;
           }
@@ -1294,6 +1335,7 @@ export default function OverUnderLearningBot() {
         changeSymbol(next)
       );
 
+      setTradesOnCurrentMarket(0);
       playTradeSound("SWITCH");
 
       setStats((current) => ({
@@ -1397,8 +1439,11 @@ export default function OverUnderLearningBot() {
           best.learned.profitRatio,
           recoveryMultiplier
         ),
-        recoveryMode: recovery.active,
-        recoveryAttempt: recovery.attempts,
+        recoveryMode: smartRecoveryActive,
+        recoveryAttempt: smartRecoveryActive
+          ? recovery.attempts
+          : 0,
+        recoveryDebtAtEntry: recoveryDebt,
         confidence:
           analysis.confidence,
         score: best.adaptiveScore,
@@ -1416,6 +1461,10 @@ export default function OverUnderLearningBot() {
 
       setTrades((current) =>
         [trade, ...current].slice(0, 50)
+      );
+
+      setTradesOnCurrentMarket(
+        (current) => current + 1
       );
 
       playTradeSound("OPEN");
@@ -1472,6 +1521,43 @@ export default function OverUnderLearningBot() {
     confirmed,
     hasOpenTrade,
     bestKey,
+    symbol,
+  ]);
+
+  useEffect(() => {
+    if (
+      !running ||
+      hasOpenTrade ||
+      tradeBusy ||
+      smartRecoveryActive ||
+      marketSymbols.length < 2
+    ) {
+      return undefined;
+    }
+
+    if (
+      tradesOnCurrentMarket <
+      Number(proactiveRotationTrades || 5)
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      void switchMarket(
+        `Proactive rotation after ${tradesOnCurrentMarket} trades`
+      );
+    }, 700);
+
+    return () =>
+      window.clearTimeout(timer);
+  }, [
+    running,
+    hasOpenTrade,
+    tradeBusy,
+    smartRecoveryActive,
+    marketSymbols,
+    tradesOnCurrentMarket,
+    proactiveRotationTrades,
     symbol,
   ]);
 
@@ -1653,22 +1739,70 @@ export default function OverUnderLearningBot() {
 
     if (result === "WON") {
       setConsecutiveLosses(0);
-      setRecovery({
-        active: false,
-        attempts: 0,
-        previousLossKey: "",
-        previousLossAmount: 0,
-      });
-      setRecoveryTarget(0);
-      lastLossKeyRef.current = "";
-      setMessage(
-        `WIN ${settled.contract}. Learning updated; searching the next fresh entry immediately.`
+
+      const wonAmount = Math.max(
+        0,
+        Number(settled.profit || 0)
       );
+
+      if (settled.recoveryMode) {
+        const remainingDebt = Math.max(
+          0,
+          Number(recoveryDebt || 0) -
+            wonAmount
+        );
+
+        setRecoveryDebt(remainingDebt);
+        setRecoveryTarget(remainingDebt);
+
+        if (remainingDebt <= 0.001) {
+          setRecovery({
+            active: false,
+            attempts: 0,
+            previousLossKey: "",
+            previousLossAmount: 0,
+          });
+          lastLossKeyRef.current = "";
+          setMessage(
+            `RECOVERY COMPLETE ${settled.contract}. Debt cleared; returning to normal lane.`
+          );
+        } else {
+          setRecovery((current) => ({
+            ...current,
+            active: true,
+          }));
+          setMessage(
+            `RECOVERY PARTIAL ${settled.contract}. ${remainingDebt.toFixed(
+              2
+            )} USD remains; searching one more clear recovery setup.`
+          );
+        }
+      } else {
+        setRecovery({
+          active: false,
+          attempts: 0,
+          previousLossKey: "",
+          previousLossAmount: 0,
+        });
+        setRecoveryDebt(0);
+        setRecoveryTarget(0);
+        lastLossKeyRef.current = "";
+        setMessage(
+          `WIN ${settled.contract}. Searching next normal low-barrier entry immediately.`
+        );
+      }
     } else {
       setConsecutiveLosses((current) => current + 1);
+      const newLossAmount = Math.abs(
+        Number(settled.profit || 0)
+      );
+
+      setRecoveryDebt((current) =>
+        Number(current || 0) + newLossAmount
+      );
+
       setRecoveryTarget((current) =>
-        Number(current || 0) +
-        Math.abs(Number(settled.profit || 0))
+        Number(current || 0) + newLossAmount
       );
       setMarketBlocks((current) => ({
         ...current,
@@ -1678,7 +1812,8 @@ export default function OverUnderLearningBot() {
       playTradeSound("RECOVERY");
 
       setRecovery((current) => ({
-        active: true,
+        active:
+          recoveryMode === "SMART",
         attempts: Math.min(
           maximumRecoveryAttempts,
           Number(current.attempts || 0) + 1
@@ -1784,6 +1919,8 @@ export default function OverUnderLearningBot() {
       previousLossAmount: 0,
     });
     setRecoveryTarget(0);
+    setRecoveryDebt(0);
+    setTradesOnCurrentMarket(0);
     setMarketBlocks({});
     setStats({
       runs: 0,
@@ -1979,8 +2116,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V9"
-          subtitle="Multi-analysis decision engine · EV-aware smart recovery"
+          title="Over/Under Adaptive Learning Bot V10"
+          subtitle="Recovery state fix · proactive market rotation · barrier lanes"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -2214,6 +2351,26 @@ export default function OverUnderLearningBot() {
           </label>
 
           <label>
+            <span>Rotate after trades</span>
+            <input
+              type="number"
+              min="2"
+              max="12"
+              step="1"
+              value={proactiveRotationTrades}
+              onChange={(event) =>
+                setProactiveRotationTrades(
+                  clamp(
+                    event.target.value,
+                    2,
+                    12
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
             <span>Recovery mode</span>
             <select
               value={recoveryMode}
@@ -2321,8 +2478,8 @@ export default function OverUnderLearningBot() {
           <article>
             <span>Recovery</span>
             <strong>
-              {recovery.active
-                ? `ACTIVE ${recovery.attempts}/2`
+              {smartRecoveryActive
+                ? `ACTIVE ${recovery.attempts}/${maximumRecoveryAttempts}`
                 : "OFF"}
             </strong>
             <small>
@@ -2613,6 +2770,29 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Active barrier lane</span>
+              <strong>
+                {smartRecoveryActive
+                  ? "REC: OVER 4 / UNDER 5"
+                  : "NORMAL: OVER 1–3 / UNDER 6–8"}
+              </strong>
+              <small>
+                Other barriers need stronger EV
+              </small>
+            </article>
+
+            <article>
+              <span>Trades this market</span>
+              <strong>
+                {tradesOnCurrentMarket}/
+                {proactiveRotationTrades}
+              </strong>
+              <small>
+                Rotates before waiting for a loss
               </small>
             </article>
 
