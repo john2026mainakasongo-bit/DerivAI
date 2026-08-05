@@ -294,3 +294,80 @@
 .oulStats article:last-child strong {
   color: #f0cf67;
 }
+
+
+.oulRotation {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid #174b63;
+  border-radius: 14px;
+  background: #061b2a;
+}
+
+.oulRotation header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.oulRotation small {
+  color: #39d9af;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.oulRotation h2 {
+  margin: 4px 0;
+  color: #fff;
+}
+
+.oulRotation header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.oulRotation > div {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.oulRotation article {
+  padding: 7px;
+  border: 1px solid #1d536a;
+  border-radius: 8px;
+  background: #071925;
+}
+
+.oulRotation article.active {
+  border-color: #38d8a8;
+}
+
+.oulRotation article.blocked {
+  border-color: #8b3a45;
+  opacity: .7;
+}
+
+.oulRotation strong,
+.oulRotation span {
+  display: block;
+}
+
+.oulRotation strong {
+  color: #fff;
+  font-size: 10px;
+}
+
+.oulRotation span {
+  margin-top: 3px;
+  color: #83aebe;
+  font-size: 8px;
+}
+
+@media (max-width: 900px) {
+  .oulRotation > div {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

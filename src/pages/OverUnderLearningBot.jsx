@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v3";
+const MEMORY_KEY = "edgepilot:over-under-learning:v4";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -143,22 +143,50 @@ function setupCooldownRemaining(row) {
   return Math.max(0, blockedUntil - Date.now());
 }
 
+function marketBlockRemaining(marketBlocks, symbol) {
+  return Math.max(
+    0,
+    Number(marketBlocks?.[symbol] || 0) -
+      Date.now()
+  );
+}
+
 function recoveryStakeAmount(
   baseStake,
   recovery,
-  maximumStake
+  maximumStake,
+  recoveryTarget = 0,
+  expectedProfitRatio = 0.34
 ) {
+  const base = Math.max(
+    0.35,
+    Number(baseStake || 0.35)
+  );
+
   if (!recovery?.active) {
-    return Math.max(0.35, Number(baseStake || 0.35));
+    return base;
   }
 
-  const multiplier =
-    Number(recovery.attempts || 0) <= 1 ? 1.5 : 2;
+  const attemptMultiplier =
+    Number(recovery.attempts || 0) <= 1
+      ? 1.5
+      : 2;
+
+  const targetStake =
+    Number(recoveryTarget || 0) > 0
+      ? Number(recoveryTarget || 0) /
+        Math.max(
+          0.05,
+          Number(expectedProfitRatio || 0.34)
+        )
+      : base * attemptMultiplier;
 
   return Math.min(
     Math.max(0.35, Number(maximumStake || 1.4)),
-    Math.max(0.35, Number(baseStake || 0.35)) *
-      multiplier
+    Math.max(
+      base * attemptMultiplier,
+      targetStake
+    )
   );
 }
 
@@ -426,6 +454,8 @@ export default function OverUnderLearningBot() {
   });
   const [maximumRecoveryStake, setMaximumRecoveryStake] =
     useState(1.4);
+  const [marketBlocks, setMarketBlocks] = useState({});
+  const [recoveryTarget, setRecoveryTarget] = useState(0);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -523,6 +553,10 @@ export default function OverUnderLearningBot() {
             ["OVER", "UNDER"].includes(
               item.side
             ) &&
+            marketBlockRemaining(
+              marketBlocks,
+              symbol
+            ) <= 0 &&
             !item.learned.blocked &&
             Number(item.probability || 0) >=
               Number(item.learned.requiredProbability || 100)
@@ -532,7 +566,7 @@ export default function OverUnderLearningBot() {
             b.adaptiveScore -
             a.adaptiveScore
         ),
-    [analysis.candidates, memory, symbol]
+    [analysis.candidates, memory, symbol, marketBlocks]
   );
 
   const best =
@@ -629,14 +663,35 @@ export default function OverUnderLearningBot() {
   function nextMarket() {
     if (!marketSymbols.length) return "";
 
-    const index = marketSymbols.indexOf(symbol);
+    const currentIndex =
+      marketSymbols.indexOf(symbol);
 
-    return marketSymbols[
-      index >= 0
-        ? (index + 1) %
-          marketSymbols.length
-        : 0
-    ];
+    for (
+      let step = 1;
+      step <= marketSymbols.length;
+      step++
+    ) {
+      const candidate =
+        marketSymbols[
+          (
+            Math.max(0, currentIndex) + step
+          ) %
+            marketSymbols.length
+        ];
+
+      if (
+        candidate &&
+        candidate !== symbol &&
+        marketBlockRemaining(
+          marketBlocks,
+          candidate
+        ) <= 0
+      ) {
+        return candidate;
+      }
+    }
+
+    return "";
   }
 
   async function switchMarket(reason) {
@@ -730,7 +785,9 @@ export default function OverUnderLearningBot() {
         amount: recoveryStakeAmount(
           stake,
           recovery,
-          maximumRecoveryStake
+          maximumRecoveryStake,
+          recoveryTarget,
+          best.learned.profitRatio
         ),
         basis: "stake",
         duration: Math.max(
@@ -759,7 +816,9 @@ export default function OverUnderLearningBot() {
         stake: recoveryStakeAmount(
           stake,
           recovery,
-          maximumRecoveryStake
+          maximumRecoveryStake,
+          recoveryTarget,
+          best.learned.profitRatio
         ),
         recoveryMode: recovery.active,
         recoveryAttempt: recovery.attempts,
@@ -786,7 +845,9 @@ export default function OverUnderLearningBot() {
         `${recovery.active ? `RECOVERY ${recovery.attempts}/2` : "NORMAL"} · ${best.side} ${best.barrier} opened · stake ${recoveryStakeAmount(
           stake,
           recovery,
-          maximumRecoveryStake
+          maximumRecoveryStake,
+          recoveryTarget,
+          best.learned.profitRatio
         ).toFixed(2)} · score ${best.adaptiveScore.toFixed(
           1
         )}% · memory ${best.learned.trades} trades.`
@@ -844,17 +905,30 @@ export default function OverUnderLearningBot() {
           Number(switchSeconds) || 8
         ) * 1000;
 
+      const currentMarketBlocked =
+        marketBlockRemaining(
+          marketBlocks,
+          symbol
+        ) > 0;
+
       if (
-        Date.now() -
-          scanStartedAtRef.current >=
-          delay &&
+        (
+          currentMarketBlocked ||
+          Date.now() -
+            scanStartedAtRef.current >=
+            delay
+        ) &&
         Date.now() -
           lastSwitchAtRef.current >=
-          delay &&
+          Math.min(delay, 3000) &&
         !confirmed
       ) {
         void switchMarket(
-          blockedByLastLoss
+          currentMarketBlocked
+            ? "Current market is cooling down"
+            : recovery.active
+            ? "No clear recovery entry; rotating"
+            : blockedByLastLoss
             ? "Last losing setup blocked"
             : "No confirmed adaptive entry"
         );
@@ -872,6 +946,8 @@ export default function OverUnderLearningBot() {
     confirmed,
     blockedByLastLoss,
     symbol,
+    marketBlocks,
+    recovery.active,
   ]);
 
   useEffect(() => {
@@ -996,12 +1072,22 @@ export default function OverUnderLearningBot() {
         previousLossKey: "",
         previousLossAmount: 0,
       });
+      setRecoveryTarget(0);
       lastLossKeyRef.current = "";
       setMessage(
-        `WIN ${settled.contract}. Learning updated; scanning continues.`
+        `WIN ${settled.contract}. Learning updated; searching the next fresh entry immediately.`
       );
     } else {
       setConsecutiveLosses((current) => current + 1);
+      setRecoveryTarget((current) =>
+        Number(current || 0) +
+        Math.abs(Number(settled.profit || 0))
+      );
+      setMarketBlocks((current) => ({
+        ...current,
+        [settled.symbol]:
+          Date.now() + 60000,
+      }));
       setRecovery((current) => ({
         active: true,
         attempts: Math.min(
@@ -1025,7 +1111,7 @@ export default function OverUnderLearningBot() {
         );
 
       setMessage(
-        `LOSS ${settled.contract}. Same setup blocked; searching another market/barrier.`
+        `LOSS ${settled.contract}. ${settled.symbol} blocked for 60s; rotating through all markets for a clear recovery setup.`
       );
     }
 
@@ -1046,7 +1132,8 @@ export default function OverUnderLearningBot() {
     }
 
     nextEntryAtRef.current =
-      Date.now() + 5000;
+      Date.now() +
+      (result === "WON" ? 1200 : 2500);
     scanStartedAtRef.current =
       Date.now();
     confirmationRef.current = {
@@ -1058,9 +1145,11 @@ export default function OverUnderLearningBot() {
       result === "LOST" &&
       runningRef.current
     ) {
-      void switchMarket(
-        "Loss memory recorded"
-      );
+      window.setTimeout(() => {
+        void switchMarket(
+          "Loss market blocked; searching fresh recovery entry"
+        );
+      }, 900);
     }
   }, [openContracts]);
 
@@ -1102,6 +1191,8 @@ export default function OverUnderLearningBot() {
       previousLossKey: "",
       previousLossAmount: 0,
     });
+    setRecoveryTarget(0);
+    setMarketBlocks({});
     setStats({
       runs: 0,
       wins: 0,
@@ -1128,8 +1219,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V3"
-          subtitle="Persistent market memory · adaptive ranking · capped recovery"
+          title="Over/Under Adaptive Learning Bot V4"
+          subtitle="Smart market rotation · non-forced recovery · continuous next-entry search"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1193,8 +1284,12 @@ export default function OverUnderLearningBot() {
                 : `WATCH ${best.side} ${best.barrier}`}
             </h1>
             <p>
-              {blockedByLastLoss
-                ? "This exact losing setup is blocked until another setup settles."
+              {recovery.active
+                ? confirmed
+                  ? "Fresh recovery setup passed stricter EV, confidence and confirmation gates."
+                  : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
+                : blockedByLastLoss
+                ? "This exact losing setup is blocked."
                 : analysis.reason}
             </p>
           </div>
@@ -1427,6 +1522,80 @@ export default function OverUnderLearningBot() {
                 : "OFF"}
             </strong>
           </article>
+          <article>
+            <span>Recovery target</span>
+            <strong>
+              {recoveryTarget.toFixed(2)}
+            </strong>
+          </article>
+          <article>
+            <span>Market cooldown</span>
+            <strong>
+              {marketBlockRemaining(
+                marketBlocks,
+                symbol
+              ) > 0
+                ? `${Math.ceil(
+                    marketBlockRemaining(
+                      marketBlocks,
+                      symbol
+                    ) / 1000
+                  )}s`
+                : "CLEAR"}
+            </strong>
+          </article>
+        </section>
+
+        <section className="oulRotation">
+          <header>
+            <div>
+              <small>SMART MARKET ROTATION</small>
+              <h2>
+                Recovery searches every clear market
+              </h2>
+            </div>
+            <strong>
+              {recovery.active
+                ? "RECOVERY SCAN"
+                : "NORMAL SCAN"}
+            </strong>
+          </header>
+
+          <div>
+            {marketSymbols.slice(0, 12).map(
+              (item) => {
+                const remaining =
+                  marketBlockRemaining(
+                    marketBlocks,
+                    item
+                  );
+
+                return (
+                  <article
+                    key={item}
+                    className={
+                      item === symbol
+                        ? "active"
+                        : remaining > 0
+                        ? "blocked"
+                        : ""
+                    }
+                  >
+                    <strong>{item}</strong>
+                    <span>
+                      {item === symbol
+                        ? "CURRENT"
+                        : remaining > 0
+                        ? `BLOCKED ${Math.ceil(
+                            remaining / 1000
+                          )}s`
+                        : "AVAILABLE"}
+                    </span>
+                  </article>
+                );
+              }
+            )}
+          </div>
         </section>
 
         <section className="oulMainGrid">
