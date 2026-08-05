@@ -113,6 +113,8 @@ export default function useDerivTicks() {
   const [transactions, setTransactions] = useState([]);
   const [tradeBusy, setTradeBusy] = useState(false);
   const [tradeError, setTradeError] = useState("");
+  const [liveTickCount, setLiveTickCount] = useState(0);
+  const [tradingReady, setTradingReady] = useState(false);
 
   const symbolRef = useRef("");
   const mountedRef = useRef(true);
@@ -144,6 +146,10 @@ export default function useDerivTicks() {
         },
       ].slice(-400)
     );
+
+    setLiveTickCount((current) =>
+      Math.min(5000, Number(current || 0) + 1)
+    );
   }, []);
 
   const loadSymbol = useCallback(async (nextSymbol) => {
@@ -155,14 +161,15 @@ export default function useDerivTicks() {
     setSymbol(nextSymbol);
     setLoadingMarket(true);
 
-    // Never display or analyse ticks from the previous market.
+    // Never trade using ticks from the previous market.
     setTicks([]);
+    setLiveTickCount(0);
 
     try {
-      const history = await derivPublicClient.getHistory(nextSymbol, 160);
+      const history = await derivPublicClient.getHistory(nextSymbol, 60);
       if (!mountedRef.current) return;
 
-      setTicks(history.slice(-160));
+      setTicks(history.slice(-60));
 
       try {
         await derivPublicClient.subscribeTicks(nextSymbol);
@@ -231,6 +238,31 @@ export default function useDerivTicks() {
       setConnected(true);
       setStatus("CONNECTED");
 
+      // V26 trading connection prewarm:
+      // authorize the selected account before an entry appears.
+      if (auth.authenticated && selectedAccountId) {
+        Promise.resolve(
+          derivPublicClient.ensureTradingConnection()
+        )
+          .then(() => {
+            if (mountedRef.current) {
+              setTradingReady(true);
+            }
+          })
+          .catch((error) => {
+            if (mountedRef.current) {
+              setTradingReady(false);
+              setStatusDetail(
+                error instanceof Error
+                  ? error.message
+                  : "Trading connection prewarm failed."
+              );
+            }
+          });
+      } else {
+        setTradingReady(false);
+      }
+
       if (connection?.fallback && auth.authenticated) {
         setStatusDetail(
           derivPublicClient.lastAuthConnectionError
@@ -275,7 +307,7 @@ export default function useDerivTicks() {
         reconnectTimer = window.setTimeout(() => {
           reconnectTimer = null;
           void connect().catch(() => {});
-        }, 1500);
+        }, 250);
       }
     });
 
@@ -378,6 +410,44 @@ export default function useDerivTicks() {
     selectedAccountId,
   ]);
 
+  // V26 instant authenticated auto-connect.
+  useEffect(() => {
+    if (
+      !auth.authenticated ||
+      !selectedAccountId ||
+      manuallyDisconnectedRef.current
+    ) {
+      return;
+    }
+
+    if (!connected && status !== "CONNECTING") {
+      void connect().catch(() => {});
+      return;
+    }
+
+    if (connected && !tradingReady) {
+      void Promise.resolve(
+        derivPublicClient.ensureTradingConnection()
+      )
+        .then(() => {
+          if (mountedRef.current) {
+            setTradingReady(true);
+          }
+        })
+        .catch(() => {
+          if (mountedRef.current) {
+            setTradingReady(false);
+          }
+        });
+    }
+  }, [
+    auth.authenticated,
+    selectedAccountId,
+    connected,
+    status,
+    tradingReady,
+    connect,
+  ]);
   const disconnect = useCallback(() => {
     manuallyDisconnectedRef.current = true;
 
@@ -452,7 +522,11 @@ export default function useDerivTicks() {
       setTradeError("");
 
       try {
-        await derivPublicClient.ensureTradingConnection();
+        if (!derivPublicClient.socketAuthenticated) {
+          await derivPublicClient.ensureTradingConnection();
+        }
+
+        setTradingReady(true);
 
         const bought = await derivPublicClient.buyContract({
           symbol: finalSymbol,
@@ -653,4 +727,5 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
+
 
