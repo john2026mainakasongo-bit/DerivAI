@@ -4312,8 +4312,131 @@ export default function RapidEdgeAI() {
     symbol,
   ]);
 
-  useEffect(() => {
-    if (!running || !entryReady) {
+  
+  const speedScanAgeMs =
+    running
+      ? Math.max(
+          0,
+          Date.now() -
+            Number(
+              scanStartedAtRef.current ||
+              Date.now()
+            )
+        )
+      : 0;
+
+  const speedBalancedActive =
+    running && speedScanAgeMs >= 20000;
+
+  const speedFallbackActive =
+    running && speedScanAgeMs >= 45000;
+
+  const speedDeadlineActive =
+    running && speedScanAgeMs >= 58000;
+
+  const speedRecoveryActive =
+    running &&
+    String(
+      lastSettledTrade?.status || ""
+    ).toUpperCase() === "LOST" &&
+    Date.now() -
+      Number(
+        lastSettledTrade?.settledAt || 0
+      ) <
+      15000;
+
+  const speedProbability = Number(
+    best?.layered?.weightedProbability ??
+      best?.probability ??
+      0
+  );
+
+  const speedExpectedValue = Number(
+    best?.layered?.simulation?.expectedValue ??
+      best?.payoutEdge ??
+      -1
+  );
+
+  const speedRisk = Number(
+    best?.guardRisk ??
+      activeGuard?.risk ??
+      100
+  );
+
+  const speedVotes = Number(
+    best?.agreementVotes || 0
+  );
+
+  const speedCandidateValid =
+    ["OVER", "UNDER"].includes(
+      String(best?.side || "")
+    ) &&
+    Number(best?.barrier ?? -1) >= 0 &&
+    !hasOpenTrade &&
+    !tradeBusy &&
+    !busyRef.current &&
+    !best?.learned?.blocked &&
+    !blockedByLastLoss;
+
+  const balancedSpeedEntry =
+    speedCandidateValid &&
+    speedBalancedActive &&
+    Number(analysis?.total || 0) >= 12 &&
+    speedProbability >= 78 &&
+    speedExpectedValue >= 0.008 &&
+    speedVotes >= 4 &&
+    speedRisk <= 48;
+
+  const fallbackSpeedEntry =
+    speedCandidateValid &&
+    speedFallbackActive &&
+    Number(analysis?.total || 0) >= 10 &&
+    speedProbability >= 72 &&
+    speedExpectedValue >= 0.003 &&
+    speedVotes >= 3 &&
+    speedRisk <= 55;
+
+  const deadlineSpeedEntry =
+    speedCandidateValid &&
+    speedDeadlineActive &&
+    Number(analysis?.total || 0) >= 8 &&
+    speedProbability >= 70 &&
+    speedExpectedValue > 0 &&
+    speedVotes >= 2 &&
+    speedRisk <= 58;
+
+  const recoverySpeedEntry =
+    speedCandidateValid &&
+    speedRecoveryActive &&
+    Number(analysis?.total || 0) >= 8 &&
+    speedProbability >= 74 &&
+    speedExpectedValue >= 0.005 &&
+    speedVotes >= 3 &&
+    speedRisk <= 50 &&
+    (
+      String(best?.side || "") !==
+        String(
+          lastSettledTrade?.side || ""
+        ) ||
+      Number(best?.barrier ?? -1) !==
+        Number(
+          lastSettledTrade?.barrier ?? -1
+        ) ||
+      String(symbol || "") !==
+        String(
+          lastSettledTrade?.symbol || ""
+        )
+    );
+
+  const speedEntryReady =
+    entryReady ||
+    balancedSpeedEntry ||
+    fallbackSpeedEntry ||
+    deadlineSpeedEntry ||
+    recoverySpeedEntry;
+
+useEffect(() => {
+    if (!running || !speedEntryReady) {
       confirmationRef.current = {
         key: "",
         ticks: 0,
@@ -4334,7 +4457,7 @@ export default function RapidEdgeAI() {
           };
   }, [
     running,
-    entryReady,
+    speedEntryReady,
     bestKey,
     prices.length,
   ]);
@@ -6141,8 +6264,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V2 · Continuous Scan"
-          subtitle="Rolling tick intelligence stays warm after settlement · continuous ranking · fast sequential OVER + UNDER entries"
+          title="RapidEdge AI V3.0.1 · 60s Speed Ladder"
+          subtitle="Strict → balanced → positive-EV fallback within 60 seconds · fast recovery entry"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
