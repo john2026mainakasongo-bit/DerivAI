@@ -10,7 +10,8 @@ const links = [
   },
   { to: "/over-under-analysis", label: "Over/Under", icon: "Ã¢â€ â€¢" },
   { to: "/bot", label: "Auto Bot", icon: "âš¡" },
-{ to: "/differs-one-shot", label: "Differs 1 Run", icon: "1" },
+  { to: "/higher-high-ai", label: "Higher High AI", icon: "HH" },
+  { to: "/differs-one-shot", label: "Differs 1 Run", icon: "1" },
   { to: "/target-10-bot", label: "Target 10", icon: "â—Ž" },
   { to: "/settings", label: "Settings", icon: "âš™" },
 ];
@@ -40,7 +41,17 @@ export default function Sidebar() {
             {link.label}
           </NavLink>
         ))}
-</nav>
+      
+        <a
+          href="/quantum-ai-bot"
+          className={`navLink quantumNavLink ${
+            window.location.pathname === "/quantum-ai-bot" ? "active" : ""
+          }`}
+        >
+          <span aria-hidden="true">ðŸ§ </span>
+          <span>Quantum AI</span>
+        </a>
+      </nav>
 
       <div className="sidebarFooter">
         <span className="statusDot" />
@@ -49,7 +60,6 @@ export default function Sidebar() {
     </aside>
   );
 }
-
 
 
 

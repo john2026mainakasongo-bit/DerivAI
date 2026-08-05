@@ -1,0 +1,95 @@
+.hhPage{min-width:0;padding:8px 12px 24px}.hhPage *{box-sizing:border-box}.hhHero,.hhToolbar,.hhDecision,.hhSettings,.hhMetrics>article,.hhChecks,.hhMessage,.hhPanel{border:1px solid #174d66;border-radius:13px;background:#061f31}.hhHero{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px;margin:8px 0}.hhHero.running,.hhDecision.ready{border-color:#25d6a7;box-shadow:0 0 0 1px rgba(37,214,167,.12)}.hhHero small,.hhDecision small,.hhPanel small{color:#34dfb5;font-size:9px;font-weight:900;letter-spacing:.08em}.hhHero h1{margin:3px 0;color:#fff;font-size:25px}.hhHero p,.hhDecision p,.hhHistory p{margin:0;color:#8eb2c4;font-size:11px}.hhHeroStatus{text-align:right}.hhHeroStatus span{display:block;color:#39dfb3;font-size:9px;font-weight:900}.hhHeroStatus strong{display:block;margin-top:4px;color:#fff;font-size:18px}.hhToolbar{display:grid;grid-template-columns:minmax(220px,1fr) 130px repeat(3,auto);gap:7px;align-items:end;padding:9px;margin-bottom:7px}.hhAccount{min-height:38px;padding:6px 8px;border:1px solid #174b63;border-radius:8px;background:#041925}.hhAccount span,.hhSettings span,.hhMetrics span,.hhDecisionGrid span,.hhPerformance span,.hhChecks span{display:block;color:#78aabd;font-size:8px;font-weight:800}.hhAccount strong{display:block;margin-top:4px;color:#fff;font-size:11px}.hhToolbar button{height:38px;padding:0 14px;border:0;border-radius:8px;color:#fff;font-size:10px;font-weight:900;cursor:pointer}.hhToolbar button:disabled{opacity:.45;cursor:not-allowed}.hhStart{background:#13ad86}.hhStop{background:#c53d58}.hhReset{background:#725c18}.hhDecision{display:grid;grid-template-columns:minmax(220px,.75fr) minmax(0,1.25fr);gap:10px;padding:11px;margin-bottom:7px;border-color:#806b20}.hhDecision h2{margin:3px 0;color:#f1ce64;font-size:30px}.hhDecision.ready h2{color:#32dfaf}.hhDecisionGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.hhDecisionGrid article,.hhPerformance article{padding:8px;border:1px solid #17475e;border-radius:8px;background:#041925}.hhDecisionGrid strong,.hhPerformance strong,.hhMetrics strong{display:block;margin-top:4px;color:#fff;font-size:13px}.hhSettings{display:grid;grid-template-columns:repeat(8,minmax(82px,1fr));gap:6px;padding:8px;margin-bottom:7px}.hhSettings input{width:100%;height:32px;margin-top:3px;padding:0 7px;border:1px solid #245c74;border-radius:7px;background:#031724;color:#fff}.hhMetrics{display:grid;grid-template-columns:repeat(8,minmax(82px,1fr));gap:6px;margin-bottom:7px}.hhMetrics>article{padding:8px;min-height:50px}.hhChecks{display:grid;grid-template-columns:repeat(10,minmax(80px,1fr));gap:6px;padding:8px;margin-bottom:7px}.hhChecks article{padding:7px;border:1px solid #17475e;border-radius:8px;background:#041925}.hhChecks article.passed{border-color:#159275;background:#07352d}.hhChecks article.failed{border-color:#775e1a;background:#2b250d}.hhChecks strong,.hhChecks b{display:block;margin-top:3px;font-size:9px}.hhChecks .passed strong{color:#39e3b4}.hhChecks .failed strong{color:#f3cd62}.hhChecks b{color:#8eb2c4}.hhMessage{display:grid;gap:3px;padding:9px 11px;margin-bottom:7px;color:#f2cf69;font-size:10px}.hhMessage span{color:#ff879c}.hhBottom{display:grid;grid-template-columns:1fr 1fr;gap:7px}.hhPanel{padding:10px}.hhPanel h3{margin:3px 0 8px;color:#fff;font-size:15px}.hhPerformance{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.hhHistory{display:grid;gap:5px}.hhHistory article{display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:7px;border:1px solid #17475e;border-radius:8px;background:#041925;color:#a4c3d0;font-size:10px}.hhHistory article strong{color:#fff;overflow:hidden;text-overflow:ellipsis}.positive{color:#36dfb0!important}.negative{color:#ff6980!important}.hhRisk{color:#d1b85d;font-size:10px}@media(max-width:1100px){.hhSettings,.hhMetrics{grid-template-columns:repeat(4,minmax(0,1fr))}.hhChecks{grid-template-columns:repeat(5,minmax(0,1fr))}.hhToolbar{grid-template-columns:1fr 1fr repeat(3,auto)}}@media(max-width:760px){.hhPage{padding:4px 6px 18px}.hhHero{padding:10px}.hhHero h1{font-size:21px}.hhToolbar{grid-template-columns:1fr 1fr}.hhToolbar>div:first-child{grid-column:1/-1}.hhToolbar button{width:100%}.hhDecision{grid-template-columns:1fr}.hhDecisionGrid{grid-template-columns:repeat(2,1fr)}.hhSettings,.hhMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}.hhChecks{grid-template-columns:repeat(2,minmax(0,1fr))}.hhBottom{grid-template-columns:1fr}}
+
+/* V2 adaptive analysis telemetry */
+.hhDecisionGrid{grid-template-columns:repeat(6,minmax(0,1fr))!important}
+.hhAdaptiveStrip{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:7px;margin-bottom:8px}
+.hhAdaptiveStrip article{min-width:0;padding:8px;border:1px solid #174d66;border-radius:9px;background:#061f31}
+.hhAdaptiveStrip span{display:block;color:#71a7bd;font-size:8px;font-weight:800}
+.hhAdaptiveStrip strong{display:block;margin-top:4px;color:#fff;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hhDecision.watch{border-color:#b68d28}
+@media(max-width:1100px){.hhDecisionGrid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.hhAdaptiveStrip{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:760px){.hhDecisionGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.hhAdaptiveStrip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* HIGHER HIGH AI PRO V3 — strict confirmation and entry audit */
+.hhSettings {
+  grid-template-columns: repeat(6, minmax(90px, 1fr)) !important;
+}
+
+.hhHistoryV3 article {
+  grid-template-columns: minmax(140px, 1.2fr) minmax(150px, 1.2fr) auto auto !important;
+  align-items: center;
+}
+
+.hhHistoryV3 article > div {
+  min-width: 0;
+}
+
+.hhHistoryV3 article small {
+  display: block;
+  margin-top: 3px;
+  color: #79a9bc;
+  font-size: 8px;
+}
+
+.hhDecision.ready {
+  box-shadow: 0 0 0 1px rgba(31, 218, 171, .18);
+}
+
+@media (max-width: 1100px) {
+  .hhSettings {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .hhSettings {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .hhHistoryV3 article {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+
+/* HIGHER HIGH AI PRO V4 — loss diagnosis and safe recovery */
+.hhLossCause {
+  color: #ff9daf !important;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.hhDecisionGrid article:nth-last-child(2) strong {
+  color: #f1cf67;
+}
+
+.hhHistoryV3 article {
+  align-items: start;
+}
+
+
+/* HIGHER HIGH AI PRO V5 — AI voting telemetry */
+.hhAdaptiveStrip {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.hhChecks article strong {
+  font-size: 12px;
+}
+
+.hhChecks article b {
+  color: #8eb5c6;
+}
+
+@media (max-width: 1100px) {
+  .hhAdaptiveStrip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .hhAdaptiveStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

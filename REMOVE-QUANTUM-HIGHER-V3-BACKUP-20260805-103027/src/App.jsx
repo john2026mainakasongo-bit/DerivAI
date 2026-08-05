@@ -14,8 +14,10 @@ import Bot from "./pages/Bot";
 import DiffersOneShotBot from "./pages/DiffersOneShotBot";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
+import QuantumAIBot from "./pages/QuantumAIBot";
 
 import "./index.css";
+import HigherHighBot from "./pages/HigherHighBot";
 
 export default function App() {
   return (
@@ -38,19 +40,20 @@ export default function App() {
         <Route path="/target-10-bot" element={<TargetTenBot />} />
 
         <Route path="/bot" element={<Bot />} />
-<Route path="/differs-one-shot" element={<DiffersOneShotBot />} />
+        <Route path="/quantum-ai-bot" element={<QuantumAIBot />
+} />
+        <Route path="/differs-one-shot" element={<DiffersOneShotBot />} />
         <Route path="/settings" element={<Settings />} />
 
         <Route
           path="*"
           element={<Navigate to="/dashboard" replace />}
         />
-
+              <Route path="/higher-high-ai" element={<QuantumAIBot />} />
       </Routes>
     </BrowserRouter>
   );
 }
-
 
 
 
