@@ -458,6 +458,70 @@ function freshEdgeAdaptiveDuration(
     settings.durationNormalSeconds || 20
   );
 }
+function freshEdgeAdaptiveDurationV83(
+  analysis,
+  settings,
+  recoveryPolicy,
+  signalTrajectory
+) {
+  const confidence = Number(analysis.confidence || 0);
+  const quality = Number(analysis.quality || 0);
+  const momentum = Number(
+    analysis.componentScores?.momentum || 0
+  );
+  const continuation = Number(
+    analysis.continuation || 0
+  );
+  const noise = Number(analysis.noise || 0);
+  const reversal = Number(
+    analysis.reversalRisk || 0
+  );
+
+  const trajectoryHealthy =
+    Boolean(signalTrajectory?.ready) &&
+    Number(signalTrajectory?.momentumDrop || 0) <= 2.5 &&
+    Number(signalTrajectory?.votesDrop || 0) <= 2.5 &&
+    Number(
+      signalTrajectory?.continuationDrop || 0
+    ) <= 2.5;
+
+  if (
+    confidence >= 90 &&
+    quality >= 82 &&
+    momentum >= 85 &&
+    continuation >= 86 &&
+    noise <= 42 &&
+    reversal <= 32 &&
+    trajectoryHealthy
+  ) {
+    return Number(settings.durationFastSeconds || 12);
+  }
+
+  if (
+    confidence >= 84 &&
+    quality >= 75 &&
+    momentum >= 76 &&
+    continuation >= 80 &&
+    noise <= 52 &&
+    reversal <= 40 &&
+    trajectoryHealthy
+  ) {
+    return Number(settings.durationStrongSeconds || 16);
+  }
+
+  if (
+    confidence >= 78 &&
+    quality >= 70 &&
+    continuation >= 74 &&
+    reversal <= 47
+  ) {
+    return Number(
+      settings.durationBalancedSeconds || 22
+    );
+  }
+
+  return Number(settings.durationPatientSeconds || 30);
+}
 export default function FreshEdgeBot() {
   const {
     markets,
@@ -493,16 +557,18 @@ export default function FreshEdgeBot() {
     maximumReversal: 50,
     maximumSpikeRatio: 6,
     confirmationTicks: 3,
-    maximumMarketSeconds: 18,
+    maximumMarketSeconds: 32,
     decisionCycleSeconds: 55,
     durationFastSeconds: 12,
     durationNormalSeconds: 20,
     durationPatientSeconds: 30,
+    durationStrongSeconds: 16,
+    durationBalancedSeconds: 22,
     latencyEntryLimitMs: 1800,
-    hardRiskHoldSeconds: 12,
-    weakSetupHoldSeconds: 10,
-    strongerMarketDelaySeconds: 6,
-    strongerMarketMargin: 8,
+    hardRiskHoldSeconds: 15,
+    weakSetupHoldSeconds: 14,
+    strongerMarketDelaySeconds: 25,
+    strongerMarketMargin: 12,
     marketBlockSeconds: 15,
     maximumOpenTrades: 1,
     takeProfit: 2,
@@ -516,7 +582,13 @@ export default function FreshEdgeBot() {
     recoveryMarketBlockSeconds: 20,
     replayLimit: 12,
     waitEstimateSeconds: 5,
-    stabilityTicks: 3,
+    stabilityTicks: 5,
+    trajectoryTicks: 6,
+    minimumTrendAgeTicks: 8,
+    maximumMomentumDrop: 6,
+    maximumVotesDrop: 5,
+    maximumContinuationDrop: 5,
+    lossCooldownSeconds: 8,
     maximumConfidenceDrop: 3.5,
     minimumConfidenceGrowth: -0.5,
     scannerBoardMarkets: 8,
@@ -576,6 +648,7 @@ export default function FreshEdgeBot() {
   const botContractsRef = useRef(new Map());
   const activeReplayTicksRef = useRef(new Map());
   const lastObservedPriceRef = useRef(null);
+  const lossCooldownUntilV83Ref = useRef(0);
   const hardRiskStartedAtRef = useRef(0);
   const weakSetupStartedAtRef = useRef(0);
 
@@ -875,6 +948,112 @@ export default function FreshEdgeBot() {
     settings.minimumConfidenceGrowth,
   ]);
 
+  const signalTrajectoryV83 = useMemo(() => {
+    const trajectoryTicks = Math.max(
+      4,
+      Number(settings.trajectoryTicks || 6)
+    );
+
+    const requiredTrendAge = Math.max(
+      trajectoryTicks,
+      Number(settings.minimumTrendAgeTicks || 8)
+    );
+
+    const trajectoryPoints =
+      confidenceTrail.slice(-trajectoryTicks);
+
+    const agePoints =
+      confidenceTrail.slice(-requiredTrendAge);
+
+    if (
+      trajectoryPoints.length < trajectoryTicks ||
+      agePoints.length < requiredTrendAge
+    ) {
+      return {
+        ready: false,
+        trendAge: agePoints.length,
+        momentumDrop: 0,
+        votesDrop: 0,
+        continuationDrop: 0,
+        reason:
+          `Building trend age ${agePoints.length}/${requiredTrendAge} ticks.`,
+      };
+    }
+
+    const direction = analysis.direction;
+
+    const sameDirectionTicks = agePoints.filter(
+      (point) =>
+        point.direction === direction &&
+        direction &&
+        direction !== "WAIT"
+    ).length;
+
+    const first = trajectoryPoints[0] || {};
+    const last = trajectoryPoints.at(-1) || {};
+
+    const momentumDrop = Math.max(
+      0,
+      Number(first.momentum || 0) -
+        Number(last.momentum || 0)
+    );
+
+    const votesDrop = Math.max(
+      0,
+      Number(first.votes || 0) -
+        Number(last.votes || 0)
+    );
+
+    const continuationDrop = Math.max(
+      0,
+      Number(first.continuation || 0) -
+        Number(last.continuation || 0)
+    );
+
+    const directionStable =
+      sameDirectionTicks >= requiredTrendAge - 1;
+
+    const metricsStable =
+      momentumDrop <=
+        Number(settings.maximumMomentumDrop || 6) &&
+      votesDrop <=
+        Number(settings.maximumVotesDrop || 5) &&
+      continuationDrop <=
+        Number(
+          settings.maximumContinuationDrop || 5
+        );
+
+    const ready =
+      Boolean(direction) &&
+      direction !== "WAIT" &&
+      directionStable &&
+      metricsStable;
+
+    return {
+      ready,
+      trendAge: sameDirectionTicks,
+      momentumDrop,
+      votesDrop,
+      continuationDrop,
+      reason: ready
+        ? `Trend held ${sameDirectionTicks}/${requiredTrendAge} ticks; trajectory is stable.`
+        : `Entry blocked: trend ${sameDirectionTicks}/${requiredTrendAge}, momentum drop ${momentumDrop.toFixed(
+            1
+          )}, votes drop ${votesDrop.toFixed(
+            1
+          )}, continuation drop ${continuationDrop.toFixed(
+            1
+          )}.`,
+    };
+  }, [
+    confidenceTrail,
+    analysis.direction,
+    settings.trajectoryTicks,
+    settings.minimumTrendAgeTicks,
+    settings.maximumMomentumDrop,
+    settings.maximumVotesDrop,
+    settings.maximumContinuationDrop,
+  ]);
   const waitReasons = useMemo(() => {
     const thresholds = analysis.adaptiveThresholds || {};
     const reasons = [];
@@ -948,11 +1127,21 @@ export default function FreshEdgeBot() {
         label: "Confidence stability",
         pass: confidenceStability.ready,
         detail: confidenceStability.reason,
+      },
+      {
+        label: "Trend trajectory V8.3",
+        pass: signalTrajectoryV83.ready,
+        detail: signalTrajectoryV83.reason,
       }
     );
 
     return reasons;
-  }, [analysis, settings, confidenceStability]);
+  }, [
+    analysis,
+    settings,
+    confidenceStability,
+    signalTrajectoryV83,
+  ]);
 
   const missingWaitReasons = waitReasons.filter((item) => !item.pass);
 
@@ -966,11 +1155,28 @@ export default function FreshEdgeBot() {
           time: Date.now(),
           confidence: Number(analysis.confidence || 0),
           quality: Number(analysis.quality || 0),
+          momentum: Number(
+            analysis.componentScores?.momentum || 0
+          ),
+          votes: Number(analysis.voteConsensus || 0),
+          continuation: Number(analysis.continuation || 0),
+          noise: Number(analysis.noise || 0),
+          reversal: Number(analysis.reversalRisk || 0),
           direction: analysis.direction || "WAIT",
         },
       ].slice(-20)
     );
-  }, [currentPrice, analysis.confidence, analysis.quality, analysis.direction]);
+  }, [
+    currentPrice,
+    analysis.confidence,
+    analysis.quality,
+    analysis.componentScores?.momentum,
+    analysis.voteConsensus,
+    analysis.continuation,
+    analysis.noise,
+    analysis.reversalRisk,
+    analysis.direction,
+  ]);
 
   useEffect(() => {
     if (!recoveryState.active) return;
@@ -1016,6 +1222,30 @@ export default function FreshEdgeBot() {
       settings,
       recoveryState.active,
       recoveryPolicy,
+    ]
+  );
+  const adaptiveDurationV83 = useMemo(
+    () =>
+      Math.max(
+        10,
+        Math.min(
+          30,
+          freshEdgeAdaptiveDurationV83(
+            analysis,
+            settings,
+            recoveryState.active
+              ? recoveryPolicy
+              : null,
+            signalTrajectoryV83
+          )
+        )
+      ),
+    [
+      analysis,
+      settings,
+      recoveryState.active,
+      recoveryPolicy,
+      signalTrajectoryV83,
     ]
   );
   const recoveryReady =
@@ -1478,6 +1708,8 @@ export default function FreshEdgeBot() {
       !authenticatedFeed ||
       !recoveryReady ||
       !confidenceStability.ready ||
+      !signalTrajectoryV83.ready ||
+      Date.now() < lossCooldownUntilV83Ref.current ||
       (
         Number(stats.history[0]?.orderLatencyMs || 0) >
           Number(settings.latencyEntryLimitMs || 1800) &&
@@ -1523,7 +1755,7 @@ export default function FreshEdgeBot() {
             Number(settings.stake || 0.35)
           ),
           basis: "stake",
-          duration: adaptiveDuration,
+          duration: adaptiveDurationV83,
           durationUnit: settings.durationUnit || "s",
           symbol,
         });
@@ -1735,6 +1967,10 @@ export default function FreshEdgeBot() {
       }));
 
       if (result === "LOST") {
+        lossCooldownUntilV83Ref.current =
+          Date.now() +
+          Number(settings.lossCooldownSeconds || 8) *
+            1000;
         setBlockedMarkets((current) => ({
           ...current,
           [original.symbol]:
@@ -1859,7 +2095,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V7.2</h1>
+            <h1>FreshEdge AI V8.3</h1>
             <small>STRICT ENTRY GUARD</small>
             <p>
               Deep replay Â· latency telemetry Â· diagnosis-based recovery
@@ -2933,6 +3169,7 @@ export default function FreshEdgeBot() {
     </div>
   );
 }
+
 
 
 
