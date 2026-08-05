@@ -12,8 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v23";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v23";
+const MEMORY_KEY = "edgepilot:over-under-learning:v24";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v24";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1608,6 +1608,38 @@ function freshSetupKey({
   ].join(":");
 }
 
+
+function marketVisitLockActive(
+  lastTradeByMarket,
+  market,
+  rearmSeconds
+) {
+  const tradedAt = Number(
+    lastTradeByMarket?.[market] || 0
+  );
+
+  if (!tradedAt) return false;
+
+  return (
+    Date.now() - tradedAt <
+    Math.max(
+      2,
+      Number(rearmSeconds || 8)
+    ) *
+      1000
+  );
+}
+
+function tradeTimestamp(trade) {
+  return Number(
+    trade?.settledAt ??
+      trade?.updatedAt ??
+      trade?.time ??
+      trade?.createdAt ??
+      0
+  );
+}
+
 function setupCooldownRemaining(row) {
   const blockedUntil = Number(row?.blockedUntil || 0);
   return Math.max(0, blockedUntil - Date.now());
@@ -2045,6 +2077,10 @@ export default function OverUnderLearningBot() {
     useState(4);
   const [idleRescanSeconds, setIdleRescanSeconds] =
     useState(18);
+  const [marketRearmSeconds, setMarketRearmSeconds] =
+    useState(8);
+  const [postSettlementRearmMs, setPostSettlementRearmMs] =
+    useState(450);
   const lastPortfolioActivityRef =
     useRef(Date.now());
 
@@ -3112,7 +3148,11 @@ export default function OverUnderLearningBot() {
 
   const marketRunLocked = Boolean(
     oneRunPerMarket &&
-    lastTradeByMarket?.[symbol]
+    marketVisitLockActive(
+      lastTradeByMarket,
+      symbol,
+      marketRearmSeconds
+    )
   );
 
   const setupRepeated = Boolean(
@@ -3132,6 +3172,13 @@ export default function OverUnderLearningBot() {
 
   const sameBarrierRepeated = Boolean(
     lastMarketTrade &&
+    Date.now() -
+      tradeTimestamp(lastMarketTrade) <
+      Math.max(
+        2,
+        Number(marketRearmSeconds || 8)
+      ) *
+        1000 &&
     String(lastMarketTrade.side || "") ===
       String(best.side || "") &&
     Number(lastMarketTrade.barrier) ===
@@ -3292,9 +3339,11 @@ export default function OverUnderLearningBot() {
       const refreshUsed =
         Boolean(
           oneRunPerMarket &&
-          lastTradeByMarket?.[
-            refreshMarket
-          ]
+          marketVisitLockActive(
+            lastTradeByMarket,
+            refreshMarket,
+            marketRearmSeconds
+          )
         );
 
       const refreshBlocked =
@@ -3333,9 +3382,11 @@ export default function OverUnderLearningBot() {
       const portfolioUsed =
         Boolean(
           oneRunPerMarket &&
-          lastTradeByMarket?.[
-            portfolioCandidate
-          ]
+          marketVisitLockActive(
+            lastTradeByMarket,
+            portfolioCandidate,
+            marketRearmSeconds
+          )
         );
 
       const portfolioBlocked =
@@ -3392,7 +3443,11 @@ export default function OverUnderLearningBot() {
       const alreadyUsed =
         Boolean(
           oneRunPerMarket &&
-          lastTradeByMarket?.[candidate]
+          marketVisitLockActive(
+            lastTradeByMarket,
+            candidate,
+            marketRearmSeconds
+          )
         );
 
       if (
@@ -3764,10 +3819,39 @@ export default function OverUnderLearningBot() {
             Number(idleRescanSeconds || 18)
           ) *
             1000 &&
-        !switchBusyRef.current
+        !hasOpenTrade
       ) {
+        busyRef.current = false;
+        switchBusyRef.current = false;
+        nextEntryAtRef.current = 0;
+        confirmationRef.current = {
+          key: "",
+          ticks: 0,
+        };
+        scanStartedAtRef.current =
+          Date.now();
         lastPortfolioActivityRef.current =
           Date.now();
+
+        setLastTradeByMarket((current) => {
+          const cutoff =
+            Date.now() -
+            Math.max(
+              2,
+              Number(marketRearmSeconds || 8)
+            ) *
+              1000;
+          const next = {};
+          for (
+            const [marketName, tradedAt]
+            of Object.entries(current || {})
+          ) {
+            if (Number(tradedAt || 0) > cutoff) {
+              next[marketName] = tradedAt;
+            }
+          }
+          return next;
+        });
 
         void switchMarket(
           portfolioReadyMarkets.length
@@ -3787,6 +3871,7 @@ export default function OverUnderLearningBot() {
     hasOpenTrade,
     tradeBusy,
     idleRescanSeconds,
+    marketRearmSeconds,
     portfolioReadyMarkets,
     portfolioWatchMarkets,
     symbol,
@@ -4060,41 +4145,76 @@ export default function OverUnderLearningBot() {
   ]);
 
   useEffect(() => {
-    if (
-      !oneRunPerMarket ||
-      !symbol ||
-      !lastTradeByMarket?.[symbol]
-    ) {
+    if (!oneRunPerMarket) {
       return undefined;
     }
 
-    const recentCount =
-      Array.isArray(analysis.recentDigits)
-        ? analysis.recentDigits.length
-        : 0;
+    const prune = () => {
+      const cutoff =
+        Date.now() -
+        Math.max(
+          2,
+          Number(marketRearmSeconds || 8)
+        ) *
+          1000;
 
-    if (
-      recentCount <
-      Number(freshTicksRequired || 12)
-    ) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => {
       setLastTradeByMarket((current) => {
+        let changed = false;
         const next = { ...current };
-        delete next[symbol];
-        return next;
-      });
-    }, 1200);
 
-    return () => window.clearTimeout(timer);
+        for (
+          const [marketName, tradedAt]
+          of Object.entries(current || {})
+        ) {
+          if (Number(tradedAt || 0) <= cutoff) {
+            delete next[marketName];
+            changed = true;
+          }
+        }
+
+        return changed ? next : current;
+      });
+
+      setLastSetupKeyByMarket((current) => {
+        const activeMarkets = new Set(
+          Object.keys(lastTradeByMarket || {}).filter(
+            (marketName) =>
+              marketVisitLockActive(
+                lastTradeByMarket,
+                marketName,
+                marketRearmSeconds
+              )
+          )
+        );
+
+        let changed = false;
+        const next = { ...current };
+
+        for (
+          const marketName
+          of Object.keys(current || {})
+        ) {
+          if (!activeMarkets.has(marketName)) {
+            delete next[marketName];
+            changed = true;
+          }
+        }
+
+        return changed ? next : current;
+      });
+    };
+
+    prune();
+
+    const timer =
+      window.setInterval(prune, 1000);
+
+    return () =>
+      window.clearInterval(timer);
   }, [
     oneRunPerMarket,
-    symbol,
     lastTradeByMarket,
-    analysis.recentDigits,
-    freshTicksRequired,
+    marketRearmSeconds,
   ]);
 
   useEffect(() => {
@@ -4337,6 +4457,25 @@ export default function OverUnderLearningBot() {
       settledSnapshot
     );
 
+    // V24: settlement is a complete execution boundary.
+    // Clear transient locks immediately while preserving learning/cache.
+    busyRef.current = false;
+    switchBusyRef.current = false;
+    nextEntryAtRef.current = 0;
+    confirmationRef.current = {
+      key: "",
+      ticks: 0,
+    };
+    scanStartedAtRef.current = Date.now();
+    lastPortfolioActivityRef.current =
+      Date.now();
+
+    setLastTradeByMarket((current) => ({
+      ...current,
+      [settled.symbol || symbol]:
+        Date.now(),
+    }));
+
     const result =
       settled.status === "WON"
         ? "WON"
@@ -4561,13 +4700,18 @@ export default function OverUnderLearningBot() {
 
     nextEntryAtRef.current =
       Date.now() +
-      (result === "WON" ? 1200 : 2500);
+      Math.max(
+        150,
+        Number(postSettlementRearmMs || 450)
+      );
     scanStartedAtRef.current =
       Date.now();
     confirmationRef.current = {
       key: "",
       ticks: 0,
     };
+    busyRef.current = false;
+    switchBusyRef.current = false;
 
     lastPortfolioActivityRef.current =
       Date.now();
@@ -4579,7 +4723,10 @@ export default function OverUnderLearningBot() {
             ? "WIN settled; rotating to refresh portfolio and find a new READY setup"
             : "LOSS settled; rotating to search a fresh recovery setup"
         );
-      }, result === "WON" ? 650 : 900);
+      }, Math.max(
+        200,
+        Number(postSettlementRearmMs || 450)
+      ));
     }
   }, [openContracts]);
 
@@ -4602,6 +4749,13 @@ export default function OverUnderLearningBot() {
     }
 
     runningRef.current = true;
+    busyRef.current = false;
+    switchBusyRef.current = false;
+    nextEntryAtRef.current = 0;
+    lastPortfolioActivityRef.current =
+      Date.now();
+    setLastTradeByMarket({});
+    setLastSetupKeyByMarket({});
     setRunning(true);
     scanStartedAtRef.current =
       Date.now();
@@ -4610,7 +4764,7 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
     setMessage(
-      "Reading live digits continuously and learning every settled setup."
+      "V24 running: live digits, auto-unlock, expiring market locks and continuous portfolio rescan."
     );
   }
 
@@ -4842,8 +4996,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V23"
-          subtitle="Tiered entry engine · ELITE first · GOOD fallback · continuous scan"
+          title="Over/Under Adaptive Learning Bot V24"
+          subtitle="Auto-unlock engine · expiring market locks · continuous portfolio rescan"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -4918,7 +5072,7 @@ export default function OverUnderLearningBot() {
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
                 : portfolioWatchEnabled &&
                   portfolioReadyMarkets.length === 0
-                ? "PORTFOLIO WATCH — No ELITE or GOOD market. Refreshing WATCH markets without opening a trade."
+                ? "PORTFOLIO WATCH — No ELITE or GOOD market. Auto-unlock is active and WATCH markets continue refreshing."
                 : globalPortfolioEnabled &&
                   (
                     !bestGlobalMarket ||
@@ -5111,6 +5265,46 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Market rearm seconds</span>
+            <input
+              type="number"
+              min="3"
+              max="60"
+              step="1"
+              value={marketRearmSeconds}
+              onChange={(event) =>
+                setMarketRearmSeconds(
+                  clamp(
+                    event.target.value,
+                    3,
+                    60
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Post-settlement rearm ms</span>
+            <input
+              type="number"
+              min="150"
+              max="3000"
+              step="50"
+              value={postSettlementRearmMs}
+              onChange={(event) =>
+                setPostSettlementRearmMs(
+                  clamp(
+                    event.target.value,
+                    150,
+                    3000
+                  )
                 )
               }
             />
@@ -6197,6 +6391,29 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Auto unlock</span>
+              <strong>
+                {marketRearmSeconds}s
+              </strong>
+              <small>
+                Market visit locks expire automatically
+              </small>
+            </article>
+
+            <article>
+              <span>Transient lock state</span>
+              <strong>
+                {busyRef.current ||
+                switchBusyRef.current
+                  ? "BUSY"
+                  : "CLEAR"}
+              </strong>
+              <small>
+                Settlement and watchdog clear stale locks
               </small>
             </article>
 

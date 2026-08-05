@@ -1325,3 +1325,9 @@
 .oulUniversalRanking article.qualified em {
   color: #31f2ba;
 }
+
+
+/* V24 auto-unlock status */
+.oulAdvancedAnalysis article strong {
+  overflow-wrap: anywhere;
+}
