@@ -1061,6 +1061,89 @@ export default function FreshEdgeBot() {
     settings.maximumVotesDrop,
     settings.maximumContinuationDrop,
   ]);
+  const entryTimingGuardV841 = useMemo(() => {
+    const requiredWarmup = Math.max(
+      6,
+      Number(settings.marketWarmupTicks || 10)
+    );
+
+    const warmupCount =
+      marketWarmupCountV841Ref.current;
+
+    const warmupReady =
+      warmupCount >= requiredWarmup;
+
+    const confidenceReady =
+      Number(analysis.confidence || 0) >=
+      Number(settings.minimumExpiryConfidence || 78);
+
+    const qualityReady =
+      Number(analysis.quality || 0) >=
+      Number(settings.minimumExpiryQuality || 70);
+
+    const sameDirectionBlocked =
+      Date.now() <
+        Number(
+          lastLossDirectionUntilV841Ref.current || 0
+        ) &&
+      analysis.direction ===
+        lastLossDirectionV841Ref.current;
+
+    const latestTrade = stats.history[0];
+
+    const latencyBlocked =
+      Number(latestTrade?.orderLatencyMs || 0) >
+        Number(settings.latencyEntryLimitMs || 1600) &&
+      Date.now() -
+        Number(latestTrade?.settledAt || 0) <
+        30000;
+
+    return {
+      ready:
+        warmupReady &&
+        confidenceReady &&
+        qualityReady &&
+        !sameDirectionBlocked &&
+        !latencyBlocked,
+      warmupReady,
+      confidenceReady,
+      qualityReady,
+      sameDirectionBlocked,
+      latencyBlocked,
+      warmupCount,
+      requiredWarmup,
+    };
+  }, [
+    currentPrice,
+    analysis.confidence,
+    analysis.quality,
+    analysis.direction,
+    stats.history,
+    settings.marketWarmupTicks,
+    settings.minimumExpiryConfidence,
+    settings.minimumExpiryQuality,
+    settings.latencyEntryLimitMs,
+  ]);
+
+  const expiryQualifiedV841 = useMemo(
+    () =>
+      Number(analysis.confidence || 0) >=
+        Number(settings.minimumExpiryConfidence || 78) &&
+      Number(analysis.quality || 0) >=
+        Number(settings.minimumExpiryQuality || 70) &&
+      Number(analysis.continuation || 0) >= 72 &&
+      Number(analysis.noise || 100) <= 60 &&
+      Number(analysis.reversalRisk || 100) <= 50,
+    [
+      analysis.confidence,
+      analysis.quality,
+      analysis.continuation,
+      analysis.noise,
+      analysis.reversalRisk,
+      settings.minimumExpiryConfidence,
+      settings.minimumExpiryQuality,
+    ]
+  );
   const waitReasons = useMemo(() => {
     const thresholds = analysis.adaptiveThresholds || {};
     const reasons = [];
@@ -1268,89 +1351,6 @@ export default function FreshEdgeBot() {
       recoveryState.active,
       recoveryPolicy,
       signalTrajectoryV83,
-    ]
-  );
-  const entryTimingGuardV841 = useMemo(() => {
-    const requiredWarmup = Math.max(
-      6,
-      Number(settings.marketWarmupTicks || 10)
-    );
-
-    const warmupCount =
-      marketWarmupCountV841Ref.current;
-
-    const warmupReady =
-      warmupCount >= requiredWarmup;
-
-    const confidenceReady =
-      Number(analysis.confidence || 0) >=
-      Number(settings.minimumExpiryConfidence || 78);
-
-    const qualityReady =
-      Number(analysis.quality || 0) >=
-      Number(settings.minimumExpiryQuality || 70);
-
-    const sameDirectionBlocked =
-      Date.now() <
-        Number(
-          lastLossDirectionUntilV841Ref.current || 0
-        ) &&
-      analysis.direction ===
-        lastLossDirectionV841Ref.current;
-
-    const latestTrade = stats.history[0];
-
-    const latencyBlocked =
-      Number(latestTrade?.orderLatencyMs || 0) >
-        Number(settings.latencyEntryLimitMs || 1600) &&
-      Date.now() -
-        Number(latestTrade?.settledAt || 0) <
-        30000;
-
-    return {
-      ready:
-        warmupReady &&
-        confidenceReady &&
-        qualityReady &&
-        !sameDirectionBlocked &&
-        !latencyBlocked,
-      warmupReady,
-      confidenceReady,
-      qualityReady,
-      sameDirectionBlocked,
-      latencyBlocked,
-      warmupCount,
-      requiredWarmup,
-    };
-  }, [
-    currentPrice,
-    analysis.confidence,
-    analysis.quality,
-    analysis.direction,
-    stats.history,
-    settings.marketWarmupTicks,
-    settings.minimumExpiryConfidence,
-    settings.minimumExpiryQuality,
-    settings.latencyEntryLimitMs,
-  ]);
-
-  const expiryQualifiedV841 = useMemo(
-    () =>
-      Number(analysis.confidence || 0) >=
-        Number(settings.minimumExpiryConfidence || 78) &&
-      Number(analysis.quality || 0) >=
-        Number(settings.minimumExpiryQuality || 70) &&
-      Number(analysis.continuation || 0) >= 72 &&
-      Number(analysis.noise || 100) <= 60 &&
-      Number(analysis.reversalRisk || 100) <= 50,
-    [
-      analysis.confidence,
-      analysis.quality,
-      analysis.continuation,
-      analysis.noise,
-      analysis.reversalRisk,
-      settings.minimumExpiryConfidence,
-      settings.minimumExpiryQuality,
     ]
   );
   const recoveryReady =
@@ -2218,7 +2218,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V8.4.1</h1>
+            <h1>FreshEdge AI V8.4.2</h1>
             <small>STRICT ENTRY GUARD</small>
             <p>
               Deep replay Â· latency telemetry Â· diagnosis-based recovery
@@ -3294,6 +3294,7 @@ export default function FreshEdgeBot() {
     </div>
   );
 }
+
 
 
 
