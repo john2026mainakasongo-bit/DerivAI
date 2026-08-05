@@ -1460,6 +1460,8 @@ export default function OverUnderLearningBot() {
     useState(() => loadMemory());
   const [trades, setTrades] =
     useState([]);
+  const [lastSettledTrade, setLastSettledTrade] =
+    useState(null);
   const [stats, setStats] = useState({
     runs: 0,
     wins: 0,
@@ -3159,6 +3161,15 @@ export default function OverUnderLearningBot() {
 
     if (!settled) return;
 
+    const settledSnapshot = {
+      ...settled,
+      settledAt: Date.now(),
+    };
+
+    setLastSettledTrade(
+      settledSnapshot
+    );
+
     const result =
       settled.status === "WON"
         ? "WON"
@@ -3392,6 +3403,7 @@ export default function OverUnderLearningBot() {
 
   function reset() {
     setTrades([]);
+    setLastSettledTrade(null);
     setConsecutiveLosses(0);
     setRecovery({
       active: false,
@@ -3597,8 +3609,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V15"
-          subtitle="One-run rotation · fresh-entry lock · qualified setup only"
+          title="Over/Under Adaptive Learning Bot V15.1"
+          subtitle="V15.1 settled-trade hotfix · one-run rotation · fresh entry"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
