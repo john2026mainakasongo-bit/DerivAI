@@ -13,7 +13,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeFreshEdge } from "../analysis/freshEdgeEngine";
 import "../styles/FreshEdgeBot.css";
 
-const STORAGE_KEY = "fresh-edge-ai-v1-history";
+const STORAGE_KEY = "fresh-edge-ai-v2-history";
 
 const INITIAL_STATS = {
   runs: 0,
@@ -77,6 +77,71 @@ function profitOf(contract, fallbackStake = 0.35) {
   return payout - buyPrice;
 }
 
+
+function diagnoseFreshEdgeTrade(trade, result) {
+  if (result === "WON") {
+    return {
+      code: "SETUP_HELD",
+      summary: "Trend, votes and continuation held through expiry.",
+      nextAction: "Keep the same thresholds; continue scanning fresh setups.",
+    };
+  }
+
+  const confidence = Number(trade?.confidence || 0);
+  const quality = Number(trade?.quality || 0);
+  const noise = Number(trade?.noise || 0);
+  const reversal = Number(trade?.reversalRisk || 0);
+  const spike = Number(trade?.spikeRatio || 0);
+  const continuation = Number(trade?.continuation || 0);
+  const votes = Number(trade?.voteConsensus || 0);
+
+  if (spike >= 4.5) {
+    return {
+      code: "SPIKE_ENTRY",
+      summary: "A large tick spike weakened the expiry timing.",
+      nextAction: "Block the market briefly and require a lower spike ratio.",
+    };
+  }
+
+  if (reversal >= 58) {
+    return {
+      code: "REVERSAL_PRESSURE",
+      summary: "Reversal pressure was already elevated at entry.",
+      nextAction: "Require stronger continuation and avoid repeating that side.",
+    };
+  }
+
+  if (noise >= 68) {
+    return {
+      code: "HIGH_NOISE",
+      summary: "Noise was high enough to disrupt the short expiry.",
+      nextAction: "Skip this market until noise drops.",
+    };
+  }
+
+  if (votes < 62 || continuation < 60) {
+    return {
+      code: "WEAK_FOLLOW_THROUGH",
+      summary: "The direction was correct briefly but follow-through was weak.",
+      nextAction: "Raise vote/continuation requirements for the next setup.",
+    };
+  }
+
+  if (confidence < 66 || quality < 62) {
+    return {
+      code: "MARGINAL_EDGE",
+      summary: "The setup passed, but its safety margin was small.",
+      nextAction: "Wait for a stronger fresh-tick setup on another market.",
+    };
+  }
+
+  return {
+    code: "EXPIRY_VARIANCE",
+    summary: "A strong setup lost to short-term expiry variance.",
+    nextAction: "Do not chase; move to a fresh market and rebuild the signal.",
+  };
+}
+
 export default function FreshEdgeBot() {
   const {
     markets,
@@ -97,22 +162,22 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge AI is isolated and ready."
+    "FreshEdge V2 is ready for fast fresh-tick analysis."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
     duration: 20,
     durationUnit: "s",
-    minimumTicks: 24,
-    minimumConfidence: 62,
-    minimumQuality: 58,
-    minimumVotes: 58,
-    minimumContinuation: 56,
+    minimumTicks: 16,
+    minimumConfidence: 60,
+    minimumQuality: 56,
+    minimumVotes: 56,
+    minimumContinuation: 54,
     maximumNoise: 76,
     maximumReversal: 70,
     maximumSpikeRatio: 6,
     confirmationTicks: 2,
-    maximumMarketSeconds: 10,
+    maximumMarketSeconds: 7,
     marketBlockSeconds: 15,
     maximumOpenTrades: 1,
     takeProfit: 2,
@@ -288,7 +353,7 @@ export default function FreshEdgeBot() {
       ) {
         void switchMarket("No confirmed entry.");
       }
-    }, 500);
+    }, 250);
 
     return () => window.clearInterval(timer);
   }, [
@@ -360,6 +425,10 @@ export default function FreshEdgeBot() {
           quality: analysis.quality,
           noise: analysis.noise,
           reversalRisk: analysis.reversalRisk,
+          continuation: analysis.continuation,
+          voteConsensus: analysis.voteConsensus,
+          spikeRatio: analysis.spikeRatio,
+          entryReasons: analysis.entryReasons || [],
           openedAt: Date.now(),
           stake: Number(settings.stake || 0.35),
         });
@@ -419,6 +488,10 @@ export default function FreshEdgeBot() {
 
       const result = resultOf(contract);
       const profit = profitOf(contract, original.stake);
+      const diagnosis = diagnoseFreshEdgeTrade(
+        original,
+        result
+      );
 
       setStats((current) => ({
         runs: current.runs + 1,
@@ -431,6 +504,7 @@ export default function FreshEdgeBot() {
             ...original,
             result,
             profit,
+            diagnosis,
             settledAt: Date.now(),
           },
           ...current.history,
@@ -446,13 +520,13 @@ export default function FreshEdgeBot() {
         }));
 
         setMessage(
-          `${original.market} lost. It is blocked for ${settings.marketBlockSeconds}s while FreshEdge scans another market.`
+          `${original.market} lost · ${diagnosis.code}: ${diagnosis.summary} ${diagnosis.nextAction}`
         );
 
         void switchMarket("Loss rearm.");
       } else {
         setMessage(
-          `${original.market} won ${profit.toFixed(2)} USD. Continuing fresh scan.`
+          `${original.market} won ${profit.toFixed(2)} USD · ${diagnosis.summary}`
         );
         setMarketStartedAt(Date.now());
       }
@@ -498,9 +572,9 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI</h1>
+            <h1>FreshEdge AI V2</h1>
             <p>
-              Fresh ticks only · isolated memory · quick market skip
+              Fast fresh-tick analysis · explainable entries · isolated memory
             </p>
           </div>
 
@@ -601,9 +675,41 @@ export default function FreshEdgeBot() {
           </div>
         </section>
 
+        <section className="freshEdgeExplain">
+          <header>
+            <div>
+              <small>WHY THIS TRADE CAN HAPPEN</small>
+              <h3>Live entry explanation</h3>
+            </div>
+            <strong>
+              {analysis.decision === "BUY"
+                ? "QUALIFIED"
+                : "FILTERING"}
+            </strong>
+          </header>
+
+          <div className="freshEdgeExplainGrid">
+            {(analysis.entryReasons || [
+              analysis.reason,
+            ]).map((reason, index) => (
+              <article key={`${reason}-${index}`}>
+                <span>{index + 1}</span>
+                <strong>{reason}</strong>
+              </article>
+            ))}
+          </div>
+
+          <p>
+            Entry confirmation: {confirmation.ticks}/
+            {settings.confirmationTicks} live ticks. Market changes
+            after {settings.maximumMarketSeconds}s without a valid setup.
+          </p>
+        </section>
+
         <section className="freshEdgeSettings">
           {[
             ["Stake", "stake", 0.35, 100, 0.05],
+            ["Fresh ticks", "minimumTicks", 10, 60, 1],
             ["Duration", "duration", 5, 120, 5],
             ["Confidence", "minimumConfidence", 50, 90, 1],
             ["Quality", "minimumQuality", 45, 90, 1],
@@ -709,17 +815,50 @@ export default function FreshEdgeBot() {
             stats.history.map((trade) => (
               <article
                 key={`${trade.contractId}-${trade.settledAt}`}
+                className="freshEdgeJournalRow"
               >
-                <strong>{trade.market}</strong>
-                <span>{trade.direction}</span>
-                <span>
-                  C {Number(trade.confidence).toFixed(1)}%
-                </span>
-                <span>
-                  Q {Number(trade.quality).toFixed(1)}%
-                </span>
-                <b className={trade.result === "WON" ? "won" : "lost"}>
-                  {trade.result} {Number(trade.profit).toFixed(2)}
+                <div>
+                  <strong>{trade.market}</strong>
+                  <span>{trade.direction}</span>
+                </div>
+
+                <div>
+                  <span>Why entered</span>
+                  <strong>
+                    {(trade.entryReasons || []).join(" · ") ||
+                      `C ${Number(trade.confidence).toFixed(
+                        1
+                      )}% · Q ${Number(trade.quality).toFixed(
+                        1
+                      )}%`}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Outcome diagnosis</span>
+                  <strong>
+                    {trade.diagnosis?.code || "SETTLED"}
+                  </strong>
+                  <small>
+                    {trade.diagnosis?.summary || "Trade settled."}
+                  </small>
+                </div>
+
+                <div>
+                  <span>Next protection</span>
+                  <strong>
+                    {trade.diagnosis?.nextAction ||
+                      "Continue fresh scan."}
+                  </strong>
+                </div>
+
+                <b
+                  className={
+                    trade.result === "WON" ? "won" : "lost"
+                  }
+                >
+                  {trade.result}{" "}
+                  {Number(trade.profit).toFixed(2)}
                 </b>
               </article>
             ))

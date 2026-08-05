@@ -54,7 +54,7 @@ export function analyzeFreshEdge(prices = [], options = {}) {
     .filter(Number.isFinite)
     .slice(-120);
 
-  const minimumTicks = Math.max(12, Number(options.minimumTicks || 24));
+  const minimumTicks = Math.max(10, Number(options.minimumTicks || 16));
 
   if (clean.length < minimumTicks) {
     return {
@@ -71,11 +71,13 @@ export function analyzeFreshEdge(prices = [], options = {}) {
     };
   }
 
+  const recent6 = clean.slice(-6);
   const recent8 = clean.slice(-8);
   const recent16 = clean.slice(-16);
   const recent32 = clean.slice(-32);
   const recent64 = clean.slice(-64);
 
+  const move6 = moves(recent6);
   const move8 = moves(recent8);
   const move16 = moves(recent16);
   const move32 = moves(recent32);
@@ -96,6 +98,7 @@ export function analyzeFreshEdge(prices = [], options = {}) {
   const spikeRatio =
     averageMove > 0 ? maximumMove / averageMove : 0;
 
+  const up6 = ratioAboveZero(move6);
   const up8 = ratioAboveZero(move8);
   const up16 = ratioAboveZero(move16);
   const up32 = ratioAboveZero(move32);
@@ -119,9 +122,10 @@ export function analyzeFreshEdge(prices = [], options = {}) {
     : "";
 
   const voteUp =
-    up8 * 40 +
-    up16 * 35 +
-    up32 * 25;
+    up6 * 28 +
+    up8 * 27 +
+    up16 * 25 +
+    up32 * 20;
 
   const voteDown = 100 - voteUp;
 
@@ -184,6 +188,15 @@ export function analyzeFreshEdge(prices = [], options = {}) {
     reversalRisk >= Number(options.maximumReversal || 70) ||
     spikeRatio >= Number(options.maximumSpikeRatio || 6);
 
+  const entryReasons = [
+    direction ? `EMA structure supports ${direction}` : "EMA structure mixed",
+    `votes ${voteConsensus.toFixed(1)}%`,
+    `continuation ${continuation.toFixed(1)}%`,
+    `noise ${noise.toFixed(1)}%`,
+    `reversal ${reversalRisk.toFixed(1)}%`,
+    `spike ${spikeRatio.toFixed(2)}x`,
+  ];
+
   const qualified =
     Boolean(direction) &&
     confidence >= Number(options.minimumConfidence || 62) &&
@@ -204,8 +217,9 @@ export function analyzeFreshEdge(prices = [], options = {}) {
     continuation,
     voteConsensus,
     spikeRatio,
+    entryReasons,
     reason: qualified
-      ? `${direction} setup confirmed from fresh ticks.`
+      ? `${direction} confirmed: ${entryReasons.join(" · ")}.`
       : hardRisk
       ? "Fresh setup rejected by live risk protection."
       : !direction
@@ -218,6 +232,7 @@ export function analyzeFreshEdge(prices = [], options = {}) {
       slope8,
       slope16,
       slope32,
+      up6: up6 * 100,
       up8: up8 * 100,
       up16: up16 * 100,
       up32: up32 * 100,

@@ -281,3 +281,126 @@
     font-size: 8px;
   }
 }
+
+
+/* FreshEdge AI V2 — explainable fast engine */
+.freshEdgeExplain {
+  margin: 8px 14px;
+  padding: 10px;
+  border: 1px solid #2a6c7f;
+  border-radius: 12px;
+  background: #052034;
+}
+
+.freshEdgeExplain header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.freshEdgeExplain small {
+  color: #39dfb5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.freshEdgeExplain h3 {
+  margin: 3px 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.freshEdgeExplain header > strong {
+  color: #f0c952;
+  font-size: 10px;
+}
+
+.freshEdgeExplainGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.freshEdgeExplainGrid article {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid #174d65;
+  border-radius: 8px;
+  background: #031827;
+}
+
+.freshEdgeExplainGrid span {
+  color: #39dfb5;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.freshEdgeExplainGrid strong {
+  color: #dceef7;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.freshEdgeExplain p {
+  margin: 7px 0 0;
+  color: #8fb6c8;
+  font-size: 9px;
+}
+
+.freshEdgeJournalRow {
+  grid-template-columns: minmax(100px, .6fr) minmax(230px, 1.5fr) minmax(220px, 1.3fr) minmax(220px, 1.3fr) 100px !important;
+  align-items: start;
+}
+
+.freshEdgeJournalRow > div {
+  min-width: 0;
+}
+
+.freshEdgeJournalRow > div > span {
+  display: block;
+  color: #82adbf;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.freshEdgeJournalRow > div > strong {
+  display: block;
+  margin-top: 3px;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.freshEdgeJournalRow small {
+  display: block;
+  margin-top: 3px;
+  color: #8fb6c8;
+  font-size: 8px;
+  line-height: 1.3;
+}
+
+@media (max-width: 1000px) {
+  .freshEdgeExplainGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .freshEdgeJournalRow {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (max-width: 650px) {
+  .freshEdgeExplainGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .freshEdgeJournalRow {
+    grid-template-columns: 1fr !important;
+  }
+}
