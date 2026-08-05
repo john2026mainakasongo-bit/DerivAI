@@ -115,6 +115,213 @@ function candidateKey(candidate, symbol) {
   ].join(":");
 }
 
+
+function recentSettledTrades(trades, limit = 20) {
+  return (Array.isArray(trades) ? trades : [])
+    .filter((trade) =>
+      ["WON", "LOST"].includes(
+        String(trade?.status || "")
+      )
+    )
+    .slice(0, limit);
+}
+
+function performanceSummary(trades) {
+  const settled = recentSettledTrades(trades, 20);
+  const wins = settled.filter(
+    (trade) => trade.status === "WON"
+  ).length;
+  const losses = settled.length - wins;
+  const profit = settled.reduce(
+    (total, trade) =>
+      total + Number(trade?.profit || 0),
+    0
+  );
+
+  return {
+    count: settled.length,
+    wins,
+    losses,
+    profit,
+    winRate: settled.length
+      ? (wins / settled.length) * 100
+      : 50,
+  };
+}
+
+function candidatePerformance(
+  trades,
+  symbol,
+  candidate
+) {
+  if (!candidate) {
+    return {
+      count: 0,
+      winRate: 50,
+      profit: 0,
+      lossStreak: 0,
+    };
+  }
+
+  const matching = recentSettledTrades(
+    trades,
+    60
+  ).filter(
+    (trade) =>
+      String(trade?.symbol || "") ===
+        String(symbol || "") &&
+      String(trade?.side || "") ===
+        String(candidate.side || "") &&
+      Number(trade?.barrier) ===
+        Number(candidate.barrier)
+  );
+
+  let lossStreak = 0;
+
+  for (const trade of matching) {
+    if (trade.status !== "LOST") break;
+    lossStreak += 1;
+  }
+
+  const wins = matching.filter(
+    (trade) => trade.status === "WON"
+  ).length;
+
+  return {
+    count: matching.length,
+    winRate: matching.length
+      ? (wins / matching.length) * 100
+      : 50,
+    profit: matching.reduce(
+      (total, trade) =>
+        total + Number(trade?.profit || 0),
+      0
+    ),
+    lossStreak,
+  };
+}
+
+function marketPerformance(trades, symbol) {
+  const matching = recentSettledTrades(
+    trades,
+    80
+  ).filter(
+    (trade) =>
+      String(trade?.symbol || "") ===
+      String(symbol || "")
+  );
+
+  let lossStreak = 0;
+
+  for (const trade of matching) {
+    if (trade.status !== "LOST") break;
+    lossStreak += 1;
+  }
+
+  const wins = matching.filter(
+    (trade) => trade.status === "WON"
+  ).length;
+
+  return {
+    count: matching.length,
+    winRate: matching.length
+      ? (wins / matching.length) * 100
+      : 50,
+    profit: matching.reduce(
+      (total, trade) =>
+        total + Number(trade?.profit || 0),
+      0
+    ),
+    lossStreak,
+  };
+}
+
+function enrichCandidate(
+  candidate,
+  trades,
+  symbol
+) {
+  if (!candidate) return null;
+
+  const global = performanceSummary(trades);
+  const contract = candidatePerformance(
+    trades,
+    symbol,
+    candidate
+  );
+  const market = marketPerformance(
+    trades,
+    symbol
+  );
+
+  const marketQuality = clamp(
+    Number(candidate.consistency || 0) * 0.45 +
+      Number(candidate.probability || 0) * 0.25 +
+      market.winRate * 0.20 +
+      Math.max(
+        0,
+        Math.min(10, market.profit * 20)
+      ),
+    0,
+    100
+  );
+
+  const executionConfidence = clamp(
+    Number(candidate.probability || 0) * 0.42 +
+      Math.max(
+        0,
+        Number(candidate.expectedValue || 0) *
+          120
+      ) +
+      contract.winRate * 0.20 +
+      global.winRate * 0.12 +
+      Number(candidate.consistency || 0) *
+        0.16 -
+      contract.lossStreak * 10 -
+      market.lossStreak * 8,
+    0,
+    100
+  );
+
+  const adaptiveRisk = clamp(
+    Number(candidate.risk || 100) +
+      contract.lossStreak * 13 +
+      market.lossStreak * 10 +
+      Math.max(0, 60 - contract.winRate) *
+        0.25,
+    0,
+    100
+  );
+
+  const qualityScore = clamp(
+    Number(candidate.probability || 0) * 0.35 +
+      Math.max(
+        0,
+        Number(candidate.expectedValue || 0) *
+          100
+      ) *
+        0.25 +
+      marketQuality * 0.20 +
+      executionConfidence * 0.20 -
+      adaptiveRisk * 0.15,
+    0,
+    100
+  );
+
+  return {
+    ...candidate,
+    marketQuality,
+    executionConfidence,
+    adaptiveRisk,
+    qualityScore,
+    contractWinRate: contract.winRate,
+    contractLossStreak: contract.lossStreak,
+    marketWinRate: market.winRate,
+    marketLossStreak: market.lossStreak,
+    recentGlobalWinRate: global.winRate,
+  };
+}
+
 function analyzeSpeedCandidates(digits) {
   const clean = (Array.isArray(digits) ? digits : [])
     .map(Number)
@@ -342,6 +549,9 @@ export default function RapidEdgeAI() {
     useState(Date.now());
   const [switches, setSwitches] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [pauseUntil, setPauseUntil] = useState(0);
+  const [marketBlocks, setMarketBlocks] = useState({});
+  const [contractBlocks, setContractBlocks] = useState({});
   const [executionAttempts, setExecutionAttempts] = useState(0);
   const [executionSuccesses, setExecutionSuccesses] = useState(0);
   const [executionFailures, setExecutionFailures] = useState(0);
@@ -411,22 +621,51 @@ export default function RapidEdgeAI() {
       ? lastLossKey
       : "";
 
-  const rankedCandidates = useMemo(
-    () =>
-      analysis.candidates.filter(
-        (candidate) =>
-          candidateKey(candidate, symbol) !==
-          blockedLossKey
-      ),
-    [
-      analysis.candidates,
-      symbol,
-      blockedLossKey,
-    ]
-  );
+  const rankedCandidates = useMemo(() => {
+    const now = Date.now();
+
+    return analysis.candidates
+      .map((candidate) =>
+        enrichCandidate(
+          candidate,
+          trades,
+          symbol
+        )
+      )
+      .filter(Boolean)
+      .filter((candidate) => {
+        const key = candidateKey(
+          candidate,
+          symbol
+        );
+
+        return (
+          key !== blockedLossKey &&
+          Number(contractBlocks[key] || 0) <=
+            now
+        );
+      })
+      .sort(
+        (a, b) =>
+          Number(b.qualityScore || 0) -
+          Number(a.qualityScore || 0)
+      );
+  }, [
+    analysis.candidates,
+    trades,
+    symbol,
+    blockedLossKey,
+    contractBlocks,
+    clock,
+  ]);
+
+  const marketBlocked =
+    Number(marketBlocks[symbol] || 0) >
+    clock;
 
   const best =
-    digitQuality.ready
+    digitQuality.ready &&
+    !marketBlocked
       ? rankedCandidates[0] || null
       : null;
 
@@ -442,22 +681,50 @@ export default function RapidEdgeAI() {
     scanAgeMs
   );
 
+  const qualityReady =
+    Boolean(best) &&
+    Number(best.expectedValue || -1) > 0 &&
+    Number(best.marketQuality || 0) >= 70 &&
+    Number(
+      best.executionConfidence || 0
+    ) >= 72 &&
+    Number(best.adaptiveRisk || 100) <= 42 &&
+    Number(best.contractLossStreak || 0) <
+      2 &&
+    Number(best.marketLossStreak || 0) < 2;
+
+  const immediateQualityEntry =
+    qualityReady &&
+    Number(best.probability || 0) >= 92 &&
+    Number(best.executionConfidence || 0) >=
+      86;
+
+  const confirmedQualityEntry =
+    qualityReady &&
+    Number(best.probability || 0) >= 84 &&
+    Number(best.qualityScore || 0) >= 74 &&
+    scanAgeMs >= 1000;
+
   const oneMinuteFallback =
     Boolean(best) &&
     digitQuality.ready &&
+    qualityReady &&
     scanAgeMs >= 45000 &&
-    Number(best.probability || 0) >= 62 &&
-    Number(best.expectedValue || -1) >= -0.01 &&
-    Number(best.votes || 0) >= 1 &&
-    Number(best.risk || 100) <= 68;
+    Number(best.probability || 0) >= 78 &&
+    Number(best.qualityScore || 0) >= 70;
 
   const ladder = {
     ...baseLadder,
     qualified:
-      baseLadder.qualified ||
+      immediateQualityEntry ||
+      confirmedQualityEntry ||
       oneMinuteFallback,
-    stage: oneMinuteFallback
-      ? "60S_FALLBACK"
+    stage: immediateQualityEntry
+      ? "QUALITY_FAST"
+      : oneMinuteFallback
+      ? "60S_QUALITY"
+      : confirmedQualityEntry
+      ? "QUALITY_CONFIRM"
       : baseLadder.stage,
   };
 
@@ -819,12 +1086,21 @@ export default function RapidEdgeAI() {
     if (!connected) return "FEED_OFFLINE";
     if (!authenticatedFeed) return "AUTH_NOT_READY";
     if (!selectedAccountId) return "ACCOUNT_NOT_SELECTED";
+    if (pauseUntil > clock) {
+      return "LOSS_PAUSE";
+    }
+    if (marketBlocked) {
+      return "MARKET_BLOCKED";
+    }
     if (!digitQuality.ready) {
       return digitQuality.allSame
         ? "BAD_TICK_DECIMALS"
         : "WAITING_LIVE_DIGITS";
     }
     if (!best) return "NO_CANDIDATE";
+    if (!qualityReady) {
+      return "QUALITY_GATE";
+    }
     if (!ladder.qualified) return "NOT_QUALIFIED";
     if (hasOpenTrade) return "OPEN_TRADE_EXISTS";
     if (busyRef.current) return "LOCAL_BUY_BUSY";
@@ -843,9 +1119,12 @@ export default function RapidEdgeAI() {
     connected,
     authenticatedFeed,
     selectedAccountId,
+    pauseUntil,
+    marketBlocked,
     digitQuality.ready,
     digitQuality.allSame,
     best,
+    qualityReady,
     ladder.qualified,
     hasOpenTrade,
     lastEntryAt,
@@ -975,10 +1254,66 @@ export default function RapidEdgeAI() {
         };
 
         if (status === "LOST") {
-          setLastLossKey(
-            candidateKey(settled, settled.symbol)
+          const now = Date.now();
+          const lossKey = candidateKey(
+            settled,
+            settled.symbol
           );
-          setLastLossAt(Date.now());
+
+          setLastLossKey(lossKey);
+          setLastLossAt(now);
+
+          const latestSettled = [
+            settled,
+            ...current.filter(
+              (trade) =>
+                ["WON", "LOST"].includes(
+                  String(trade.status || "")
+                ) &&
+                String(trade.id) !==
+                  String(settled.id)
+            ),
+          ];
+
+          const marketMemory =
+            marketPerformance(
+              latestSettled,
+              settled.symbol
+            );
+
+          const contractMemory =
+            candidatePerformance(
+              latestSettled,
+              settled.symbol,
+              settled
+            );
+
+          if (
+            contractMemory.lossStreak >= 2
+          ) {
+            setContractBlocks((blocks) => ({
+              ...blocks,
+              [lossKey]: now + 30000,
+            }));
+          } else {
+            setContractBlocks((blocks) => ({
+              ...blocks,
+              [lossKey]: now + 8000,
+            }));
+          }
+
+          if (marketMemory.lossStreak >= 2) {
+            setMarketBlocks((blocks) => ({
+              ...blocks,
+              [settled.symbol]:
+                now + 30000,
+            }));
+            setPauseUntil(now + 5000);
+          } else {
+            setPauseUntil(now + 1500);
+          }
+        } else {
+          setPauseUntil(0);
         }
 
         setLastSettlementAt(Date.now());
@@ -1015,14 +1350,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.4 started · live digit feed and 60-second entry ladder active."
+      "RapidEdge V4.5 started · adaptive quality and loss memory active."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.4 stopped.");
+    setMessage("RapidEdge V4.5 stopped.");
   }
 
   function reset() {
@@ -1030,6 +1365,9 @@ export default function RapidEdgeAI() {
     setTrades([]);
     setLastLossKey("");
     setLastLossAt(0);
+    setPauseUntil(0);
+    setMarketBlocks({});
+    setContractBlocks({});
     setLastSettlementAt(Date.now());
     recentRunTimesRef.current = [];
     processedRef.current.clear();
@@ -1039,7 +1377,7 @@ export default function RapidEdgeAI() {
     setLastExecutionError("");
     setLastBuyRequestAt(0);
     setLoopStatus("IDLE");
-    setMessage("RapidEdge V4.4 session reset.");
+    setMessage("RapidEdge V4.5 session reset.");
   }
 
   return (
@@ -1048,8 +1386,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.4 · One-Minute Run"
-          subtitle="Uses hook digitHistory correctly · first qualified attempt targeted inside 60 seconds · direct buy diagnostics"
+          title="RapidEdge AI V4.5 · Adaptive Quality"
+          subtitle="Probability + EV + market quality + execution confidence · adaptive loss protection"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1104,7 +1442,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.4 ONE-MINUTE RUN</small>
+            <small>V4.5 ADAPTIVE QUALITY</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -1153,6 +1491,32 @@ export default function RapidEdgeAI() {
               </strong>
             </article>
             <article>
+              <span>Market Quality</span>
+              <strong>
+                {pct(best?.marketQuality)}
+              </strong>
+            </article>
+            <article>
+              <span>Execution Confidence</span>
+              <strong>
+                {pct(
+                  best?.executionConfidence
+                )}
+              </strong>
+            </article>
+            <article>
+              <span>Adaptive Risk</span>
+              <strong>
+                {pct(best?.adaptiveRisk)}
+              </strong>
+            </article>
+            <article>
+              <span>Quality Score</span>
+              <strong>
+                {pct(best?.qualityScore)}
+              </strong>
+            </article>
+            <article>
               <span>EV</span>
               <strong>
                 {Number(
@@ -1172,6 +1536,38 @@ export default function RapidEdgeAI() {
               <span>Scan Age</span>
               <strong>
                 {(scanAgeMs / 1000).toFixed(1)}s
+              </strong>
+            </article>
+            <article>
+              <span>Market Memory</span>
+              <strong>
+                {best
+                  ? `${pct(
+                      best.marketWinRate
+                    )} · L${best.marketLossStreak}`
+                  : "—"}
+              </strong>
+            </article>
+            <article>
+              <span>Contract Memory</span>
+              <strong>
+                {best
+                  ? `${pct(
+                      best.contractWinRate
+                    )} · L${best.contractLossStreak}`
+                  : "—"}
+              </strong>
+            </article>
+            <article>
+              <span>Protection</span>
+              <strong>
+                {pauseUntil > clock
+                  ? `${Math.ceil(
+                      (pauseUntil - clock) / 1000
+                    )}s PAUSE`
+                  : marketBlocked
+                  ? "MARKET BLOCK"
+                  : "CLEAR"}
               </strong>
             </article>
             <article>
@@ -1410,7 +1806,22 @@ export default function RapidEdgeAI() {
                       )}
                     </span>
                     <span>
-                      Risk {pct(candidate.risk)}
+                      Quality{" "}
+                      {pct(
+                        candidate.qualityScore
+                      )}
+                    </span>
+                    <span>
+                      Exec{" "}
+                      {pct(
+                        candidate.executionConfidence
+                      )}
+                    </span>
+                    <span>
+                      Risk{" "}
+                      {pct(
+                        candidate.adaptiveRisk
+                      )}
                     </span>
                   </div>
                 ))}
@@ -1422,7 +1833,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.4 Trades</h2>
+              <h2>RapidEdge V4.5 Trades</h2>
             </div>
           </header>
 
@@ -1466,14 +1877,14 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.4 transactions yet.
+                No RapidEdge V4.5 transactions yet.
               </p>
             )}
           </div>
         </section>
 
         <p className="oulDisclaimer">
-          V4.4 targets a first qualified attempt within one minute when live digits and Deriv authentication are healthy. Profit is not guaranteed. Test on demo first.
+          V4.5 prioritizes entry quality over raw trade count. Loss memory may pause or switch markets. Profit and win rate are not guaranteed. Test on demo first.
         </p>
       </main>
     </div>

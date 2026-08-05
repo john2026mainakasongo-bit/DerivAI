@@ -1533,3 +1533,24 @@
 .oulDecision.ready::after {
   content: "60-SECOND ENTRY LADDER ARMED";
 }
+
+
+/* RapidEdge V4.5 adaptive quality */
+.oulDecision.ready::after {
+  content: "ADAPTIVE QUALITY GATE PASSED";
+}
+
+.oulCandidates > div {
+  min-height: 92px;
+}
+
+.oulCandidates > div:first-child {
+  border-color: #31f2ba;
+  box-shadow:
+    0 0 0 1px rgba(49, 242, 186, .2),
+    0 0 16px rgba(49, 242, 186, .06);
+}
+
+.oulDecisionGrid article:nth-child(n+10) strong {
+  color: #ffd56a;
+}
