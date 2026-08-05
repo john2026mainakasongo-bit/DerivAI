@@ -445,7 +445,11 @@ export default function FreshEdgeBot() {
     maximumReversal: 50,
     maximumSpikeRatio: 6,
     confirmationTicks: 3,
-    maximumMarketSeconds: 6,
+    maximumMarketSeconds: 18,
+    hardRiskHoldSeconds: 12,
+    weakSetupHoldSeconds: 10,
+    strongerMarketDelaySeconds: 6,
+    strongerMarketMargin: 8,
     marketBlockSeconds: 15,
     maximumOpenTrades: 1,
     takeProfit: 2,
@@ -519,6 +523,8 @@ export default function FreshEdgeBot() {
   const botContractsRef = useRef(new Map());
   const activeReplayTicksRef = useRef(new Map());
   const lastObservedPriceRef = useRef(null);
+  const hardRiskStartedAtRef = useRef(0);
+  const weakSetupStartedAtRef = useRef(0);
 
   useEffect(() => {
     try {
@@ -1211,6 +1217,8 @@ export default function FreshEdgeBot() {
         }
       );
       setConfirmation({ key: "", ticks: 0 });
+      hardRiskStartedAtRef.current = 0;
+      weakSetupStartedAtRef.current = 0;
       setMarketStartedAt(Date.now());
 
       await changeSymbol(nextSymbol);
@@ -1250,35 +1258,109 @@ export default function FreshEdgeBot() {
             settings.maximumSpikeRatio
         );
 
+      const now = Date.now();
       const currentScore =
         Number(marketScores?.[symbol]?.score || 0);
       const bestRanked = rankedMarkets[0];
+
       const strongerRanked =
         bestRanked &&
         bestRanked.symbol !== symbol &&
         Number(bestRanked.score || 0) -
           currentScore >=
-          Number(settings.rankingSwitchMargin || 3);
+          Number(settings.strongerMarketMargin || 8);
 
-      if (strongerRanked && elapsed >= 1.5) {
+      const weakFreshSetup =
+        analysis.ready &&
+        analysis.confidence < 45 &&
+        analysis.quality < 45;
+
+      if (hardRisk) {
+        if (!hardRiskStartedAtRef.current) {
+          hardRiskStartedAtRef.current = now;
+        }
+      } else {
+        hardRiskStartedAtRef.current = 0;
+      }
+
+      if (weakFreshSetup) {
+        if (!weakSetupStartedAtRef.current) {
+          weakSetupStartedAtRef.current = now;
+        }
+      } else {
+        weakSetupStartedAtRef.current = 0;
+      }
+
+      const hardRiskDuration =
+        hardRiskStartedAtRef.current
+          ? (now - hardRiskStartedAtRef.current) / 1000
+          : 0;
+
+      const weakSetupDuration =
+        weakSetupStartedAtRef.current
+          ? (now - weakSetupStartedAtRef.current) / 1000
+          : 0;
+
+      if (
+        strongerRanked &&
+        elapsed >=
+          Number(settings.strongerMarketDelaySeconds || 6)
+      ) {
+        hardRiskStartedAtRef.current = 0;
+        weakSetupStartedAtRef.current = 0;
+
         void switchMarket(
-          `Stronger ranked market found (${Number(
+          `Materially stronger market found (${Number(
             bestRanked.score || 0
           ).toFixed(1)} vs ${currentScore.toFixed(1)}).`
         );
-      } else if (hardRisk && elapsed >= 2) {
-        void switchMarket("Hard risk detected.");
       } else if (
-        analysis.ready &&
-        analysis.confidence < 48 &&
-        analysis.quality < 45 &&
-        elapsed >= 6
+        hardRisk &&
+        hardRiskDuration >=
+          Number(settings.hardRiskHoldSeconds || 12)
       ) {
-        void switchMarket("Weak fresh setup.");
+        hardRiskStartedAtRef.current = 0;
+        weakSetupStartedAtRef.current = 0;
+
+        void switchMarket(
+          "Risk remained high after patient confirmation."
+        );
+      } else if (
+        weakFreshSetup &&
+        weakSetupDuration >=
+          Number(settings.weakSetupHoldSeconds || 10)
+      ) {
+        hardRiskStartedAtRef.current = 0;
+        weakSetupStartedAtRef.current = 0;
+
+        void switchMarket(
+          "Confidence and quality remained weak."
+        );
       } else if (
         elapsed >= Number(settings.maximumMarketSeconds)
       ) {
-        void switchMarket("No confirmed entry.");
+        hardRiskStartedAtRef.current = 0;
+        weakSetupStartedAtRef.current = 0;
+
+        void switchMarket(
+          "No confirmed entry after patient scan."
+        );
+      } else if (hardRisk) {
+        setMessage(
+          `High risk detected. Holding ${symbol} for fresh confirmation (${hardRiskDuration.toFixed(
+            1
+          )}/${Number(
+            settings.hardRiskHoldSeconds || 12
+          )}s).`
+        );
+      } else if (weakFreshSetup) {
+        setMessage(
+          `Weak setup. Continuing current-market scan (${weakSetupDuration.toFixed(
+            1
+          )}/${Number(
+            settings.weakSetupHoldSeconds || 10
+          )}s).`
+        );
       }
     }, 150);
 
@@ -1294,7 +1376,10 @@ export default function FreshEdgeBot() {
     settings.maximumReversal,
     settings.maximumSpikeRatio,
     settings.maximumMarketSeconds,
-    settings.rankingSwitchMargin,
+    settings.hardRiskHoldSeconds,
+    settings.weakSetupHoldSeconds,
+    settings.strongerMarketDelaySeconds,
+    settings.strongerMarketMargin,
     marketScores,
     rankedMarkets,
     switchMarket,
@@ -1622,7 +1707,9 @@ export default function FreshEdgeBot() {
           cause: "",
           sourceDirection: "",
         });
-        setMarketStartedAt(Date.now());
+        hardRiskStartedAtRef.current = 0;
+      weakSetupStartedAtRef.current = 0;
+      setMarketStartedAt(Date.now());
       }
     }
   }, [
@@ -1728,7 +1815,9 @@ export default function FreshEdgeBot() {
                   activeReplayTicksRef.current.clear();
                 }
 
-                setMarketStartedAt(Date.now());
+                hardRiskStartedAtRef.current = 0;
+      weakSetupStartedAtRef.current = 0;
+      setMarketStartedAt(Date.now());
                 setRunning(true);
 
                 setMessage(
@@ -1762,7 +1851,9 @@ export default function FreshEdgeBot() {
             value={symbol}
             onChange={(value) => {
               setConfirmation({ key: "", ticks: 0 });
-              setMarketStartedAt(Date.now());
+              hardRiskStartedAtRef.current = 0;
+      weakSetupStartedAtRef.current = 0;
+      setMarketStartedAt(Date.now());
               void changeSymbol(value);
             }}
             disabled={loadingMarket}
@@ -2328,7 +2419,9 @@ export default function FreshEdgeBot() {
             ["Max noise", "maximumNoise", 40, 95, 1],
             ["Max reversal", "maximumReversal", 40, 95, 1],
             ["Confirm ticks", "confirmationTicks", 1, 5, 1],
-            ["Market seconds", "maximumMarketSeconds", 3, 30, 1],
+            ["Market seconds", "maximumMarketSeconds", 5, 60, 1],
+            ["Risk hold", "hardRiskHoldSeconds", 5, 30, 1],
+            ["Weak hold", "weakSetupHoldSeconds", 5, 30, 1],
             ["Take profit", "takeProfit", 0.5, 100, 0.5],
             ["Stop loss", "stopLoss", 0.5, 100, 0.5],
             ["Rank switch", "rankingSwitchMargin", 1, 15, 0.5],
@@ -2746,5 +2839,6 @@ export default function FreshEdgeBot() {
     </div>
   );
 }
+
 
 
