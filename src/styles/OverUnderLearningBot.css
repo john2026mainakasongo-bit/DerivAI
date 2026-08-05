@@ -1245,3 +1245,40 @@
       repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.oulPortfolioRanking article.ready {
+  border-color: #22d3a6;
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 166, .22);
+}
+
+.oulPortfolioRanking article.watch {
+  border-color: #8a6f1e;
+}
+
+.oulPortfolioRanking article.blocked {
+  border-color: #7d2b3b;
+  opacity: .62;
+}
+
+.oulPortfolioRanking article.stale {
+  border-color: #344b58;
+  opacity: .42;
+}
+
+.oulPortfolioRanking article.ready em {
+  color: #34e7b0;
+}
+
+.oulPortfolioRanking article.watch em {
+  color: #f0cf67;
+}
+
+.oulPortfolioRanking article.blocked em {
+  color: #ff657a;
+}
+
+.oulPortfolioRanking article.stale em {
+  color: #8299a5;
+}

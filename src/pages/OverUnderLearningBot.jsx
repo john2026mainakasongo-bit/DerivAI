@@ -12,8 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v20";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v20";
+const MEMORY_KEY = "edgepilot:over-under-learning:v21";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v21";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1136,6 +1136,15 @@ function marketHealthMap(trades, minimumSample = 3) {
 
 
 
+
+function classifyPortfolioStatus(item) {
+  if (!item) return "STALE";
+  if (item.blocked || item.weak) return "BLOCKED";
+  if (!item.fresh) return "STALE";
+  if (item.qualified) return "READY";
+  return "WATCH";
+}
+
 function buildGlobalMarketPortfolio({
   marketSymbols,
   marketCache,
@@ -1225,7 +1234,7 @@ function buildGlobalMarketPortfolio({
             : 0
         );
 
-      return {
+      const portfolioItem = {
         market: marketName,
         contract:
           row?.contract || "WAIT",
@@ -1243,6 +1252,14 @@ function buildGlobalMarketPortfolio({
         weak,
         qualified,
         score,
+      };
+
+      return {
+        ...portfolioItem,
+        status:
+          classifyPortfolioStatus(
+            portfolioItem
+          ),
       };
     })
     .sort(
@@ -1962,6 +1979,12 @@ export default function OverUnderLearningBot() {
     useState(2);
   const [portfolioSwitchCooldownMs, setPortfolioSwitchCooldownMs] =
     useState(700);
+  const [portfolioWatchEnabled, setPortfolioWatchEnabled] =
+    useState(true);
+  const [watchRefreshMilliseconds, setWatchRefreshMilliseconds] =
+    useState(900);
+  const [readyLiveConfirmationTicks, setReadyLiveConfirmationTicks] =
+    useState(4);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -2367,7 +2390,11 @@ export default function OverUnderLearningBot() {
     (
       !cachedMarketUsable ||
       liveTicksAfterSwitch >=
-        Number(minimumLiveTicksAfterSwitch || 4)
+        Number(
+          readyLiveConfirmationTicks ||
+          minimumLiveTicksAfterSwitch ||
+          4
+        )
     );
 
   const regimeAnalysis = useMemo(
@@ -2495,6 +2522,16 @@ export default function OverUnderLearningBot() {
     globalMarketPortfolio.find(
       (item) => item.qualified
     ) || null;
+
+  const portfolioReadyMarkets =
+    globalMarketPortfolio.filter(
+      (item) => item.status === "READY"
+    );
+
+  const portfolioWatchMarkets =
+    globalMarketPortfolio.filter(
+      (item) => item.status === "WATCH"
+    );
 
   const smartRecoveryActive =
     recovery.active &&
@@ -3156,8 +3193,16 @@ export default function OverUnderLearningBot() {
     if (!marketSymbols.length) return "";
 
     if (
+      portfolioWatchEnabled &&
+      portfolioReadyMarkets.length === 0
+    ) {
+      return "";
+    }
+
+    if (
       globalPortfolioEnabled &&
       bestGlobalMarket &&
+      bestGlobalMarket.status === "READY" &&
       bestGlobalMarket.market !== symbol
     ) {
       const portfolioCandidate =
@@ -3570,6 +3615,48 @@ export default function OverUnderLearningBot() {
   useEffect(() => {
     if (
       !running ||
+      !portfolioWatchEnabled ||
+      hasOpenTrade ||
+      tradeBusy ||
+      switchBusyRef.current
+    ) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const leader =
+        portfolioReadyMarkets[0] || null;
+
+      if (
+        leader &&
+        leader.market !== symbol
+      ) {
+        void switchMarket(
+          `PORTFOLIO READY · ${leader.market} ${leader.contract} · ${leader.probability.toFixed(1)}%`
+        );
+      }
+    }, Math.max(
+      350,
+      Number(
+        watchRefreshMilliseconds || 900
+      )
+    ));
+
+    return () =>
+      window.clearInterval(timer);
+  }, [
+    running,
+    portfolioWatchEnabled,
+    hasOpenTrade,
+    tradeBusy,
+    portfolioReadyMarkets,
+    symbol,
+    watchRefreshMilliseconds,
+  ]);
+
+  useEffect(() => {
+    if (
+      !running ||
       !globalPortfolioEnabled ||
       hasOpenTrade ||
       tradeBusy ||
@@ -3590,7 +3677,7 @@ export default function OverUnderLearningBot() {
       Number(currentPortfolioRow?.score || 0);
 
     if (
-      bestGlobalMarket.qualified &&
+      bestGlobalMarket.status === "READY" &&
       (
         !currentPortfolioRow?.qualified ||
         lead >=
@@ -4544,8 +4631,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V20"
-          subtitle="Global market portfolio · universal OVER + UNDER · live-confirmed entry"
+          title="Over/Under Adaptive Learning Bot V21"
+          subtitle="Portfolio watch engine · READY/WATCH/BLOCKED/STALE · live-confirmed entry"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -4618,12 +4705,15 @@ export default function OverUnderLearningBot() {
                 ? confirmed
                   ? "Fresh recovery setup passed stricter EV, confidence and confirmation gates."
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
+                : portfolioWatchEnabled &&
+                  portfolioReadyMarkets.length === 0
+                ? "PORTFOLIO WATCH — No READY market. Scanning continues without opening a trade."
                 : globalPortfolioEnabled &&
                   (
                     !bestGlobalMarket ||
                     bestGlobalMarket.market !== symbol
                   )
-                ? "GLOBAL PORTFOLIO — Current market is not the top qualified market. Trade blocked while switching."
+                ? "GLOBAL PORTFOLIO — Current market is not the top READY market. Trade blocked while switching."
                 : universalPoolEnabled &&
                   !universalDecision.selected
                 ? "UNIVERSAL POOL — No OVER or UNDER candidate passed every gate. Trade skipped."
@@ -4810,6 +4900,69 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Portfolio watch engine</span>
+            <select
+              value={
+                portfolioWatchEnabled
+                  ? "ON"
+                  : "OFF"
+              }
+              onChange={(event) =>
+                setPortfolioWatchEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — wait for READY market
+              </option>
+              <option value="OFF">
+                OFF — normal rotation
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Watch refresh ms</span>
+            <input
+              type="number"
+              min="350"
+              max="5000"
+              step="50"
+              value={watchRefreshMilliseconds}
+              onChange={(event) =>
+                setWatchRefreshMilliseconds(
+                  clamp(
+                    event.target.value,
+                    350,
+                    5000
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>READY live confirmation ticks</span>
+            <input
+              type="number"
+              min="2"
+              max="12"
+              step="1"
+              value={readyLiveConfirmationTicks}
+              onChange={(event) =>
+                setReadyLiveConfirmationTicks(
+                  clamp(
+                    event.target.value,
+                    2,
+                    12
+                  )
                 )
               }
             />
@@ -5576,6 +5729,9 @@ export default function OverUnderLearningBot() {
             <strong>
               {hasOpenTrade
                 ? "MONITORING"
+                : portfolioWatchEnabled &&
+                  portfolioReadyMarkets.length === 0
+                ? "WATCHING MARKETS"
                 : globalPortfolioEnabled &&
                   (
                     !bestGlobalMarket ||
@@ -5810,6 +5966,38 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Portfolio READY</span>
+              <strong>
+                {portfolioReadyMarkets.length}
+              </strong>
+              <small>
+                Markets eligible for live confirmation
+              </small>
+            </article>
+
+            <article>
+              <span>Portfolio WATCH</span>
+              <strong>
+                {portfolioWatchMarkets.length}
+              </strong>
+              <small>
+                Fresh markets below entry gates
+              </small>
+            </article>
+
+            <article>
+              <span>Watch engine</span>
+              <strong>
+                {portfolioWatchEnabled
+                  ? "ACTIVE"
+                  : "OFF"}
+              </strong>
+              <small>
+                No READY market means no trade
               </small>
             </article>
 
@@ -6554,11 +6742,9 @@ export default function OverUnderLearningBot() {
                   <article
                     key={item.market}
                     className={
-                      item.qualified
-                        ? "qualified"
-                        : item.fresh
-                        ? ""
-                        : "stale"
+                      String(
+                        item.status || "STALE"
+                      ).toLowerCase()
                     }
                   >
                     <small>
@@ -6583,15 +6769,7 @@ export default function OverUnderLearningBot() {
                       R {pct(item.risk)}
                     </span>
                     <em>
-                      {item.qualified
-                        ? "PORTFOLIO READY"
-                        : item.blocked
-                        ? "BLACKLISTED"
-                        : item.weak
-                        ? "WEAK MARKET"
-                        : item.fresh
-                        ? "WAIT"
-                        : "STALE"}
+                      {item.status}
                     </em>
                   </article>
                 ))}
