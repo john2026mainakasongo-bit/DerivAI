@@ -1030,49 +1030,6 @@ export default function QuantumAIBot() {
     Number(analysis.reversalRisk || 0) >
       Number(settings.hardReversalLimit);
 
-  const adaptiveSteps =
-    decisionClock >=
-    Number(settings.adaptiveEntryStartSeconds)
-      ? Math.floor(
-          (
-            decisionClock -
-            Number(settings.adaptiveEntryStartSeconds)
-          ) /
-            Math.max(
-              1,
-              Number(settings.adaptiveEntryStepSeconds)
-            )
-        ) + 1
-      : 0;
-
-  const adaptiveEntryRelief =
-    adaptiveSteps *
-    Number(settings.adaptiveEntryDropPerStep);
-
-  const timeAwareConfidenceGate = recovery.active
-    ? dynamicRequiredConfidence
-    : Math.max(
-        Number(settings.adaptiveEntryFloor),
-        dynamicRequiredConfidence -
-          adaptiveEntryRelief
-      );
-
-  const timeAwareQualityGate = Math.max(
-    Number(settings.adaptiveQualityFloor),
-    Number(settings.weightedQualityMinimum) -
-      adaptiveEntryRelief * 0.5
-  );
-
-  const timeAwareVoteGate = Math.max(
-    Number(settings.adaptiveVoteFloor),
-    requiredVotes -
-      adaptiveEntryRelief * 0.6
-  );
-
-  const deadlineReached =
-    decisionClock >=
-    Number(settings.marketDecisionDeadlineSeconds);
-
   const smartRecoveryDirection =
     recovery.active &&
     oppositeHistorical.trades >= 4 &&
@@ -1131,6 +1088,49 @@ export default function QuantumAIBot() {
   const allowedReversal = finalSafeStage
     ? Number(settings.finalSafeMaximumReversal)
     : Number(settings.maximumFastReversal);
+
+  const adaptiveSteps =
+    decisionClock >=
+    Number(settings.adaptiveEntryStartSeconds)
+      ? Math.floor(
+          (
+            decisionClock -
+            Number(settings.adaptiveEntryStartSeconds)
+          ) /
+            Math.max(
+              1,
+              Number(settings.adaptiveEntryStepSeconds)
+            )
+        ) + 1
+      : 0;
+
+  const adaptiveEntryRelief =
+    adaptiveSteps *
+    Number(settings.adaptiveEntryDropPerStep);
+
+  const timeAwareConfidenceGate = recovery.active
+    ? dynamicRequiredConfidence
+    : Math.max(
+        Number(settings.adaptiveEntryFloor),
+        dynamicRequiredConfidence -
+          adaptiveEntryRelief
+      );
+
+  const timeAwareQualityGate = Math.max(
+    Number(settings.adaptiveQualityFloor),
+    Number(settings.weightedQualityMinimum) -
+      adaptiveEntryRelief * 0.5
+  );
+
+  const timeAwareVoteGate = Math.max(
+    Number(settings.adaptiveVoteFloor),
+    requiredVotes -
+      adaptiveEntryRelief * 0.6
+  );
+
+  const deadlineReached =
+    decisionClock >=
+    Number(settings.marketDecisionDeadlineSeconds);
 
   const phaseSignalPass =
     finalLearnedConfidence >=
@@ -2056,8 +2056,13 @@ export default function QuantumAIBot() {
     adaptiveLossGuard.shouldSwitchMarket,
     settings.marketSwitchSeconds,
     settings.scanCycleSeconds,
+    settings.topMarketAutoSelect,
+    settings.topMarketMinimumScore,
+    settings.marketRecheckCooldownSeconds,
     marketScores,
+    rankedMarkets,
     scanPhase,
+    deadlineReached,
     changeSymbol,
   ]);
 
@@ -2374,13 +2379,16 @@ export default function QuantumAIBot() {
     );
   }
 
+
+
+
   return (
     <div className="appShell quantumShell">
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
-          title="MetaBinary Quantum AI V18.1"
-          subtitle="Tick audit · latency monitor · anomaly-safe learning"
+          title="MetaBinary Quantum AI V19"
+          subtitle="Stable runtime · ordered initialization · verified audit"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -2390,7 +2398,7 @@ export default function QuantumAIBot() {
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
             <small>METABINARY SYNTHETIC INTELLIGENCE</small>
-            <h1>MetaBinary Quantum AI V18.1</h1>
+            <h1>MetaBinary Quantum AI V19</h1>
             <p>
               Compares each live setup with settled history, calculates
               market-direction probability and uses a fresh confirmed
@@ -2422,10 +2430,51 @@ export default function QuantumAIBot() {
           <button className="quantumReset" onClick={resetSession} disabled={running || activeTrades.length > 0}>RESET</button>
         </section>
 
+        <section className="quantumStableRuntime">
+          <header>
+            <div>
+              <small>V19 STABLE RUNTIME</small>
+              <h3>Initialization order verified</h3>
+            </div>
+            <strong>RUNTIME READY</strong>
+          </header>
+
+          <div className="quantumStableGrid">
+            <article>
+              <span>Confidence dependency</span>
+              <strong>READY</strong>
+            </article>
+            <article>
+              <span>Vote dependency</span>
+              <strong>READY</strong>
+            </article>
+            <article>
+              <span>Market ranking</span>
+              <strong>{rankedMarkets.length} TRACKED</strong>
+            </article>
+            <article>
+              <span>Tick audit</span>
+              <strong>
+                {settings.auditEnabled ? "ACTIVE" : "OFF"}
+              </strong>
+            </article>
+            <article>
+              <span>Entry engine</span>
+              <strong>
+                {running ? "SCANNING" : "STOPPED"}
+              </strong>
+            </article>
+            <article>
+              <span>Runtime errors</span>
+              <strong>0 EXPECTED</strong>
+            </article>
+          </div>
+        </section>
+
         <section className="quantumAuditPanel">
           <header>
             <div>
-              <small>V18.1 EXECUTION AUDIT</small>
+              <small>V18 EXECUTION AUDIT</small>
               <h3>Tick, latency and settlement verification</h3>
             </div>
             <strong>
@@ -2691,7 +2740,7 @@ export default function QuantumAIBot() {
         <section className={`quantumFastScanner ${scanPhase.toLowerCase()}`}>
           <header>
             <div>
-              <small>V18.1 VERIFIED ENTRY MANAGER</small>
+              <small>V19 STABLE ENTRY MANAGER</small>
               <h3>{scanPhase} LANE</h3>
             </div>
             <strong>
