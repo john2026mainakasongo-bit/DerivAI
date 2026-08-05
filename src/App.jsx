@@ -17,6 +17,7 @@ import Login from "./pages/Login";
 
 import "./index.css";
 
+import FreshEdgeBot from "./pages/FreshEdgeBot";
 export default function App() {
   return (
     <BrowserRouter>
@@ -46,10 +47,15 @@ export default function App() {
           element={<Navigate to="/dashboard" replace />}
         />
 
-      </Routes>
+      
+        <Route
+          path="/fresh-edge-ai"
+          element={<FreshEdgeBot />}
+        /></Routes>
     </BrowserRouter>
   );
 }
+
 
 
 
