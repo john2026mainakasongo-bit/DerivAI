@@ -27,7 +27,7 @@ const RAPID_EDGE_LOCK_KEY =
 
 function createRapidEdgeSessionId() {
   return [
-    "rapid",
+    "rapid20",
     Date.now().toString(36),
     Math.random().toString(36).slice(2, 10),
   ].join("-");
@@ -2001,7 +2001,7 @@ export default function RapidEdgeAI() {
   });
   const [message, setMessage] =
     useState(
-      "RapidEdge AI isolated engine is ready."
+      "RapidEdge 20/min mode ready. Starts only after Deriv account is connected."
     );
   const [consecutiveLosses, setConsecutiveLosses] =
     useState(0);
@@ -2076,11 +2076,11 @@ export default function RapidEdgeAI() {
   const [lastSkipReason, setLastSkipReason] =
     useState("WAITING_FOR_MARKET_DATA");
   const [oneRunPerMarket, setOneRunPerMarket] =
-    useState(true);
+    useState(false);
   const [rotateAfterEverySettlement, setRotateAfterEverySettlement] =
-    useState(true);
+    useState(false);
   const [freshTicksRequired, setFreshTicksRequired] =
-    useState(12);
+    useState(4);
   const [lastTradeByMarket, setLastTradeByMarket] =
     useState({});
   const [lastSetupKeyByMarket, setLastSetupKeyByMarket] =
@@ -2122,13 +2122,13 @@ export default function RapidEdgeAI() {
   const [watchRefreshMilliseconds, setWatchRefreshMilliseconds] =
     useState(300);
   const [readyLiveConfirmationTicks, setReadyLiveConfirmationTicks] =
-    useState(4);
+    useState(1);
   const [idleRescanSeconds, setIdleRescanSeconds] =
     useState(4);
   const [marketRearmSeconds, setMarketRearmSeconds] =
-    useState(8);
+    useState(2);
   const [postSettlementRearmMs, setPostSettlementRearmMs] =
-    useState(250);
+    useState(100);
   const [adaptiveArmingEnabled, setAdaptiveArmingEnabled] =
     useState(true);
   const [adaptiveMinimumProbability, setAdaptiveMinimumProbability] =
@@ -2140,11 +2140,11 @@ export default function RapidEdgeAI() {
   const [adaptiveStableTicks, setAdaptiveStableTicks] =
     useState(1);
   const [adaptiveConfirmTicks, setAdaptiveConfirmTicks] =
-    useState(2);
+    useState(1);
   const [oneMinuteEngineEnabled, setOneMinuteEngineEnabled] =
     useState(true);
   const [oneMinuteMinimumSamples, setOneMinuteMinimumSamples] =
-    useState(30);
+    useState(15);
   const [negativeEvRotateSeconds, setNegativeEvRotateSeconds] =
     useState(2);
   const [regimeResetSensitivity, setRegimeResetSensitivity] =
@@ -2152,9 +2152,9 @@ export default function RapidEdgeAI() {
   const [regimeEpoch, setRegimeEpoch] =
     useState(0);
   const [maximumRunsPerMinute, setMaximumRunsPerMinute] =
-    useState(10);
+    useState(20);
   const [minimumEntryGapMs, setMinimumEntryGapMs] =
-    useState(900);
+    useState(2500);
   const recentRunTimesRef =
     useRef([]);
   const [recentRunsThisMinute, setRecentRunsThisMinute] =
@@ -2652,7 +2652,7 @@ export default function RapidEdgeAI() {
       : 0;
 
   const marketWarmReady =
-    analysis.total >= 30 &&
+    analysis.total >= 15 &&
     (
       !cachedMarketUsable ||
       liveTicksAfterSwitch >=
@@ -3866,7 +3866,7 @@ export default function RapidEdgeAI() {
       (smartRecoveryActive ? 4 : 1.5) &&
     Number(regimeAnalysis.riskPenalty || 0) <=
       (smartRecoveryActive ? 18 : 25) &&
-    Number(regimeAnalysis.sample || 0) >= 30 &&
+    Number(regimeAnalysis.sample || 0) >= 15 &&
     (
       !multiLayerEnabled ||
       (
@@ -4074,13 +4074,13 @@ export default function RapidEdgeAI() {
   const requiredConfirmationTicks =
     adaptiveEntryReady
       ? Math.max(
-          3,
-          Number(adaptiveConfirmTicks || 5)
+          1,
+          Number(adaptiveConfirmTicks || 1)
         )
       : Math.max(
-          2,
+          1,
           Number(
-            readyLiveConfirmationTicks || 4
+            readyLiveConfirmationTicks || 1
           )
         );
 
@@ -5838,7 +5838,7 @@ export default function RapidEdgeAI() {
     const anchor = document.createElement("a");
 
     anchor.href = url;
-    anchor.download = `rapidedge-transactions-${Date.now()}.csv`;
+    anchor.download = `rapidedge-20min-transactions-${Date.now()}.csv`;
     anchor.click();
 
     URL.revokeObjectURL(url);
@@ -5852,7 +5852,7 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V1.1"
+          title="RapidEdge AI V1.2 · Rapid 20"
           subtitle="Fast multi-entry scanner · rolling one-minute run control · isolated engine"
           connected={connected}
           connecting={loadingMarket}

@@ -1362,116 +1362,28 @@
   overflow-wrap: anywhere;
 }
 
-/* RapidEdge AI V1.1 — isolated visual identity */
-.oulPage {
-  --rapid-cyan: #2ce7d1;
-  --rapid-blue: #4f8cff;
-  --rapid-violet: #8b5cf6;
-  background:
-    radial-gradient(circle at 88% 4%, rgba(139, 92, 246, .12), transparent 28%),
-    radial-gradient(circle at 18% 18%, rgba(44, 231, 209, .08), transparent 24%);
-}
 
-.oulToolbar,
-.oulDecision,
-.oulControls,
-.oulStats,
-.oulPanel,
-.oulMessage,
-.oulRotation,
-.oulTransactionPanel,
-.oulMoneySummary,
-.oulSmartDashboard article,
-.oulEquityPanel,
-.oulAdvancedAnalysis,
-.oulGlobalSelector {
-  border-color: rgba(79, 140, 255, .52);
-}
-
-.oulToolbar {
-  box-shadow:
-    inset 3px 0 0 var(--rapid-violet),
-    0 8px 28px rgba(0, 0, 0, .14);
-}
-
-.oulDecision {
-  background:
-    linear-gradient(110deg, rgba(79, 140, 255, .10), transparent 42%),
-    #061b2a;
+/* RapidEdge AI V1.2 Rapid 20 */
+.oulToolbar::before {
+  content: "RAPID 20/MIN";
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #2ce7d1;
+  border-radius: 999px;
+  background: rgba(44, 231, 209, .10);
+  color: #66f4df;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .08em;
 }
 
 .oulDecision.ready {
-  border-color: var(--rapid-cyan);
-  box-shadow:
-    0 0 0 1px rgba(44, 231, 209, .20),
-    0 0 24px rgba(44, 231, 209, .08);
+  animation: rapid-ready-pulse 1.15s ease-in-out infinite;
 }
 
-.oulStart {
-  background: linear-gradient(135deg, var(--rapid-cyan), var(--rapid-blue));
-  color: #02131c;
+@keyframes rapid-ready-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(44, 231, 209, .14); }
+  50% { box-shadow: 0 0 0 2px rgba(44, 231, 209, .28), 0 0 22px rgba(44, 231, 209, .08); }
 }
-
-.oulStop {
-  background: linear-gradient(135deg, #ff5c7a, #a855f7);
-}
-
-.oulReset {
-  border: 1px solid rgba(139, 92, 246, .62);
-  background: rgba(139, 92, 246, .14);
-}
-
-.oulDecision small,
-.oulPanel small,
-.oulRotation small,
-.oulTransactionHeader small,
-.oulEquityPanel small,
-.oulAdvancedAnalysis small,
-.oulGlobalSelector header small {
-  color: var(--rapid-cyan);
-}
-
-.oulCandidates > div,
-.oulPortfolioRanking article,
-.oulUniversalRanking article,
-.oulGlobalScoreGrid article {
-  transition:
-    transform .16s ease,
-    border-color .16s ease,
-    box-shadow .16s ease;
-}
-
-.oulCandidates > div:hover,
-.oulPortfolioRanking article:hover,
-.oulUniversalRanking article:hover,
-.oulGlobalScoreGrid article:hover {
-  transform: translateY(-1px);
-  border-color: var(--rapid-blue);
-}
-
-.oulPortfolioRanking article.elite,
-.oulUniversalRanking article.qualified,
-.oulGlobalScoreGrid article.qualified {
-  border-color: var(--rapid-cyan);
-}
-
-.oulPortfolioRanking article.good {
-  border-color: var(--rapid-blue);
-}
-
-.oulSkipBanner {
-  border-color: rgba(139, 92, 246, .65);
-  background: rgba(70, 34, 120, .24);
-  color: #d9c7ff;
-}
-
-.oulEquityChart {
-  color: var(--rapid-cyan);
-}
-
-@media (max-width: 760px) {
-  .oulPage {
-    padding-bottom: 88px;
-  }
-}
-
