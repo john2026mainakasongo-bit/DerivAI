@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v11";
+const MEMORY_KEY = "edgepilot:over-under-learning:v12";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -472,7 +472,431 @@ function predictiveGuard({
   };
 }
 
+function frequencyWindow(digits, size) {
+  const sample = (Array.isArray(digits) ? digits : [])
+    .map(Number)
+    .filter(
+      (digit) =>
+        Number.isFinite(digit) &&
+        digit >= 0 &&
+        digit <= 9
+    )
+    .slice(-Math.max(1, Number(size || 1)));
 
+  const counts = Array.from(
+    { length: 10 },
+    () => 0
+  );
+
+  for (const digit of sample) {
+    counts[digit] += 1;
+  }
+
+  const percentages = counts.map(
+    (count) =>
+      sample.length
+        ? (count / sample.length) * 100
+        : 0
+  );
+
+  return {
+    size: sample.length,
+    counts,
+    percentages,
+    hottestDigit:
+      percentages.indexOf(
+        Math.max(...percentages)
+      ),
+    coldestDigit:
+      percentages.indexOf(
+        Math.min(...percentages)
+      ),
+  };
+}
+
+function transitionMatrixAnalysis(digits) {
+  const sample = (Array.isArray(digits) ? digits : [])
+    .map(Number)
+    .filter(
+      (digit) =>
+        Number.isFinite(digit) &&
+        digit >= 0 &&
+        digit <= 9
+    )
+    .slice(-220);
+
+  const matrix = Array.from(
+    { length: 10 },
+    () =>
+      Array.from(
+        { length: 10 },
+        () => 0
+      )
+  );
+
+  for (
+    let index = 1;
+    index < sample.length;
+    index += 1
+  ) {
+    matrix[sample[index - 1]][sample[index]] += 1;
+  }
+
+  const lastDigit =
+    sample.length > 0
+      ? sample[sample.length - 1]
+      : null;
+
+  const row =
+    lastDigit === null
+      ? Array.from({ length: 10 }, () => 0)
+      : matrix[lastDigit];
+
+  const rowTotal = row.reduce(
+    (total, value) => total + value,
+    0
+  );
+
+  const nextProbabilities = row.map(
+    (value) =>
+      rowTotal
+        ? (value / rowTotal) * 100
+        : 10
+  );
+
+  const predictedDigit =
+    nextProbabilities.indexOf(
+      Math.max(...nextProbabilities)
+    );
+
+  const confidence = clamp(
+    Math.max(...nextProbabilities) - 10,
+    0,
+    90
+  );
+
+  return {
+    lastDigit,
+    predictedDigit,
+    confidence,
+    nextProbabilities,
+  };
+}
+
+function cycleAnalysis(digits) {
+  const sample = (Array.isArray(digits) ? digits : [])
+    .map(Number)
+    .filter(Number.isFinite)
+    .slice(-160);
+
+  let bestLength = 0;
+  let bestScore = 0;
+
+  for (let length = 2; length <= 14; length += 1) {
+    if (sample.length < length * 3) continue;
+
+    let matches = 0;
+    let comparisons = 0;
+
+    for (
+      let index = sample.length - length;
+      index < sample.length;
+      index += 1
+    ) {
+      const current = sample[index];
+      const previous = sample[index - length];
+
+      if (
+        Number.isFinite(current) &&
+        Number.isFinite(previous)
+      ) {
+        comparisons += 1;
+
+        if (current === previous) {
+          matches += 1;
+        }
+      }
+    }
+
+    const score = comparisons
+      ? (matches / comparisons) * 100
+      : 0;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestLength = length;
+    }
+  }
+
+  return {
+    length: bestLength,
+    strength: bestScore,
+  };
+}
+
+function bayesianBarrierProbability({
+  digits,
+  side,
+  barrier,
+  prior = 0.5,
+}) {
+  const sample = (Array.isArray(digits) ? digits : [])
+    .map(Number)
+    .filter(
+      (digit) =>
+        Number.isFinite(digit) &&
+        digit >= 0 &&
+        digit <= 9
+    )
+    .slice(-160);
+
+  const wins = sample.filter((digit) =>
+    side === "OVER"
+      ? digit > Number(barrier)
+      : digit < Number(barrier)
+  ).length;
+
+  const losses = sample.length - wins;
+  const priorStrength = 10;
+  const alpha =
+    prior * priorStrength + wins;
+  const beta =
+    (1 - prior) * priorStrength + losses;
+
+  return {
+    posterior:
+      (alpha / Math.max(1, alpha + beta)) *
+      100,
+    sample: sample.length,
+  };
+}
+
+function meanReversionAnalysis(digits) {
+  const sample = (Array.isArray(digits) ? digits : [])
+    .map(Number)
+    .filter(Number.isFinite)
+    .slice(-80);
+
+  if (sample.length < 10) {
+    return {
+      average: 4.5,
+      deviation: 0,
+      probability: 50,
+      direction: "NEUTRAL",
+    };
+  }
+
+  const average =
+    sample.reduce(
+      (total, value) => total + value,
+      0
+    ) / sample.length;
+
+  const latest = sample[sample.length - 1];
+  const deviation = latest - average;
+
+  return {
+    average,
+    deviation,
+    probability: clamp(
+      50 + Math.abs(deviation) * 7,
+      50,
+      88
+    ),
+    direction:
+      deviation > 1.2
+        ? "DOWN"
+        : deviation < -1.2
+        ? "UP"
+        : "NEUTRAL",
+  };
+}
+
+function barrierProfitRatio(side, barrier) {
+  const value = Number(barrier);
+
+  const theoreticalProbability =
+    side === "OVER"
+      ? (9 - value) / 10
+      : value / 10;
+
+  if (theoreticalProbability <= 0) {
+    return 0;
+  }
+
+  return Math.max(
+    0.01,
+    0.93 / theoreticalProbability - 1
+  );
+}
+
+function simulateBarrierEV({
+  probability,
+  profitRatio,
+  trials = 1000,
+}) {
+  const winProbability = clamp(
+    Number(probability || 0) / 100,
+    0,
+    1
+  );
+
+  const expectedValue =
+    winProbability * Number(profitRatio || 0) -
+    (1 - winProbability);
+
+  const variance =
+    winProbability *
+      Math.pow(
+        Number(profitRatio || 0) -
+          expectedValue,
+        2
+      ) +
+    (1 - winProbability) *
+      Math.pow(-1 - expectedValue, 2);
+
+  const standardError = Math.sqrt(
+    Math.max(0, variance) /
+      Math.max(1, Number(trials || 1000))
+  );
+
+  return {
+    expectedValue,
+    expectedProfitPerDollar: expectedValue,
+    confidenceLow:
+      expectedValue - 1.96 * standardError,
+    confidenceHigh:
+      expectedValue + 1.96 * standardError,
+    trials,
+  };
+}
+
+function multiLayerCandidateScore({
+  candidate,
+  frequencies,
+  transition,
+  cycle,
+  meanReversion,
+  bayesian,
+  regime,
+  resultRisk,
+  recoveryActive,
+}) {
+  const side = String(candidate.side || "");
+  const barrier = Number(candidate.barrier);
+
+  const shortFrequency =
+    frequencies.short.percentages.filter(
+      (_, digit) =>
+        side === "OVER"
+          ? digit > barrier
+          : digit < barrier
+    ).reduce((a, b) => a + b, 0);
+
+  const mediumFrequency =
+    frequencies.medium.percentages.filter(
+      (_, digit) =>
+        side === "OVER"
+          ? digit > barrier
+          : digit < barrier
+    ).reduce((a, b) => a + b, 0);
+
+  const longFrequency =
+    frequencies.long.percentages.filter(
+      (_, digit) =>
+        side === "OVER"
+          ? digit > barrier
+          : digit < barrier
+    ).reduce((a, b) => a + b, 0);
+
+  const transitionProbability =
+    transition.nextProbabilities.filter(
+      (_, digit) =>
+        side === "OVER"
+          ? digit > barrier
+          : digit < barrier
+    ).reduce((a, b) => a + b, 0);
+
+  const cycleCompatibility =
+    cycle.length > 0
+      ? cycle.strength
+      : 50;
+
+  const reversionCompatibility =
+    meanReversion.direction === "NEUTRAL"
+      ? 55
+      : side === "OVER"
+      ? meanReversion.direction === "UP"
+        ? meanReversion.probability
+        : 100 - meanReversion.probability
+      : meanReversion.direction === "DOWN"
+      ? meanReversion.probability
+      : 100 - meanReversion.probability;
+
+  const weightedProbability = clamp(
+    shortFrequency * 0.24 +
+      mediumFrequency * 0.18 +
+      longFrequency * 0.12 +
+      transitionProbability * 0.18 +
+      bayesian.posterior * 0.20 +
+      reversionCompatibility * 0.05 +
+      cycleCompatibility * 0.03,
+    0,
+    100
+  );
+
+  const profitRatio = barrierProfitRatio(
+    side,
+    barrier
+  );
+
+  const simulation = simulateBarrierEV({
+    probability: weightedProbability,
+    profitRatio,
+    trials: 1000,
+  });
+
+  const riskPenalty =
+    Number(regime.riskPenalty || 0) * 0.45 +
+    Number(resultRisk.risk || 0) * 0.35 +
+    (simulation.confidenceLow < 0 ? 16 : 0);
+
+  const lanePreference = barrierLaneScore(
+    side,
+    barrier,
+    recoveryActive
+  );
+
+  const finalScore = clamp(
+    weightedProbability * 0.54 +
+      lanePreference * 0.16 +
+      Math.max(
+        -20,
+        simulation.expectedValue * 100
+      ) *
+        0.18 +
+      Number(candidate.consistency || 0) *
+        0.12 -
+      riskPenalty,
+    0,
+    100
+  );
+
+  return {
+    weightedProbability,
+    transitionProbability,
+    shortFrequency,
+    mediumFrequency,
+    longFrequency,
+    cycleCompatibility,
+    reversionCompatibility,
+    bayesianPosterior:
+      bayesian.posterior,
+    profitRatio,
+    simulation,
+    finalScore,
+  };
+}
 function setupCooldownRemaining(row) {
   const blockedUntil = Number(row?.blockedUntil || 0);
   return Math.max(0, blockedUntil - Date.now());
@@ -824,6 +1248,14 @@ export default function OverUnderLearningBot() {
     useState(true);
   const [guardThreshold, setGuardThreshold] =
     useState(58);
+  const [multiLayerEnabled, setMultiLayerEnabled] =
+    useState(true);
+  const [minimumLayerAgreement, setMinimumLayerAgreement] =
+    useState(5);
+  const [evFloor, setEvFloor] =
+    useState(0.015);
+  const [adaptiveCooldownSeconds, setAdaptiveCooldownSeconds] =
+    useState(3);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -1180,6 +1612,48 @@ export default function OverUnderLearningBot() {
     [trades, symbol]
   );
 
+  const multiWindowFrequency = useMemo(
+    () => ({
+      short: frequencyWindow(
+        analysis.recentDigits,
+        40
+      ),
+      medium: frequencyWindow(
+        analysis.recentDigits,
+        100
+      ),
+      long: frequencyWindow(
+        analysis.recentDigits,
+        250
+      ),
+    }),
+    [analysis.recentDigits]
+  );
+
+  const transitionAnalysis = useMemo(
+    () =>
+      transitionMatrixAnalysis(
+        analysis.recentDigits
+      ),
+    [analysis.recentDigits]
+  );
+
+  const observedCycle = useMemo(
+    () =>
+      cycleAnalysis(
+        analysis.recentDigits
+      ),
+    [analysis.recentDigits]
+  );
+
+  const meanReversion = useMemo(
+    () =>
+      meanReversionAnalysis(
+        analysis.recentDigits
+      ),
+    [analysis.recentDigits]
+  );
+
   const marketSymbols = useMemo(
     () =>
       (Array.isArray(markets)
@@ -1238,23 +1712,73 @@ export default function OverUnderLearningBot() {
               smartRecoveryActive
             );
 
-          const regimeAdjustedScore = clamp(
-            candidateScore(
-              candidate,
-              learned
-            ) +
-              regimeAnalysis.qualityBonus -
-              regimeAnalysis.riskPenalty -
-              Number(resultRisk.risk || 0) * 0.18 +
-              (
-                smartRecoveryActive
-                  ? safetyScore * 0.08 +
-                    payoutEdge * 0.30 +
-                    laneScore * 0.22
-                  : safetyScore * 0.04 +
-                    payoutEdge * 0.18 +
-                    laneScore * 0.12
+          const theoreticalPrior =
+            barrierSafetyScore(
+              side,
+              barrier
+            ) / 100;
+
+          const bayesian =
+            bayesianBarrierProbability({
+              digits:
+                analysis.recentDigits,
+              side,
+              barrier,
+              prior: theoreticalPrior,
+            });
+
+          const layered =
+            multiLayerCandidateScore({
+              candidate: {
+                ...candidate,
+                side,
+                barrier,
+              },
+              frequencies:
+                multiWindowFrequency,
+              transition:
+                transitionAnalysis,
+              cycle: observedCycle,
+              meanReversion,
+              bayesian,
+              regime: regimeAnalysis,
+              resultRisk,
+              recoveryActive:
+                smartRecoveryActive,
+            });
+
+          const agreementVotes = [
+            layered.shortFrequency >=
+              Number(candidate.probability || 0) -
+                8,
+            layered.mediumFrequency >=
+              Number(candidate.probability || 0) -
+                10,
+            layered.transitionProbability >=
+              55,
+            layered.bayesianPosterior >=
+              Number(
+                learned.requiredProbability || 100
               ),
+            layered.reversionCompatibility >=
+              55,
+            layered.simulation.expectedValue >=
+              Number(evFloor || 0.015),
+            layered.simulation.confidenceLow >=
+              -0.02,
+          ].filter(Boolean).length;
+
+          const regimeAdjustedScore = clamp(
+            multiLayerEnabled
+              ? layered.finalScore
+              : candidateScore(
+                  candidate,
+                  learned
+                ) +
+                  regimeAnalysis.qualityBonus -
+                  regimeAnalysis.riskPenalty -
+                  Number(resultRisk.risk || 0) *
+                    0.18,
             0,
             100
           );
@@ -1267,6 +1791,9 @@ export default function OverUnderLearningBot() {
             safetyScore,
             payoutEdge,
             laneScore,
+            bayesian,
+            layered,
+            agreementVotes,
             regimeAdjustedScore,
             adaptiveScore:
               regimeAdjustedScore,
@@ -1314,6 +1841,13 @@ export default function OverUnderLearningBot() {
       marketBlocks,
       regimeAnalysis,
       resultRisk,
+      multiWindowFrequency,
+      transitionAnalysis,
+      observedCycle,
+      meanReversion,
+      multiLayerEnabled,
+      minimumLayerAgreement,
+      evFloor,
       recovery.active,
       recoveryMode,
       smartRecoveryActive,
@@ -1394,6 +1928,23 @@ export default function OverUnderLearningBot() {
         activeGuard.state !== "BLOCK" &&
         Number(activeGuard.risk || 0) <
           Number(guardThreshold || 58)
+      )
+    ) &&
+    (
+      !multiLayerEnabled ||
+      (
+        Number(best.agreementVotes || 0) >=
+          Number(minimumLayerAgreement || 5) &&
+        Number(
+          best.layered?.simulation
+            ?.expectedValue || -1
+        ) >= Number(evFloor || 0.015) &&
+        Number(
+          best.layered?.weightedProbability || 0
+        ) >=
+          Number(
+            best.learned.requiredProbability || 100
+          )
       )
     ) &&
     !best.learned.blocked &&
@@ -2046,7 +2597,12 @@ export default function OverUnderLearningBot() {
         );
 
       setMessage(
-        `LOSS ${settled.contract}. ${settled.symbol} blocked for 60s; rotating through all markets for a clear recovery setup.`
+        `LOSS ${settled.contract}. Recovery debt ${(
+          Number(recoveryDebt || 0) +
+          newLossAmount
+        ).toFixed(
+          2
+        )} USD. Scanning every market for the strongest EV-positive recovery barrier.`
       );
     }
 
@@ -2327,8 +2883,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V11"
-          subtitle="Predictive guard · adaptive barriers · proactive loss avoidance"
+          title="Over/Under Adaptive Learning Bot V12.3"
+          subtitle="V12.3 syntax-clean · Markov · Bayesian · EV"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -2401,6 +2957,18 @@ export default function OverUnderLearningBot() {
                 ? confirmed
                   ? "Fresh recovery setup passed stricter EV, confidence and confirmation gates."
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
+                : multiLayerEnabled &&
+                  Number(best.agreementVotes || 0) <
+                    Number(minimumLayerAgreement || 5)
+                ? `Only ${Number(
+                    best.agreementVotes || 0
+                  )}/7 analysis layers agree. Waiting or switching market.`
+                : multiLayerEnabled &&
+                  Number(
+                    best.layered?.simulation
+                      ?.expectedValue || -1
+                  ) < Number(evFloor || 0.015)
+                ? "Expected value is below the configured floor. Trade blocked."
                 : blockedByLastLoss
                 ? "This exact losing setup is blocked."
                 : analysis.reason}
@@ -2561,6 +3129,87 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Multi-layer engine</span>
+            <select
+              value={
+                multiLayerEnabled
+                  ? "ON"
+                  : "OFF"
+              }
+              onChange={(event) =>
+                setMultiLayerEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — Markov/Bayesian/EV
+              </option>
+              <option value="OFF">
+                OFF — legacy score
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Minimum layer votes</span>
+            <input
+              type="number"
+              min="3"
+              max="7"
+              step="1"
+              value={minimumLayerAgreement}
+              onChange={(event) =>
+                setMinimumLayerAgreement(
+                  clamp(
+                    event.target.value,
+                    3,
+                    7
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Minimum EV</span>
+            <input
+              type="number"
+              min="-0.05"
+              max="0.2"
+              step="0.005"
+              value={evFloor}
+              onChange={(event) =>
+                setEvFloor(
+                  Number(
+                    event.target.value || 0
+                  )
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Base cooldown seconds</span>
+            <input
+              type="number"
+              min="1"
+              max="15"
+              step="1"
+              value={adaptiveCooldownSeconds}
+              onChange={(event) =>
+                setAdaptiveCooldownSeconds(
+                  clamp(
+                    event.target.value,
+                    1,
+                    15
+                  )
                 )
               }
             />
@@ -3022,6 +3671,112 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Layer agreement</span>
+              <strong>
+                {best.agreementVotes || 0}/7
+              </strong>
+              <small>
+                Frequency, Markov, Bayesian, EV
+              </small>
+            </article>
+
+            <article>
+              <span>Bayesian probability</span>
+              <strong>
+                {pct(
+                  best.layered
+                    ?.bayesianPosterior || 0
+                )}
+              </strong>
+              <small>
+                Prior + observed market data
+              </small>
+            </article>
+
+            <article>
+              <span>Markov transition</span>
+              <strong>
+                {pct(
+                  best.layered
+                    ?.transitionProbability || 0
+                )}
+              </strong>
+              <small>
+                Next-digit transition support
+              </small>
+            </article>
+
+            <article>
+              <span>EV simulation</span>
+              <strong>
+                {Number(
+                  best.layered
+                    ?.simulation
+                    ?.expectedValue || 0
+                ) >= 0
+                  ? "+"
+                  : ""}
+                {Number(
+                  best.layered
+                    ?.simulation
+                    ?.expectedValue || 0
+                ).toFixed(3)}
+              </strong>
+              <small>
+                1,000-trial mathematical estimate
+              </small>
+            </article>
+
+            <article>
+              <span>Observed cycle</span>
+              <strong>
+                {observedCycle.length || "—"}
+              </strong>
+              <small>
+                Strength {pct(
+                  observedCycle.strength
+                )}
+              </small>
+            </article>
+
+            <article>
+              <span>Mean reversion</span>
+              <strong>
+                {meanReversion.direction}
+              </strong>
+              <small>
+                {pct(
+                  meanReversion.probability
+                )} probability
+              </small>
+            </article>
+
+            <article>
+              <span>Hot / cold digit</span>
+              <strong>
+                {multiWindowFrequency.short.hottestDigit}
+                {" / "}
+                {multiWindowFrequency.short.coldestDigit}
+              </strong>
+              <small>
+                Last {multiWindowFrequency.short.size} ticks
+              </small>
+            </article>
+
+            <article>
+              <span>Weighted probability</span>
+              <strong>
+                {pct(
+                  best.layered
+                    ?.weightedProbability || 0
+                )}
+              </strong>
+              <small>
+                Combined layer output
               </small>
             </article>
 
