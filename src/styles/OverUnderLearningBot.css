@@ -787,3 +787,10 @@
   border-color: #9b4652;
   color: #ff8790;
 }
+
+
+.oulLastSoundEvent {
+  margin-top: 4px !important;
+  color: #f0cf67 !important;
+  font-weight: 800;
+}

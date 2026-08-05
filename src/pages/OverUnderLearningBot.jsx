@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v7";
+const MEMORY_KEY = "edgepilot:over-under-learning:v8";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -36,21 +36,29 @@ function contractIdOf(item = {}) {
 }
 
 function contractStatus(item = {}) {
-  const status = String(
+  const rawStatus = String(
     item?.status || ""
   ).toUpperCase();
+
+  const profit = profitOf(item);
 
   if (
     item?.is_sold ||
     item?.is_expired ||
     ["WON", "LOST", "SOLD", "EXPIRED"].includes(
-      status
+      rawStatus
     )
   ) {
-    return status || "CLOSED";
+    if (rawStatus === "WON") return "WON";
+    if (rawStatus === "LOST") return "LOST";
+
+    if (profit > 0) return "WON";
+    if (profit < 0) return "LOST";
+
+    return rawStatus || "CLOSED";
   }
 
-  return status || "OPEN";
+  return rawStatus || "OPEN";
 }
 
 function profitOf(item = {}) {
@@ -467,6 +475,8 @@ export default function OverUnderLearningBot() {
     useState(true);
   const [journalSearch, setJournalSearch] =
     useState("");
+  const [lastSoundEvent, setLastSoundEvent] =
+    useState("NONE");
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -482,6 +492,8 @@ export default function OverUnderLearningBot() {
   });
   const audioContextRef = useRef(null);
   const soundUnlockedRef = useRef(false);
+  const soundedTradeIdsRef = useRef(new Set());
+  const previousTradeStatusRef = useRef(new Map());
 
   function getAudioContext() {
     const AudioContextClass =
@@ -725,6 +737,59 @@ export default function OverUnderLearningBot() {
     },
     []
   );
+
+
+  useEffect(() => {
+    if (!Array.isArray(trades) || !trades.length) {
+      return;
+    }
+
+    for (const trade of trades) {
+      const tradeId = String(
+        trade.contractId || trade.id || ""
+      );
+
+      if (!tradeId) continue;
+
+      const status = String(
+        trade.status || ""
+      ).toUpperCase();
+
+      const previousStatus =
+        previousTradeStatusRef.current.get(
+          tradeId
+        ) || "";
+
+      previousTradeStatusRef.current.set(
+        tradeId,
+        status
+      );
+
+      const settledNow =
+        ["WON", "LOST"].includes(status) &&
+        previousStatus !== status;
+
+      if (
+        !settledNow ||
+        soundedTradeIdsRef.current.has(tradeId)
+      ) {
+        continue;
+      }
+
+      soundedTradeIdsRef.current.add(tradeId);
+
+      setLastSoundEvent(
+        `${status} · ${trade.symbol} · ${trade.contract}`
+      );
+
+      if (
+        soundEnabled &&
+        soundUnlockedRef.current
+      ) {
+        playTradeSound(status);
+      }
+    }
+  }, [trades, soundEnabled]);
 
 
   useEffect(() => {
@@ -1087,6 +1152,11 @@ export default function OverUnderLearningBot() {
         profit: 0,
       };
 
+      previousTradeStatusRef.current.set(
+        String(trade.contractId || trade.id),
+        "OPEN"
+      );
+
       setTrades((current) =>
         [trade, ...current].slice(0, 50)
       );
@@ -1271,8 +1341,6 @@ export default function OverUnderLearningBot() {
       settled.status === "WON"
         ? "WON"
         : "LOST";
-
-    playTradeSound(result);
 
     setMemory((current) =>
       updateMemory(current, {
@@ -1464,6 +1532,8 @@ export default function OverUnderLearningBot() {
       switches: 0,
     });
     processedRef.current = new Set();
+    soundedTradeIdsRef.current = new Set();
+    previousTradeStatusRef.current = new Map();
     lastLossKeyRef.current = "";
     setMessage(
       running
@@ -1648,8 +1718,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V7"
-          subtitle="Persistent sale-style win chime · reliable settlement alerts"
+          title="Over/Under Adaptive Learning Bot V8"
+          subtitle="Journal-driven WIN/LOSS alerts · persistent sound engine"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1977,7 +2047,10 @@ export default function OverUnderLearningBot() {
                 : "🔇 SOUNDS OFF"}
             </button>
             <small>
-              Win, loss, open and switch alerts
+              WIN/LOSS now trigger from settled journal status
+            </small>
+            <small className="oulLastSoundEvent">
+              Last: {lastSoundEvent}
             </small>
 
             <div className="oulSoundTests">
@@ -2432,12 +2505,12 @@ export default function OverUnderLearningBot() {
                             : status === "WON"
                             ? `Won ${Number(
                                 trade.profit || 0
-                              ).toFixed(2)} USD.`
+                              ).toFixed(2)} USD · WIN sound triggered from journal settlement.`
                             : `Lost ${Math.abs(
                                 Number(
                                   trade.profit || 0
                                 )
-                              ).toFixed(2)} USD.`}
+                              ).toFixed(2)} USD · LOSS sound triggered from journal settlement.`}
                         </p>
                       </div>
                     </div>
