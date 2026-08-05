@@ -1554,3 +1554,22 @@
 .oulDecisionGrid article:nth-child(n+10) strong {
   color: #ffd56a;
 }
+
+
+/* RapidEdge V4.6 quality revalidation */
+.oulDecision.ready::after {
+  content: "QUALITY + REVALIDATION PASSED";
+}
+
+.oulCandidates > div:first-child {
+  border-color: #62a8ff;
+  box-shadow:
+    0 0 0 1px rgba(98, 168, 255, .22),
+    0 0 16px rgba(98, 168, 255, .07);
+}
+
+.oulDecisionGrid article strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

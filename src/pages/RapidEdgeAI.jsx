@@ -308,12 +308,24 @@ function enrichCandidate(
     100
   );
 
+  const calibratedProbability = clamp(
+    Number(candidate.probability || 0) * 0.58 +
+      contract.winRate * 0.16 +
+      market.winRate * 0.14 +
+      global.winRate * 0.12 -
+      contract.lossStreak * 8 -
+      market.lossStreak * 7,
+    5,
+    96
+  );
+
   return {
     ...candidate,
     marketQuality,
     executionConfidence,
     adaptiveRisk,
     qualityScore,
+    calibratedProbability,
     contractWinRate: contract.winRate,
     contractLossStreak: contract.lossStreak,
     marketWinRate: market.winRate,
@@ -552,6 +564,9 @@ export default function RapidEdgeAI() {
   const [pauseUntil, setPauseUntil] = useState(0);
   const [marketBlocks, setMarketBlocks] = useState({});
   const [contractBlocks, setContractBlocks] = useState({});
+  const [postLossAnchorCount, setPostLossAnchorCount] = useState(null);
+  const [postLossMarket, setPostLossMarket] = useState("");
+  const [confirmationAnchor, setConfirmationAnchor] = useState(null);
   const [executionAttempts, setExecutionAttempts] = useState(0);
   const [executionSuccesses, setExecutionSuccesses] = useState(0);
   const [executionFailures, setExecutionFailures] = useState(0);
@@ -615,6 +630,29 @@ export default function RapidEdgeAI() {
         unique.size >= 3,
     };
   }, [digits]);
+
+
+  const postLossTicksCollected =
+    postLossAnchorCount === null
+      ? 999
+      : Math.max(
+          0,
+          digits.length -
+            Number(postLossAnchorCount || 0)
+        );
+
+  const postLossRevalidated =
+    postLossAnchorCount === null ||
+    postLossTicksCollected >= 24;
+
+  const confirmationTicksCollected =
+    confirmationAnchor === null
+      ? 999
+      : Math.max(
+          0,
+          digits.length -
+            Number(confirmationAnchor || 0)
+        );
 
   const blockedLossKey =
     clock - lastLossAt < 4000
@@ -684,34 +722,43 @@ export default function RapidEdgeAI() {
   const qualityReady =
     Boolean(best) &&
     Number(best.expectedValue || -1) > 0 &&
-    Number(best.marketQuality || 0) >= 70 &&
+    Number(best.marketQuality || 0) >= 75 &&
     Number(
       best.executionConfidence || 0
-    ) >= 72 &&
-    Number(best.adaptiveRisk || 100) <= 42 &&
-    Number(best.contractLossStreak || 0) <
-      2 &&
-    Number(best.marketLossStreak || 0) < 2;
+    ) >= 80 &&
+    Number(best.adaptiveRisk || 100) < 20 &&
+    Number(best.qualityScore || 0) >= 78 &&
+    Number(best.contractLossStreak || 0) ===
+      0 &&
+    Number(best.marketLossStreak || 0) === 0 &&
+    postLossRevalidated;
 
   const immediateQualityEntry =
     qualityReady &&
-    Number(best.probability || 0) >= 92 &&
+    Number(best.calibratedProbability || 0) >=
+      90 &&
     Number(best.executionConfidence || 0) >=
-      86;
+      88;
+
+  const confirmationRequired =
+    qualityReady &&
+    Number(best.calibratedProbability || 0) >=
+      82 &&
+    Number(best.calibratedProbability || 0) < 90;
 
   const confirmedQualityEntry =
-    qualityReady &&
-    Number(best.probability || 0) >= 84 &&
-    Number(best.qualityScore || 0) >= 74 &&
-    scanAgeMs >= 1000;
+    confirmationRequired &&
+    confirmationTicksCollected >= 2;
 
   const oneMinuteFallback =
     Boolean(best) &&
     digitQuality.ready &&
     qualityReady &&
     scanAgeMs >= 45000 &&
-    Number(best.probability || 0) >= 78 &&
-    Number(best.qualityScore || 0) >= 70;
+    Number(best.calibratedProbability || 0) >=
+      80 &&
+    Number(best.qualityScore || 0) >= 80 &&
+    confirmationTicksCollected >= 2;
 
   const ladder = {
     ...baseLadder,
@@ -724,8 +771,12 @@ export default function RapidEdgeAI() {
       : oneMinuteFallback
       ? "60S_QUALITY"
       : confirmedQualityEntry
-      ? "QUALITY_CONFIRM"
-      : baseLadder.stage,
+      ? "QUALITY_2T_CONFIRM"
+      : confirmationRequired
+      ? "WAIT_2_TICKS"
+      : postLossRevalidated
+      ? baseLadder.stage
+      : "POST_LOSS_RECHECK",
   };
 
   const hasOpenTrade = trades.some(
@@ -952,7 +1003,7 @@ export default function RapidEdgeAI() {
       setLastExecutionError("");
       setMessage(
         `BUY REQUEST · ${best.contract} · ${pct(
-          best.probability
+          best.calibratedProbability
         )} · ${ladder.stage}`
       );
 
@@ -1016,7 +1067,8 @@ export default function RapidEdgeAI() {
           barrier: best.barrier,
           contract: best.contract,
           stake: Number(stake || 0.35),
-          probability: best.probability,
+          probability: best.calibratedProbability,
+          rawProbability: best.probability,
           expectedValue: best.expectedValue,
           stage: ladder.stage,
           status: "OPEN",
@@ -1092,6 +1144,9 @@ export default function RapidEdgeAI() {
     if (marketBlocked) {
       return "MARKET_BLOCKED";
     }
+    if (!postLossRevalidated) {
+      return `POST_LOSS_TICKS_${postLossTicksCollected}_OF_24`;
+    }
     if (!digitQuality.ready) {
       return digitQuality.allSame
         ? "BAD_TICK_DECIMALS"
@@ -1100,6 +1155,12 @@ export default function RapidEdgeAI() {
     if (!best) return "NO_CANDIDATE";
     if (!qualityReady) {
       return "QUALITY_GATE";
+    }
+    if (
+      confirmationRequired &&
+      confirmationTicksCollected < 2
+    ) {
+      return `CONFIRM_TICKS_${confirmationTicksCollected}_OF_2`;
     }
     if (!ladder.qualified) return "NOT_QUALIFIED";
     if (hasOpenTrade) return "OPEN_TRADE_EXISTS";
@@ -1121,16 +1182,47 @@ export default function RapidEdgeAI() {
     selectedAccountId,
     pauseUntil,
     marketBlocked,
+    postLossRevalidated,
+    postLossTicksCollected,
     digitQuality.ready,
     digitQuality.allSame,
     best,
     qualityReady,
+    confirmationRequired,
+    confirmationTicksCollected,
     ladder.qualified,
     hasOpenTrade,
     lastEntryAt,
     selectedAccountType,
     allowReal,
     clock,
+  ]);
+
+  useEffect(() => {
+    const needsConfirmation =
+      Boolean(best) &&
+      qualityReady &&
+      Number(
+        best.calibratedProbability || 0
+      ) >= 82 &&
+      Number(
+        best.calibratedProbability || 0
+      ) < 90;
+
+    if (needsConfirmation) {
+      if (confirmationAnchor === null) {
+        setConfirmationAnchor(digits.length);
+      }
+    } else if (confirmationAnchor !== null) {
+      setConfirmationAnchor(null);
+    }
+  }, [
+    best?.side,
+    best?.barrier,
+    best?.calibratedProbability,
+    qualityReady,
+    digits.length,
+    confirmationAnchor,
   ]);
 
   useEffect(() => {
@@ -1298,22 +1390,32 @@ export default function RapidEdgeAI() {
           } else {
             setContractBlocks((blocks) => ({
               ...blocks,
-              [lossKey]: now + 8000,
+              [lossKey]: now + 10000,
             }));
           }
 
-          if (marketMemory.lossStreak >= 2) {
+          setPostLossAnchorCount(digits.length);
+          setPostLossMarket(settled.symbol);
+          setConfirmationAnchor(null);
+
+          if (marketMemory.lossStreak >= 3) {
             setMarketBlocks((blocks) => ({
               ...blocks,
               [settled.symbol]:
                 now + 30000,
             }));
             setPauseUntil(now + 5000);
+          } else if (
+            marketMemory.lossStreak >= 2
+          ) {
+            setPauseUntil(now + 3000);
           } else {
             setPauseUntil(now + 1500);
           }
         } else {
           setPauseUntil(0);
+          setPostLossAnchorCount(null);
+          setPostLossMarket("");
         }
 
         setLastSettlementAt(Date.now());
@@ -1350,14 +1452,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.5 started · adaptive quality and loss memory active."
+      "RapidEdge V4.6 started · calibrated probability and post-loss revalidation active."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.5 stopped.");
+    setMessage("RapidEdge V4.6 stopped.");
   }
 
   function reset() {
@@ -1368,6 +1470,9 @@ export default function RapidEdgeAI() {
     setPauseUntil(0);
     setMarketBlocks({});
     setContractBlocks({});
+    setPostLossAnchorCount(null);
+    setPostLossMarket("");
+    setConfirmationAnchor(null);
     setLastSettlementAt(Date.now());
     recentRunTimesRef.current = [];
     processedRef.current.clear();
@@ -1377,7 +1482,7 @@ export default function RapidEdgeAI() {
     setLastExecutionError("");
     setLastBuyRequestAt(0);
     setLoopStatus("IDLE");
-    setMessage("RapidEdge V4.5 session reset.");
+    setMessage("RapidEdge V4.6 session reset.");
   }
 
   return (
@@ -1386,8 +1491,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.5 · Adaptive Quality"
-          subtitle="Probability + EV + market quality + execution confidence · adaptive loss protection"
+          title="RapidEdge AI V4.6 · Quality Revalidation"
+          subtitle="Calibrated probability · strict quality gate · 2-tick confirmation · 24-tick post-loss recheck"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1442,7 +1547,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.5 ADAPTIVE QUALITY</small>
+            <small>V4.6 QUALITY REVALIDATION</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -1486,6 +1591,12 @@ export default function RapidEdgeAI() {
             </article>
             <article>
               <span>Probability</span>
+              <strong>
+                {pct(best?.calibratedProbability)}
+              </strong>
+            </article>
+            <article>
+              <span>Raw Pattern</span>
               <strong>
                 {pct(best?.probability)}
               </strong>
@@ -1568,6 +1679,22 @@ export default function RapidEdgeAI() {
                   : marketBlocked
                   ? "MARKET BLOCK"
                   : "CLEAR"}
+              </strong>
+            </article>
+            <article>
+              <span>Post-Loss Ticks</span>
+              <strong>
+                {postLossAnchorCount === null
+                  ? "CLEAR"
+                  : `${postLossTicksCollected}/24`}
+              </strong>
+            </article>
+            <article>
+              <span>Confirm Ticks</span>
+              <strong>
+                {confirmationRequired
+                  ? `${confirmationTicksCollected}/2`
+                  : "NOT NEEDED"}
               </strong>
             </article>
             <article>
@@ -1797,7 +1924,7 @@ export default function RapidEdgeAI() {
                       {candidate.contract}
                     </strong>
                     <span>
-                      P {pct(candidate.probability)}
+                      P {pct(candidate.calibratedProbability)}
                     </span>
                     <span>
                       EV{" "}
@@ -1833,7 +1960,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.5 Trades</h2>
+              <h2>RapidEdge V4.6 Trades</h2>
             </div>
           </header>
 
@@ -1877,14 +2004,14 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.5 transactions yet.
+                No RapidEdge V4.6 transactions yet.
               </p>
             )}
           </div>
         </section>
 
         <p className="oulDisclaimer">
-          V4.5 prioritizes entry quality over raw trade count. Loss memory may pause or switch markets. Profit and win rate are not guaranteed. Test on demo first.
+          V4.6 waits for 24 new ticks after a loss and uses calibrated probability plus stricter quality limits. It may trade less often. Profit and win rate are not guaranteed. Test on demo first.
         </p>
       </main>
     </div>
