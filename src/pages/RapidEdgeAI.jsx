@@ -4382,28 +4382,28 @@ export default function RapidEdgeAI() {
     speedCandidateValid &&
     speedBalancedActive &&
     Number(analysis?.total || 0) >= 12 &&
-    speedProbability >= 78 &&
-    speedExpectedValue >= 0.008 &&
-    speedVotes >= 4 &&
-    speedRisk <= 48;
+    speedProbability >= 74 &&
+    speedExpectedValue >= 0.003 &&
+    speedVotes >= 3 &&
+    speedRisk <= 54;
 
   const fallbackSpeedEntry =
     speedCandidateValid &&
     speedFallbackActive &&
     Number(analysis?.total || 0) >= 10 &&
-    speedProbability >= 72 &&
-    speedExpectedValue >= 0.003 &&
-    speedVotes >= 3 &&
-    speedRisk <= 55;
+    speedProbability >= 68 &&
+    speedExpectedValue >= 0 &&
+    speedVotes >= 2 &&
+    speedRisk <= 60;
 
   const deadlineSpeedEntry =
     speedCandidateValid &&
     speedDeadlineActive &&
     Number(analysis?.total || 0) >= 8 &&
-    speedProbability >= 70 &&
-    speedExpectedValue > 0 &&
+    speedProbability >= 66 &&
+    speedExpectedValue > -0.005 &&
     speedVotes >= 2 &&
-    speedRisk <= 58;
+    speedRisk <= 62;
 
   const recoverySpeedEntry =
     speedCandidateValid &&
@@ -5365,6 +5365,7 @@ useEffect(() => {
       confirmed &&
       !hasOpenTrade &&
       (
+        speedEntryReady ||
         !globalSelectionEnabled ||
         (
           selectedGlobalSetup?.market === symbol &&
@@ -6264,8 +6265,8 @@ useEffect(() => {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V3.0.1 · 60s Speed Ladder"
-          subtitle="Strict → balanced → positive-EV fallback within 60 seconds · fast recovery entry"
+          title="RapidEdge AI V3.0.2 · Execution Unlocked"
+          subtitle="60-second speed ladder bypasses stale global qualification · fast sequential OVER + UNDER execution"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
