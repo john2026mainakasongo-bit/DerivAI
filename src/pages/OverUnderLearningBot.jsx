@@ -12,8 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v18";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v18";
+const MEMORY_KEY = "edgepilot:over-under-learning:v19";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v19";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1134,6 +1134,92 @@ function marketHealthMap(trades, minimumSample = 3) {
 
 
 
+
+function universalCandidateDecision({
+  rankedCandidates,
+  blockedSetups,
+  minimumProbability,
+  minimumEV,
+  minimumVotes,
+  maximumRisk,
+}) {
+  const evaluated = (
+    Array.isArray(rankedCandidates)
+      ? rankedCandidates
+      : []
+  ).map((candidate) => {
+    const probability = Number(
+      candidate?.layered?.weightedProbability ??
+        candidate?.probability ??
+        0
+    );
+    const expectedValue = Number(
+      candidate?.layered?.simulation?.expectedValue ??
+        candidate?.payoutEdge ??
+        -1
+    );
+    const votes = Number(
+      candidate?.agreementVotes || 0
+    );
+    const risk = Number(
+      candidate?.guardRisk ??
+        candidate?.risk ??
+        100
+    );
+    const setupKey = [
+      String(candidate?.side || ""),
+      String(candidate?.barrier ?? ""),
+    ].join(":");
+    const blocked =
+      Number(blockedSetups?.[setupKey] || 0) >
+      Date.now();
+    const qualified =
+      !blocked &&
+      probability >= Number(minimumProbability || 86) &&
+      expectedValue > Number(minimumEV || 0) &&
+      votes >= Number(minimumVotes || 6) &&
+      risk <= Number(maximumRisk || 25) &&
+      !candidate?.learned?.blocked;
+    const universalScore =
+      Number(candidate?.adaptiveScore || 0) * 0.40 +
+      probability * 0.30 +
+      votes * 3.5 +
+      Math.max(
+        -20,
+        Math.min(20, expectedValue * 100)
+      ) -
+      risk * 0.20;
+
+    return {
+      candidate,
+      qualified,
+      blocked,
+      probability,
+      expectedValue,
+      votes,
+      risk,
+      universalScore,
+      setupKey,
+    };
+  });
+
+  const sorted = evaluated.sort(
+    (a, b) =>
+      b.universalScore -
+      a.universalScore
+  );
+  const selected =
+    sorted.find((item) => item.qualified) ||
+    null;
+
+  return {
+    selected: selected?.candidate || null,
+    selectedMeta: selected,
+    ranked: sorted,
+    rejectedTop: sorted[0] || null,
+  };
+}
+
 function balancedLaneDecision({
   overCandidate,
   underCandidate,
@@ -1742,6 +1828,18 @@ export default function OverUnderLearningBot() {
     useState("AUTO");
   const [minimumSideLead, setMinimumSideLead] =
     useState(1.5);
+  const [universalPoolEnabled, setUniversalPoolEnabled] =
+    useState(true);
+  const [universalMinimumProbability, setUniversalMinimumProbability] =
+    useState(86);
+  const [universalMinimumVotes, setUniversalMinimumVotes] =
+    useState(6);
+  const [universalMaximumRisk, setUniversalMaximumRisk] =
+    useState(25);
+  const [setupBlacklistSeconds, setSetupBlacklistSeconds] =
+    useState(90);
+  const [dynamicSetupBlacklist, setDynamicSetupBlacklist] =
+    useState({});
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -2460,8 +2558,37 @@ export default function OverUnderLearningBot() {
     ]
   );
 
+  const universalDecision = useMemo(
+    () =>
+      universalCandidateDecision({
+        rankedCandidates,
+        blockedSetups:
+          dynamicSetupBlacklist?.[symbol] || {},
+        minimumProbability:
+          universalMinimumProbability,
+        minimumEV: evFloor,
+        minimumVotes:
+          universalMinimumVotes,
+        maximumRisk:
+          universalMaximumRisk,
+      }),
+    [
+      rankedCandidates,
+      dynamicSetupBlacklist,
+      symbol,
+      universalMinimumProbability,
+      evFloor,
+      universalMinimumVotes,
+      universalMaximumRisk,
+    ]
+  );
+
   const best =
-    balancedDecision.selected || {
+    (
+      universalPoolEnabled
+        ? universalDecision.selected
+        : balancedDecision.selected
+    ) || {
       side: "WAIT",
       barrier: 2,
       adaptiveScore: 0,
@@ -2762,6 +2889,10 @@ export default function OverUnderLearningBot() {
     !marketRunLocked &&
     !setupRepeated &&
     !sameBarrierRepeated &&
+    (
+      !universalPoolEnabled ||
+      Boolean(universalDecision.selected)
+    ) &&
     (
       !globalSelectionEnabled ||
       currentMarketDecision.qualified
@@ -3656,6 +3787,50 @@ export default function OverUnderLearningBot() {
         ? "WON"
         : "LOST";
 
+    if (result === "LOST") {
+      const marketName =
+        settled.symbol || symbol;
+      const lostSide =
+        String(
+          settled.side || ""
+        ).toUpperCase();
+      const lostBarrier =
+        Number(settled.barrier ?? -1);
+      const setupKey =
+        `${lostSide}:${lostBarrier}`;
+
+      const matchingRecentLosses =
+        trades.filter((trade) =>
+          String(trade.symbol || "") ===
+            String(marketName) &&
+          String(
+            trade.side || ""
+          ).toUpperCase() === lostSide &&
+          Number(trade.barrier ?? -1) ===
+            lostBarrier &&
+          String(
+            trade.status || ""
+          ).toUpperCase() === "LOST"
+        ).length + 1;
+
+      if (matchingRecentLosses >= 2) {
+        setDynamicSetupBlacklist(
+          (current) => ({
+            ...current,
+            [marketName]: {
+              ...(current?.[marketName] || {}),
+              [setupKey]:
+                Date.now() +
+                Number(
+                  setupBlacklistSeconds || 90
+                ) *
+                  1000,
+            },
+          })
+        );
+      }
+    }
+
     setMemory((current) =>
       updateMemory(current, {
         symbol: settled.symbol,
@@ -4110,8 +4285,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V18"
-          subtitle="Balanced OVER + UNDER · browser intelligence · one-run rotation"
+          title="Over/Under Adaptive Learning Bot V19"
+          subtitle="Universal candidate pool · rank #1 only · adaptive blacklist"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -4184,6 +4359,9 @@ export default function OverUnderLearningBot() {
                 ? confirmed
                   ? "Fresh recovery setup passed stricter EV, confidence and confirmation gates."
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
+                : universalPoolEnabled &&
+                  !universalDecision.selected
+                ? "UNIVERSAL POOL — No OVER or UNDER candidate passed every gate. Trade skipped."
                 : marketRunLocked
                 ? "ONE-RUN LIMIT — This market already traded. Switching to a different market."
                 : setupRepeated
@@ -4367,6 +4545,93 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Universal candidate pool</span>
+            <select
+              value={
+                universalPoolEnabled
+                  ? "ON"
+                  : "OFF"
+              }
+              onChange={(event) =>
+                setUniversalPoolEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — rank OVER + UNDER together
+              </option>
+              <option value="OFF">
+                OFF — balanced lane fallback
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Universal minimum probability</span>
+            <input
+              type="number"
+              min="70"
+              max="99"
+              step="1"
+              value={universalMinimumProbability}
+              onChange={(event) =>
+                setUniversalMinimumProbability(
+                  clamp(event.target.value, 70, 99)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Universal minimum votes</span>
+            <input
+              type="number"
+              min="3"
+              max="7"
+              step="1"
+              value={universalMinimumVotes}
+              onChange={(event) =>
+                setUniversalMinimumVotes(
+                  clamp(event.target.value, 3, 7)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Universal maximum risk</span>
+            <input
+              type="number"
+              min="5"
+              max="80"
+              step="1"
+              value={universalMaximumRisk}
+              onChange={(event) =>
+                setUniversalMaximumRisk(
+                  clamp(event.target.value, 5, 80)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Setup blacklist seconds</span>
+            <input
+              type="number"
+              min="20"
+              max="600"
+              step="10"
+              value={setupBlacklistSeconds}
+              onChange={(event) =>
+                setSetupBlacklistSeconds(
+                  clamp(event.target.value, 20, 600)
                 )
               }
             />
@@ -4987,6 +5252,9 @@ export default function OverUnderLearningBot() {
             <strong>
               {hasOpenTrade
                 ? "MONITORING"
+                : universalPoolEnabled &&
+                  !universalDecision.selected
+                ? "UNIVERSAL SKIP"
                 : globalSelectionEnabled &&
                   !currentMarketDecision.qualified
                 ? "SKIP / SWITCH"
@@ -5212,6 +5480,66 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Universal Rank #1</span>
+              <strong>
+                {universalDecision.selected
+                  ? `${universalDecision.selected.side} ${universalDecision.selected.barrier}`
+                  : "SKIP"}
+              </strong>
+              <small>
+                {universalDecision.selectedMeta
+                  ? `P ${pct(
+                      universalDecision.selectedMeta.probability
+                    )} · EV ${Number(
+                      universalDecision.selectedMeta.expectedValue
+                    ).toFixed(3)}`
+                  : "No candidate passed all gates"}
+              </small>
+            </article>
+
+            <article>
+              <span>Rejected top setup</span>
+              <strong>
+                {universalDecision.rejectedTop
+                  ? `${universalDecision.rejectedTop.candidate.side} ${universalDecision.rejectedTop.candidate.barrier}`
+                  : "NONE"}
+              </strong>
+              <small>
+                {universalDecision.rejectedTop
+                  ? `Risk ${pct(
+                      universalDecision.rejectedTop.risk
+                    )} · Votes ${universalDecision.rejectedTop.votes}/7`
+                  : "No candidates available"}
+              </small>
+            </article>
+
+            <article>
+              <span>Universal pool size</span>
+              <strong>
+                {universalDecision.ranked.length}
+              </strong>
+              <small>
+                OVER and UNDER ranked together
+              </small>
+            </article>
+
+            <article>
+              <span>Setup blacklist</span>
+              <strong>
+                {Object.values(
+                  dynamicSetupBlacklist?.[symbol] || {}
+                ).filter(
+                  (until) =>
+                    Number(until || 0) >
+                    Date.now()
+                ).length}
+              </strong>
+              <small>
+                Repeated losing setups blocked
               </small>
             </article>
 
@@ -5831,6 +6159,48 @@ export default function OverUnderLearningBot() {
                     : "WAIT"}
                 </span>
               </article>
+            </div>
+
+            <div className="oulUniversalRanking">
+              {universalDecision.ranked
+                .slice(0, 8)
+                .map((item, index) => (
+                  <article
+                    key={`${item.setupKey}-${index}`}
+                    className={
+                      item.qualified
+                        ? "qualified"
+                        : item.blocked
+                        ? "blocked"
+                        : ""
+                    }
+                  >
+                    <small>RANK #{index + 1}</small>
+                    <strong>
+                      {item.candidate.side}{" "}
+                      {item.candidate.barrier}
+                    </strong>
+                    <span>
+                      P {pct(item.probability)}
+                      {" · "}
+                      EV {Number(
+                        item.expectedValue
+                      ).toFixed(3)}
+                    </span>
+                    <span>
+                      V {item.votes}/7
+                      {" · "}
+                      R {pct(item.risk)}
+                    </span>
+                    <em>
+                      {item.blocked
+                        ? "BLACKLISTED"
+                        : item.qualified
+                        ? "QUALIFIED"
+                        : "REJECTED"}
+                    </em>
+                  </article>
+                ))}
             </div>
 
             <div className="oulCandidates">

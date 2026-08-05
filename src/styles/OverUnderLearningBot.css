@@ -1110,3 +1110,71 @@
   color: #9fc6d6;
   font-size: 9px;
 }
+
+
+.oulUniversalRanking {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.oulUniversalRanking article {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #174b63;
+  border-radius: 9px;
+  background: #041521;
+}
+
+.oulUniversalRanking article.qualified {
+  border-color: #22d3a6;
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 166, .18);
+}
+
+.oulUniversalRanking article.blocked {
+  border-color: #865328;
+  opacity: .68;
+}
+
+.oulUniversalRanking small,
+.oulUniversalRanking strong,
+.oulUniversalRanking span,
+.oulUniversalRanking em {
+  display: block;
+}
+
+.oulUniversalRanking small {
+  color: #39d9af;
+  font-size: 7px;
+  font-weight: 900;
+}
+
+.oulUniversalRanking strong {
+  margin-top: 3px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.oulUniversalRanking span {
+  margin-top: 3px;
+  color: #9fc6d6;
+  font-size: 8px;
+}
+
+.oulUniversalRanking em {
+  margin-top: 4px;
+  color: #f0cf67;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+@media (max-width: 900px) {
+  .oulUniversalRanking {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
