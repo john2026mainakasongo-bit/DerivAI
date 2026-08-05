@@ -2868,6 +2868,105 @@ export default function RapidEdgeAI() {
   const smartRecoveryActive =
     recovery.active &&
     recoveryMode === "SMART";
+  const recentContractLearning = useMemo(() => {
+    const map = new Map();
+
+    const settled = (Array.isArray(trades) ? trades : [])
+      .filter((trade) =>
+        ["WON", "LOST"].includes(
+          String(trade?.status || "").toUpperCase()
+        )
+      )
+      .slice(0, 80);
+
+    for (const trade of settled) {
+      const side = String(trade?.side || "")
+        .toUpperCase();
+      const barrier = Number(trade?.barrier ?? -1);
+
+      if (
+        !["OVER", "UNDER"].includes(side) ||
+        barrier < 0
+      ) {
+        continue;
+      }
+
+      const key = [side, barrier].join(":");
+      const current = map.get(key) || {
+        runs: 0,
+        wins: 0,
+        losses: 0,
+        profit: 0,
+      };
+
+      current.runs += 1;
+      current.wins +=
+        String(trade.status || "").toUpperCase() ===
+        "WON"
+          ? 1
+          : 0;
+      current.losses +=
+        String(trade.status || "").toUpperCase() ===
+        "LOST"
+          ? 1
+          : 0;
+      current.profit += Number(trade.profit || 0);
+
+      map.set(key, current);
+    }
+
+    for (const row of map.values()) {
+      row.winRate = row.runs
+        ? (row.wins / row.runs) * 100
+        : 0;
+      row.profitPerRun = row.runs
+        ? row.profit / row.runs
+        : 0;
+    }
+
+    return map;
+  }, [trades]);
+
+  const recentContractStreak = useMemo(() => {
+    const settled = (Array.isArray(trades) ? trades : [])
+      .filter((trade) =>
+        ["WON", "LOST"].includes(
+          String(trade?.status || "").toUpperCase()
+        )
+      )
+      .slice(0, 12);
+
+    if (!settled.length) {
+      return {
+        key: "",
+        count: 0,
+      };
+    }
+
+    const firstKey = [
+      String(settled[0]?.side || "").toUpperCase(),
+      Number(settled[0]?.barrier ?? -1),
+    ].join(":");
+
+    let count = 0;
+
+    for (const trade of settled) {
+      const key = [
+        String(trade?.side || "").toUpperCase(),
+        Number(trade?.barrier ?? -1),
+      ].join(":");
+
+      if (key !== firstKey) break;
+      count += 1;
+    }
+
+    return {
+      key: firstKey,
+      count,
+    };
+  }, [trades]);
+
+
 
   const rankedCandidates = useMemo(
     () =>
@@ -2885,6 +2984,23 @@ export default function RapidEdgeAI() {
             side,
             barrier
           );
+
+          const contractLearningKey = [
+            side,
+            barrier,
+          ].join(":");
+
+          const contractLearning =
+            recentContractLearning.get(
+              contractLearningKey
+            ) || {
+              runs: 0,
+              wins: 0,
+              losses: 0,
+              profit: 0,
+              winRate: 0,
+              profitPerRun: 0,
+            };
 
           const safetyScore =
             barrierSafetyScore(
@@ -2976,6 +3092,58 @@ export default function RapidEdgeAI() {
             100
           );
 
+          const contractLearningAdjustment =
+            contractLearning.runs >= 3
+              ? clamp(
+                  Number(
+                    contractLearning.profitPerRun || 0
+                  ) * 90 +
+                    (
+                      Number(
+                        contractLearning.winRate || 0
+                      ) - 55
+                    ) * 0.16,
+                  -20,
+                  20
+                )
+              : 0;
+
+          const repeatedContractPenalty =
+            recentContractStreak.key ===
+              contractLearningKey &&
+            recentContractStreak.count >= 3
+              ? Math.min(
+                  26,
+                  (recentContractStreak.count - 2) * 9
+                )
+              : 0;
+
+          const lowPayoutOverOnePenalty =
+            side === "OVER" &&
+            barrier === 1 &&
+            !(
+              Number(
+                layered?.weightedProbability ??
+                  candidate?.probability ??
+                  0
+              ) >= 95 &&
+              Number(
+                layered?.simulation?.expectedValue ??
+                  -1
+              ) >= 0.035
+            )
+              ? 18
+              : 0;
+
+          const learnedAdaptiveScore = clamp(
+            regimeAdjustedScore +
+              contractLearningAdjustment -
+              repeatedContractPenalty -
+              lowPayoutOverOnePenalty,
+            0,
+            100
+          );
+
           return {
             ...candidate,
             side,
@@ -2992,7 +3160,11 @@ export default function RapidEdgeAI() {
               Number(regimeAnalysis.riskPenalty || 0),
             regimeAdjustedScore,
             adaptiveScore:
-              regimeAdjustedScore,
+              learnedAdaptiveScore,
+            contractLearning,
+            contractLearningAdjustment,
+            repeatedContractPenalty,
+            lowPayoutOverOnePenalty,
           };
         })
         .filter(
@@ -3086,8 +3258,9 @@ export default function RapidEdgeAI() {
       minimumLayerAgreement,
       evFloor,
       recovery.active,
-      recoveryMode,
-      smartRecoveryActive,
+      recoveryMode,      smartRecoveryActive,
+      recentContractLearning,
+      recentContractStreak,
     ]
   );
 
@@ -5947,8 +6120,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V1.5 · EV Ranked"
-          subtitle="Expected-value contract ranking · OVER 1 only when exceptional · diversified OVER + UNDER selection"
+          title="RapidEdge AI V1.6 · Self Learning EV"
+          subtitle="Rolling contract profitability learning · three-run diversity control · EV-ranked OVER + UNDER entries"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
