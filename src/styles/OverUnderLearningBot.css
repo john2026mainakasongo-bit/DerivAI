@@ -1063,3 +1063,50 @@
 }
 
 /* V17 Browser Intelligence Engine */
+
+
+.oulLaneSummary {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.oulLaneSummary article {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #174b63;
+  border-radius: 9px;
+  background: #041521;
+}
+
+.oulLaneSummary article.selected {
+  border-color: #22d3a6;
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 166, .18);
+}
+
+.oulLaneSummary small,
+.oulLaneSummary strong,
+.oulLaneSummary span {
+  display: block;
+}
+
+.oulLaneSummary small {
+  color: #39d9af;
+  font-size: 7px;
+  font-weight: 900;
+}
+
+.oulLaneSummary strong {
+  margin-top: 4px;
+  color: #fff;
+  font-size: 12px;
+}
+
+.oulLaneSummary span {
+  margin-top: 3px;
+  color: #9fc6d6;
+  font-size: 9px;
+}

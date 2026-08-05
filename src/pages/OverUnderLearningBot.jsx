@@ -12,8 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v17";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v17";
+const MEMORY_KEY = "edgepilot:over-under-learning:v18";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v18";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1133,6 +1133,107 @@ function marketHealthMap(trades, minimumSample = 3) {
 }
 
 
+
+function balancedLaneDecision({
+  overCandidate,
+  underCandidate,
+  sidePreference,
+  minimumSideLead,
+}) {
+  const over = overCandidate || null;
+  const under = underCandidate || null;
+
+  if (!over && !under) {
+    return {
+      selected: null,
+      side: "WAIT",
+      reason: "NO_OVER_OR_UNDER_CANDIDATE",
+      overScore: 0,
+      underScore: 0,
+    };
+  }
+
+  if (!over) {
+    return {
+      selected: under,
+      side: "UNDER",
+      reason: "UNDER_ONLY",
+      overScore: 0,
+      underScore: Number(under.adaptiveScore || 0),
+    };
+  }
+
+  if (!under) {
+    return {
+      selected: over,
+      side: "OVER",
+      reason: "OVER_ONLY",
+      overScore: Number(over.adaptiveScore || 0),
+      underScore: 0,
+    };
+  }
+
+  const score = (candidate) =>
+    Number(candidate?.adaptiveScore || 0) * 0.42 +
+    Number(
+      candidate?.layered?.weightedProbability ??
+        candidate?.probability ??
+        0
+    ) * 0.28 +
+    Number(candidate?.agreementVotes || 0) * 3.2 +
+    Math.max(
+      -15,
+      Math.min(
+        15,
+        Number(
+          candidate?.layered?.simulation?.expectedValue ??
+            candidate?.payoutEdge ??
+            0
+        ) * 100
+      )
+    ) -
+    Number(candidate?.guardRisk || 0) * 0.16;
+
+  let overScore = score(over);
+  let underScore = score(under);
+
+  if (sidePreference === "OVER") overScore += 1.5;
+  if (sidePreference === "UNDER") underScore += 1.5;
+
+  if (
+    Math.abs(overScore - underScore) <
+    Math.max(0, Number(minimumSideLead || 0))
+  ) {
+    const selected =
+      Number(over.guardRisk || 0) <=
+      Number(under.guardRisk || 0)
+        ? over
+        : under;
+
+    return {
+      selected,
+      side: String(selected.side || "WAIT"),
+      overScore,
+      underScore,
+      reason: "CLOSE_SCORES_SELECTED_LOWER_RISK",
+    };
+  }
+
+  const selected =
+    underScore > overScore ? under : over;
+
+  return {
+    selected,
+    side: String(selected.side || "WAIT"),
+    overScore,
+    underScore,
+    reason:
+      underScore > overScore
+        ? "UNDER_SCORE_HIGHER"
+        : "OVER_SCORE_HIGHER",
+  };
+}
+
 function qualifiedMarketDecision({
   market,
   candidate,
@@ -1635,6 +1736,12 @@ export default function OverUnderLearningBot() {
     useState(650);
   const [minimumLiveTicksAfterSwitch, setMinimumLiveTicksAfterSwitch] =
     useState(4);
+  const [balancedSidesEnabled, setBalancedSidesEnabled] =
+    useState(true);
+  const [sidePreference, setSidePreference] =
+    useState("AUTO");
+  const [minimumSideLead, setMinimumSideLead] =
+    useState(1.5);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -2315,8 +2422,46 @@ export default function OverUnderLearningBot() {
     ]
   );
 
+  const bestOver = useMemo(
+    () =>
+      rankedCandidates.find(
+        (candidate) =>
+          String(candidate.side || "") === "OVER"
+      ) || null,
+    [rankedCandidates]
+  );
+
+  const bestUnder = useMemo(
+    () =>
+      rankedCandidates.find(
+        (candidate) =>
+          String(candidate.side || "") === "UNDER"
+      ) || null,
+    [rankedCandidates]
+  );
+
+  const balancedDecision = useMemo(
+    () =>
+      balancedLaneDecision({
+        overCandidate: bestOver,
+        underCandidate: bestUnder,
+        sidePreference:
+          balancedSidesEnabled
+            ? sidePreference
+            : "AUTO",
+        minimumSideLead,
+      }),
+    [
+      bestOver,
+      bestUnder,
+      balancedSidesEnabled,
+      sidePreference,
+      minimumSideLead,
+    ]
+  );
+
   const best =
-    rankedCandidates[0] || {
+    balancedDecision.selected || {
       side: "WAIT",
       barrier: 2,
       adaptiveScore: 0,
@@ -2458,6 +2603,14 @@ export default function OverUnderLearningBot() {
       contract:
         best.contract ||
         `${best.side || ""} ${best.barrier ?? ""}`.trim(),
+      side: String(best.side || "WAIT"),
+      barrier: Number(best.barrier ?? 2),
+      overScore:
+        Number(balancedDecision.overScore || 0),
+      underScore:
+        Number(balancedDecision.underScore || 0),
+      laneReason:
+        balancedDecision.reason,
       probability:
         Number(currentMarketDecision.probability || 0),
       expectedValue:
@@ -2571,6 +2724,23 @@ export default function OverUnderLearningBot() {
       currentFreshSetupKey
   );
 
+  const lastMarketTrade =
+    trades.find(
+      (trade) =>
+        String(trade.symbol || "") === symbol &&
+        ["WON", "LOST", "OPEN"].includes(
+          String(trade.status || "").toUpperCase()
+        )
+    ) || null;
+
+  const sameBarrierRepeated = Boolean(
+    lastMarketTrade &&
+    String(lastMarketTrade.side || "") ===
+      String(best.side || "") &&
+    Number(lastMarketTrade.barrier) ===
+      Number(best.barrier)
+  );
+
 
   const blockedByLastLoss =
     lastLossKeyRef.current === bestKey;
@@ -2591,6 +2761,7 @@ export default function OverUnderLearningBot() {
     !protectionActive &&
     !marketRunLocked &&
     !setupRepeated &&
+    !sameBarrierRepeated &&
     (
       !globalSelectionEnabled ||
       currentMarketDecision.qualified
@@ -3939,8 +4110,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V17"
-          subtitle="Browser intelligence · fast warm scan · global qualified ranking"
+          title="Over/Under Adaptive Learning Bot V18"
+          subtitle="Balanced OVER + UNDER · browser intelligence · one-run rotation"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -4017,6 +4188,8 @@ export default function OverUnderLearningBot() {
                 ? "ONE-RUN LIMIT — This market already traded. Switching to a different market."
                 : setupRepeated
                 ? "REPEATED SETUP — Waiting for fresh ticks or a new market."
+                : sameBarrierRepeated
+                ? `BARRIER LOCK — ${best.side} ${best.barrier} already used on this market. Switching.`
                 : globalSelectionEnabled &&
                   !currentMarketDecision.qualified
                 ? `NO QUALIFIED MARKET — TRADE SKIPPED. ${currentMarketDecision.reasons.join(
@@ -4194,6 +4367,61 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Balanced OVER + UNDER</span>
+            <select
+              value={balancedSidesEnabled ? "ON" : "OFF"}
+              onChange={(event) =>
+                setBalancedSidesEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — compare both lanes
+              </option>
+              <option value="OFF">
+                OFF — raw top candidate
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Side preference</span>
+            <select
+              value={sidePreference}
+              onChange={(event) =>
+                setSidePreference(event.target.value)
+              }
+            >
+              <option value="AUTO">
+                AUTO — strongest lane
+              </option>
+              <option value="OVER">
+                Slight OVER preference
+              </option>
+              <option value="UNDER">
+                Slight UNDER preference
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Minimum side score lead</span>
+            <input
+              type="number"
+              min="0"
+              max="10"
+              step="0.5"
+              value={minimumSideLead}
+              onChange={(event) =>
+                setMinimumSideLead(
+                  clamp(event.target.value, 0, 10)
                 )
               }
             />
@@ -4988,6 +5216,62 @@ export default function OverUnderLearningBot() {
             </article>
 
             <article>
+              <span>Best OVER lane</span>
+              <strong>
+                {bestOver
+                  ? `OVER ${bestOver.barrier}`
+                  : "NONE"}
+              </strong>
+              <small>
+                {bestOver
+                  ? `${pct(
+                      bestOver.layered?.weightedProbability ??
+                        bestOver.probability
+                    )} · ${bestOver.agreementVotes}/7`
+                  : "No qualified OVER candidate"}
+              </small>
+            </article>
+
+            <article>
+              <span>Best UNDER lane</span>
+              <strong>
+                {bestUnder
+                  ? `UNDER ${bestUnder.barrier}`
+                  : "NONE"}
+              </strong>
+              <small>
+                {bestUnder
+                  ? `${pct(
+                      bestUnder.layered?.weightedProbability ??
+                        bestUnder.probability
+                    )} · ${bestUnder.agreementVotes}/7`
+                  : "No qualified UNDER candidate"}
+              </small>
+            </article>
+
+            <article>
+              <span>Selected lane</span>
+              <strong>{balancedDecision.side}</strong>
+              <small>{balancedDecision.reason}</small>
+            </article>
+
+            <article>
+              <span>OVER / UNDER score</span>
+              <strong>
+                {Number(
+                  balancedDecision.overScore || 0
+                ).toFixed(1)}
+                {" / "}
+                {Number(
+                  balancedDecision.underScore || 0
+                ).toFixed(1)}
+              </strong>
+              <small>
+                Higher qualified lane is selected
+              </small>
+            </article>
+
+            <article>
               <span>Engine version</span>
               <strong>V17</strong>
               <small>
@@ -5504,6 +5788,50 @@ export default function OverUnderLearningBot() {
                 </h2>
               </div>
             </header>
+
+            <div className="oulLaneSummary">
+              <article className={
+                best.side === "OVER"
+                  ? "selected"
+                  : ""
+              }>
+                <small>BEST OVER</small>
+                <strong>
+                  {bestOver
+                    ? `OVER ${bestOver.barrier}`
+                    : "NONE"}
+                </strong>
+                <span>
+                  {bestOver
+                    ? pct(
+                        bestOver.layered?.weightedProbability ??
+                          bestOver.probability
+                      )
+                    : "WAIT"}
+                </span>
+              </article>
+
+              <article className={
+                best.side === "UNDER"
+                  ? "selected"
+                  : ""
+              }>
+                <small>BEST UNDER</small>
+                <strong>
+                  {bestUnder
+                    ? `UNDER ${bestUnder.barrier}`
+                    : "NONE"}
+                </strong>
+                <span>
+                  {bestUnder
+                    ? pct(
+                        bestUnder.layered?.weightedProbability ??
+                          bestUnder.probability
+                      )
+                    : "WAIT"}
+                </span>
+              </article>
+            </div>
 
             <div className="oulCandidates">
               {rankedCandidates
