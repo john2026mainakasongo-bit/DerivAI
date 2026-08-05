@@ -1040,3 +1040,13 @@
       repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.oulGlobalScoreGrid article.used {
+  opacity: .55;
+}
+
+.oulOneRunNotice {
+  color: #f0cf67;
+  font-weight: 900;
+}

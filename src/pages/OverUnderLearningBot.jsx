@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v14";
+const MEMORY_KEY = "edgepilot:over-under-learning:v15";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1139,6 +1139,25 @@ function qualifiedMarketDecision({
   };
 }
 
+
+function freshSetupKey({
+  market,
+  side,
+  barrier,
+  digits,
+}) {
+  const recent = (Array.isArray(digits) ? digits : [])
+    .slice(-12)
+    .join("");
+
+  return [
+    String(market || ""),
+    String(side || ""),
+    String(barrier ?? ""),
+    recent,
+  ].join(":");
+}
+
 function setupCooldownRemaining(row) {
   const blockedUntil = Number(row?.blockedUntil || 0);
   return Math.max(0, blockedUntil - Date.now());
@@ -1524,6 +1543,16 @@ export default function OverUnderLearningBot() {
     useState(null);
   const [lastSkipReason, setLastSkipReason] =
     useState("WAITING_FOR_MARKET_DATA");
+  const [oneRunPerMarket, setOneRunPerMarket] =
+    useState(true);
+  const [rotateAfterEverySettlement, setRotateAfterEverySettlement] =
+    useState(true);
+  const [freshTicksRequired, setFreshTicksRequired] =
+    useState(12);
+  const [lastTradeByMarket, setLastTradeByMarket] =
+    useState({});
+  const [lastSetupKeyByMarket, setLastSetupKeyByMarket] =
+    useState({});
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -2219,6 +2248,34 @@ export default function OverUnderLearningBot() {
     best.barrier
   );
 
+  const currentFreshSetupKey = useMemo(
+    () =>
+      freshSetupKey({
+        market: symbol,
+        side: best.side,
+        barrier: best.barrier,
+        digits: analysis.recentDigits,
+      }),
+    [
+      symbol,
+      best.side,
+      best.barrier,
+      analysis.recentDigits,
+    ]
+  );
+
+  const marketRunLocked = Boolean(
+    oneRunPerMarket &&
+    lastTradeByMarket?.[symbol]
+  );
+
+  const setupRepeated = Boolean(
+    lastSetupKeyByMarket?.[symbol] &&
+    lastSetupKeyByMarket[symbol] ===
+      currentFreshSetupKey
+  );
+
+
   const blockedByLastLoss =
     lastLossKeyRef.current === bestKey;
 
@@ -2236,6 +2293,8 @@ export default function OverUnderLearningBot() {
 
   const entryReady =
     !protectionActive &&
+    !marketRunLocked &&
+    !setupRepeated &&
     (
       !globalSelectionEnabled ||
       currentMarketDecision.qualified
@@ -2355,9 +2414,16 @@ export default function OverUnderLearningBot() {
       const weakMarket =
         Boolean(marketHealth?.[candidate]?.weak);
 
+      const alreadyUsed =
+        Boolean(
+          oneRunPerMarket &&
+          lastTradeByMarket?.[candidate]
+        );
+
       if (
         candidate &&
         candidate !== symbol &&
+        !alreadyUsed &&
         marketBlockRemaining(
           marketBlocks,
           candidate
@@ -2534,6 +2600,16 @@ export default function OverUnderLearningBot() {
       setTradesOnCurrentMarket(
         (current) => current + 1
       );
+
+      setLastTradeByMarket((current) => ({
+        ...current,
+        [symbol]: Date.now(),
+      }));
+
+      setLastSetupKeyByMarket((current) => ({
+        ...current,
+        [symbol]: currentFreshSetupKey,
+      }));
 
       playTradeSound("OPEN");
 
@@ -2749,6 +2825,50 @@ export default function OverUnderLearningBot() {
 
   useEffect(() => {
     if (
+      !running ||
+      hasOpenTrade ||
+      tradeBusy ||
+      !rotateAfterEverySettlement ||
+      !lastSettledTrade
+    ) {
+      return undefined;
+    }
+
+    const settledAt = Number(
+      lastSettledTrade.settledAt ||
+      lastSettledTrade.updatedAt ||
+      lastSettledTrade.createdAt ||
+      0
+    );
+
+    if (!settledAt) {
+      return undefined;
+    }
+
+    const age = Date.now() - settledAt;
+
+    if (age < 0 || age > 2500) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      void switchMarket(
+        `One-run rule: ${lastSettledTrade.status || "SETTLED"} on ${lastSettledTrade.symbol || symbol}. Scanning a new market.`
+      );
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    running,
+    hasOpenTrade,
+    tradeBusy,
+    rotateAfterEverySettlement,
+    lastSettledTrade,
+    symbol,
+  ]);
+
+  useEffect(() => {
+    if (
       running &&
       confirmed &&
       !hasOpenTrade &&
@@ -2768,6 +2888,44 @@ export default function OverUnderLearningBot() {
     hasOpenTrade,
     bestKey,
     symbol,
+  ]);
+
+  useEffect(() => {
+    if (
+      !oneRunPerMarket ||
+      !symbol ||
+      !lastTradeByMarket?.[symbol]
+    ) {
+      return undefined;
+    }
+
+    const recentCount =
+      Array.isArray(analysis.recentDigits)
+        ? analysis.recentDigits.length
+        : 0;
+
+    if (
+      recentCount <
+      Number(freshTicksRequired || 12)
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setLastTradeByMarket((current) => {
+        const next = { ...current };
+        delete next[symbol];
+        return next;
+      });
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    oneRunPerMarket,
+    symbol,
+    lastTradeByMarket,
+    analysis.recentDigits,
+    freshTicksRequired,
   ]);
 
   useEffect(() => {
@@ -3439,8 +3597,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V14"
-          subtitle="Global market selector · qualified-entry only · skip engine"
+          title="Over/Under Adaptive Learning Bot V15"
+          subtitle="One-run rotation · fresh-entry lock · qualified setup only"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -3513,6 +3671,10 @@ export default function OverUnderLearningBot() {
                 ? confirmed
                   ? "Fresh recovery setup passed stricter EV, confidence and confirmation gates."
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
+                : marketRunLocked
+                ? "ONE-RUN LIMIT — This market already traded. Switching to a different market."
+                : setupRepeated
+                ? "REPEATED SETUP — Waiting for fresh ticks or a new market."
                 : globalSelectionEnabled &&
                   !currentMarketDecision.qualified
                 ? `NO QUALIFIED MARKET — TRADE SKIPPED. ${currentMarketDecision.reasons.join(
@@ -3690,6 +3852,60 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>One run per market</span>
+            <select
+              value={oneRunPerMarket ? "ON" : "OFF"}
+              onChange={(event) =>
+                setOneRunPerMarket(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — switch after each trade
+              </option>
+              <option value="OFF">OFF</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Rotate after settlement</span>
+            <select
+              value={
+                rotateAfterEverySettlement
+                  ? "ON"
+                  : "OFF"
+              }
+              onChange={(event) =>
+                setRotateAfterEverySettlement(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — win or loss
+              </option>
+              <option value="OFF">OFF</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Fresh ticks before reuse</span>
+            <input
+              type="number"
+              min="8"
+              max="40"
+              step="1"
+              value={freshTicksRequired}
+              onChange={(event) =>
+                setFreshTicksRequired(
+                  clamp(event.target.value, 8, 40)
                 )
               }
             />
@@ -4369,6 +4585,32 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Market run rule</span>
+              <strong>
+                {marketRunLocked
+                  ? "LOCKED"
+                  : "AVAILABLE"}
+              </strong>
+              <small>
+                {marketRunLocked
+                  ? "Already traded once; switch required"
+                  : "No trade used on this market"}
+              </small>
+            </article>
+
+            <article>
+              <span>Fresh setup</span>
+              <strong>
+                {setupRepeated
+                  ? "REPEATED"
+                  : "FRESH"}
+              </strong>
+              <small>
+                Exact market/barrier pattern lock
               </small>
             </article>
 
