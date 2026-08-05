@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v6";
+const MEMORY_KEY = "edgepilot:over-under-learning:v7";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -24,143 +24,7 @@ const pct = (value) =>
   `${Number(value || 0).toFixed(1)}%`;
 
 
-function playTradeSound(type, enabled = true) {
-  if (!enabled) return;
 
-  try {
-    const AudioContextClass =
-      window.AudioContext ||
-      window.webkitAudioContext;
-
-    if (!AudioContextClass) return;
-
-    const context = new AudioContextClass();
-
-    function tone({
-      start,
-      frequency,
-      endFrequency = frequency,
-      duration,
-      volume = 0.08,
-      wave = "sine",
-    }) {
-      const oscillator =
-        context.createOscillator();
-      const gain = context.createGain();
-
-      oscillator.type = wave;
-      oscillator.frequency.setValueAtTime(
-        frequency,
-        context.currentTime + start
-      );
-      oscillator.frequency.exponentialRampToValueAtTime(
-        Math.max(1, endFrequency),
-        context.currentTime + start + duration
-      );
-
-      gain.gain.setValueAtTime(
-        0.0001,
-        context.currentTime + start
-      );
-      gain.gain.exponentialRampToValueAtTime(
-        volume,
-        context.currentTime + start + 0.015
-      );
-      gain.gain.exponentialRampToValueAtTime(
-        0.0001,
-        context.currentTime + start + duration
-      );
-
-      oscillator.connect(gain);
-      gain.connect(context.destination);
-      oscillator.start(
-        context.currentTime + start
-      );
-      oscillator.stop(
-        context.currentTime + start + duration
-      );
-    }
-
-    if (type === "WON") {
-      // Bright celebratory commerce-style chime.
-      tone({
-        start: 0,
-        frequency: 659,
-        endFrequency: 784,
-        duration: 0.16,
-        volume: 0.075,
-      });
-      tone({
-        start: 0.11,
-        frequency: 784,
-        endFrequency: 1046,
-        duration: 0.22,
-        volume: 0.085,
-      });
-      tone({
-        start: 0.24,
-        frequency: 1046,
-        endFrequency: 1318,
-        duration: 0.28,
-        volume: 0.07,
-      });
-    } else if (type === "LOST") {
-      tone({
-        start: 0,
-        frequency: 260,
-        endFrequency: 150,
-        duration: 0.34,
-        volume: 0.10,
-        wave: "triangle",
-      });
-      tone({
-        start: 0.08,
-        frequency: 180,
-        endFrequency: 110,
-        duration: 0.30,
-        volume: 0.065,
-        wave: "sawtooth",
-      });
-    } else if (type === "RECOVERY") {
-      tone({
-        start: 0,
-        frequency: 420,
-        endFrequency: 520,
-        duration: 0.12,
-        volume: 0.06,
-      });
-      tone({
-        start: 0.15,
-        frequency: 420,
-        endFrequency: 520,
-        duration: 0.12,
-        volume: 0.06,
-      });
-    } else if (type === "SWITCH") {
-      tone({
-        start: 0,
-        frequency: 520,
-        endFrequency: 620,
-        duration: 0.08,
-        volume: 0.045,
-      });
-    } else {
-      tone({
-        start: 0,
-        frequency: 440,
-        endFrequency: 560,
-        duration: 0.12,
-        volume: 0.055,
-      });
-    }
-
-    window.setTimeout(() => {
-      context.close().catch(() => {});
-    }, 900);
-  } catch {
-    // Audio should never interrupt trading.
-  }
-}
 
 function contractIdOf(item = {}) {
   return String(
@@ -616,10 +480,252 @@ export default function OverUnderLearningBot() {
     key: "",
     ticks: 0,
   });
+  const audioContextRef = useRef(null);
+  const soundUnlockedRef = useRef(false);
+
+  function getAudioContext() {
+    const AudioContextClass =
+      window.AudioContext ||
+      window.webkitAudioContext;
+
+    if (!AudioContextClass) return null;
+
+    if (!audioContextRef.current) {
+      audioContextRef.current =
+        new AudioContextClass();
+    }
+
+    return audioContextRef.current;
+  }
+
+  async function unlockSounds() {
+    if (!soundEnabled) return false;
+
+    try {
+      const context = getAudioContext();
+
+      if (!context) return false;
+
+      if (context.state === "suspended") {
+        await context.resume();
+      }
+
+      soundUnlockedRef.current =
+        context.state === "running";
+
+      return soundUnlockedRef.current;
+    } catch {
+      return false;
+    }
+  }
+
+  function playBellTone({
+    start = 0,
+    frequency,
+    duration,
+    volume = 0.08,
+    harmonic = 2,
+  }) {
+    const context = audioContextRef.current;
+
+    if (
+      !context ||
+      context.state !== "running" ||
+      !soundEnabled
+    ) {
+      return;
+    }
+
+    const now = context.currentTime + start;
+    const fundamental =
+      context.createOscillator();
+    const overtone =
+      context.createOscillator();
+    const fundamentalGain =
+      context.createGain();
+    const overtoneGain =
+      context.createGain();
+
+    fundamental.type = "sine";
+    overtone.type = "sine";
+
+    fundamental.frequency.setValueAtTime(
+      frequency,
+      now
+    );
+    overtone.frequency.setValueAtTime(
+      frequency * harmonic,
+      now
+    );
+
+    fundamentalGain.gain.setValueAtTime(
+      0.0001,
+      now
+    );
+    fundamentalGain.gain.exponentialRampToValueAtTime(
+      volume,
+      now + 0.012
+    );
+    fundamentalGain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      now + duration
+    );
+
+    overtoneGain.gain.setValueAtTime(
+      0.0001,
+      now
+    );
+    overtoneGain.gain.exponentialRampToValueAtTime(
+      volume * 0.24,
+      now + 0.008
+    );
+    overtoneGain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      now + duration * 0.68
+    );
+
+    fundamental.connect(fundamentalGain);
+    overtone.connect(overtoneGain);
+    fundamentalGain.connect(
+      context.destination
+    );
+    overtoneGain.connect(
+      context.destination
+    );
+
+    fundamental.start(now);
+    overtone.start(now);
+    fundamental.stop(now + duration);
+    overtone.stop(now + duration);
+  }
+
+  function playTradeSound(type) {
+    if (
+      !soundEnabled ||
+      !soundUnlockedRef.current
+    ) {
+      return;
+    }
+
+    const context = audioContextRef.current;
+
+    if (
+      !context ||
+      context.state !== "running"
+    ) {
+      return;
+    }
+
+    if (type === "WON") {
+      // Clean sale-style bell: bright double ting plus a soft finish.
+      playBellTone({
+        start: 0,
+        frequency: 987.77,
+        duration: 0.42,
+        volume: 0.085,
+        harmonic: 2.01,
+      });
+      playBellTone({
+        start: 0.13,
+        frequency: 1318.51,
+        duration: 0.50,
+        volume: 0.09,
+        harmonic: 1.99,
+      });
+      playBellTone({
+        start: 0.31,
+        frequency: 1567.98,
+        duration: 0.58,
+        volume: 0.055,
+        harmonic: 2.02,
+      });
+      return;
+    }
+
+    if (type === "LOST") {
+      const oscillator =
+        context.createOscillator();
+      const gain = context.createGain();
+      const now = context.currentTime;
+
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(
+        294,
+        now
+      );
+      oscillator.frequency.exponentialRampToValueAtTime(
+        130,
+        now + 0.46
+      );
+
+      gain.gain.setValueAtTime(
+        0.0001,
+        now
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.095,
+        now + 0.02
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        now + 0.48
+      );
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.49);
+      return;
+    }
+
+    if (type === "RECOVERY") {
+      playBellTone({
+        start: 0,
+        frequency: 440,
+        duration: 0.16,
+        volume: 0.06,
+      });
+      playBellTone({
+        start: 0.18,
+        frequency: 440,
+        duration: 0.16,
+        volume: 0.06,
+      });
+      return;
+    }
+
+    if (type === "SWITCH") {
+      playBellTone({
+        frequency: 620,
+        duration: 0.07,
+        volume: 0.035,
+      });
+      return;
+    }
+
+    playBellTone({
+      frequency: 523.25,
+      duration: 0.11,
+      volume: 0.045,
+    });
+  }
+
 
   useEffect(() => {
     runningRef.current = running;
   }, [running]);
+
+  useEffect(
+    () => () => {
+      if (audioContextRef.current) {
+        audioContextRef.current
+          .close()
+          .catch(() => {});
+      }
+    },
+    []
+  );
+
 
   useEffect(() => {
     try {
@@ -872,7 +978,7 @@ export default function OverUnderLearningBot() {
         changeSymbol(next)
       );
 
-      playTradeSound("SWITCH", soundEnabled);
+      playTradeSound("SWITCH");
 
       setStats((current) => ({
         ...current,
@@ -985,7 +1091,7 @@ export default function OverUnderLearningBot() {
         [trade, ...current].slice(0, 50)
       );
 
-      playTradeSound("OPEN", soundEnabled);
+      playTradeSound("OPEN");
 
       setStats((current) => ({
         ...current,
@@ -1166,7 +1272,7 @@ export default function OverUnderLearningBot() {
         ? "WON"
         : "LOST";
 
-    playTradeSound(result, soundEnabled);
+    playTradeSound(result);
 
     setMemory((current) =>
       updateMemory(current, {
@@ -1241,7 +1347,7 @@ export default function OverUnderLearningBot() {
         [settled.symbol]:
           Date.now() + 60000,
       }));
-      playTradeSound("RECOVERY", soundEnabled);
+      playTradeSound("RECOVERY");
 
       setRecovery((current) => ({
         active: true,
@@ -1308,7 +1414,9 @@ export default function OverUnderLearningBot() {
     }
   }, [openContracts]);
 
-  function toggle() {
+  async function toggle() {
+    await unlockSounds();
+
     if (running) {
       stop("Stopped manually.");
       return;
@@ -1540,8 +1648,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V6"
-          subtitle="Smart dashboard · Shopify-style win chime · equity tracking"
+          title="Over/Under Adaptive Learning Bot V7"
+          subtitle="Persistent sale-style win chime · reliable settlement alerts"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1843,17 +1951,55 @@ export default function OverUnderLearningBot() {
               className={
                 soundEnabled ? "soundOn" : ""
               }
-              onClick={() =>
-                setSoundEnabled((current) => !current)
-              }
+              onClick={async () => {
+                if (soundEnabled) {
+                  setSoundEnabled(false);
+                  soundUnlockedRef.current = false;
+                  return;
+                }
+
+                setSoundEnabled(true);
+
+                window.setTimeout(async () => {
+                  const unlocked =
+                    await unlockSounds();
+
+                  if (unlocked) {
+                    playTradeSound("WON");
+                  }
+                }, 0);
+              }}
             >
               {soundEnabled
-                ? "🔊 SOUNDS ON"
+                ? soundUnlockedRef.current
+                  ? "🔊 SOUNDS READY"
+                  : "🔊 CLICK START/TEST"
                 : "🔇 SOUNDS OFF"}
             </button>
             <small>
               Win, loss, open and switch alerts
             </small>
+
+            <div className="oulSoundTests">
+              <button
+                type="button"
+                onClick={async () => {
+                  await unlockSounds();
+                  playTradeSound("WON");
+                }}
+              >
+                TEST WIN
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await unlockSounds();
+                  playTradeSound("LOST");
+                }}
+              >
+                TEST LOSS
+              </button>
+            </div>
           </article>
 
           <article>

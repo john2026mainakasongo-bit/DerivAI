@@ -763,3 +763,27 @@
     margin-bottom: 6px;
   }
 }
+
+
+.oulSoundTests {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.oulSoundTests button {
+  margin-top: 0;
+  padding: 5px 3px;
+  font-size: 7px;
+}
+
+.oulSoundTests button:first-child {
+  border-color: #2ec79d;
+  color: #61e5ba;
+}
+
+.oulSoundTests button:last-child {
+  border-color: #9b4652;
+  color: #ff8790;
+}
