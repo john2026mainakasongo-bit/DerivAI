@@ -1,4 +1,4 @@
-
+﻿
 function clamp(value, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Number(value) || 0));
 }
@@ -410,7 +410,6 @@ function directionalStreak(values = []) {
   };
 }
 
-
 function bollinger(values = [], period = 20, multiplier = 2) {
   const recent = values.slice(-Math.min(period, values.length));
 
@@ -612,7 +611,6 @@ function scoreGrade(score) {
   return "WAIT";
 }
 
-
 function tickImpulse(values = []) {
   if (values.length < 4) {
     return {
@@ -685,7 +683,6 @@ function noiseRatio(values = []) {
 
   return clamp((1 - direct / path) * 100);
 }
-
 
 function microWindowVote(values = [], size = 3) {
   const sample = values.slice(-Math.min(size, values.length));
@@ -840,7 +837,6 @@ function exhaustionScore({
       accelerationPenalty * 0.2
   );
 }
-
 
 function consecutiveBias(values = []) {
   if (values.length < 2) {
@@ -1033,7 +1029,6 @@ function microReversal({
   };
 }
 
-
 function orderFlowDelta(values = []) {
   if (values.length < 2) {
     return {
@@ -1216,7 +1211,6 @@ function candleSequence(values = []) {
     ),
   };
 }
-
 
 function voteDirection(value, riseCondition, fallCondition) {
   if (riseCondition(value)) return "RISE";
@@ -1427,7 +1421,7 @@ function entryWindow({
 
   if (score >= buyThreshold) {
     return {
-      label: stability >= 65 ? "1–2 TICKS" : "2–3 TICKS",
+      label: stability >= 65 ? "1â€“2 TICKS" : "2â€“3 TICKS",
       ticks: stability >= 65 ? 2 : 3,
     };
   }
@@ -1437,7 +1431,6 @@ function entryWindow({
     ticks: 0,
   };
 }
-
 
 function freshTickComposite({
   acceleration,
@@ -2482,7 +2475,6 @@ export function analyzeRiseFall(
                     ? "Trade quality rejected"
                     : "";
 
-
   const trendScore = clamp(
     consistency * 0.45 +
       Math.min(100, dominantVotes / voteSignals.length * 100) * 0.35 +
@@ -2535,9 +2527,9 @@ export function analyzeRiseFall(
 
   const aiDecision =
     autoSkip
-      ? "SKIP · SEARCHING BETTER OPPORTUNITY"
+      ? "SKIP Â· SEARCHING BETTER OPPORTUNITY"
       : instantOneTick
-        ? `INSTANT BUY ${direction} · 1 TICK`
+        ? `INSTANT BUY ${direction} Â· 1 TICK`
         : strongTrade
           ? `STRONG BUY ${direction}`
           : tradeNow
@@ -2873,3 +2865,4 @@ export function analyzeRiseFallMultiTimeframe(prices = []) {
 }
 
 export default analyzeRiseFall;
+

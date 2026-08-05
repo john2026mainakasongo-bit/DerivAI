@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import DerivVolatilitySelector, { DERIV_VOLATILITY_MARKETS } from "../components/DerivVolatilitySelector";
@@ -403,7 +403,7 @@ export default function TargetTenBot() {
         ];
 
       if (next && next !== symbol) {
-        setMessage(`No qualified setup. Switching ${symbol} → ${next}.`);
+        setMessage(`No qualified setup. Switching ${symbol} â†’ ${next}.`);
         waitStartedRef.current = Date.now();
         void Promise.resolve(changeSymbol(next));
       }
@@ -564,7 +564,7 @@ export default function TargetTenBot() {
 
     try {
       if (!connected) {
-        setMessage("Connecting Deriv live feed…");
+        setMessage("Connecting Deriv live feedâ€¦");
         await connect();
       }
 
@@ -580,7 +580,7 @@ export default function TargetTenBot() {
       lastEntryRef.current = 0;
       waitStartedRef.current = Date.now();
 
-      setMessage("Loading live ticks before the first scan…");
+      setMessage("Loading live ticks before the first scanâ€¦");
 
       const warmupStarted = Date.now();
       while (
@@ -615,8 +615,8 @@ export default function TargetTenBot() {
 
       <main className="mainContent targetTenPage">
         <Topbar
-          title="EdgePilot V106 · Final Multi-Contract Target 10"
-          subtitle="Scans OVER/UNDER 1–7 · edge-ranked entries · contract rotation · loss memory"
+          title="EdgePilot V106 Â· Final Multi-Contract Target 10"
+          subtitle="Scans OVER/UNDER 1â€“7 Â· edge-ranked entries Â· contract rotation Â· loss memory"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -636,7 +636,7 @@ export default function TargetTenBot() {
             disabled={tradeBusy}
             onClick={toggleRun}
           >
-            {tradeBusy ? "SENDING…" : running ? "STOP" : "START"}
+            {tradeBusy ? "SENDINGâ€¦" : running ? "STOP" : "START"}
           </button>
         </section>
 
@@ -746,7 +746,7 @@ export default function TargetTenBot() {
             disabled={tradeBusy || hasOpenTrade}
             onClick={() => void placeManualTrade("OVER")}
           >
-            {tradeBusy ? "SENDING…" : `BUY OVER ${manualBarrier}`}
+            {tradeBusy ? "SENDINGâ€¦" : `BUY OVER ${manualBarrier}`}
           </button>
 
           <button
@@ -755,7 +755,7 @@ export default function TargetTenBot() {
             disabled={tradeBusy || hasOpenTrade}
             onClick={() => void placeManualTrade("UNDER")}
           >
-            {tradeBusy ? "SENDING…" : `BUY UNDER ${manualBarrier}`}
+            {tradeBusy ? "SENDINGâ€¦" : `BUY UNDER ${manualBarrier}`}
           </button>
         </section>
 
@@ -780,7 +780,6 @@ export default function TargetTenBot() {
           </div>
         </section>
 
-
         <section className="targetFinalRanking">
           <div className="targetTradesHead">
             <div>
@@ -801,7 +800,7 @@ export default function TargetTenBot() {
                 <small>{candidate.side} {candidate.barrier}</small>
                 <strong>{candidate.score.toFixed(1)}</strong>
                 <span>
-                  Edge {candidate.expectedEdge.toFixed(1)} ·
+                  Edge {candidate.expectedEdge.toFixed(1)} Â·
                   Risk {candidate.exactRisk.toFixed(1)}%
                 </span>
                 {candidate.blocked ? <b>BLOCKED</b> : null}
@@ -813,7 +812,7 @@ export default function TargetTenBot() {
         <section className="targetSignalGrid">
           <article><small>CURRENT DIGIT</small><strong>{decision.currentDigit}</strong></article>
           <article><small>CONTRACT</small><strong>{decision.best.side} {decision.best.barrier}</strong></article>
-          <article><small>WINNING DIGITS</small><strong>{Array.isArray(decision.winningDigits) ? decision.winningDigits.join(" · ") || "—" : "—"}</strong></article>
+          <article><small>WINNING DIGITS</small><strong>{Array.isArray(decision.winningDigits) ? decision.winningDigits.join(" Â· ") || "â€”" : "â€”"}</strong></article>
           <article><small>ACCOUNT MODE</small><strong>{accountType.toUpperCase()}</strong></article>
           <article><small>ROTATION</small><strong>{recentContracts.length}/8</strong></article>
           <article><small>STATUS</small><strong>{running ? "RUNNING" : "STOPPED"}</strong></article>
@@ -823,8 +822,8 @@ export default function TargetTenBot() {
           <strong>{running ? "SCANNING" : "STOPPED"}</strong>
           <span>{message || tradeError}</span>
           <small>
-            Best: {decision.best.side} {decision.best.barrier} ·
-            Edge {Number(decision.best.expectedEdge || 0).toFixed(1)} ·
+            Best: {decision.best.side} {decision.best.barrier} Â·
+            Edge {Number(decision.best.expectedEdge || 0).toFixed(1)} Â·
             Confirm {confirmationRef.current.count}/3
           </small>
         </section>
@@ -867,3 +866,4 @@ export default function TargetTenBot() {
     </div>
   );
 }
+

@@ -297,7 +297,6 @@
   }
 }
 
-
 .testTradeButton {
   border: 1px solid #9b7b20;
   border-radius: 10px;
@@ -311,7 +310,6 @@
 .testTradeButton:hover {
   background: rgba(176, 130, 24, 0.28);
 }
-
 
 .botCompletionSummary {
   margin-top: 16px;
@@ -358,7 +356,6 @@
   }
 }
 
-
 .botStrictGate {
   display: grid;
   gap: 5px;
@@ -380,7 +377,6 @@
   font-size: 13px;
   line-height: 1.4;
 }
-
 
 .botRecoverySchedule {
   display: grid;
@@ -574,7 +570,6 @@
   }
 }
 
-
 .botStrictGate {
   border-color: rgba(255, 194, 62, 0.42);
   background: rgba(120, 85, 10, 0.15);
@@ -583,7 +578,6 @@
 .botStrictGate strong {
   color: #ffd86a;
 }
-
 
 .botFrequencyToggle {
   border-color: rgba(255, 196, 69, 0.45);
@@ -625,7 +619,6 @@
   color: #ffd86a;
 }
 
-
 .botStrictGate {
   border-color: rgba(45, 224, 167, 0.42);
   background: rgba(12, 111, 79, 0.14);
@@ -648,7 +641,6 @@
 .botTimedFallbackInfo strong {
   color: #40efb4;
 }
-
 
 .botMarketSwitchToggle {
   border-color: rgba(53, 171, 255, 0.42);
@@ -1285,10 +1277,6 @@ main .botLayout > *,
 
 /* === EDGEPILOT V12.3 DENSE FILL END === */
 
-
-
-
-
 /* === EDGEPILOT V13 THREE SECTION BEGIN === */
 
 .botLayout {
@@ -1467,7 +1455,6 @@ main .botLayout > *,
 }
 
 /* === EDGEPILOT V13 THREE SECTION END === */
-
 
 /* === EDGEPILOT V14 PROFESSIONAL TERMINAL BEGIN === */
 
@@ -2091,7 +2078,6 @@ body,
 
 /* === EDGEPILOT V14.2 ULTRA DENSE TERMINAL END === */
 
-
 /* === EDGEPILOT V15 COMPACT QUANT TERMINAL BEGIN === */
 
 :root {
@@ -2526,7 +2512,6 @@ body,
 
 /* === EDGEPILOT V15 COMPACT QUANT TERMINAL END === */
 
-
 /* === EDGEPILOT V16 METRIC TABLE BEGIN === */
 
 /* V16: compact professional metric/value table */
@@ -2749,7 +2734,6 @@ body,
 }
 
 /* === EDGEPILOT V16 METRIC TABLE END === */
-
 
 /* === EDGEPILOT V17 PROFESSIONAL ROW TERMINAL BEGIN === */
 
@@ -3118,7 +3102,6 @@ body,
 
 /* === EDGEPILOT V17 PROFESSIONAL ROW TERMINAL END === */
 
-
 /* === EDGEPILOT V18 ONE SCREEN 100 BEGIN === */
 
 /*
@@ -3311,7 +3294,6 @@ body {
 }
 
 /* === EDGEPILOT V18 ONE SCREEN 100 END === */
-
 
 /* === EDGEPILOT V18.1 DENSE FIT BEGIN === */
 
@@ -3608,7 +3590,6 @@ body {
 }
 
 /* === EDGEPILOT V18.1 DENSE FIT END === */
-
 
 /* === EDGEPILOT V19 CLEAN DESKTOP TERMINAL BEGIN === */
 
@@ -3971,3 +3952,4 @@ body,
 }
 
 /* === EDGEPILOT V19 CLEAN DESKTOP TERMINAL END === */
+

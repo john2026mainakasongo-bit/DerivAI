@@ -1,4 +1,4 @@
-const PUBLIC_SOCKET_URLS = [
+﻿const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -879,7 +879,6 @@ class DerivTradingClient {
     });
   }
 
-
   normalizeTradeOptions(options = {}) {
     const normalized = {
       ...options,
@@ -1114,3 +1113,4 @@ export const derivPublicClient =
   new DerivTradingClient();
 
 export default derivPublicClient;
+

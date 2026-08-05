@@ -1,4 +1,4 @@
-import {
+﻿import {
   cloneElement,
   useEffect,
   useId,
@@ -75,7 +75,7 @@ const INITIAL_BOT_STATE = {
   largestLossStreak: 0,
   martingaleStep: 0,
   currentStake: 1,
-  activeSetup: "—",
+  activeSetup: "â€”",
   activeContractId: "",
   scanStartedAt: 0,
   scanElapsedSeconds: 0,
@@ -87,7 +87,7 @@ const INITIAL_BOT_STATE = {
   signalConfirmations: 0,
   requiredConfirmations: 2,
   blockedSetupUntil: 0,
-  lastLossSetup: "—",
+  lastLossSetup: "â€”",
   lossProtectionCount: 0,
   deepScore: 0,
   deepConsensus: 0,
@@ -421,7 +421,6 @@ export default function Bot() {
     lastDigit,
   ]);
 
-
   const connecting =
     status === "CONNECTING" ||
     loadingMarket;
@@ -444,7 +443,6 @@ export default function Bot() {
 
   const paused =
     botState.status === "PAUSED";
-
 
   useEffect(() => {
     marketScanStartedRef.current = Date.now();
@@ -579,7 +577,6 @@ export default function Bot() {
       [key]: Number(event.target.value),
     }));
   };
-
 
   const updateContractMode = (event) => {
     const contractMode = event.target.value;
@@ -755,8 +752,8 @@ export default function Bot() {
 
       <main className="mainContent">
         <Topbar
-          title="EdgePilot V102 · Fast AI + Manual Trader"
-          subtitle="Auto-connect feed · fast scanner warm-up · manual and automatic execution"
+          title="EdgePilot V102 Â· Fast AI + Manual Trader"
+          subtitle="Auto-connect feed Â· fast scanner warm-up Â· manual and automatic execution"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -777,8 +774,8 @@ export default function Bot() {
             className={isDemo ? "botDemoLock safe" : "botDemoLock real"}
           >
             {isDemo
-              ? "✓ DEMO ACCOUNT"
-              : `⚠ REAL ACCOUNT · ${selectedId || "SELECTED"}`}
+              ? "âœ“ DEMO ACCOUNT"
+              : `âš  REAL ACCOUNT Â· ${selectedId || "SELECTED"}`}
           </div>
         </section>
 
@@ -835,7 +832,7 @@ export default function Bot() {
                   disabled={running || paused}
                   onChange={updateContractMode}
                 >
-                  <option value="AUTO">Auto SAFE — validated contract only</option>
+                  <option value="AUTO">Auto SAFE â€” validated contract only</option>
                   <option value="RISE">Rise</option>
                   <option value="FALL">Fall</option>
                   <option value="EVEN">Even</option>
@@ -887,7 +884,7 @@ export default function Bot() {
                     value="s"
                     disabled={isDigitContractMode(settings.contractMode)}
                   >
-                    Seconds — Rise/Fall or Auto
+                    Seconds â€” Rise/Fall or Auto
                   </option>
                 </select>
               </Field>
@@ -917,7 +914,6 @@ export default function Bot() {
                   onChange={updateNumber("minConfidence")}
                 />
               </Field>
-
 
               <Field label="Delay after trade (seconds)">
                 <input
@@ -1005,7 +1001,7 @@ export default function Bot() {
 
               <div className="botRecoverySchedule">
                 <span>Smart recovery schedule</span>
-                <strong>Step 1 ×1.35 only</strong>
+                <strong>Step 1 Ã—1.35 only</strong>
                 <small>
                   Safer cap. It remains OFF by default and a win resets to base.
                 </small>
@@ -1042,7 +1038,6 @@ export default function Bot() {
                   Enable Analysis Assisted entry
                 </span>
               </label>
-
 
               <label className="botToggle botMarketSwitchToggle">
                 <input
@@ -1088,22 +1083,21 @@ export default function Bot() {
               </div>
               <div>
                 <small>RISK CONTROL</small>
-                <strong>SL {settings.stopLoss} · HARD {settings.hardStopLossStreak}</strong>
+                <strong>SL {settings.stopLoss} Â· HARD {settings.hardStopLossStreak}</strong>
               </div>
               <div>
                 <small>RECOVERY</small>
-                <strong>{settings.martingaleEnabled ? "LIMITED ×1.35" : "OFF"}</strong>
+                <strong>{settings.martingaleEnabled ? "LIMITED Ã—1.35" : "OFF"}</strong>
               </div>
               <div>
-                <small>FAST DIGIT ROW · OVER/UNDER + DIFFERS</small>
+                <small>FAST DIGIT ROW Â· OVER/UNDER + DIFFERS</small>
                 <strong>
-                  ROW PRESSURE → BARRIER RANK → 1 TICK CONFIRM → BUY
+                  ROW PRESSURE â†’ BARRIER RANK â†’ 1 TICK CONFIRM â†’ BUY
                 </strong>
               </div>
             </div>
 
             
-
 
             <section className="v102ManualPanel">
               <div>
@@ -1242,7 +1236,7 @@ export default function Bot() {
               {isDemo
                 ? "Demo mode: orders go to the connected Deriv demo account."
                 : "REAL mode: confirmed orders are sent to the connected Deriv real account and can lose real money."}{" "}
-              V49 keeps Demo digits-only and scans continuously. It compares row 0–4 against row 5–9, ranks OVER/UNDER barriers 1–7, uses historical, fast and trigger windows, and dynamically selects DIFFERS digits with lower observed immediate return risk. A qualified setup proceeds after one fresh confirmation. No analysis guarantees a win.
+              V49 keeps Demo digits-only and scans continuously. It compares row 0â€“4 against row 5â€“9, ranks OVER/UNDER barriers 1â€“7, uses historical, fast and trigger windows, and dynamically selects DIFFERS digits with lower observed immediate return risk. A qualified setup proceeds after one fresh confirmation. No analysis guarantees a win.
             </div>
           </article>
 
@@ -1317,8 +1311,8 @@ export default function Bot() {
                   : "DEEP SCAN FOR A REAL EDGE"}
               </strong>
               <span>
-                {market?.label || symbol} · Scan {botState.scanTicks || 0}/{settings.maxScanTicks} ticks · Contract {settings.duration}{" "}
-                {settings.durationUnit === "s" ? "seconds" : "ticks"} ·{" "}
+                {market?.label || symbol} Â· Scan {botState.scanTicks || 0}/{settings.maxScanTicks} ticks Â· Contract {settings.duration}{" "}
+                {settings.durationUnit === "s" ? "seconds" : "ticks"} Â·{" "}
                 {botState.lastBlockReason ||
                   analysisGate.reason ||
                   syntheticIntelligence.bestDetail}
@@ -1357,7 +1351,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Bayesian setup"
-                  value={`${syntheticIntelligence.bestSetup || "WAIT"} · ${Number(
+                  value={`${syntheticIntelligence.bestSetup || "WAIT"} Â· ${Number(
                     syntheticIntelligence.bestScore || 0
                   ).toFixed(1)}%`}
                 />
@@ -1369,7 +1363,7 @@ export default function Bot() {
                   label="Cycle"
                   value={
                     syntheticIntelligence.cycle?.period
-                      ? `${syntheticIntelligence.cycle.period} ticks · ${Number(
+                      ? `${syntheticIntelligence.cycle.period} ticks Â· ${Number(
                           syntheticIntelligence.cycle.strength || 0
                         ).toFixed(0)}%`
                       : "NO STABLE CYCLE"
@@ -1377,7 +1371,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Momentum"
-                  value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} · ${Number(
+                  value={`${syntheticIntelligence.momentum?.direction || "NEUTRAL"} Â· ${Number(
                     syntheticIntelligence.momentum?.agreement || 0
                   ).toFixed(0)}%`}
                 />
@@ -1385,13 +1379,13 @@ export default function Bot() {
                   label="Entropy"
                   value={`${Number(
                     syntheticIntelligence.entropy?.normalized || 0
-                  ).toFixed(1)}% · ${
+                  ).toFixed(1)}% Â· ${
                     syntheticIntelligence.entropy?.label || "UNKNOWN"
                   }`}
                 />
                 <Metric
                   label="Lag"
-                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "—"} · ${Number(
+                  value={`Lag ${syntheticIntelligence.autocorrelation?.lag || "â€”"} Â· ${Number(
                     syntheticIntelligence.autocorrelation?.strength || 0
                   ).toFixed(0)}%`}
                 />
@@ -1401,7 +1395,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Volatility phase"
-                  value={`${syntheticIntelligence.volatility?.state || "UNKNOWN"} · ${Number(
+                  value={`${syntheticIntelligence.volatility?.state || "UNKNOWN"} Â· ${Number(
                     syntheticIntelligence.volatility?.stability || 0
                   ).toFixed(0)}% stable`}
                 />
@@ -1413,7 +1407,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Decision"
-                  value={`${professionalDecision.bestContract || "WAIT"} · ${Number(
+                  value={`${professionalDecision.bestContract || "WAIT"} Â· ${Number(
                     professionalDecision.professionalScore ||
                       professionalDecision.confidence ||
                       0
@@ -1421,7 +1415,7 @@ export default function Bot() {
                 />
                 <Metric
                   label="Entry speed"
-                  value={"VALIDATED · 1 fresh confirm"}
+                  value={"VALIDATED Â· 1 fresh confirm"}
                 />
               </div>
 
@@ -1541,7 +1535,7 @@ export default function Bot() {
               />
               <Metric
                 label="Locked candidate"
-                value={botState.lockedCandidate || botState.gate?.lockedCandidate || "—"}
+                value={botState.lockedCandidate || botState.gate?.lockedCandidate || "â€”"}
               />
               <Metric
                 label="Top contract"
@@ -1583,7 +1577,7 @@ export default function Bot() {
               />
               <Metric
                 label="Data readiness"
-                value={(botState.scanTicks || 0) >= 20 ? `READY · ${botState.scanTicks || 0} ticks` : `${botState.scanTicks || 0}/20`}
+                value={(botState.scanTicks || 0) >= 20 ? `READY Â· ${botState.scanTicks || 0} ticks` : `${botState.scanTicks || 0}/20`}
               />
               <Metric
                 label="Analysis cycle"
@@ -1613,11 +1607,11 @@ export default function Bot() {
                   botState.gate?.qualificationMode === "DEMO_BLOCKER_REMOVED" ||
                   botState.gate?.qualificationMode === "DEMO_EXECUTABLE_CANDIDATE" ||
                   botState.gate?.qualificationMode === "WEIGHTED_SCORE"
-                    ? `QUALIFIED · ${
+                    ? `QUALIFIED Â· ${
                         botState.gate?.qualificationMode || "V42"
                       }`
                     : botState.gate?.blockedChecks?.score
-                      ? `BLOCKED ${botState.gate.blockedChecks.score} · ${
+                      ? `BLOCKED ${botState.gate.blockedChecks.score} Â· ${
                           isDemo
                             ? "P70 S50 T4 V2"
                             : "SCORE65 P79 C76 S100 T7 V3"
@@ -1749,24 +1743,24 @@ export default function Bot() {
                   >
                     <div className="botHistoryMain">
                       <strong>
-                        {item.setup} · {item.symbol || market?.id || symbol}
+                        {item.setup} Â· {item.symbol || market?.id || symbol}
                       </strong>
                       <small>
-                        {new Date(item.time).toLocaleTimeString()} · Contract{" "}
-                        {item.contractId || "—"}
+                        {new Date(item.time).toLocaleTimeString()} Â· Contract{" "}
+                        {item.contractId || "â€”"}
                       </small>
                       <small>
-                        Entry {Number(item.entrySpot || 0).toFixed(3)} · Exit{" "}
-                        {Number(item.exitSpot || 0).toFixed(3)} · Stake{" "}
-                        {Number(item.stake || 0).toFixed(2)} ·{" "}
+                        Entry {Number(item.entrySpot || 0).toFixed(3)} Â· Exit{" "}
+                        {Number(item.exitSpot || 0).toFixed(3)} Â· Stake{" "}
+                        {Number(item.stake || 0).toFixed(2)} Â·{" "}
                         {Number(item.duration || 0)}{" "}
-                        {item.durationUnit === "s" ? "sec" : "ticks"} · Entry scan{" "}
-                        {Number(item.entryScanTick || 0)}/{settings.maxScanTicks} · MG{" "}
+                        {item.durationUnit === "s" ? "sec" : "ticks"} Â· Entry scan{" "}
+                        {Number(item.entryScanTick || 0)}/{settings.maxScanTicks} Â· MG{" "}
                         {Number(item.martingaleStep || 0)}
                       </small>
                       <small>
-                        Mode {item.executionMode || "V12_DEEP_CYCLE_AI"} ·
-                        Confidence {Number(item.confidence || 0).toFixed(1)}% ·{" "}
+                        Mode {item.executionMode || "V12_DEEP_CYCLE_AI"} Â·
+                        Confidence {Number(item.confidence || 0).toFixed(1)}% Â·{" "}
                         Entry {item.entryStage || "ENTER"}
                       </small>
                     </div>
@@ -1793,7 +1787,5 @@ export default function Bot() {
     </div>
   );
 }
-
-
 
 

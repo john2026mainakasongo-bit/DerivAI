@@ -1,4 +1,4 @@
-import {
+﻿import {
   useEffect,
   useMemo,
   useRef,
@@ -56,7 +56,6 @@ function readOverUnderSessionId() {
   }
 }
 
-
 const clamp = (value, minimum, maximum) =>
   Math.min(
     maximum,
@@ -65,9 +64,6 @@ const clamp = (value, minimum, maximum) =>
 
 const pct = (value) =>
   `${Number(value || 0).toFixed(1)}%`;
-
-
-
 
 function contractIdOf(item = {}) {
   return String(
@@ -117,7 +113,6 @@ function profitOf(item = {}) {
 
   return Number.isFinite(value) ? value : 0;
 }
-
 
 function loadMarketBrowserCache() {
   try {
@@ -262,7 +257,6 @@ function defaultProfitRatio(side, barrier) {
 function breakEvenProbability(profitRatio) {
   return 100 / (1 + Math.max(0.01, profitRatio));
 }
-
 
 function digitEntropy(digits) {
   if (!Array.isArray(digits) || !digits.length) {
@@ -430,7 +424,6 @@ function barrierSafetyScore(side, barrier) {
 
   return clamp(theoreticalWinRate, 0, 100);
 }
-
 
 function barrierLaneScore(side, barrier, recoveryActive) {
   const value = Number(barrier);
@@ -1174,11 +1167,6 @@ function marketHealthMap(trades, minimumSample = 3) {
   return groups;
 }
 
-
-
-
-
-
 function classifyPortfolioStatus(item) {
   if (!item) return "STALE";
   if (item.blocked || item.weak) return "BLOCKED";
@@ -1631,7 +1619,6 @@ function qualifiedMarketDecision({
   };
 }
 
-
 function freshSetupKey({
   market,
   side,
@@ -1649,7 +1636,6 @@ function freshSetupKey({
     recent,
   ].join(":");
 }
-
 
 function marketVisitLockActive(
   lastTradeByMarket,
@@ -1825,7 +1811,7 @@ function memoryStats(memory, symbol, side, barrier) {
     rollingConfidence: Number(
       row.rollingConfidence || 50
     ),
-    lastResult: row.lastResult || "—",
+    lastResult: row.lastResult || "â€”",
   };
 }
 
@@ -2414,7 +2400,6 @@ export default function OverUnderLearningBot() {
     });
   }
 
-
   useEffect(() => {
     runningRef.current = running;
   }, [running]);
@@ -2429,7 +2414,6 @@ export default function OverUnderLearningBot() {
     },
     []
   );
-
 
   useEffect(() => {
     if (!Array.isArray(trades) || !trades.length) {
@@ -2471,7 +2455,7 @@ export default function OverUnderLearningBot() {
       soundedTradeIdsRef.current.add(tradeId);
 
       setLastSoundEvent(
-        `${status} · ${trade.symbol} · ${trade.contract}`
+        `${status} Â· ${trade.symbol} Â· ${trade.contract}`
       );
 
       if (
@@ -2482,7 +2466,6 @@ export default function OverUnderLearningBot() {
       }
     }
   }, [trades, soundEnabled]);
-
 
   useEffect(() => {
     try {
@@ -3147,7 +3130,6 @@ export default function OverUnderLearningBot() {
     rankedCandidates,
   ]);
 
-
   const cachedCurrentMarket =
     marketBrowserCache?.[symbol] || {};
 
@@ -3319,7 +3301,7 @@ export default function OverUnderLearningBot() {
       nextEntryAtRef.current =
         Date.now() + 500;
       setMessage(
-        "REGIME CHANGE DETECTED · Old setup cleared · rebuilding one-minute evidence"
+        "REGIME CHANGE DETECTED Â· Old setup cleared Â· rebuilding one-minute evidence"
       );
     }
   }, [
@@ -3475,7 +3457,6 @@ export default function OverUnderLearningBot() {
     ) ||
     null;
 
-
   const best =
     (
       universalPoolEnabled
@@ -3551,8 +3532,6 @@ export default function OverUnderLearningBot() {
     minimumQualifiedVotes,
     maximumQualifiedRisk,
   ]);
-
-
 
   const bestKey = memoryKey(
     symbol,
@@ -3771,7 +3750,6 @@ export default function OverUnderLearningBot() {
     Number(lastMarketTrade.barrier) ===
       Number(best.barrier)
   );
-
 
   const blockedByLastLoss =
     lastLossKeyRef.current === bestKey;
@@ -4022,7 +4000,7 @@ export default function OverUnderLearningBot() {
         probability: 0,
       });
       void switchMarket(
-        `FAST REJECT · ${topCandidate.side} ${topCandidate.barrier} EV ${expectedValue.toFixed(3)} · rotating`
+        `FAST REJECT Â· ${topCandidate.side} ${topCandidate.barrier} EV ${expectedValue.toFixed(3)} Â· rotating`
       );
     }
   }, [
@@ -4279,14 +4257,14 @@ export default function OverUnderLearningBot() {
       marketBrowserCache?.[next];
 
     setMessage(
-      `Switching ${symbol} → ${next} · ${
+      `Switching ${symbol} â†’ ${next} Â· ${
         cacheIsFresh(
           warmRow,
           cacheFreshnessSeconds
         )
           ? "WARM CACHE READY"
           : "COLLECTING FRESH DATA"
-      } · ${reason}`
+      } Â· ${reason}`
     );
 
     try {
@@ -4454,7 +4432,7 @@ export default function OverUnderLearningBot() {
       }));
 
       setMessage(
-        `${recovery.active ? `RECOVERY ${recovery.attempts}/2` : "NORMAL"} · ${best.side} ${best.barrier} opened · stake ${recoveryStakeAmount(
+        `${recovery.active ? `RECOVERY ${recovery.attempts}/2` : "NORMAL"} Â· ${best.side} ${best.barrier} opened Â· stake ${recoveryStakeAmount(
           stake,
           recoveryMode === "SMART"
             ? recovery
@@ -4463,9 +4441,9 @@ export default function OverUnderLearningBot() {
           recoveryTarget,
           best.learned.profitRatio,
           recoveryMultiplier
-        ).toFixed(2)} · score ${best.adaptiveScore.toFixed(
+        ).toFixed(2)} Â· score ${best.adaptiveScore.toFixed(
           1
-        )}% · memory ${best.learned.trades} trades.`
+        )}% Â· memory ${best.learned.trades} trades.`
       );
 
       nextEntryAtRef.current =
@@ -4543,7 +4521,7 @@ export default function OverUnderLearningBot() {
     }
 
     setMessage(
-      `PROTECTION MODE · ${cascadeTriggered
+      `PROTECTION MODE Â· ${cascadeTriggered
         ? `${protectionStats.lossStreak} consecutive losses`
         : weakRecentRate
         ? `recent win rate ${Number(
@@ -4635,10 +4613,10 @@ export default function OverUnderLearningBot() {
 
         void switchMarket(
           portfolioReadyMarkets.length
-            ? "IDLE WATCHDOG · moving to the strongest ELITE/GOOD market"
+            ? "IDLE WATCHDOG Â· moving to the strongest ELITE/GOOD market"
             : portfolioWatchMarkets.length
-            ? "IDLE WATCHDOG · refreshing the strongest WATCH market"
-            : "IDLE WATCHDOG · warming the next available market"
+            ? "IDLE WATCHDOG Â· refreshing the strongest WATCH market"
+            : "IDLE WATCHDOG Â· warming the next available market"
         );
       }
     }, 1000);
@@ -4677,7 +4655,7 @@ export default function OverUnderLearningBot() {
         leader.market !== symbol
       ) {
         void switchMarket(
-          `PORTFOLIO TRADE-READY · ${leader.market} ${leader.contract} · ${leader.probability.toFixed(1)}%`
+          `PORTFOLIO TRADE-READY Â· ${leader.market} ${leader.contract} Â· ${leader.probability.toFixed(1)}%`
         );
         return;
       }
@@ -4704,7 +4682,7 @@ export default function OverUnderLearningBot() {
             1000
       ) {
         void switchMarket(
-          `PORTFOLIO WATCH REFRESH · ${watchTarget.market} ${watchTarget.contract}`
+          `PORTFOLIO WATCH REFRESH Â· ${watchTarget.market} ${watchTarget.contract}`
         );
       }
     }, Math.max(
@@ -4759,7 +4737,7 @@ export default function OverUnderLearningBot() {
       )
     ) {
       void switchMarket(
-        `GLOBAL PORTFOLIO · ${bestGlobalMarket.market} ${bestGlobalMarket.contract} · score lead ${lead.toFixed(1)}`
+        `GLOBAL PORTFOLIO Â· ${bestGlobalMarket.market} ${bestGlobalMarket.contract} Â· score lead ${lead.toFixed(1)}`
       );
     }
   }, [
@@ -4838,7 +4816,7 @@ export default function OverUnderLearningBot() {
 
     const timer = window.setTimeout(() => {
       void switchMarket(
-        `NO QUALIFIED MARKET · ${currentMarketDecision.reasons.join(
+        `NO QUALIFIED MARKET Â· ${currentMarketDecision.reasons.join(
           ", "
         ) || "setup rejected"}`
       );
@@ -5019,7 +4997,7 @@ export default function OverUnderLearningBot() {
         ticks: 0,
       };
       setMessage(
-        "PROTECTION RELEASED · Fresh market must pass predictive guard, layer agreement and EV before trading."
+        "PROTECTION RELEASED Â· Fresh market must pass predictive guard, layer agreement and EV before trading."
       );
     }, remaining + 100);
 
@@ -5779,8 +5757,6 @@ export default function OverUnderLearningBot() {
     URL.revokeObjectURL(url);
   }
 
-
-
   return (
     <div className="appShell">
       <Sidebar />
@@ -5788,7 +5764,7 @@ export default function OverUnderLearningBot() {
       <main className="mainContent oulPage">
         <Topbar
           title="Over/Under Adaptive Learning Bot V28.2"
-          subtitle="V28.2 Start runtime hotfix · defined status setter · continuous scanner"
+          subtitle="V28.2 Start runtime hotfix Â· defined status setter Â· continuous scanner"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -5833,8 +5809,8 @@ export default function OverUnderLearningBot() {
               {tradeBusy
                 ? "SENDING..."
                 : running
-                ? "■ STOP"
-                : "▶ START"}
+                ? "â–  STOP"
+                : "â–¶ START"}
             </button>
           </div>
         </section>
@@ -5863,33 +5839,33 @@ export default function OverUnderLearningBot() {
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
                 : portfolioWatchEnabled &&
                   portfolioReadyMarkets.length === 0
-                ? "PORTFOLIO WATCH — No ELITE or GOOD market. Auto-unlock is active and WATCH markets continue refreshing."
+                ? "PORTFOLIO WATCH â€” No ELITE or GOOD market. Auto-unlock is active and WATCH markets continue refreshing."
                 : globalPortfolioEnabled &&
                   (
                     !bestGlobalMarket ||
                     bestGlobalMarket.market !== symbol
                   )
-                ? "GLOBAL PORTFOLIO — Current market is not the top ELITE/GOOD market. Trade blocked while switching."
+                ? "GLOBAL PORTFOLIO â€” Current market is not the top ELITE/GOOD market. Trade blocked while switching."
                 : !oneMinuteEvidenceReady
-                ? `ONE-MINUTE ENGINE — Building evidence ${oneMinuteEvidenceSamples}/${oneMinuteMinimumSamples}.`
+                ? `ONE-MINUTE ENGINE â€” Building evidence ${oneMinuteEvidenceSamples}/${oneMinuteMinimumSamples}.`
                 : adaptiveEntryReady
-                ? `ADAPTIVE ARMED — ${best.side} ${best.barrier} remained stable for ${adaptiveArmState.ticks} ticks.`
+                ? `ADAPTIVE ARMED â€” ${best.side} ${best.barrier} remained stable for ${adaptiveArmState.ticks} ticks.`
                 : adaptiveFallbackCandidate
-                ? `ADAPTIVE ${adaptiveArmState.stage} — watching ${adaptiveFallbackCandidate.side} ${adaptiveFallbackCandidate.barrier} before confirmation.`
+                ? `ADAPTIVE ${adaptiveArmState.stage} â€” watching ${adaptiveFallbackCandidate.side} ${adaptiveFallbackCandidate.barrier} before confirmation.`
                 : portfolioBridgeActive
-                ? `LIVE BRIDGE — ${currentPortfolioRow.status} ${best.side} ${best.barrier} synchronized with portfolio metrics.`
+                ? `LIVE BRIDGE â€” ${currentPortfolioRow.status} ${best.side} ${best.barrier} synchronized with portfolio metrics.`
                 : universalPoolEnabled &&
                   !unifiedSelectedCandidate
-                ? "UNIVERSAL POOL — No ELITE or GOOD OVER/UNDER candidate passed every gate. Trade skipped."
+                ? "UNIVERSAL POOL â€” No ELITE or GOOD OVER/UNDER candidate passed every gate. Trade skipped."
                 : marketRunLocked
-                ? "ONE-RUN LIMIT — This market already traded. Switching to a different market."
+                ? "ONE-RUN LIMIT â€” This market already traded. Switching to a different market."
                 : setupRepeated
-                ? "REPEATED SETUP — Waiting for fresh ticks or a new market."
+                ? "REPEATED SETUP â€” Waiting for fresh ticks or a new market."
                 : sameBarrierRepeated
-                ? `BARRIER LOCK — ${best.side} ${best.barrier} already used on this market. Switching.`
+                ? `BARRIER LOCK â€” ${best.side} ${best.barrier} already used on this market. Switching.`
                 : globalSelectionEnabled &&
                   !currentMarketDecision.qualified
-                ? `NO QUALIFIED MARKET — TRADE SKIPPED. ${currentMarketDecision.reasons.join(
+                ? `NO QUALIFIED MARKET â€” TRADE SKIPPED. ${currentMarketDecision.reasons.join(
                     ", "
                   ) || "Current setup rejected."}`
                 : multiLayerEnabled &&
@@ -5970,7 +5946,7 @@ export default function OverUnderLearningBot() {
               <span>Recovery gate</span>
               <strong>
                 {recovery.active
-                  ? `Score ${recoveryScoreGate} · Conf ${recoveryConfidenceGate}`
+                  ? `Score ${recoveryScoreGate} Â· Conf ${recoveryConfidenceGate}`
                   : "NORMAL"}
               </strong>
             </article>
@@ -6084,10 +6060,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — cached 60-sample evidence
+                ON â€” cached 60-sample evidence
               </option>
               <option value="OFF">
-                OFF — live gates only
+                OFF â€” live gates only
               </option>
             </select>
           </label>
@@ -6167,10 +6143,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — stable live fallback
+                ON â€” stable live fallback
               </option>
               <option value="OFF">
-                OFF — strict tiers only
+                OFF â€” strict tiers only
               </option>
             </select>
           </label>
@@ -6350,10 +6326,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — wait for ELITE or GOOD market
+                ON â€” wait for ELITE or GOOD market
               </option>
               <option value="OFF">
-                OFF — normal rotation
+                OFF â€” normal rotation
               </option>
             </select>
           </label>
@@ -6413,10 +6389,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — choose best cached market
+                ON â€” choose best cached market
               </option>
               <option value="OFF">
-                OFF — sequential rotation
+                OFF â€” sequential rotation
               </option>
             </select>
           </label>
@@ -6472,10 +6448,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — rank OVER + UNDER together
+                ON â€” rank OVER + UNDER together
               </option>
               <option value="OFF">
-                OFF — balanced lane fallback
+                OFF â€” balanced lane fallback
               </option>
             </select>
           </label>
@@ -6555,10 +6531,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — compare both lanes
+                ON â€” compare both lanes
               </option>
               <option value="OFF">
-                OFF — raw top candidate
+                OFF â€” raw top candidate
               </option>
             </select>
           </label>
@@ -6572,7 +6548,7 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="AUTO">
-                AUTO — strongest lane
+                AUTO â€” strongest lane
               </option>
               <option value="OVER">
                 Slight OVER preference
@@ -6603,7 +6579,7 @@ export default function OverUnderLearningBot() {
             <span>Browser market memory</span>
             <select value="ON" disabled>
               <option value="ON">
-                ON — persistent market cache
+                ON â€” persistent market cache
               </option>
             </select>
           </label>
@@ -6667,7 +6643,7 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — switch after each trade
+                ON â€” switch after each trade
               </option>
               <option value="OFF">OFF</option>
             </select>
@@ -6688,7 +6664,7 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — win or loss
+                ON â€” win or loss
               </option>
               <option value="OFF">OFF</option>
             </select>
@@ -6721,10 +6697,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — qualified market only
+                ON â€” qualified market only
               </option>
               <option value="OFF">
-                OFF — current market only
+                OFF â€” current market only
               </option>
             </select>
           </label>
@@ -6788,7 +6764,7 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — pause loss cascades
+                ON â€” pause loss cascades
               </option>
               <option value="OFF">OFF</option>
             </select>
@@ -6857,10 +6833,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — Markov/Bayesian/EV
+                ON â€” Markov/Bayesian/EV
               </option>
               <option value="OFF">
-                OFF — legacy score
+                OFF â€” legacy score
               </option>
             </select>
           </label>
@@ -6934,7 +6910,7 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — avoid weakening setups
+                ON â€” avoid weakening setups
               </option>
               <option value="OFF">OFF</option>
             </select>
@@ -6987,10 +6963,10 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="SMART">
-                SMART — clear setup only
+                SMART â€” clear setup only
               </option>
               <option value="OFF">
-                OFF — base stake only
+                OFF â€” base stake only
               </option>
             </select>
           </label>
@@ -7062,7 +7038,7 @@ export default function OverUnderLearningBot() {
           <article>
             <span>Current market</span>
             <strong>
-              {market?.label || symbol || "—"}
+              {market?.label || symbol || "â€”"}
             </strong>
             <small>
               {running ? "SCANNING" : "STOPPED"}
@@ -7121,9 +7097,9 @@ export default function OverUnderLearningBot() {
             >
               {soundEnabled
                 ? soundUnlockedRef.current
-                  ? "🔊 SOUNDS READY"
-                  : "🔊 CLICK START/TEST"
-                : "🔇 SOUNDS OFF"}
+                  ? "ðŸ”Š SOUNDS READY"
+                  : "ðŸ”Š CLICK START/TEST"
+                : "ðŸ”‡ SOUNDS OFF"}
             </button>
             <small>
               WIN/LOSS now trigger from settled journal status
@@ -7243,7 +7219,7 @@ export default function OverUnderLearningBot() {
             <span>Recovery</span>
             <strong>
               {recovery.active
-                ? `${recovery.attempts}/2 · ${recoveryTarget.toFixed(
+                ? `${recovery.attempts}/2 Â· ${recoveryTarget.toFixed(
                     2
                   )} target`
                 : "OFF"}
@@ -7311,7 +7287,6 @@ export default function OverUnderLearningBot() {
             )}
           </div>
         </section>
-
 
         <section className="oulAdvancedAnalysis">
           <header>
@@ -7452,7 +7427,7 @@ export default function OverUnderLearningBot() {
                 {portfolioEliteMarkets.length}
               </strong>
               <small>
-                88%+ probability · 6/7 votes · risk ≤25
+                88%+ probability Â· 6/7 votes Â· risk â‰¤25
               </small>
             </article>
 
@@ -7462,7 +7437,7 @@ export default function OverUnderLearningBot() {
                 {portfolioGoodMarkets.length}
               </strong>
               <small>
-                78%+ probability · 5/7 votes · risk ≤35
+                78%+ probability Â· 5/7 votes Â· risk â‰¤35
               </small>
             </article>
 
@@ -7507,7 +7482,7 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 {bestGlobalMarket
-                  ? `${bestGlobalMarket.contract} · ${pct(
+                  ? `${bestGlobalMarket.contract} Â· ${pct(
                       bestGlobalMarket.probability
                     )}`
                   : "No cached market passed all gates"}
@@ -7535,7 +7510,7 @@ export default function OverUnderLearningBot() {
                     (item) =>
                       item.market === symbol
                   ) + 1
-                ) || "—"}
+                ) || "â€”"}
               </strong>
               <small>
                 {symbol || "No active market"}
@@ -7562,8 +7537,8 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 {oneMinuteEvidenceReady
-                  ? "READY — cache/live sample accepted"
-                  : "BUILDING — no entry yet"}
+                  ? "READY â€” cache/live sample accepted"
+                  : "BUILDING â€” no entry yet"}
               </small>
             </article>
 
@@ -7585,7 +7560,7 @@ export default function OverUnderLearningBot() {
                   : "NORMAL"}
               </strong>
               <small>
-                Debt {Number(recoveryDebt || 0).toFixed(2)} · no stale-regime recovery
+                Debt {Number(recoveryDebt || 0).toFixed(2)} Â· no stale-regime recovery
               </small>
             </article>
 
@@ -7597,7 +7572,7 @@ export default function OverUnderLearningBot() {
                   : "OFF"}
               </strong>
               <small>
-                WATCH → PREPARE → ARMED → CONFIRM
+                WATCH â†’ PREPARE â†’ ARMED â†’ CONFIRM
               </small>
             </article>
 
@@ -7609,7 +7584,7 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 {adaptiveFallbackCandidate
-                  ? `${adaptiveFallbackCandidate.side} ${adaptiveFallbackCandidate.barrier} · ${pct(adaptiveFallbackCandidate.probability)}`
+                  ? `${adaptiveFallbackCandidate.side} ${adaptiveFallbackCandidate.barrier} Â· ${pct(adaptiveFallbackCandidate.probability)}`
                   : "No stable fallback candidate"}
               </small>
             </article>
@@ -7697,9 +7672,9 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 {universalDecision.selectedMeta
-                  ? `${universalDecision.selectedMeta.tier} · P ${pct(
+                  ? `${universalDecision.selectedMeta.tier} Â· P ${pct(
                       universalDecision.selectedMeta.probability
-                    )} · EV ${Number(
+                    )} Â· EV ${Number(
                       universalDecision.selectedMeta.expectedValue
                     ).toFixed(3)}`
                   : "No ELITE or GOOD candidate passed all gates"}
@@ -7717,7 +7692,7 @@ export default function OverUnderLearningBot() {
                 {universalDecision.rejectedTop
                   ? `Risk ${pct(
                       universalDecision.rejectedTop.risk
-                    )} · Votes ${universalDecision.rejectedTop.votes}/7`
+                    )} Â· Votes ${universalDecision.rejectedTop.votes}/7`
                   : "No candidates available"}
               </small>
             </article>
@@ -7760,7 +7735,7 @@ export default function OverUnderLearningBot() {
                   ? `${pct(
                       bestOver.layered?.weightedProbability ??
                         bestOver.probability
-                    )} · ${bestOver.agreementVotes}/7`
+                    )} Â· ${bestOver.agreementVotes}/7`
                   : "No qualified OVER candidate"}
               </small>
             </article>
@@ -7777,7 +7752,7 @@ export default function OverUnderLearningBot() {
                   ? `${pct(
                       bestUnder.layered?.weightedProbability ??
                         bestUnder.probability
-                    )} · ${bestUnder.agreementVotes}/7`
+                    )} Â· ${bestUnder.agreementVotes}/7`
                   : "No qualified UNDER candidate"}
               </small>
             </article>
@@ -7968,7 +7943,7 @@ export default function OverUnderLearningBot() {
                 {pct(protectionStats.winRate)}
               </strong>
               <small>
-                {protectionStats.wins}W / {protectionStats.losses}L · {protectionStats.sample} trades
+                {protectionStats.wins}W / {protectionStats.losses}L Â· {protectionStats.sample} trades
               </small>
             </article>
 
@@ -8058,7 +8033,7 @@ export default function OverUnderLearningBot() {
             <article>
               <span>Observed cycle</span>
               <strong>
-                {observedCycle.length || "—"}
+                {observedCycle.length || "â€”"}
               </strong>
               <small>
                 Strength {pct(
@@ -8143,7 +8118,7 @@ export default function OverUnderLearningBot() {
               <strong>
                 {smartRecoveryActive
                   ? "REC: OVER 4 / UNDER 5"
-                  : "NORMAL: OVER 1–3 / UNDER 6–8"}
+                  : "NORMAL: OVER 1â€“3 / UNDER 6â€“8"}
               </strong>
               <small>
                 Other barriers need stronger EV
@@ -8209,15 +8184,15 @@ export default function OverUnderLearningBot() {
                   </span>
                   <small>
                     P {pct(item?.probability || 0)}
-                    {" · "}
+                    {" Â· "}
                     EV {Number(
                       item?.expectedValue || 0
                     ).toFixed(3)}
-                    {" · "}
+                    {" Â· "}
                     L {item?.votes || 0}/7
                   </small>
                   <small>
-                    {item?.cached ? "CACHE · " : "LIVE · "}
+                    {item?.cached ? "CACHE Â· " : "LIVE Â· "}
                     {item?.qualified
                       ? "QUALIFIED"
                       : item?.reasons?.join(", ") ||
@@ -8230,7 +8205,7 @@ export default function OverUnderLearningBot() {
 
           {!selectedGlobalSetup && (
             <div className="oulSkipBanner">
-              NO QUALIFIED MARKET — TRADE SKIPPED
+              NO QUALIFIED MARKET â€” TRADE SKIPPED
             </div>
           )}
         </section>
@@ -8386,19 +8361,19 @@ export default function OverUnderLearningBot() {
                     </strong>
                     <span>
                       {item.contract}
-                      {" · "}
+                      {" Â· "}
                       {item.status}
                     </span>
                     <span>
                       P {pct(item.probability)}
-                      {" · "}
+                      {" Â· "}
                       EV {Number(
                         item.expectedValue
                       ).toFixed(3)}
                     </span>
                     <span>
                       V {item.votes}/7
-                      {" · "}
+                      {" Â· "}
                       R {pct(item.risk)}
                     </span>
                     <em>
@@ -8429,14 +8404,14 @@ export default function OverUnderLearningBot() {
                     </strong>
                     <span>
                       P {pct(item.probability)}
-                      {" · "}
+                      {" Â· "}
                       EV {Number(
                         item.expectedValue
                       ).toFixed(3)}
                     </span>
                     <span>
                       V {item.votes}/7
-                      {" · "}
+                      {" Â· "}
                       R {pct(item.risk)}
                     </span>
                     <em>
@@ -8469,7 +8444,7 @@ export default function OverUnderLearningBot() {
                     </span>
                     <span>
                       Memory{" "}
-                      {candidate.learned.trades}T ·{" "}
+                      {candidate.learned.trades}T Â·{" "}
                       {pct(
                         candidate.learned
                           .probability * 100
@@ -8480,7 +8455,7 @@ export default function OverUnderLearningBot() {
                       {pct(
                         candidate.learned
                           .requiredProbability
-                      )} ·{" "}
+                      )} Â·{" "}
                       {candidate.learned.blocked
                         ? "COOLDOWN"
                         : "EV PASS"}
@@ -8489,7 +8464,7 @@ export default function OverUnderLearningBot() {
                       Recent{" "}
                       {pct(
                         candidate.learned.recentWinRate
-                      )} · roll{" "}
+                      )} Â· roll{" "}
                       {pct(
                         candidate.learned.rollingScore
                       )}
@@ -8637,9 +8612,9 @@ export default function OverUnderLearningBot() {
                         <small>WHY ENTERED</small>
                         <p>
                           Adaptive score{" "}
-                          {pct(trade.score)} ·
+                          {pct(trade.score)} Â·
                           confidence{" "}
-                          {pct(trade.confidence)} ·
+                          {pct(trade.confidence)} Â·
                           probability{" "}
                           {pct(trade.probability)}.
                         </p>
@@ -8660,12 +8635,12 @@ export default function OverUnderLearningBot() {
                             : status === "WON"
                             ? `Won ${Number(
                                 trade.profit || 0
-                              ).toFixed(2)} USD · WIN sound triggered from journal settlement.`
+                              ).toFixed(2)} USD Â· WIN sound triggered from journal settlement.`
                             : `Lost ${Math.abs(
                                 Number(
                                   trade.profit || 0
                                 )
-                              ).toFixed(2)} USD · LOSS sound triggered from journal settlement.`}
+                              ).toFixed(2)} USD Â· LOSS sound triggered from journal settlement.`}
                         </p>
                       </div>
                     </div>
@@ -8695,3 +8670,4 @@ export default function OverUnderLearningBot() {
     </div>
   );
 }
+

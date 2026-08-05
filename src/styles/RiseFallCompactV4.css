@@ -1,4 +1,4 @@
-
+﻿
 /* Rise/Fall V4 compact mobile command center */
 .rfCompactMonitor {
   margin: 10px 0;
@@ -231,7 +231,6 @@
   }
 }
 
-
 /* V5 fresh-settlement monitor */
 .rfTimeframeStrip {
   overflow-x: auto;
@@ -268,7 +267,6 @@
   }
 }
 
-
 .rfCompactMonitor:has(.rfMonitorDecision.scanning) {
   border-color: #8d7422;
 }
@@ -278,3 +276,4 @@
   border-color: #80691d;
   background: #2a250d;
 }
+

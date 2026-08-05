@@ -94,7 +94,6 @@ function currentLossStreak(records = []) {
   return streak;
 }
 
-
 const RF_HISTORY_STORAGE_KEY = "edgepilot-rf-price-history-v73";
 const RF_MARKET_SNAPSHOT_KEY = "edgepilot-rf-market-snapshots-v73";
 const RF_MAX_HISTORY_POINTS = 2400;
@@ -249,7 +248,6 @@ function candleSignal(candle) {
   return "WAIT";
 }
 
-
 function freezeClosedCandles(previous = [], next = []) {
   if (!next.length) return [];
 
@@ -263,7 +261,6 @@ function freezeClosedCandles(previous = [], next = []) {
     return previousMap.get(item.time) || item;
   });
 }
-
 
 function candleStructure(candles = []) {
   if (!candles.length) {
@@ -370,7 +367,6 @@ function structureEntryChecklist({
       items.filter((item) => item.passed).length >= 5,
   };
 }
-
 
 function emaSeries(candles = [], period = 20) {
   const multiplier = 2 / (period + 1);
@@ -1101,7 +1097,6 @@ export default function RiseFallAnalysis() {
 
   const candles = displayedCandles;
 
-
   const candleMarketStructure = useMemo(
     () => candleStructure(candles),
     [candles]
@@ -1119,7 +1114,6 @@ export default function RiseFallAnalysis() {
 
   const active =
     mode === "15s" ? analysis15 : analysis10;
-
 
   const syntheticScore = useMemo(
     () =>
@@ -1180,7 +1174,6 @@ export default function RiseFallAnalysis() {
         .sort((a, b) => Number(b.score) - Number(a.score)),
     [marketSnapshots]
   );
-
 
   const preBuyStructure = useMemo(
     () =>
@@ -1310,7 +1303,6 @@ export default function RiseFallAnalysis() {
           analysis10.confidence
         ) / 2;
 
-
   const marketSymbols = useMemo(
     () =>
       (Array.isArray(markets) ? markets : [])
@@ -1392,7 +1384,6 @@ export default function RiseFallAnalysis() {
       ) ||
       burstEntryReady
     );
-
 
   useEffect(() => {
     if (!recoveryRequired || !autoRunning) return;
@@ -1594,8 +1585,6 @@ export default function RiseFallAnalysis() {
         : "Transaction view and run counter reset."
     );
   }
-
-
 
   function contractIdOf(item = {}) {
     return String(
@@ -2335,7 +2324,6 @@ export default function RiseFallAnalysis() {
     soundEnabled,
   ]);
 
-
   useEffect(() => {
     if (
       !autoRunning ||
@@ -2450,7 +2438,6 @@ export default function RiseFallAnalysis() {
     consecutiveLosses,
   ]);
 
-
   useEffect(() => {
     if (!sessionTrades.length || typeof refreshContract !== "function") return;
 
@@ -2495,7 +2482,6 @@ export default function RiseFallAnalysis() {
 
     return () => window.clearInterval(timer);
   }, [sessionTrades, refreshContract]);
-
 
   useEffect(() => {
     const contracts = Array.isArray(openContracts) ? openContracts : [];
@@ -2833,7 +2819,6 @@ export default function RiseFallAnalysis() {
               }`
             : feedMessage}
         </div>
-
 
         <section className={`rfAutoPanel ${autoRunning ? "running" : "stopped"}`}>
           <div className="rfAutoPanelHead">
@@ -4171,7 +4156,6 @@ export default function RiseFallAnalysis() {
           </article>
         </section>
 
-
         <section className="rfDeepAnalysisGrid">
           <article>
             <small>ORDER FLOW DELTA</small>
@@ -4442,8 +4426,6 @@ export default function RiseFallAnalysis() {
           </div>
         </section>
 
-
-
         <section className={`rfRecoveryStatus ${recoveryRequired ? "active" : "ready"}`}>
           <div>
             <small>CONTINUOUS EXECUTION</small>
@@ -4581,7 +4563,6 @@ export default function RiseFallAnalysis() {
             </div>
           </details>
         </section>
-
 
         <button
           type="button"
@@ -4772,7 +4753,5 @@ export default function RiseFallAnalysis() {
     </div>
   );
 }
-
-
 
 

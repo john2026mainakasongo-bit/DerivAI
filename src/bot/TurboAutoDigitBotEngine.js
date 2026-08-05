@@ -1,4 +1,4 @@
-
+﻿
 function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -74,10 +74,10 @@ export default class TurboAutoDigitBotEngine {
       losses: 0,
       profit: 0,
       totalStake: 0,
-      activeSetup: "—",
+      activeSetup: "â€”",
       activeContractId: "",
       selectedConfidence: 0,
-      selectedSource: "—",
+      selectedSource: "â€”",
       selectedQuality: 0,
       signalConfirmations: 0,
       skipSignalsRemaining: 0,
@@ -87,8 +87,8 @@ export default class TurboAutoDigitBotEngine {
       marketSwitches: 0,
       history: [],
       lastCompletedConfidence: 0,
-      lastCompletedRisk: "—",
-      lastCompletedSetup: "—",
+      lastCompletedRisk: "â€”",
+      lastCompletedSetup: "â€”",
     };
 
     this.removeContractListener = this.client.onContract((contract) => {
@@ -215,7 +215,7 @@ export default class TurboAutoDigitBotEngine {
       status: "STOPPED",
       executionPhase: "IDLE",
       message,
-      activeSetup: "—",
+      activeSetup: "â€”",
       activeContractId: "",
     });
   }
@@ -231,10 +231,10 @@ export default class TurboAutoDigitBotEngine {
       losses: 0,
       profit: 0,
       totalStake: 0,
-      activeSetup: "—",
+      activeSetup: "â€”",
       activeContractId: "",
       selectedConfidence: 0,
-      selectedSource: "—",
+      selectedSource: "â€”",
       selectedQuality: 0,
       signalConfirmations: 0,
       executionPhase: "IDLE",
@@ -242,8 +242,8 @@ export default class TurboAutoDigitBotEngine {
       marketSwitches: 0,
       history: [],
       lastCompletedConfidence: 0,
-      lastCompletedRisk: "—",
-      lastCompletedSetup: "—",
+      lastCompletedRisk: "â€”",
+      lastCompletedSetup: "â€”",
     };
     this.onState({ ...this.state });
   }
@@ -337,10 +337,10 @@ export default class TurboAutoDigitBotEngine {
               0,
               Math.ceil((this.settings.scanSwitchMs - waited) / 1000)
             )}s.`,
-          activeSetup: signal?.setup || "—",
+          activeSetup: signal?.setup || "â€”",
           selectedConfidence: Number(signal?.qualityScore || 0),
           selectedQuality: Number(signal?.qualityScore || 0),
-          selectedSource: signal?.source || "—",
+          selectedSource: signal?.source || "â€”",
           signalConfirmations: 0,
         });
 
@@ -393,7 +393,7 @@ export default class TurboAutoDigitBotEngine {
           signalConfirmations: 0,
           selectedConfidence: Number(signal.qualityScore || 0),
           selectedQuality: Number(signal.qualityScore || 0),
-          selectedSource: signal.source || "—",
+          selectedSource: signal.source || "â€”",
           message: `${signal.setup} found. Waiting for one fresh confirmation.`,
         });
 
@@ -420,7 +420,6 @@ export default class TurboAutoDigitBotEngine {
       await this.execute(signal);
     }
   }
-
 
   assessProposal(signal, quote) {
     const askPrice = Number(quote?.askPrice || 0);
@@ -561,12 +560,12 @@ export default class TurboAutoDigitBotEngine {
         this.patch({
           status: "SCANNING",
           executionPhase: "PAYOUT_REJECTED",
-          activeSetup: "—",
+          activeSetup: "â€”",
           activeContractId: "",
           message: proposalGate.reason,
           selectedConfidence: Number(signal.qualityScore || 0),
           selectedQuality: Number(signal.qualityScore || 0),
-          selectedSource: signal.source || "—",
+          selectedSource: signal.source || "â€”",
           proposalBreakEven: proposalGate.breakEvenProbability,
           proposalEdge: proposalGate.payoutEdgePct,
           proposalEv: proposalGate.expectedValuePct,
@@ -643,7 +642,7 @@ export default class TurboAutoDigitBotEngine {
         profit: totalProfit,
         totalStake: this.state.totalStake + stake,
         activeContractId: "",
-        activeSetup: "—",
+        activeSetup: "â€”",
         lastCompletedSetup: signal.setup,
         lastCompletedConfidence: Number(signal.qualityScore || 0),
         lastCompletedRisk:
@@ -750,3 +749,4 @@ export default class TurboAutoDigitBotEngine {
     });
   }
 }
+

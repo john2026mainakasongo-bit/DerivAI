@@ -1,4 +1,4 @@
-.freshEdgeShell {
+﻿.freshEdgeShell {
   min-height: 100vh;
   background: #020d17;
   color: #eff8ff;
@@ -282,8 +282,7 @@
   }
 }
 
-
-/* FreshEdge AI V2 — explainable fast engine */
+/* FreshEdge AI V2 â€” explainable fast engine */
 .freshEdgeExplain {
   margin: 8px 14px;
   padding: 10px;
@@ -405,8 +404,7 @@
   }
 }
 
-
-/* FreshEdge AI V3 — adaptive learning */
+/* FreshEdge AI V3 â€” adaptive learning */
 .freshEdgeLearning {
   margin: 8px 14px;
   padding: 10px;
@@ -521,8 +519,7 @@
   }
 }
 
-
-/* FreshEdge AI V4 — live edge, ranking and timeline */
+/* FreshEdge AI V4 â€” live edge, ranking and timeline */
 .freshEdgeV4Live,
 .freshEdgeRanking,
 .freshEdgeTimeline {
@@ -700,8 +697,7 @@
   }
 }
 
-
-/* FreshEdge AI V5 — live decision and replay */
+/* FreshEdge AI V5 â€” live decision and replay */
 .freshEdgeV5Decision,
 .freshEdgeRecoveryPanel,
 .freshEdgeReplay {
@@ -854,8 +850,7 @@
   .freshEdgeReplaySteps > div { grid-template-columns: 70px 55px 1fr; }
 }
 
-
-/* FreshEdge AI V6 — stability, scanner reasons and learning changes */
+/* FreshEdge AI V6 â€” stability, scanner reasons and learning changes */
 .freshEdgeStability {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1038,8 +1033,7 @@
   }
 }
 
-
-/* FreshEdge AI V7 — telemetry and deep replay */
+/* FreshEdge AI V7 â€” telemetry and deep replay */
 .freshEdgeV7Telemetry,
 .freshEdgeV7DeepReplay {
   margin: 8px 14px;
@@ -1181,3 +1175,4 @@
     grid-template-columns: 80px 1fr;
   }
 }
+

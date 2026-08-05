@@ -467,7 +467,6 @@
   }
 }
 
-
 .rfToolbarActions {
   display: flex;
   align-items: center;
@@ -669,7 +668,6 @@
   }
 }
 
-
 .rfFastDecisionRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -743,7 +741,6 @@
     grid-template-columns: 1fr;
   }
 }
-
 
 .rfProGrid {
   display: grid;
@@ -851,7 +848,6 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
-
 
 .rfAutoPanel,
 .rfTradeViewer {
@@ -1078,7 +1074,6 @@
   }
 }
 
-
 .rfSideStartButton {
   min-width: 112px;
   border: 1px solid #1681d9;
@@ -1115,7 +1110,6 @@
     width: 100%;
   }
 }
-
 
 .rfDurationSelect {
   border: 1px solid #1c5a72;
@@ -1181,7 +1175,6 @@
     width: 100%;
   }
 }
-
 
 .rfAiEntryTerminal {
   margin: 14px 0;
@@ -1313,7 +1306,6 @@
   }
 }
 
-
 .rfAdvancedTools {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1359,7 +1351,6 @@
     grid-template-columns: 1fr;
   }
 }
-
 
 .rfAiEntryTerminal .rfPanelHead > span.strong {
   border-color: #53a6ff;
@@ -1409,7 +1400,6 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
-
 
 .rfAiEntryGrid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1462,7 +1452,6 @@
   }
 }
 
-
 .rfProfessionalSummary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1510,7 +1499,6 @@
     grid-template-columns: 1fr;
   }
 }
-
 
 .rfConsensusHero {
   display: grid;
@@ -1677,7 +1665,6 @@
   }
 }
 
-
 .rfQuantumMetrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1725,7 +1712,6 @@
     grid-template-columns: 1fr;
   }
 }
-
 
 .rfLearningPanel {
   display: grid;
@@ -1781,7 +1767,6 @@
   }
 }
 
-
 .rfAutoPanelButtons {
   display: flex;
   align-items: center;
@@ -1811,7 +1796,6 @@
   padding: 7px 9px;
   background: #061c2a;
 }
-
 
 .rfSyntheticScanner,
 .rfCandleSection {
@@ -2013,7 +1997,6 @@
   }
 }
 
-
 .rfCandleChart g.closed {
   opacity: .9;
 }
@@ -2183,7 +2166,6 @@
   }
 }
 
-
 .rfCandleModes {
   position: sticky;
   top: 0;
@@ -2203,7 +2185,6 @@
 .rfCandleChart g.live .wick {
   transition: height .18s linear, y .18s linear;
 }
-
 
 /* ============================================================
    V76.2 â€” Rise/Fall UI cleanup
@@ -2377,7 +2358,6 @@
     min-height: 320px !important;
   }
 }
-
 
 /* ================================================================
    EdgePilot V78 â€” Mobile / adaptive-duration overrides
@@ -2562,8 +2542,6 @@
     padding: 10px !important;
   }
 }
-
-
 
 /* ================================================================
    EdgePilot V79 â€” Manual direct trading panel
@@ -2751,8 +2729,6 @@
   }
 }
 
-
-
 /* ================================================================
    EdgePilot V80 â€” final smooth/safe mobile polish
    ================================================================ */
@@ -2812,8 +2788,6 @@
     bottom: calc(10px + env(safe-area-inset-bottom));
   }
 }
-
-
 
 /* ================================================================
    EdgePilot V81 â€” compact mobile header/account/result sound
@@ -3059,8 +3033,6 @@
     font-size: 8px !important;
   }
 }
-
-
 
 /* V83 TRADINGVIEW STYLE CHART */
 .rfCandleSection {
@@ -3345,3 +3317,4 @@
     flex-direction: column;
   }
 }
+

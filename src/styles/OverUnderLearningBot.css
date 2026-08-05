@@ -1,4 +1,4 @@
-.oulPage {
+﻿.oulPage {
   padding-bottom: 32px;
 }
 
@@ -286,7 +286,6 @@
   }
 }
 
-
 .oulDecision.ready h1 {
   color: #38d8a8;
 }
@@ -294,7 +293,6 @@
 .oulStats article:last-child strong {
   color: #f0cf67;
 }
-
 
 .oulRotation {
   margin-top: 10px;
@@ -371,7 +369,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-
 
 /* V5 transaction monitor */
 .oulMoneySummary {
@@ -582,7 +579,6 @@
   }
 }
 
-
 /* V6 smart dashboard */
 .oulSmartDashboard {
   display: grid;
@@ -764,7 +760,6 @@
   }
 }
 
-
 .oulSoundTests {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -788,13 +783,11 @@
   color: #ff8790;
 }
 
-
 .oulLastSoundEvent {
   margin-top: 4px !important;
   color: #f0cf67 !important;
   font-weight: 800;
 }
-
 
 .oulAdvancedAnalysis {
   margin-top: 10px;
@@ -886,16 +879,13 @@
   }
 }
 
-
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
 
-
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
-
 
 .oulAdvancedAnalysis > div {
   grid-template-columns:
@@ -929,7 +919,6 @@
   }
 }
 
-
 .oulProtectionPaused {
   border-color: #f0cf67 !important;
 }
@@ -937,7 +926,6 @@
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
-
 
 .oulGlobalSelector {
   margin-top: 10px;
@@ -1041,7 +1029,6 @@
   }
 }
 
-
 .oulGlobalScoreGrid article.used {
   opacity: .55;
 }
@@ -1050,7 +1037,6 @@
   color: #f0cf67;
   font-weight: 900;
 }
-
 
 .oulGlobalScoreGrid article {
   transition:
@@ -1063,7 +1049,6 @@
 }
 
 /* V17 Browser Intelligence Engine */
-
 
 .oulLaneSummary {
   display: grid;
@@ -1110,7 +1095,6 @@
   color: #9fc6d6;
   font-size: 9px;
 }
-
 
 .oulUniversalRanking {
   display: grid;
@@ -1179,7 +1163,6 @@
   }
 }
 
-
 .oulPortfolioRanking {
   display: grid;
   grid-template-columns:
@@ -1246,7 +1229,6 @@
   }
 }
 
-
 .oulPortfolioRanking article.ready {
   border-color: #22d3a6;
   box-shadow:
@@ -1283,7 +1265,6 @@
   color: #8299a5;
 }
 
-
 .oulPortfolioRanking article.watch {
   animation:
     oul-watch-pulse 2.4s ease-in-out infinite;
@@ -1299,7 +1280,6 @@
       0 0 0 1px rgba(240, 207, 103, .2);
   }
 }
-
 
 .oulPortfolioRanking article.elite {
   border-color: #00e7b0;
@@ -1326,32 +1306,28 @@
   color: #31f2ba;
 }
 
-
 /* V24 auto-unlock status */
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
-
 
 /* V25 unified live entry bridge */
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
 
-
 /* V26 hard-isolation indicators */
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
-
 
 /* V27 adaptive arming scanner */
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
 
-
 /* V28 one-minute regime engine */
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
+

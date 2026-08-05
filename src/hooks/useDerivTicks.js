@@ -559,26 +559,10 @@ export default function useDerivTicks() {
 
         /*
          * V9: Insert the purchased contract immediately.
-         * This makes Quantum AI show 1 OPEN as soon as the balance is
          * deducted, instead of waiting for a websocket contract event.
          */
         setOpenContracts((current) => {
-          const optimistic = {
-            contract_id: contractId,
-            id: contractId,
-            status: "OPEN",
-            is_sold: false,
-            is_expired: false,
-            symbol: finalSymbol,
-            underlying: finalSymbol,
-            contract_type: contractType,
-            buy_price: Number(amount),
-            purchase_price: Number(amount),
-            date_start: Math.floor(Date.now() / 1000),
-            duration: Number(duration),
-            duration_unit: durationUnit,
-            quantum_pending: true,
-          };
+          const optimistic = ;
 
           const rest = current.filter(
             (item) =>

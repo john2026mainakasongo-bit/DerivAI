@@ -1,4 +1,4 @@
-
+﻿
 .turboStatusHero {
   display: flex;
   align-items: center;
@@ -229,7 +229,6 @@
   }
 }
 
-
 .v53Recommendation {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -346,7 +345,6 @@
   }
 }
 
-
 .v54RealRisk {
   display: flex;
   align-items: flex-start;
@@ -417,7 +415,6 @@
   font-size: 10px;
 }
 
-
 .v55Families {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -439,7 +436,6 @@
 @media (max-width: 700px) {
   .v55Families { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-
 
 .v56SwitchNotice {
   display: grid;
@@ -468,7 +464,6 @@
   color: #5cb8ff;
   box-shadow: 0 0 20px rgba(92, 184, 255, .2);
 }
-
 
 .v57FamilyBoard {
   margin-top: 12px;
@@ -530,7 +525,6 @@
   }
 }
 
-
 .v58HighRiskToggle {
   display: flex;
   align-items: flex-start;
@@ -557,7 +551,6 @@
 .v53RankRow.highRisk small {
   color: #e6b976;
 }
-
 
 .v60Gate {
   display: grid;
@@ -590,7 +583,6 @@
   color: #a4c0d1;
   line-height: 1.45;
 }
-
 
 .v61ScoreModel {
   display: grid;
@@ -628,13 +620,11 @@
   }
 }
 
-
 .v62RankingNote {
   color: #9ebdce;
   font-size: 10px;
   line-height: 1.45;
 }
-
 
 .v63ModeBanner {
   display: grid;
@@ -657,7 +647,6 @@
   font-size: 11px;
   line-height: 1.45;
 }
-
 
 .v64AnalysisGrid {
   display: grid;
@@ -700,7 +689,6 @@
   }
 }
 
-
 .v64AnalysisGrid.v65 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -710,7 +698,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-
 
 .v66Countdown {
   display: grid;
@@ -726,7 +713,6 @@
   font-weight: 900;
   box-shadow: 0 0 20px rgba(39, 229, 184, .16);
 }
-
 
 .v67BotSelector {
   display: flex;
@@ -808,13 +794,11 @@
   font-size: 10px;
 }
 
-
 /* V68 authenticated-feed status */
 .turboStatusOrb.connecting {
   border-color: #1995ff;
   color: #1995ff;
 }
-
 
 .v72BotSelector {
   display: grid;
@@ -922,7 +906,6 @@
   }
 }
 
-
 /* V74 smart signal state */
 .v72FamilySummary strong.riskLow,
 .turboMetric.riskLow strong {
@@ -955,3 +938,4 @@
 .turboMetric.riskHigh {
   border-color: rgba(255, 112, 136, .55);
 }
+
