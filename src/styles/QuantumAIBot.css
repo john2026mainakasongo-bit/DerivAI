@@ -709,53 +709,48 @@ html:has(.quantumShell),
 }
 
 
-/* QUANTUM AI V17 — market intelligence */
-.quantumV17Intelligence {
+/* QUANTUM AI V17 — adaptive entry */
+.quantumV17Entry {
   margin: 7px 0;
   padding: 9px;
-  border: 1px solid #28788e;
+  border: 1px solid #32758a;
   border-radius: 12px;
   background: #062235;
 }
 
-.quantumV17Intelligence header {
+.quantumV17Entry header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.quantumV17Intelligence small {
+.quantumV17Entry small {
   color: #3de0b4;
   font-size: 8px;
   font-weight: 900;
   letter-spacing: .08em;
 }
 
-.quantumV17Intelligence h3 {
+.quantumV17Entry h3 {
   margin: 3px 0 0;
   color: #fff;
   font-size: 15px;
 }
 
-.quantumDnaGrid,
-.quantumProbabilityGrid {
+.quantumV17Entry header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.quantumV17Grid {
   display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 5px;
   margin-top: 7px;
 }
 
-.quantumDnaGrid {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-}
-
-.quantumProbabilityGrid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.quantumDnaGrid article,
-.quantumProbabilityGrid article,
-.quantumCommittee article {
+.quantumV17Grid article {
   min-width: 0;
   padding: 7px;
   border: 1px solid #184f67;
@@ -763,18 +758,14 @@ html:has(.quantumShell),
   background: #041a29;
 }
 
-.quantumDnaGrid span,
-.quantumProbabilityGrid span,
-.quantumCommittee span {
+.quantumV17Grid span {
   display: block;
   color: #7faec0;
   font-size: 8px;
   font-weight: 800;
 }
 
-.quantumDnaGrid strong,
-.quantumProbabilityGrid strong,
-.quantumCommittee strong {
+.quantumV17Grid strong {
   display: block;
   margin-top: 4px;
   color: #fff;
@@ -782,55 +773,107 @@ html:has(.quantumShell),
   overflow-wrap: anywhere;
 }
 
-.quantumCommittee {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 5px;
-  margin-top: 6px;
-}
-
-.quantumCommittee article.pass {
-  border-color: #21a984;
-}
-
-.quantumCommittee article.wait {
-  border-color: #8b6f1d;
-}
-
-.quantumCommittee b {
-  color: #f0cf67;
-  font-size: 10px;
-}
-
-.quantumCommittee small {
-  display: block;
-  margin-top: 4px;
-  color: #83aebf;
-  line-height: 1.25;
-}
-
-.quantumReplay {
-  margin: 5px 0 0;
-  padding-left: 14px;
-  color: #e5c96d;
-  font-size: 8px;
-  line-height: 1.35;
-}
-
 @media (max-width: 1100px) {
-  .quantumDnaGrid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .quantumCommittee {
+  .quantumV17Grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 760px) {
-  .quantumDnaGrid,
-  .quantumProbabilityGrid,
-  .quantumCommittee {
+  .quantumV17Grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* QUANTUM AI V18 — execution audit */
+.quantumAuditPanel {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #2f758c;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumAuditPanel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumAuditPanel small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.quantumAuditPanel h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumAuditPanel header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.quantumAuditSummary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumAuditSummary article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumAuditSummary span {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumAuditSummary strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 12px;
+}
+
+.quantumAuditPanel p {
+  margin: 7px 0 0;
+  color: #87afbf;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.quantumHistoryTable .quantumAuditRow {
+  grid-template-columns:
+    minmax(130px, 1.05fr)
+    minmax(90px, .65fr)
+    minmax(120px, .8fr)
+    minmax(175px, 1.15fr)
+    minmax(90px, .65fr)
+    minmax(220px, 1.4fr) !important;
+}
+
+@media (max-width: 1100px) {
+  .quantumAuditSummary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumAuditSummary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
