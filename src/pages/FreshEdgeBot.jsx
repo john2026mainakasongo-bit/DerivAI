@@ -345,7 +345,7 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge V6 is ready with confidence stability protection."
+    "FreshEdge V6.1 is ready with corrected initialization order."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
@@ -647,6 +647,67 @@ export default function FreshEdgeBot() {
     currentPrice,
   ]);
 
+  const confidenceStability = useMemo(() => {
+    const requiredTicks = Math.max(
+      2,
+      Number(settings.stabilityTicks || 3)
+    );
+    const points = confidenceTrail.slice(-requiredTicks);
+
+    if (points.length < requiredTicks) {
+      return {
+        ready: false,
+        trend: 0,
+        drop: 0,
+        reason: `Collecting stability ${points.length}/${requiredTicks}.`,
+      };
+    }
+
+    const first = Number(points[0]?.confidence || 0);
+    const last = Number(points.at(-1)?.confidence || 0);
+    const trend = last - first;
+
+    let maximumDrop = 0;
+
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = Number(
+        points[index - 1]?.confidence || 0
+      );
+      const current = Number(
+        points[index]?.confidence || 0
+      );
+
+      maximumDrop = Math.max(
+        maximumDrop,
+        previous - current
+      );
+    }
+
+    const ready =
+      maximumDrop <=
+        Number(settings.maximumConfidenceDrop || 3.5) &&
+      trend >=
+        Number(settings.minimumConfidenceGrowth || -0.5);
+
+    return {
+      ready,
+      trend,
+      drop: maximumDrop,
+      reason: ready
+        ? `Stable ${trend >= 0 ? "+" : ""}${trend.toFixed(
+            1
+          )}% · max drop ${maximumDrop.toFixed(1)}%.`
+        : `Confidence unstable: trend ${trend.toFixed(
+            1
+          )}% · max drop ${maximumDrop.toFixed(1)}%.`,
+    };
+  }, [
+    confidenceTrail,
+    settings.stabilityTicks,
+    settings.maximumConfidenceDrop,
+    settings.minimumConfidenceGrowth,
+  ]);
+
   const waitReasons = useMemo(() => {
     const thresholds = analysis.adaptiveThresholds || {};
     const reasons = [];
@@ -764,66 +825,7 @@ export default function FreshEdgeBot() {
     (symbol !== recoveryState.sourceSymbol &&
       recoveryState.freshTicks >= recoveryState.requiredTicks);
 
-  const confidenceStability = useMemo(() => {
-    const requiredTicks = Math.max(
-      2,
-      Number(settings.stabilityTicks || 3)
-    );
-    const points = confidenceTrail.slice(-requiredTicks);
 
-    if (points.length < requiredTicks) {
-      return {
-        ready: false,
-        trend: 0,
-        drop: 0,
-        reason: `Collecting stability ${points.length}/${requiredTicks}.`,
-      };
-    }
-
-    const first = Number(points[0]?.confidence || 0);
-    const last = Number(points.at(-1)?.confidence || 0);
-    const trend = last - first;
-
-    let maximumDrop = 0;
-
-    for (let index = 1; index < points.length; index += 1) {
-      const previous = Number(
-        points[index - 1]?.confidence || 0
-      );
-      const current = Number(
-        points[index]?.confidence || 0
-      );
-
-      maximumDrop = Math.max(
-        maximumDrop,
-        previous - current
-      );
-    }
-
-    const ready =
-      maximumDrop <=
-        Number(settings.maximumConfidenceDrop || 3.5) &&
-      trend >=
-        Number(settings.minimumConfidenceGrowth || -0.5);
-
-    return {
-      ready,
-      trend,
-      drop: maximumDrop,
-      reason: ready
-        ? `Stable ${trend >= 0 ? "+" : ""}${trend.toFixed(
-            1
-          )}% · max drop ${maximumDrop.toFixed(1)}%.`
-        : `Confidence unstable: trend ${trend.toFixed(
-            1
-          )}% · max drop ${maximumDrop.toFixed(1)}%.`,
-    };
-  }, [
-    confidenceTrail,
-    settings.stabilityTicks,
-    settings.maximumConfidenceDrop,
-    settings.minimumConfidenceGrowth,
-  ]);
 
   const directionHeatmap = useMemo(() => {
     const riseHistory =
@@ -1419,7 +1421,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V6</h1>
+            <h1>FreshEdge AI V6.1</h1>
             <p>
               Confidence stability · scanner reasons · learning changes · replay
             </p>
@@ -2199,7 +2201,7 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V6 blocks falling-confidence entries, explains scanner rejections and shows bounded learning changes. Recent snapshots are not simultaneous multi-market feeds. Test on Demo.
+          FreshEdge V6.1 fixes initialization order and blocks falling-confidence entries, explains scanner rejections and shows bounded learning changes. Recent snapshots are not simultaneous multi-market feeds. Test on Demo.
         </footer>
       </main>
     </div>
