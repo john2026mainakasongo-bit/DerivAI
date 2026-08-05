@@ -58,7 +58,7 @@ export function analyzeFreshEdge(
     .filter(Number.isFinite)
     .slice(-120);
 
-  const minimumTicks = Math.max(10, Number(options.minimumTicks || 16));
+  const minimumTicks = Math.max(8, Number(options.minimumTicks || 12));
 
   if (clean.length < minimumTicks) {
     return {
@@ -241,13 +241,29 @@ export function analyzeFreshEdge(
     reversalRisk >= Number(options.maximumReversal || 70) ||
     spikeRatio >= Number(options.maximumSpikeRatio || 6);
 
+  const componentScores = {
+    emaAlignment: trendAgreement,
+    momentum:
+      direction === "RISE"
+        ? clamp((up6 * 45 + up8 * 35 + up16 * 20))
+        : direction === "FALL"
+        ? clamp(((1 - up6) * 45 + (1 - up8) * 35 + (1 - up16) * 20))
+        : 0,
+    continuation,
+    voteConsensus,
+    noiseSafety: clamp(100 - noise),
+    reversalSafety: clamp(100 - reversalRisk),
+    spikeSafety: clamp(100 - Math.min(100, spikeRatio * 14)),
+  };
+
   const entryReasons = [
     direction ? `EMA structure supports ${direction}` : "EMA structure mixed",
+    `momentum ${componentScores.momentum.toFixed(1)}%`,
     `votes ${voteConsensus.toFixed(1)}%`,
     `continuation ${continuation.toFixed(1)}%`,
-    `noise ${noise.toFixed(1)}%`,
-    `reversal ${reversalRisk.toFixed(1)}%`,
-    `spike ${spikeRatio.toFixed(2)}x`,
+    `noise safety ${componentScores.noiseSafety.toFixed(1)}%`,
+    `reversal safety ${componentScores.reversalSafety.toFixed(1)}%`,
+    `spike safety ${componentScores.spikeSafety.toFixed(1)}%`,
   ];
 
   const qualified =
@@ -271,6 +287,7 @@ export function analyzeFreshEdge(
     voteConsensus,
     spikeRatio,
     entryReasons,
+    componentScores,
     adaptiveThresholds: {
       confidence: adaptiveMinimumConfidence,
       quality: adaptiveMinimumQuality,

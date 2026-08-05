@@ -13,7 +13,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeFreshEdge } from "../analysis/freshEdgeEngine";
 import "../styles/FreshEdgeBot.css";
 
-const STORAGE_KEY = "fresh-edge-ai-v3-learning-history";
+const STORAGE_KEY = "fresh-edge-ai-v5-learning-history";
 
 const INITIAL_STATS = {
   runs: 0,
@@ -345,26 +345,35 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge V3 is ready with adaptive learning."
+    "FreshEdge V5 is ready with live decision replay and fresh recovery."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
     duration: 20,
     durationUnit: "s",
-    minimumTicks: 16,
-    minimumConfidence: 60,
-    minimumQuality: 56,
-    minimumVotes: 56,
-    minimumContinuation: 54,
+    minimumTicks: 12,
+    minimumConfidence: 59,
+    minimumQuality: 55,
+    minimumVotes: 55,
+    minimumContinuation: 53,
     maximumNoise: 76,
     maximumReversal: 70,
     maximumSpikeRatio: 6,
     confirmationTicks: 2,
-    maximumMarketSeconds: 7,
+    maximumMarketSeconds: 5,
     marketBlockSeconds: 15,
     maximumOpenTrades: 1,
     takeProfit: 2,
     stopLoss: 1.4,
+    rankingTopMarkets: 5,
+    rankingFreshnessSeconds: 20,
+    rankingSwitchMargin: 3,
+    rankingMinimumScore: 48,
+    timelineLimit: 60,
+    freshRecoveryTicks: 12,
+    recoveryMarketBlockSeconds: 20,
+    replayLimit: 12,
+    waitEstimateSeconds: 5,
   });
   const [stats, setStats] = useState(() => {
     try {
@@ -382,6 +391,17 @@ export default function FreshEdgeBot() {
   });
   const [blockedMarkets, setBlockedMarkets] = useState({});
   const [marketStartedAt, setMarketStartedAt] = useState(Date.now());
+  const [marketScores, setMarketScores] = useState({});
+  const [timeline, setTimeline] = useState([]);
+  const [confidenceTrail, setConfidenceTrail] = useState([]);
+  const [selectedReplayId, setSelectedReplayId] = useState("");
+  const [recoveryState, setRecoveryState] = useState({
+    active: false,
+    sourceSymbol: "",
+    requiredTicks: 0,
+    freshTicks: 0,
+    cause: "",
+  });
 
   const buyingRef = useRef(false);
   const processedRef = useRef(new Set());
@@ -398,17 +418,51 @@ export default function FreshEdgeBot() {
     }
   }, [stats]);
 
+  const appendTimeline = useCallback(
+    (type, detail, extra = {}) => {
+      setTimeline((current) =>
+        [
+          {
+            id: `${Date.now()}-${Math.random()
+              .toString(36)
+              .slice(2)}`,
+            time: Date.now(),
+            type,
+            detail,
+            symbol,
+            ...extra,
+          },
+          ...current,
+        ].slice(0, Number(settings.timelineLimit || 60))
+      );
+    },
+    [symbol, settings.timelineLimit]
+  );
+
   useEffect(() => {
+    if (connected) {
+      appendTimeline(
+        "CONNECTED",
+        authenticatedFeed
+          ? "Authenticated Deriv feed ready."
+          : "Public analysis feed ready."
+      );
+    }
+
     if (!connected) {
-      void connect().catch((error) => {
-        setMessage(
+      void connect().catch((error) => {        setMessage(
           error instanceof Error
             ? error.message
             : "Unable to connect."
         );
       });
     }
-  }, [connected, connect]);
+  }, [
+    connected,
+    connect,
+    authenticatedFeed,
+    appendTimeline,
+  ]);
 
   const learning = useMemo(
     () => buildFreshEdgeLearning(stats.history),
@@ -424,6 +478,188 @@ export default function FreshEdgeBot() {
       ),
     [prices, settings, learning]
   );
+
+
+  useEffect(() => {
+    if (!symbol || !analysis.ready) return;
+
+    setMarketScores((current) => ({
+      ...current,
+      [symbol]: {
+        symbol,
+        label: market?.label || symbol,
+        score:
+          Number(analysis.confidence || 0) * 0.42 +
+          Number(analysis.quality || 0) * 0.28 +
+          Number(analysis.continuation || 0) * 0.18 +
+          Number(analysis.voteConsensus || 0) * 0.12,
+        confidence: Number(analysis.confidence || 0),
+        quality: Number(analysis.quality || 0),
+        votes: Number(analysis.voteConsensus || 0),
+        continuation: Number(analysis.continuation || 0),
+        noise: Number(analysis.noise || 0),
+        reversal: Number(analysis.reversalRisk || 0),
+        direction: analysis.direction || "WAIT",
+        updatedAt: Date.now(),
+      },
+    }));
+  }, [
+    symbol,
+    market?.label,
+    analysis.ready,
+    analysis.confidence,
+    analysis.quality,
+    analysis.continuation,
+    analysis.voteConsensus,
+    analysis.noise,
+    analysis.reversalRisk,
+    analysis.direction,
+  ]);
+
+  const rankedMarkets = useMemo(
+    () =>
+      Object.values(marketScores)
+        .filter(
+          (item) =>
+            item?.symbol &&
+            Date.now() - Number(item.updatedAt || 0) <=
+              Number(settings.rankingFreshnessSeconds || 20) *
+                1000 &&
+            Number(item.score || 0) >=
+              Number(settings.rankingMinimumScore || 48)
+        )
+        .sort(
+          (a, b) =>
+            Number(b.score || 0) -
+            Number(a.score || 0)
+        )
+        .slice(
+          0,
+          Math.max(
+            1,
+            Number(settings.rankingTopMarkets || 5)
+          )
+        ),
+    [
+      marketScores,
+      settings.rankingFreshnessSeconds,
+      settings.rankingMinimumScore,
+      settings.rankingTopMarkets,
+      currentPrice,
+    ]
+  );
+
+  const waitReasons = useMemo(() => {
+    const thresholds = analysis.adaptiveThresholds || {};
+    const reasons = [];
+
+    if (!analysis.ready) {
+      reasons.push({
+        label: "Fresh ticks",
+        pass: false,
+        detail: analysis.reason,
+      });
+      return reasons;
+    }
+
+    reasons.push(
+      {
+        label: "EMA structure",
+        pass: Boolean(analysis.direction),
+        detail: analysis.direction
+          ? `${analysis.direction} aligned`
+          : "mixed",
+      },
+      {
+        label: "Confidence",
+        pass:
+          Number(analysis.confidence || 0) >=
+          Number(thresholds.confidence || settings.minimumConfidence),
+        detail: `${Number(analysis.confidence || 0).toFixed(1)} / ${Number(
+          thresholds.confidence || settings.minimumConfidence
+        ).toFixed(1)}%`,
+      },
+      {
+        label: "Quality",
+        pass:
+          Number(analysis.quality || 0) >=
+          Number(thresholds.quality || settings.minimumQuality),
+        detail: `${Number(analysis.quality || 0).toFixed(1)} / ${Number(
+          thresholds.quality || settings.minimumQuality
+        ).toFixed(1)}%`,
+      },
+      {
+        label: "Votes",
+        pass:
+          Number(analysis.voteConsensus || 0) >=
+          Number(thresholds.votes || settings.minimumVotes),
+        detail: `${Number(analysis.voteConsensus || 0).toFixed(1)} / ${Number(
+          thresholds.votes || settings.minimumVotes
+        ).toFixed(1)}%`,
+      },
+      {
+        label: "Continuation",
+        pass:
+          Number(analysis.continuation || 0) >=
+          Number(thresholds.continuation || settings.minimumContinuation),
+        detail: `${Number(analysis.continuation || 0).toFixed(1)} / ${Number(
+          thresholds.continuation || settings.minimumContinuation
+        ).toFixed(1)}%`,
+      },
+      {
+        label: "Noise safety",
+        pass: Number(analysis.noise || 0) < Number(settings.maximumNoise),
+        detail: `${Number(analysis.noise || 0).toFixed(1)} / max ${settings.maximumNoise}%`,
+      },
+      {
+        label: "Reversal safety",
+        pass:
+          Number(analysis.reversalRisk || 0) <
+          Number(settings.maximumReversal),
+        detail: `${Number(analysis.reversalRisk || 0).toFixed(1)} / max ${settings.maximumReversal}%`,
+      }
+    );
+
+    return reasons;
+  }, [analysis, settings]);
+
+  const missingWaitReasons = waitReasons.filter((item) => !item.pass);
+
+  useEffect(() => {
+    if (!Number.isFinite(Number(analysis.confidence))) return;
+
+    setConfidenceTrail((current) =>
+      [
+        ...current,
+        {
+          time: Date.now(),
+          confidence: Number(analysis.confidence || 0),
+          quality: Number(analysis.quality || 0),
+          direction: analysis.direction || "WAIT",
+        },
+      ].slice(-20)
+    );
+  }, [currentPrice, analysis.confidence, analysis.quality, analysis.direction]);
+
+  useEffect(() => {
+    if (!recoveryState.active) return;
+
+    setRecoveryState((current) => ({
+      ...current,
+      freshTicks:
+        symbol === current.sourceSymbol
+          ? 0
+          : Math.min(
+              current.requiredTicks,
+              Number(current.freshTicks || 0) + 1
+            ),
+    }));
+  }, [currentPrice, symbol, recoveryState.active]);
+
+  const recoveryReady =
+    !recoveryState.active ||
+    (symbol !== recoveryState.sourceSymbol &&
+      recoveryState.freshTicks >= recoveryState.requiredTicks);
 
   const directionHeatmap = useMemo(() => {
     const riseHistory =
@@ -487,16 +723,31 @@ export default function FreshEdgeBot() {
       analysis.decision === "BUY" &&
       analysis.direction
     ) {
-      setConfirmation((current) => ({
+      const nextConfirmationTicks =
+        confirmation.key === key
+          ? Math.min(
+              Number(settings.confirmationTicks),
+              Number(confirmation.ticks || 0) + 1
+            )
+          : 1;
+
+      setConfirmation({
         key,
-        ticks:
-          current.key === key
-            ? Math.min(
-                Number(settings.confirmationTicks),
-                current.ticks + 1
-              )
-            : 1,
-      }));
+        ticks: nextConfirmationTicks,
+      });
+
+      appendTimeline(
+        "SIGNAL",
+        `${analysis.direction} candidate ${analysis.confidence.toFixed(
+          1
+        )}% · confirmation ${nextConfirmationTicks}/${
+          settings.confirmationTicks
+        }.`,
+        {
+          direction: analysis.direction,
+          confidence: analysis.confidence,
+        }
+      );
     } else {
       setConfirmation({ key: "", ticks: 0 });
     }
@@ -510,6 +761,8 @@ export default function FreshEdgeBot() {
     analysis.confidence,
     analysis.quality,
     settings.confirmationTicks,
+    confirmation.ticks,
+    appendTimeline,
   ]);
 
   const switchMarket = useCallback(
@@ -523,23 +776,46 @@ export default function FreshEdgeBot() {
           Number(blockedMarkets[item.id] || 0) <= now
       );
 
-      const next =
+      const rankedNext = rankedMarkets.find(
+        (item) =>
+          item.symbol !== symbol &&
+          Number(blockedMarkets[item.symbol] || 0) <= now
+      );
+
+      const fallback =
         available[0] ||
         markets.find((item) => item.id !== symbol);
 
-      if (!next) return;
+      const nextSymbol =
+        rankedNext?.symbol || fallback?.id;
+      const nextLabel =
+        rankedNext?.label ||
+        fallback?.label ||
+        nextSymbol;
 
-      setMessage(`${reason} Switching to ${next.label}.`);
+      if (!nextSymbol) return;
+
+      setMessage(`${reason} Switching to ${nextLabel}.`);
+      appendTimeline(
+        "SWITCH",
+        `${reason} ${symbol} → ${nextLabel}.`,
+        {
+          from: symbol,
+          to: nextSymbol,
+        }
+      );
       setConfirmation({ key: "", ticks: 0 });
       setMarketStartedAt(Date.now());
 
-      await changeSymbol(next.id);
+      await changeSymbol(nextSymbol);
     },
     [
       markets,
       loadingMarket,
       symbol,
       blockedMarkets,
+      rankedMarkets,
+      appendTimeline,
       changeSymbol,
     ]
   );
@@ -568,7 +844,23 @@ export default function FreshEdgeBot() {
             settings.maximumSpikeRatio
         );
 
-      if (hardRisk && elapsed >= 3) {
+      const currentScore =
+        Number(marketScores?.[symbol]?.score || 0);
+      const bestRanked = rankedMarkets[0];
+      const strongerRanked =
+        bestRanked &&
+        bestRanked.symbol !== symbol &&
+        Number(bestRanked.score || 0) -
+          currentScore >=
+          Number(settings.rankingSwitchMargin || 3);
+
+      if (strongerRanked && elapsed >= 1.5) {
+        void switchMarket(
+          `Stronger ranked market found (${Number(
+            bestRanked.score || 0
+          ).toFixed(1)} vs ${currentScore.toFixed(1)}).`
+        );
+      } else if (hardRisk && elapsed >= 2) {
         void switchMarket("Hard risk detected.");
       } else if (
         analysis.ready &&
@@ -582,7 +874,7 @@ export default function FreshEdgeBot() {
       ) {
         void switchMarket("No confirmed entry.");
       }
-    }, 250);
+    }, 150);
 
     return () => window.clearInterval(timer);
   }, [
@@ -596,6 +888,9 @@ export default function FreshEdgeBot() {
     settings.maximumReversal,
     settings.maximumSpikeRatio,
     settings.maximumMarketSeconds,
+    settings.rankingSwitchMargin,
+    marketScores,
+    rankedMarkets,
     switchMarket,
   ]);
 
@@ -604,6 +899,7 @@ export default function FreshEdgeBot() {
       !running ||
       sessionStopped ||
       !authenticatedFeed ||
+      !recoveryReady ||
       tradeBusy ||
       buyingRef.current ||
       activeBotTrades.length >=
@@ -664,6 +960,10 @@ export default function FreshEdgeBot() {
             analysis.learnedWeights || {},
           learningTrades:
             learning.totalTrades,
+          entryTimeline: timeline.slice(0, 12),
+          confidenceTrail: confidenceTrail.slice(-12),
+          waitReasons: waitReasons.map((item) => ({ ...item })),
+          recoveryEntry: recoveryState.active,
           openedAt: Date.now(),
           stake: Number(settings.stake || 0.35),
         });
@@ -672,6 +972,18 @@ export default function FreshEdgeBot() {
           `${analysis.direction} opened on ${market?.label || symbol} at ${analysis.confidence.toFixed(
             1
           )}% confidence.`
+        );
+        appendTimeline(
+          "OPEN",
+          `${analysis.direction} opened · C ${analysis.confidence.toFixed(
+            1
+          )}% · Q ${analysis.quality.toFixed(
+            1
+          )}% · ${settings.duration}${settings.durationUnit}.`,
+          {
+            contractId,
+            direction: analysis.direction,
+          }
         );
         setConfirmation({ key: "", ticks: 0 });
       } catch (error) {
@@ -699,6 +1011,12 @@ export default function FreshEdgeBot() {
     settings.durationUnit,
     symbol,
     market?.label,
+    appendTimeline,
+    recoveryReady,
+    recoveryState,
+    timeline,
+    confidenceTrail,
+    waitReasons,
     placeTrade,
   ]);
 
@@ -757,12 +1075,48 @@ export default function FreshEdgeBot() {
         setMessage(
           `${original.market} lost · ${diagnosis.code}: ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades. ${diagnosis.nextAction}`
         );
+        appendTimeline(
+          "LOST",
+          `${original.market} · ${diagnosis.code} · ${diagnosis.summary}`,
+          {
+            contractId: original.contractId,
+            profit,
+          }
+        );
+        setRecoveryState({
+          active: true,
+          sourceSymbol: original.symbol,
+          requiredTicks: Number(settings.freshRecoveryTicks || 12),
+          freshTicks: 0,
+          cause: diagnosis.code,
+        });
+        setBlockedMarkets((current) => ({
+          ...current,
+          [original.symbol]:
+            Date.now() +
+            Number(settings.recoveryMarketBlockSeconds || 20) * 1000,
+        }));
 
         void switchMarket("Loss rearm.");
       } else {
         setMessage(
           `${original.market} won ${profit.toFixed(2)} USD · ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades.`
         );
+        appendTimeline(
+          "WON",
+          `${original.market} · ${diagnosis.summary}`,
+          {
+            contractId: original.contractId,
+            profit,
+          }
+        );
+        setRecoveryState({
+          active: false,
+          sourceSymbol: "",
+          requiredTicks: 0,
+          freshTicks: 0,
+          cause: "",
+        });
         setMarketStartedAt(Date.now());
       }
     }
@@ -771,6 +1125,9 @@ export default function FreshEdgeBot() {
     settings.marketBlockSeconds,
     switchMarket,
     learning.totalTrades,
+    appendTimeline,
+    settings.freshRecoveryTicks,
+    settings.recoveryMarketBlockSeconds,
   ]);
 
   useEffect(() => {
@@ -793,6 +1150,17 @@ export default function FreshEdgeBot() {
     setStats(INITIAL_STATS);
     setConfirmation({ key: "", ticks: 0 });
     setBlockedMarkets({});
+    setMarketScores({});
+    setTimeline([]);
+    setConfidenceTrail([]);
+    setSelectedReplayId("");
+    setRecoveryState({
+      active: false,
+      sourceSymbol: "",
+      requiredTicks: 0,
+      freshTicks: 0,
+      cause: "",
+    });
     processedRef.current.clear();
     botContractsRef.current.clear();
     setMessage("FreshEdge session reset.");
@@ -808,9 +1176,9 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V3</h1>
+            <h1>FreshEdge AI V5</h1>
             <p>
-              Adaptive learning · live probability · explainable outcomes
+              Live confidence · WAIT reasons · trade replay · fresh recovery
             </p>
           </div>
 
@@ -915,6 +1283,179 @@ export default function FreshEdgeBot() {
                 <strong>{value}</strong>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="freshEdgeV5Decision">
+          <header>
+            <div>
+              <small>V5 LIVE DECISION</small>
+              <h3>Confidence movement and WAIT reasons</h3>
+            </div>
+            <strong>
+              {analysis.decision === "BUY"
+                ? `${analysis.direction} QUALIFIED`
+                : `${missingWaitReasons.length} BLOCKERS`}
+            </strong>
+          </header>
+
+          <div className="freshEdgeConfidenceTrail">
+            {confidenceTrail.slice(-12).map((point, index, values) => {
+              const previous = values[index - 1];
+              const delta = previous
+                ? point.confidence - previous.confidence
+                : 0;
+
+              return (
+                <article key={`${point.time}-${index}`}>
+                  <span>{point.direction}</span>
+                  <strong>{point.confidence.toFixed(1)}%</strong>
+                  <b className={delta >= 0 ? "up" : "down"}>
+                    {delta >= 0 ? "+" : ""}
+                    {delta.toFixed(1)}
+                  </b>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="freshEdgeWaitGrid">
+            {waitReasons.map((item) => (
+              <article
+                key={item.label}
+                className={item.pass ? "pass" : "fail"}
+              >
+                <b>{item.pass ? "PASS" : "WAIT"}</b>
+                <strong>{item.label}</strong>
+                <span>{item.detail}</span>
+              </article>
+            ))}
+          </div>
+
+          <p>
+            {analysis.decision === "BUY"
+              ? `Signal confirmed ${confirmation.ticks}/${settings.confirmationTicks} ticks.`
+              : `Waiting for ${missingWaitReasons
+                  .map((item) => item.label)
+                  .join(", ") || "fresh confirmation"}. Estimated check ${settings.waitEstimateSeconds}s.`}
+          </p>
+        </section>
+
+        <section className="freshEdgeRecoveryPanel">
+          <header>
+            <div>
+              <small>V5 FRESH RECOVERY</small>
+              <h3>No old-signal recovery</h3>
+            </div>
+            <strong>{recoveryState.active ? "REBUILDING" : "NORMAL"}</strong>
+          </header>
+          <div>
+            <article><span>Source market</span><strong>{recoveryState.sourceSymbol || "NONE"}</strong></article>
+            <article><span>Fresh ticks</span><strong>{recoveryState.freshTicks}/{recoveryState.requiredTicks || settings.freshRecoveryTicks}</strong></article>
+            <article><span>Cause</span><strong>{recoveryState.cause || "NONE"}</strong></article>
+            <article><span>Entry permission</span><strong>{recoveryReady ? "READY" : "WAIT"}</strong></article>
+          </div>
+        </section>
+
+        <section className="freshEdgeV4Live">
+          <header>
+            <div>
+              <small>V4 LIVE EDGE</small>
+              <h3>Decision score breakdown</h3>
+            </div>
+            <strong>
+              {analysis.decision === "BUY"
+                ? `${analysis.direction} READY`
+                : "FILTERING"}
+            </strong>
+          </header>
+
+          <div className="freshEdgeMeterGrid">
+            {Object.entries(
+              analysis.componentScores || {}
+            ).map(([key, value]) => (
+              <article key={key}>
+                <span>{key}</span>
+                <div>
+                  <i
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, Number(value || 0))
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <strong>
+                  {Number(value || 0).toFixed(1)}%
+                </strong>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="freshEdgeRanking">
+          <header>
+            <div>
+              <small>V4 PARALLEL RANKING</small>
+              <h3>Recently scanned markets</h3>
+            </div>
+            <strong>
+              {rankedMarkets.length} CANDIDATES
+            </strong>
+          </header>
+
+          <div className="freshEdgeRankingGrid">
+            {rankedMarkets.length ? (
+              rankedMarkets.map((item, index) => (
+                <article key={item.symbol}>
+                  <span>#{index + 1}</span>
+                  <strong>{item.label}</strong>
+                  <b>
+                    {Number(item.score || 0).toFixed(1)}
+                  </b>
+                  <small>
+                    {item.direction} · C{" "}
+                    {Number(
+                      item.confidence || 0
+                    ).toFixed(1)}
+                    % · Q{" "}
+                    {Number(
+                      item.quality || 0
+                    ).toFixed(1)}
+                    %
+                  </small>
+                </article>
+              ))
+            ) : (
+              <p>Collecting ranked market snapshots...</p>
+            )}
+          </div>
+        </section>
+
+        <section className="freshEdgeTimeline">
+          <header>
+            <div>
+              <small>V4 TRADE TIMELINE</small>
+              <h3>Every decision and outcome</h3>
+            </div>
+            <strong>{timeline.length} EVENTS</strong>
+          </header>
+
+          <div className="freshEdgeTimelineList">
+            {timeline.length ? (
+              timeline.map((event) => (
+                <article key={event.id}>
+                  <time>
+                    {new Date(event.time).toLocaleTimeString()}
+                  </time>
+                  <b>{event.type}</b>
+                  <span>{event.detail}</span>
+                </article>
+              ))
+            ) : (
+              <p>No timeline events yet.</p>
+            )}
           </div>
         </section>
 
@@ -1091,6 +1632,10 @@ export default function FreshEdgeBot() {
             ["Market seconds", "maximumMarketSeconds", 3, 30, 1],
             ["Take profit", "takeProfit", 0.5, 100, 0.5],
             ["Stop loss", "stopLoss", 0.5, 100, 0.5],
+            ["Rank switch", "rankingSwitchMargin", 1, 15, 0.5],
+            ["Rank min", "rankingMinimumScore", 30, 90, 1],
+            ["Recovery ticks", "freshRecoveryTicks", 6, 40, 1],
+            ["Wait estimate", "waitEstimateSeconds", 1, 15, 1],
           ].map(([label, key, min, max, step]) => (
             <label key={key}>
               <span>{label}</span>
@@ -1175,6 +1720,49 @@ export default function FreshEdgeBot() {
           </div>
         </section>
 
+        <section className="freshEdgeReplay">
+          <header>
+            <div>
+              <small>V5 TRADE REPLAY</small>
+              <h3>Open a settled trade to inspect its signal</h3>
+            </div>
+            <strong>{selectedReplayId ? "OPEN" : "SELECT TRADE"}</strong>
+          </header>
+
+          {(() => {
+            const trade = stats.history.find(
+              (item) => `${item.contractId}-${item.settledAt}` === selectedReplayId
+            );
+
+            if (!trade) {
+              return <p>Select a trade from the journal below.</p>;
+            }
+
+            return (
+              <div className="freshEdgeReplayBody">
+                <article><span>Market / side</span><strong>{trade.market} · {trade.direction}</strong></article>
+                <article><span>Entry edge</span><strong>C {Number(trade.confidence || 0).toFixed(1)}% · Q {Number(trade.quality || 0).toFixed(1)}%</strong></article>
+                <article><span>Result</span><strong className={trade.result === "WON" ? "won" : "lost"}>{trade.result} {Number(trade.profit || 0).toFixed(2)}</strong></article>
+                <article><span>Diagnosis</span><strong>{trade.diagnosis?.code || "SETTLED"}</strong></article>
+                <div className="freshEdgeReplaySteps">
+                  {(trade.entryTimeline || []).slice().reverse().map((event) => (
+                    <div key={event.id}>
+                      <time>{new Date(event.time).toLocaleTimeString()}</time>
+                      <b>{event.type}</b>
+                      <span>{event.detail}</span>
+                    </div>
+                  ))}
+                  <div>
+                    <time>{new Date(trade.settledAt).toLocaleTimeString()}</time>
+                    <b>{trade.result}</b>
+                    <span>{trade.diagnosis?.summary || "Trade settled."}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </section>
+
         <section className="freshEdgeJournal">
           <header>
             <small>TRADE JOURNAL</small>
@@ -1186,6 +1774,20 @@ export default function FreshEdgeBot() {
               <article
                 key={`${trade.contractId}-${trade.settledAt}`}
                 className="freshEdgeJournalRow"
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  setSelectedReplayId(
+                    `${trade.contractId}-${trade.settledAt}`
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    setSelectedReplayId(
+                      `${trade.contractId}-${trade.settledAt}`
+                    );
+                  }
+                }}
               >
                 <div>
                   <strong>{trade.market}</strong>
@@ -1241,7 +1843,7 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V3 learning is isolated from Quantum AI and Higher High. Learning adjusts filters; it does not guarantee future wins. Test on Demo.
+          FreshEdge V5 uses fresh confirmation, bounded learning and recent market snapshots. It does not guarantee wins. Test on Demo before Real execution.
         </footer>
       </main>
     </div>
