@@ -12,10 +12,10 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:isolated:over-under:v28:learning";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v28:market-cache";
+const MEMORY_KEY = "edgepilot:isolated:over-under:v28-1:learning";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v28-1:market-cache";
 const OVER_UNDER_NAMESPACE =
-  "edgepilot:isolated:over-under:v28";
+  "edgepilot:isolated:over-under:v28-1";
 const OVER_UNDER_SESSION_KEY =
   `${OVER_UNDER_NAMESPACE}:session`;
 const OVER_UNDER_AUDIO_KEY =
@@ -3952,6 +3952,10 @@ export default function OverUnderLearningBot() {
     bridgeEntryReady ||
     adaptiveEntryReady;
 
+  const hasOpenTrade = trades.some(
+    (trade) => trade.status === "OPEN"
+  );
+
   useEffect(() => {
     if (
       !running ||
@@ -4077,10 +4081,6 @@ export default function OverUnderLearningBot() {
     confirmationRef.current.key === bestKey &&
     confirmationRef.current.ticks >=
       requiredConfirmationTicks;
-
-  const hasOpenTrade = trades.some(
-    (trade) => trade.status === "OPEN"
-  );
 
   function stop(text) {
     runningRef.current = false;
@@ -5544,7 +5544,7 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
     setMessage(
-      "V28 running: one-minute cached evidence, regime reset, fast negative-EV rotation and isolated recovery."
+      "V28.1 running: runtime-order hotfix, one-minute evidence, regime reset and fast negative-EV rotation."
     );
   }
 
@@ -5787,8 +5787,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V28"
-          subtitle="One-minute regime engine · cached evidence · fast negative-EV rotation"
+          title="Over/Under Adaptive Learning Bot V28.1"
+          subtitle="V28.1 runtime hotfix · one-minute regime engine · continuous scanner"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
