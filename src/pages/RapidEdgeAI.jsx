@@ -3581,7 +3581,7 @@ export default function RapidEdgeAI() {
       nextEntryAtRef.current =
         Date.now() + 500;
       setMessage(
-        "REGIME CHANGE DETECTED · Old setup cleared · rebuilding one-minute evidence"
+        "REGIME CHANGE DETECTED · rolling evidence retained · fast local scan continues"
       );
     }
   }, [
@@ -4334,7 +4334,65 @@ export default function RapidEdgeAI() {
   const speedDeadlineActive =
     running && speedScanAgeMs >= 58000;
 
-  const speedRecoveryActive =
+  
+  const lossSequenceGuard = useMemo(() => {
+    const settled = (Array.isArray(trades) ? trades : [])
+      .filter((trade) =>
+        ["WON", "LOST"].includes(
+          String(trade?.status || "").toUpperCase()
+        )
+      )
+      .slice(0, 4);
+
+    const latest = settled[0] || null;
+    const previous = settled[1] || null;
+
+    const latestLost =
+      String(latest?.status || "").toUpperCase() ===
+      "LOST";
+
+    const previousLost =
+      String(previous?.status || "").toUpperCase() ===
+      "LOST";
+
+    const exactKey = latest
+      ? [
+          String(latest?.symbol || ""),
+          String(latest?.side || "").toUpperCase(),
+          Number(latest?.barrier ?? -1),
+        ].join(":")
+      : "";
+
+    return {
+      latest,
+      latestLost,
+      consecutiveLosses:
+        latestLost && previousLost ? 2 : latestLost ? 1 : 0,
+      exactKey,
+      activeUntil:
+        latestLost
+          ? Number(latest?.settledAt || 0) + 12000
+          : 0,
+    };
+  }, [trades]);
+
+  const currentSetupKey = [
+    String(symbol || ""),
+    String(best?.side || "").toUpperCase(),
+    Number(best?.barrier ?? -1),
+  ].join(":");
+
+  const exactLossSetupBlocked =
+    lossSequenceGuard.latestLost &&
+    Date.now() < lossSequenceGuard.activeUntil &&
+    currentSetupKey === lossSequenceGuard.exactKey;
+
+  const fastAlternateAfterLoss =
+    lossSequenceGuard.latestLost &&
+    Date.now() < lossSequenceGuard.activeUntil &&
+    currentSetupKey !== lossSequenceGuard.exactKey;
+
+const speedRecoveryActive =
     running &&
     String(
       lastSettledTrade?.status || ""
@@ -4376,7 +4434,8 @@ export default function RapidEdgeAI() {
     !tradeBusy &&
     !busyRef.current &&
     !best?.learned?.blocked &&
-    !blockedByLastLoss;
+    !blockedByLastLoss &&
+    !exactLossSetupBlocked;
 
   const balancedSpeedEntry =
     speedCandidateValid &&
@@ -4407,26 +4466,17 @@ export default function RapidEdgeAI() {
 
   const recoverySpeedEntry =
     speedCandidateValid &&
-    speedRecoveryActive &&
-    Number(analysis?.total || 0) >= 8 &&
-    speedProbability >= 74 &&
-    speedExpectedValue >= 0.005 &&
-    speedVotes >= 3 &&
-    speedRisk <= 50 &&
     (
-      String(best?.side || "") !==
-        String(
-          lastSettledTrade?.side || ""
-        ) ||
-      Number(best?.barrier ?? -1) !==
-        Number(
-          lastSettledTrade?.barrier ?? -1
-        ) ||
-      String(symbol || "") !==
-        String(
-          lastSettledTrade?.symbol || ""
-        )
-    );
+      speedRecoveryActive ||
+      fastAlternateAfterLoss
+    ) &&
+    Number(analysis?.total || 0) >= 8 &&
+    speedProbability >= 72 &&
+    speedExpectedValue >= 0.002 &&
+    speedVotes >= 2 &&
+    speedRisk <= 52 &&
+    currentSetupKey !==
+      lossSequenceGuard.exactKey;
 
   const speedEntryReady =
     entryReady ||
@@ -5903,7 +5953,7 @@ useEffect(() => {
       setMarketBlocks((current) => ({
         ...current,
         [settled.symbol]:
-          Date.now() + 3000,
+          Date.now() + 2200,
       }));
       playTradeSound("RECOVERY");
 
@@ -6270,8 +6320,8 @@ useEffect(() => {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V3.1 · Independent Fast Scan"
-          subtitle="Independent local-market execution · 60-tick rolling evidence · fast rescan · up to 20 qualified runs/min"
+          title="RapidEdge AI V3.2 · Loss Sequence Guard"
+          subtitle="Fast scan retained · exact losing setup blocked briefly · alternate market/contract prioritized immediately"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
