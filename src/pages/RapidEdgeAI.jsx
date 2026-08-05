@@ -309,6 +309,9 @@ export default function RapidEdgeAI() {
     authenticatedFeed = false,
     loadingMarket = false,
     prices = [],
+    digitHistory = [],
+    currentPrice = null,
+    lastDigit = null,
     selectedAccountType = "demo",
     selectedAccountId = "",
     openContracts = [],
@@ -359,19 +362,49 @@ export default function RapidEdgeAI() {
     [markets]
   );
 
-  const digits = useMemo(
-    () =>
-      (Array.isArray(prices) ? prices : [])
-        .map(lastDigitOf)
-        .filter((digit) => digit !== null)
-        .slice(-60),
-    [prices]
-  );
+  const digits = useMemo(() => {
+    const direct = (
+      Array.isArray(digitHistory)
+        ? digitHistory
+        : []
+    )
+      .map(Number)
+      .filter(
+        (digit) =>
+          Number.isInteger(digit) &&
+          digit >= 0 &&
+          digit <= 9
+      );
+
+    if (direct.length) {
+      return direct.slice(-60);
+    }
+
+    return (Array.isArray(prices) ? prices : [])
+      .map(lastDigitOf)
+      .filter((digit) => digit !== null)
+      .slice(-60);
+  }, [digitHistory, prices]);
 
   const analysis = useMemo(
     () => analyzeSpeedCandidates(digits),
     [digits]
   );
+
+  const digitQuality = useMemo(() => {
+    const unique = new Set(digits);
+    const allSame =
+      digits.length >= 8 && unique.size <= 1;
+
+    return {
+      count: digits.length,
+      unique: unique.size,
+      allSame,
+      ready:
+        digits.length >= 12 &&
+        unique.size >= 3,
+    };
+  }, [digits]);
 
   const blockedLossKey =
     clock - lastLossAt < 4000
@@ -392,7 +425,10 @@ export default function RapidEdgeAI() {
     ]
   );
 
-  const best = rankedCandidates[0] || null;
+  const best =
+    digitQuality.ready
+      ? rankedCandidates[0] || null
+      : null;
 
   const scanAgeMs =
     clock -
@@ -401,10 +437,29 @@ export default function RapidEdgeAI() {
       Number(marketEnteredAt || 0)
     );
 
-  const ladder = ladderQualification(
+  const baseLadder = ladderQualification(
     best,
     scanAgeMs
   );
+
+  const oneMinuteFallback =
+    Boolean(best) &&
+    digitQuality.ready &&
+    scanAgeMs >= 45000 &&
+    Number(best.probability || 0) >= 62 &&
+    Number(best.expectedValue || -1) >= -0.01 &&
+    Number(best.votes || 0) >= 1 &&
+    Number(best.risk || 100) <= 68;
+
+  const ladder = {
+    ...baseLadder,
+    qualified:
+      baseLadder.qualified ||
+      oneMinuteFallback,
+    stage: oneMinuteFallback
+      ? "60S_FALLBACK"
+      : baseLadder.stage,
+  };
 
   const hasOpenTrade = trades.some(
     (trade) => trade.status === "OPEN"
@@ -764,6 +819,11 @@ export default function RapidEdgeAI() {
     if (!connected) return "FEED_OFFLINE";
     if (!authenticatedFeed) return "AUTH_NOT_READY";
     if (!selectedAccountId) return "ACCOUNT_NOT_SELECTED";
+    if (!digitQuality.ready) {
+      return digitQuality.allSame
+        ? "BAD_TICK_DECIMALS"
+        : "WAITING_LIVE_DIGITS";
+    }
     if (!best) return "NO_CANDIDATE";
     if (!ladder.qualified) return "NOT_QUALIFIED";
     if (hasOpenTrade) return "OPEN_TRADE_EXISTS";
@@ -783,6 +843,8 @@ export default function RapidEdgeAI() {
     connected,
     authenticatedFeed,
     selectedAccountId,
+    digitQuality.ready,
+    digitQuality.allSame,
     best,
     ladder.qualified,
     hasOpenTrade,
@@ -834,6 +896,24 @@ export default function RapidEdgeAI() {
     }
 
     if (
+      !digitQuality.ready &&
+      scanAgeMs >= 8000 &&
+      !hasOpenTrade &&
+      !busyRef.current
+    ) {
+      setMessage(
+        digitQuality.allSame
+          ? "BAD TICK DECIMALS · reconnecting market feed"
+          : "WAITING LIVE DIGITS · reconnecting market feed"
+      );
+
+      Promise.resolve(connect()).catch(() => {});
+      setLastSettlementAt(Date.now());
+      return;
+    }
+
+    if (
+      digitQuality.ready &&
       !ladder.qualified &&
       scanAgeMs >= 8000 &&
       !hasOpenTrade &&
@@ -848,9 +928,12 @@ export default function RapidEdgeAI() {
     running,
     ladder.qualified,
     best?.contract,
+    digitQuality.ready,
+    digitQuality.allSame,
     hasOpenTrade,
     scanAgeMs,
     rotateMarket,
+    connect,
     clock,
   ]);
 
@@ -932,14 +1015,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.3 started · diagnostic execution check active."
+      "RapidEdge V4.4 started · live digit feed and 60-second entry ladder active."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.3 stopped.");
+    setMessage("RapidEdge V4.4 stopped.");
   }
 
   function reset() {
@@ -956,7 +1039,7 @@ export default function RapidEdgeAI() {
     setLastExecutionError("");
     setLastBuyRequestAt(0);
     setLoopStatus("IDLE");
-    setMessage("RapidEdge V4.3 session reset.");
+    setMessage("RapidEdge V4.4 session reset.");
   }
 
   return (
@@ -965,8 +1048,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.3 · Execution Diagnostics"
-          subtitle="Visible execution blockers · direct qualified buy · manual test button · one open trade"
+          title="RapidEdge AI V4.4 · One-Minute Run"
+          subtitle="Uses hook digitHistory correctly · first qualified attempt targeted inside 60 seconds · direct buy diagnostics"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1021,7 +1104,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.3 EXECUTION DIAGNOSTICS</small>
+            <small>V4.4 ONE-MINUTE RUN</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -1042,6 +1125,26 @@ export default function RapidEdgeAI() {
             <article>
               <span>Sample</span>
               <strong>{analysis.sample}/60</strong>
+            </article>
+            <article>
+              <span>Unique Digits</span>
+              <strong>{digitQuality.unique}</strong>
+            </article>
+            <article>
+              <span>Last Digit</span>
+              <strong>
+                {Number.isInteger(Number(lastDigit))
+                  ? Number(lastDigit)
+                  : "—"}
+              </strong>
+            </article>
+            <article>
+              <span>Current Price</span>
+              <strong>
+                {Number.isFinite(Number(currentPrice))
+                  ? Number(currentPrice)
+                  : "—"}
+              </strong>
             </article>
             <article>
               <span>Probability</span>
@@ -1265,11 +1368,17 @@ export default function RapidEdgeAI() {
             </header>
 
             <div className="oulDigits">
-              {digits.map((digit, index) => (
-                <span key={`${digit}-${index}`}>
-                  {digit}
-                </span>
-              ))}
+              {digits.length ? (
+                digits.map((digit, index) => (
+                  <span key={`${digit}-${index}`}>
+                    {digit}
+                  </span>
+                ))
+              ) : (
+                <p className="oulNoLiveDigits">
+                  NO LIVE DIGITS RECEIVED
+                </p>
+              )}
             </div>
           </article>
 
@@ -1313,7 +1422,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.3 Trades</h2>
+              <h2>RapidEdge V4.4 Trades</h2>
             </div>
           </header>
 
@@ -1357,15 +1466,14 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.3 transactions yet.
+                No RapidEdge V4.4 transactions yet.
               </p>
             )}
           </div>
         </section>
 
         <p className="oulDisclaimer">
-          Speed mode does not guarantee profit or 20 trades
-          every minute. Test on demo first.
+          V4.4 targets a first qualified attempt within one minute when live digits and Deriv authentication are healthy. Profit is not guaranteed. Test on demo first.
         </p>
       </main>
     </div>
