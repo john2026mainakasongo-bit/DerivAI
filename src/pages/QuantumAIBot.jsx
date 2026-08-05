@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import MarketSelector from "../components/MarketSelector";
@@ -682,7 +682,7 @@ export default function QuantumAIBot() {
     maxNoise: 66,
     maxReversalRisk: 60,
     maxOpenTrades: 2,
-    marketSwitchSeconds: 5,
+    marketSwitchSeconds: 3,
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
@@ -699,10 +699,10 @@ export default function QuantumAIBot() {
     recoveryAttempt2Confidence: 72,
     recoveryCooldownSeconds: 20,
     recoveryStakeMultiplier: 2,
-    scanCycleSeconds: 120,
-    fastLaneSeconds: 30,
-    balancedLaneSeconds: 60,
-    opportunityLaneSeconds: 90,
+    scanCycleSeconds: 45,
+    fastLaneSeconds: 10,
+    balancedLaneSeconds: 20,
+    opportunityLaneSeconds: 30,
     fastConfidence: 70,
     balancedConfidence: 68,
     opportunityConfidence: 66,
@@ -727,21 +727,29 @@ export default function QuantumAIBot() {
     hardNoiseLimit: 86,
     hardReversalLimit: 82,
     smartRecoveryOppositeBonus: 4,
-    adaptiveEntryStartSeconds: 25,
-    adaptiveEntryStepSeconds: 10,
+    adaptiveEntryStartSeconds: 8,
+    adaptiveEntryStepSeconds: 5,
     adaptiveEntryDropPerStep: 1.5,
     adaptiveEntryFloor: 62,
     adaptiveQualityFloor: 58,
     adaptiveVoteFloor: 54,
-    marketDecisionDeadlineSeconds: 45,
-    marketRecheckCooldownSeconds: 8,
-    topMarketMinimumScore: 58,
+    marketDecisionDeadlineSeconds: 20,
+    marketRecheckCooldownSeconds: 3,
+    topMarketMinimumScore: 52,
     topMarketAutoSelect: true,
     auditEnabled: true,
     auditPreTicks: 30,
     auditPostTicks: 30,
     auditLatencyWarningMs: 1800,
     auditExcludeAnomaliesFromLearning: true,
+    quickSkipHardRiskSeconds: 3,
+    quickSkipWeakSeconds: 6,
+    quickSkipMaximumSeconds: 10,
+    quickSkipMinimumTicks: 20,
+    quickSkipWeakConfidence: 48,
+    quickSkipWeakQuality: 45,
+    quickSkipNoiseLimit: 78,
+    quickSkipReversalLimit: 72,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -1394,7 +1402,7 @@ export default function QuantumAIBot() {
       ready,
       reason,
       candidate,
-      lastLossDirection: last?.result === "LOST" ? last.direction : "—",
+      lastLossDirection: last?.result === "LOST" ? last.direction : "â€”",
       sameDirectionLossStreak,
       marketLossStreak,
       sessionLossStreak,
@@ -1902,6 +1910,134 @@ export default function QuantumAIBot() {
     [marketScores, scanClock]
   );
 
+  // V21 QUICK-SKIP ENGINE
+  useEffect(() => {
+    if (
+      !running ||
+      loadingMarket ||
+      activeTrades.length > 0 ||
+      markets.length < 2
+    ) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const elapsed = Math.max(
+        0,
+        (Date.now() -
+          Number(scanStartedAtRef.current || Date.now())) /
+          1000
+      );
+
+      const ticksReady =
+        Number(prices?.length || 0) >=
+        Number(settings.quickSkipMinimumTicks || 20);
+
+      const hardRisk =
+        hardRiskBlock ||
+        Number(analysis.noiseScore || 0) >=
+          Number(settings.quickSkipNoiseLimit || 78) ||
+        Number(analysis.reversalRisk || 0) >=
+          Number(settings.quickSkipReversalLimit || 72);
+
+      const weakSetup =
+        ticksReady &&
+        Number(finalLearnedConfidence || 0) <
+          Number(settings.quickSkipWeakConfidence || 48) &&
+        Number(liveQualityScore || 0) <
+          Number(settings.quickSkipWeakQuality || 45);
+
+      const hardSkip =
+        hardRisk &&
+        elapsed >=
+          Number(settings.quickSkipHardRiskSeconds || 3);
+
+      const weakSkip =
+        weakSetup &&
+        elapsed >=
+          Number(settings.quickSkipWeakSeconds || 6);
+
+      const staleSkip =
+        !learningEntryPass &&
+        elapsed >=
+          Number(settings.quickSkipMaximumSeconds || 10);
+
+      if (!hardSkip && !weakSkip && !staleSkip) {
+        return;
+      }
+
+      const rankedNext = rankedMarkets.find(
+        (item) =>
+          item?.symbol &&
+          item.symbol !== symbol &&
+          Number(item.score || 0) >
+            Number(liveQualityScore || 0)
+      );
+
+      const currentIndex = Math.max(
+        0,
+        markets.findIndex((item) => item.id === symbol)
+      );
+
+      const fallback =
+        markets[(currentIndex + 1) % markets.length];
+
+      const nextSymbol =
+        rankedNext?.symbol || fallback?.id;
+
+      const nextLabel =
+        rankedNext?.label ||
+        fallback?.label ||
+        nextSymbol;
+
+      if (!nextSymbol || nextSymbol === symbol) {
+        return;
+      }
+
+      const reason = hardSkip
+        ? "hard risk"
+        : weakSkip
+        ? "weak confidence and quality"
+        : "no qualified entry";
+
+      setMessage(
+        `V21 quick skip: ${symbol} has ${reason}. Moving to ${nextLabel}.`
+      );
+
+      scanStartedAtRef.current = Date.now();
+      marketDecisionStartedAtRef.current =
+        Date.now();
+      setDecisionClock(0);
+      setEntryQueue({ key: "", ticks: 0 });
+
+      void changeSymbol(nextSymbol);
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [
+    running,
+    loadingMarket,
+    activeTrades.length,
+    markets,
+    symbol,
+    prices?.length,
+    analysis.noiseScore,
+    analysis.reversalRisk,
+    hardRiskBlock,
+    finalLearnedConfidence,
+    liveQualityScore,
+    learningEntryPass,
+    rankedMarkets,
+    settings.quickSkipHardRiskSeconds,
+    settings.quickSkipWeakSeconds,
+    settings.quickSkipMaximumSeconds,
+    settings.quickSkipMinimumTicks,
+    settings.quickSkipWeakConfidence,
+    settings.quickSkipWeakQuality,
+    settings.quickSkipNoiseLimit,
+    settings.quickSkipReversalLimit,
+    changeSymbol,
+  ]);
   useEffect(() => {
     if (!running || loadingMarket || activeTrades.length > 0 || markets.length < 2) return;
     if (adaptiveLossGuard.ready) {
@@ -2110,13 +2246,13 @@ export default function QuantumAIBot() {
               settings.stake,
               recovery
             )
-          ).toFixed(2)} USD` : "Normal entry"} · ${direction} · ${finalLearnedConfidence.toFixed(
+          ).toFixed(2)} USD` : "Normal entry"} Â· ${direction} Â· ${finalLearnedConfidence.toFixed(
             1
-          )}% final confidence · ${recoveryDuration.duration}${
+          )}% final confidence Â· ${recoveryDuration.duration}${
             recoveryDuration.durationUnit === "t"
               ? " ticks"
               : " seconds"
-          } · execution ${latencyMs}ms.`
+          } Â· execution ${latencyMs}ms.`
         );
 
         const tradeRequest = Promise.resolve(
@@ -2292,7 +2428,7 @@ export default function QuantumAIBot() {
             recovery.active
               ? `${recoveryStakeAmount(settings.stake, recovery).toFixed(2)} USD recovery stake`
               : `${Number(settings.stake || 0.35).toFixed(2)} USD base stake`
-          } · execution ${latencyMs}ms.`
+          } Â· execution ${latencyMs}ms.`
         );
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to open trade.");
@@ -2379,8 +2515,8 @@ export default function QuantumAIBot() {
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
-          title="MetaBinary Quantum AI V20.1.1"
-          subtitle="Tick audit · latency monitor · anomaly-safe learning"
+          title="MetaBinary Quantum AI V21.1"
+          subtitle="Tick audit Â· latency monitor Â· anomaly-safe learning"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -2390,7 +2526,7 @@ export default function QuantumAIBot() {
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
             <small>METABINARY SYNTHETIC INTELLIGENCE</small>
-            <h1>MetaBinary Quantum AI V20.1.1</h1>
+            <h1>MetaBinary Quantum AI V21.1</h1>
             <p>
               Compares each live setup with settled history, calculates
               market-direction probability and uses a fresh confirmed
@@ -2398,7 +2534,7 @@ export default function QuantumAIBot() {
             </p>
           </div>
           <div className="quantumHeroStatus">
-            <span>{running ? "â— LIVE" : "â—‹ IDLE"}</span>
+            <span>{running ? "Ã¢â€”Â LIVE" : "Ã¢â€”â€¹ IDLE"}</span>
             <strong>{running ? (analysis.ready ? "ENTRY READY" : "SCANNING") : "STOPPED"}</strong>
           </div>
         </section>
@@ -2792,7 +2928,7 @@ export default function QuantumAIBot() {
               <span>Learned confidence</span>
               <strong>{finalLearnedConfidence.toFixed(1)}%</strong>
             </article>
-            <article><span>Candidate</span><strong>{analysis.candidate || "â€”"}</strong></article>
+            <article><span>Candidate</span><strong>{analysis.candidate || "Ã¢â‚¬â€"}</strong></article>
             <article>
               <span>Smart duration</span>
               <strong>
@@ -2875,7 +3011,7 @@ export default function QuantumAIBot() {
           <article><span>Volatility</span><strong>{analysis.volatility.toFixed(0)}%</strong></article>
           <article><span>Consistency</span><strong>{analysis.consistency.toFixed(0)}%</strong></article>
           <article><span>Reversal risk</span><strong>{analysis.reversalRisk.toFixed(0)}%</strong></article>
-          <article><span>Price</span><strong>{currentPrice ?? "â€”"}</strong></article>
+          <article><span>Price</span><strong>{currentPrice ?? "Ã¢â‚¬â€"}</strong></article>
         </section>
 
         <section className="quantumToolsPanel">
@@ -2889,13 +3025,13 @@ export default function QuantumAIBot() {
 
           <div className="quantumToolGrid">
             {[
-              ["RSI 14", analysis.metrics?.rsi?.toFixed?.(1) ?? "â€”"],
-              ["EMA 6", analysis.metrics?.fastEma?.toFixed?.(5) ?? "â€”"],
-              ["EMA 14", analysis.metrics?.mediumEma?.toFixed?.(5) ?? "â€”"],
-              ["EMA 30", analysis.metrics?.slowEma?.toFixed?.(5) ?? "â€”"],
-              ["Fast slope", analysis.metrics?.fastSlope?.toFixed?.(6) ?? "â€”"],
-              ["Medium slope", analysis.metrics?.mediumSlope?.toFixed?.(6) ?? "â€”"],
-              ["Slow slope", analysis.metrics?.slowSlope?.toFixed?.(6) ?? "â€”"],
+              ["RSI 14", analysis.metrics?.rsi?.toFixed?.(1) ?? "Ã¢â‚¬â€"],
+              ["EMA 6", analysis.metrics?.fastEma?.toFixed?.(5) ?? "Ã¢â‚¬â€"],
+              ["EMA 14", analysis.metrics?.mediumEma?.toFixed?.(5) ?? "Ã¢â‚¬â€"],
+              ["EMA 30", analysis.metrics?.slowEma?.toFixed?.(5) ?? "Ã¢â‚¬â€"],
+              ["Fast slope", analysis.metrics?.fastSlope?.toFixed?.(6) ?? "Ã¢â‚¬â€"],
+              ["Medium slope", analysis.metrics?.mediumSlope?.toFixed?.(6) ?? "Ã¢â‚¬â€"],
+              ["Slow slope", analysis.metrics?.slowSlope?.toFixed?.(6) ?? "Ã¢â‚¬â€"],
               ["Impulse", `${Number(analysis.metrics?.impulse || 0).toFixed(0)}%`],
               ["Trend strength", `${Number(analysis.metrics?.trendStrength || 0).toFixed(0)}%`],
               ["Vote consensus", `${Number(analysis.metrics?.voteConsensus || 0).toFixed(0)}%`],
@@ -2946,7 +3082,7 @@ export default function QuantumAIBot() {
             <article>
               <span>Market + side</span>
               <strong>
-                {symbol || "—"} · {currentCandidate}
+                {symbol || "â€”"} Â· {currentCandidate}
               </strong>
             </article>
             <article>
@@ -3110,9 +3246,9 @@ export default function QuantumAIBot() {
                   <strong>{trade.market}</strong>
                   <span>
                     {trade.recoveryTrade
-                      ? `RECOVERY ${trade.recoveryAttempt} · X${trade.recoveryMultiplier || 2}`
+                      ? `RECOVERY ${trade.recoveryAttempt} Â· X${trade.recoveryMultiplier || 2}`
                       : "NORMAL"}{" "}
-                    · {trade.direction} ·{" "}
+                    Â· {trade.direction} Â·{" "}
                     {Number(trade.stake || 0).toFixed(2)} USD
                   </span>
                 </div>
@@ -3141,7 +3277,7 @@ export default function QuantumAIBot() {
                         trade.audit?.latencyMs ||
                         0
                     ).toFixed(0)}
-                    ms · slip{" "}
+                    ms Â· slip{" "}
                     {Number(
                       trade.executionAudit
                         ?.slippageRatio || 0
@@ -3157,11 +3293,11 @@ export default function QuantumAIBot() {
                     {Number(
                       trade.entrySnapshot?.voteConsensus || 0
                     ).toFixed(0)}
-                    % · N{" "}
+                    % Â· N{" "}
                     {Number(
                       trade.entrySnapshot?.noiseScore || 0
                     ).toFixed(0)}
-                    % · R{" "}
+                    % Â· R{" "}
                     {Number(
                       trade.entrySnapshot?.reversalRisk || 0
                     ).toFixed(0)}
@@ -3207,6 +3343,7 @@ export default function QuantumAIBot() {
     </div>
   );
 }
+
 
 
 
