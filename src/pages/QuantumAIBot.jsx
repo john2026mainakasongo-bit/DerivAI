@@ -839,11 +839,11 @@ export default function QuantumAIBot() {
   const [message, setMessage] = useState("Quantum AI is ready.");
   const [settings, setSettings] = useState({
     stake: 0.35,
-    minConfidence: 60,
+    minConfidence: 72,
     maxNoise: 66,
     maxReversalRisk: 60,
     maxOpenTrades: 2,
-    marketSwitchSeconds: 18,
+    marketSwitchSeconds: 3,
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
@@ -860,14 +860,14 @@ export default function QuantumAIBot() {
     recoveryAttempt2Confidence: 72,
     recoveryCooldownSeconds: 20,
     recoveryStakeMultiplier: 2,
-    scanCycleSeconds: 120,
-    fastLaneSeconds: 15,
-    balancedLaneSeconds: 30,
-    opportunityLaneSeconds: 45,
-    fastConfidence: 62,
-    balancedConfidence: 60,
-    opportunityConfidence: 58,
-    selectiveConfidence: 58,
+    scanCycleSeconds: 45,
+    fastLaneSeconds: 10,
+    balancedLaneSeconds: 20,
+    opportunityLaneSeconds: 30,
+    fastConfidence: 70,
+    balancedConfidence: 68,
+    opportunityConfidence: 66,
+    selectiveConfidence: 65,
     entryQueueTicks: 1,
     minimumVoteConsensus: 52,
     maximumFastNoise: 72,
@@ -884,18 +884,18 @@ export default function QuantumAIBot() {
     patternMaximumPenalty: 7,
     historicalMinimumSamples: 4,
     historicalMaximumBonus: 6,
-    weightedQualityMinimum: 54,
+    weightedQualityMinimum: 62,
     hardNoiseLimit: 86,
     hardReversalLimit: 82,
     smartRecoveryOppositeBonus: 4,
-    adaptiveEntryStartSeconds: 12,
-    adaptiveEntryStepSeconds: 8,
+    adaptiveEntryStartSeconds: 8,
+    adaptiveEntryStepSeconds: 5,
     adaptiveEntryDropPerStep: 1.5,
-    adaptiveEntryFloor: 56,
-    adaptiveQualityFloor: 50,
-    adaptiveVoteFloor: 52,
-    marketDecisionDeadlineSeconds: 45,
-    marketRecheckCooldownSeconds: 8,
+    adaptiveEntryFloor: 62,
+    adaptiveQualityFloor: 58,
+    adaptiveVoteFloor: 54,
+    marketDecisionDeadlineSeconds: 20,
+    marketRecheckCooldownSeconds: 3,
     topMarketMinimumScore: 58,
     topMarketAutoSelect: true,
     auditEnabled: true,
@@ -903,17 +903,29 @@ export default function QuantumAIBot() {
     auditPostTicks: 30,
     auditLatencyWarningMs: 1800,
     auditExcludeAnomaliesFromLearning: true,
-    opportunityMinimumTicks: 10,
-    opportunityScoreGate: 54,
-    opportunityConfidenceGate: 55,
-    opportunityAgreementGate: 60,
-    opportunityMaximumNoise: 72,
-    opportunityMaximumReversal: 66,
+    opportunityMinimumTicks: 12,
+    opportunityScoreGate: 57,
+    opportunityConfidenceGate: 60,
+    opportunityAgreementGate: 66,
+    opportunityMaximumNoise: 68,
+    opportunityMaximumReversal: 62,
     opportunityConfirmTicks: 2,
-    minimumMarketWarmupSeconds: 14,
-    hardRiskQuickSkipSeconds: 7,
-    minimumQuickEntryScore: 52,
-    maximumQuickEntryRisk: 64,
+    quickSkipHardRiskSeconds: 3,
+    quickSkipWeakSeconds: 6,
+    quickSkipMaximumSeconds: 10,
+    quickSkipMinimumTicks: 20,
+    quickSkipWeakConfidence: 48,
+    quickSkipWeakQuality: 45,
+    quickSkipNoiseLimit: 78,
+    quickSkipReversalLimit: 72,
+    candidateQueueSize: 3,
+    candidateMinimumScore: 48,
+    candidateStrongScore: 56,
+    candidateHoldTicks: 3,
+    candidateExpirySeconds: 25,
+    candidateSwitchMargin: 3,
+    candidateRefreshMs: 500,
+    candidateMaximumWaitSeconds: 15,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -943,6 +955,12 @@ export default function QuantumAIBot() {
     key: "",
     ticks: 0,
   });
+  const [candidateQueue, setCandidateQueue] = useState([]);
+  const [candidateHold, setCandidateHold] = useState({
+    symbol: "",
+    ticks: 0,
+    score: 0,
+  });
 
   const lastTradeAtRef = useRef(0);
   const scanStartedAtRef = useRef(Date.now());
@@ -957,6 +975,7 @@ export default function QuantumAIBot() {
     at: 0,
   });
   const tickHistoryRef = useRef([]);
+  const candidateLastSeenRef = useRef(new Map());
 
   useEffect(() => {
     try {
@@ -1268,24 +1287,6 @@ export default function QuantumAIBot() {
     100
   );
 
-  const calibratedEntryConfidence = clampNumber(
-    Number(finalLearnedConfidence || 0) * 0.55 +
-      Number(marketDna.score || 0) * 0.20 +
-      Number(marketDna.agreement || 0) * 0.15 +
-      Number(liveQualityScore || 0) * 0.10,
-    0,
-    99
-  );
-
-  const quickEntryQuality = clampNumber(
-    Number(opportunityScore || 0) * 0.50 +
-      Number(marketDna.continuation || 0) * 0.20 +
-      Number(marketDna.efficiency || 0) * 0.15 +
-      Number(marketDna.agreement || 0) * 0.15,
-    0,
-    100
-  );
-
   const opportunityBaseReady =
     marketDna.ready &&
     Number(profile30.ticks || 0) >=
@@ -1295,12 +1296,8 @@ export default function QuantumAIBot() {
       Number(settings.opportunityAgreementGate) &&
     opportunityScore >=
       Number(settings.opportunityScoreGate) &&
-    calibratedEntryConfidence >=
+    finalLearnedConfidence >=
       Number(settings.opportunityConfidenceGate) &&
-    quickEntryQuality >=
-      Number(settings.minimumQuickEntryScore) &&
-    opportunityRisk <=
-      Number(settings.maximumQuickEntryRisk) &&
     Number(marketDna.noise || 100) <=
       Number(settings.opportunityMaximumNoise) &&
     Number(marketDna.reversal || 100) <=
@@ -1386,7 +1383,7 @@ export default function QuantumAIBot() {
   const dynamicRequiredConfidence = recovery.active
     ? recoveryRequiredConfidence
     : Math.max(
-        Number(settings.adaptiveEntryFloor || 56),
+        Number(settings.minConfidence || 72),
         phaseConfidence
       );
 
@@ -1851,8 +1848,6 @@ export default function QuantumAIBot() {
     marketDna,
     opportunityScore,
     opportunityRisk,
-    calibratedEntryConfidence,
-    quickEntryQuality,
     opportunityDirection,
     opportunityReady,
   ]);
@@ -2265,6 +2260,277 @@ export default function QuantumAIBot() {
     [marketScores, scanClock]
   );
 
+  const candidateRankings = useMemo(
+    () =>
+      Object.values(marketScores)
+        .filter(
+          (item) =>
+            item?.symbol &&
+            Date.now() -
+              Number(item.updatedAt || 0) <=
+              Number(settings.candidateExpirySeconds || 25) *
+                1000
+        )
+        .map((item) => ({
+          ...item,
+          queueScore:
+            Number(item.score || 0) * 0.55 +
+            Number(item.confidence || 0) * 0.25 +
+            Number(item.votes || 0) * 0.20,
+        }))
+        .filter(
+          (item) =>
+            Number(item.queueScore || 0) >=
+            Number(settings.candidateMinimumScore || 48)
+        )
+        .sort(
+          (a, b) =>
+            Number(b.queueScore || 0) -
+            Number(a.queueScore || 0)
+        )
+        .slice(
+          0,
+          Math.max(
+            1,
+            Number(settings.candidateQueueSize || 3)
+          )
+        ),
+    [
+      marketScores,
+      settings.candidateExpirySeconds,
+      settings.candidateMinimumScore,
+      settings.candidateQueueSize,
+      scanClock,
+    ]
+  );
+
+  useEffect(() => {
+    setCandidateQueue(candidateRankings);
+
+    candidateRankings.forEach((item) => {
+      candidateLastSeenRef.current.set(
+        item.symbol,
+        Date.now()
+      );
+    });
+  }, [candidateRankings]);
+
+  useEffect(() => {
+    if (!running) {
+      setCandidateHold({
+        symbol: "",
+        ticks: 0,
+        score: 0,
+      });
+      return;
+    }
+
+    const best = candidateRankings[0];
+
+    if (!best?.symbol) {
+      setCandidateHold({
+        symbol: "",
+        ticks: 0,
+        score: 0,
+      });
+      return;
+    }
+
+    setCandidateHold((current) => ({
+      symbol: best.symbol,
+      ticks:
+        current.symbol === best.symbol
+          ? Math.min(
+              Number(settings.candidateHoldTicks || 3),
+              Number(current.ticks || 0) + 1
+            )
+          : 1,
+      score: Number(best.queueScore || 0),
+    }));
+  }, [
+    running,
+    currentPrice,
+    candidateRankings,
+    settings.candidateHoldTicks,
+  ]);
+
+  const candidateReady =
+    candidateHold.symbol === symbol &&
+    candidateHold.ticks >=
+      Number(settings.candidateHoldTicks || 3) &&
+    candidateHold.score >=
+      Number(settings.candidateStrongScore || 56);
+
+  // V23 FAST RANKING + QUICK SKIP
+  useEffect(() => {
+    if (
+      !running ||
+      loadingMarket ||
+      activeTrades.length > 0 ||
+      markets.length < 2
+    ) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const elapsed =
+        (Date.now() -
+          Number(scanStartedAtRef.current || Date.now())) /
+        1000;
+
+      const enoughTicks =
+        Number(prices?.length || 0) >=
+        Number(settings.quickSkipMinimumTicks || 20);
+
+      const hardRisk =
+        hardRiskBlock ||
+        Number(analysis.noiseScore || 0) >=
+          Number(settings.quickSkipNoiseLimit || 78) ||
+        Number(analysis.reversalRisk || 0) >=
+          Number(settings.quickSkipReversalLimit || 72);
+
+      const weakSetup =
+        enoughTicks &&
+        Number(finalLearnedConfidence || 0) <
+          Number(settings.quickSkipWeakConfidence || 48) &&
+        Number(liveQualityScore || 0) <
+          Number(settings.quickSkipWeakQuality || 45);
+
+      const best = candidateRankings[0];
+
+      const currentRank =
+        marketScores?.[symbol];
+
+      const currentQueueScore =
+        Number(currentRank?.score || 0) * 0.55 +
+        Number(currentRank?.confidence || 0) * 0.25 +
+        Number(currentRank?.votes || 0) * 0.20;
+
+      const bestQueueScore =
+        Number(best?.queueScore || 0);
+
+      const strongerCandidate =
+        best?.symbol &&
+        best.symbol !== symbol &&
+        bestQueueScore - currentQueueScore >=
+          Number(settings.candidateSwitchMargin || 3);
+
+      const hardSkip =
+        hardRisk &&
+        elapsed >=
+          Number(settings.quickSkipHardRiskSeconds || 3);
+
+      const weakSkip =
+        weakSetup &&
+        elapsed >=
+          Number(settings.quickSkipWeakSeconds || 6);
+
+      const staleSkip =
+        !candidateReady &&
+        elapsed >=
+          Number(settings.quickSkipMaximumSeconds || 10);
+
+      const candidateTimeout =
+        candidateHold.symbol &&
+        candidateHold.symbol !== symbol &&
+        elapsed >=
+          Number(settings.candidateMaximumWaitSeconds || 15);
+
+      if (
+        !strongerCandidate &&
+        !hardSkip &&
+        !weakSkip &&
+        !staleSkip &&
+        !candidateTimeout
+      ) {
+        return;
+      }
+
+      let nextSymbol = best?.symbol;
+      let nextLabel = best?.label;
+
+      if (!nextSymbol || nextSymbol === symbol) {
+        const currentIndex = Math.max(
+          0,
+          markets.findIndex(
+            (item) => item.id === symbol
+          )
+        );
+
+        const fallback =
+          markets[(currentIndex + 1) % markets.length];
+
+        nextSymbol = fallback?.id;
+        nextLabel = fallback?.label;
+      }
+
+      if (!nextSymbol || nextSymbol === symbol) {
+        return;
+      }
+
+      const reason = strongerCandidate
+        ? "a stronger queued candidate"
+        : hardSkip
+        ? "hard risk"
+        : weakSkip
+        ? "weak confidence and quality"
+        : candidateTimeout
+        ? "candidate wait timeout"
+        : "no confirmed candidate";
+
+      setMessage(
+        `V23 fast scan: ${symbol} skipped for ${reason}. Moving to ${nextLabel || nextSymbol}.`
+      );
+
+      scanStartedAtRef.current = Date.now();
+      marketDecisionStartedAtRef.current =
+        Date.now();
+      setDecisionClock(0);
+      setEntryQueue({ key: "", ticks: 0 });
+      setOpportunityHold({ key: "", ticks: 0 });
+      setCandidateHold({
+        symbol: nextSymbol,
+        ticks: 0,
+        score: Number(bestQueueScore || 0),
+      });
+
+      void changeSymbol(nextSymbol);
+    }, Math.max(
+      250,
+      Number(settings.candidateRefreshMs || 500)
+    ));
+
+    return () => window.clearInterval(timer);
+  }, [
+    running,
+    loadingMarket,
+    activeTrades.length,
+    markets,
+    symbol,
+    prices?.length,
+    analysis.noiseScore,
+    analysis.reversalRisk,
+    hardRiskBlock,
+    finalLearnedConfidence,
+    liveQualityScore,
+    candidateRankings,
+    candidateReady,
+    candidateHold.symbol,
+    marketScores,
+    settings.quickSkipMinimumTicks,
+    settings.quickSkipNoiseLimit,
+    settings.quickSkipReversalLimit,
+    settings.quickSkipWeakConfidence,
+    settings.quickSkipWeakQuality,
+    settings.quickSkipHardRiskSeconds,
+    settings.quickSkipWeakSeconds,
+    settings.quickSkipMaximumSeconds,
+    settings.candidateSwitchMargin,
+    settings.candidateMaximumWaitSeconds,
+    settings.candidateRefreshMs,
+    changeSymbol,
+  ]);
+
   useEffect(() => {
     if (!running || loadingMarket || activeTrades.length > 0 || markets.length < 2) return;
     if (adaptiveLossGuard.ready) {
@@ -2376,26 +2642,9 @@ export default function QuantumAIBot() {
         }
       }
 
-      const warmupComplete =
-        marketElapsed >=
-        Number(settings.minimumMarketWarmupSeconds);
-
-      const hardRiskQuickSkip =
-        hardRiskBlock &&
-        marketElapsed >=
-          Number(settings.hardRiskQuickSkipSeconds);
-
-      if (
-        !warmupComplete &&
-        !hardRiskQuickSkip
-      ) {
-        return;
-      }
-
       if (
         marketElapsed <
-          Number(settings.marketSwitchSeconds || 18) &&
-        !hardRiskQuickSkip
+        Number(settings.marketSwitchSeconds || 7)
       ) {
         return;
       }
@@ -2412,9 +2661,7 @@ export default function QuantumAIBot() {
 
       if (next?.id && next.id !== symbol) {
         setMessage(
-          `${hardRiskQuickSkip ? "RISK SKIP" : scanPhase} scan: switching to ${next.label} after ${marketElapsed.toFixed(
-          0
-        )}s.`
+          `${scanPhase} scan: switching to ${next.label} after ${settings.marketSwitchSeconds}s.`
         );
         scanStartedAtRef.current = Date.now();
         marketDecisionStartedAtRef.current =
@@ -2447,11 +2694,24 @@ export default function QuantumAIBot() {
     if (
       !running ||
       !adaptiveLossGuard.ready ||
+      !candidateReady ||
       buyingRef.current ||
       tradeBusy
     ) {
-      if (running && analysis.ready && !adaptiveLossGuard.ready) {
+      if (
+        running &&
+        analysis.ready &&
+        !adaptiveLossGuard.ready
+      ) {
         setMessage(adaptiveLossGuard.reason);
+      } else if (
+        running &&
+        adaptiveLossGuard.ready &&
+        !candidateReady
+      ) {
+        setMessage(
+          `V23 candidate confirmation ${candidateHold.ticks}/${settings.candidateHoldTicks} ticks on ${candidateHold.symbol || "best market"}.`
+        );
       }
       return;
     }
@@ -2486,19 +2746,9 @@ export default function QuantumAIBot() {
           ? smartRecoveryDirection
           : adaptiveLossGuard.candidate;
         setMessage(
-          `${recovery.active ? `Recovery ${recovery.attempts}/${settings.maxRecoveryAttempts} at ${Math.min(
-            Number(settings.maximumRecoveryStake),
-            recoveryStakeAmount(
-              settings.stake,
-              recovery
-            )
-          ).toFixed(2)} USD` : "Normal entry"} · ${direction} · ${finalLearnedConfidence.toFixed(
+          `${recovery.active ? `Recovery ${recovery.attempts}/${settings.maxRecoveryAttempts}` : "Normal entry"} · ${direction} · ${finalLearnedConfidence.toFixed(
             1
-          )}% final confidence · ${recoveryDuration.duration}${
-            recoveryDuration.durationUnit === "t"
-              ? " ticks"
-              : " seconds"
-          } · execution ${latencyMs}ms.`
+          )}% final confidence · sending order...`
         );
 
         const tradeRequest = Promise.resolve(
@@ -2541,6 +2791,10 @@ export default function QuantumAIBot() {
         const purchaseConfirmedAt = Date.now();
         const latencyMs =
           purchaseConfirmedAt - signalAt;
+
+        setMessage(
+          `Order confirmed in ${latencyMs}ms. Waiting for contract ID and settlement tracking.`
+        );
 
         const contractId = contractIdOf(response);
         if (!contractId) throw new Error("Deriv did not return a contract ID.");
@@ -2677,8 +2931,6 @@ export default function QuantumAIBot() {
             },
             opportunityScore,
             opportunityRisk,
-            calibratedEntryConfidence,
-            quickEntryQuality,
             opportunityDirection,
             opportunityEntry:
               Boolean(opportunityReady),
@@ -2781,7 +3033,7 @@ export default function QuantumAIBot() {
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
-          title="MetaBinary Quantum AI V22.1"
+          title="MetaBinary Quantum AI V23.1"
           subtitle="Tick audit · latency monitor · anomaly-safe learning"
           connected={connected}
           connecting={connecting}
@@ -2792,7 +3044,7 @@ export default function QuantumAIBot() {
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
             <small>METABINARY SYNTHETIC INTELLIGENCE</small>
-            <h1>MetaBinary Quantum AI V22.1</h1>
+            <h1>MetaBinary Quantum AI V23.1</h1>
             <p>
               Compares each live setup with settled history, calculates
               market-direction probability and uses a fresh confirmed
@@ -2853,79 +3105,10 @@ export default function QuantumAIBot() {
           </div>
         </section>
 
-        <section className="quantumV22Status">
-          <header>
-            <div>
-              <small>V22 CLEAN ENTRY LOGIC</small>
-              <h3>Warm market first, then trade or skip</h3>
-            </div>
-            <strong>
-              {hardRiskBlock
-                ? "HARD RISK"
-                : opportunityReady
-                ? `ENTRY ${opportunityDirection}`
-                : "LEARNING"}
-            </strong>
-          </header>
-
-          <div className="quantumV22Grid">
-            <article>
-              <span>Phase gate</span>
-              <strong>
-                {dynamicRequiredConfidence.toFixed(1)}%
-              </strong>
-            </article>
-            <article>
-              <span>Final confidence</span>
-              <strong>
-                {finalLearnedConfidence.toFixed(1)}%
-              </strong>
-            </article>
-            <article>
-              <span>Calibrated confidence</span>
-              <strong>
-                {calibratedEntryConfidence.toFixed(1)}%
-              </strong>
-            </article>
-            <article>
-              <span>Quick quality</span>
-              <strong>{quickEntryQuality.toFixed(1)}</strong>
-            </article>
-            <article>
-              <span>Opportunity score</span>
-              <strong>{opportunityScore.toFixed(1)}</strong>
-            </article>
-            <article>
-              <span>Opportunity risk</span>
-              <strong>{opportunityRisk.toFixed(1)}</strong>
-            </article>
-            <article>
-              <span>Market warmup</span>
-              <strong>
-                {Math.min(
-                  scanClock,
-                  Number(settings.minimumMarketWarmupSeconds)
-                ).toFixed(1)}
-                /{settings.minimumMarketWarmupSeconds}s
-              </strong>
-            </article>
-            <article>
-              <span>Decision</span>
-              <strong>
-                {opportunityReady
-                  ? "FAST ENTRY"
-                  : hardRiskBlock
-                  ? "SKIP"
-                  : "WAIT"}
-              </strong>
-            </article>
-          </div>
-        </section>
-
         <section className="quantumV21Dna">
           <header>
             <div>
-              <small>V22 QUICK MARKET DNA</small>
+              <small>V21 30-SECOND MARKET DNA</small>
               <h3>Fast learning + opportunity entry</h3>
             </div>
             <strong>
@@ -2945,8 +3128,6 @@ export default function QuantumAIBot() {
             <article><span>Reversal</span><strong>{marketDna.reversal.toFixed(1)}</strong></article>
             <article><span>DNA score</span><strong>{marketDna.score.toFixed(1)}</strong></article>
             <article><span>Opportunity</span><strong>{opportunityScore.toFixed(1)}</strong></article>
-            <article><span>Calibrated conf</span><strong>{calibratedEntryConfidence.toFixed(1)}%</strong></article>
-            <article><span>Quick quality</span><strong>{quickEntryQuality.toFixed(1)}</strong></article>
             <article><span>Risk</span><strong>{opportunityRisk.toFixed(1)}</strong></article>
             <article><span>Confirm</span><strong>{opportunityHold.ticks}/{settings.opportunityConfirmTicks}</strong></article>
             <article><span>Engine</span><strong>{opportunityReady ? "30S FAST" : "STANDARD"}</strong></article>
@@ -2964,6 +3145,56 @@ export default function QuantumAIBot() {
                 </article>
               )
             )}
+          </div>
+        </section>
+
+        <section className="quantumCandidatePanel">
+          <header>
+            <div>
+              <small>V23 PARALLEL RANKING</small>
+              <h3>Top candidate queue</h3>
+            </div>
+            <strong>
+              {candidateReady ? "CONFIRMED" : "RANKING"}
+            </strong>
+          </header>
+
+          <div className="quantumCandidateGrid">
+            {candidateQueue.length ? (
+              candidateQueue.map((item, index) => (
+                <article key={item.symbol}>
+                  <span>#{index + 1}</span>
+                  <strong>{item.label}</strong>
+                  <b>
+                    {Number(
+                      item.queueScore || 0
+                    ).toFixed(1)}
+                  </b>
+                  <small>
+                    Score{" "}
+                    {Number(item.score || 0).toFixed(1)}
+                    {" · "}Confidence{" "}
+                    {Number(
+                      item.confidence || 0
+                    ).toFixed(1)}
+                    %
+                  </small>
+                </article>
+              ))
+            ) : (
+              <p>Collecting market candidates...</p>
+            )}
+          </div>
+
+          <div className="quantumCandidateHold">
+            <span>Best candidate hold</span>
+            <strong>
+              {candidateHold.symbol || "NONE"}
+            </strong>
+            <b>
+              {candidateHold.ticks}/
+              {settings.candidateHoldTicks} ticks
+            </b>
           </div>
         </section>
 
@@ -3373,10 +3604,6 @@ export default function QuantumAIBot() {
             ["DNA max noise", "opportunityMaximumNoise", 30, 95, 1],
             ["DNA max reversal", "opportunityMaximumReversal", 30, 95, 1],
             ["Opportunity ticks", "opportunityConfirmTicks", 1, 5, 1],
-            ["Market warmup", "minimumMarketWarmupSeconds", 5, 60, 1],
-            ["Risk quick skip", "hardRiskQuickSkipSeconds", 3, 30, 1],
-            ["Quick quality", "minimumQuickEntryScore", 35, 90, 1],
-            ["Quick max risk", "maximumQuickEntryRisk", 30, 90, 1],
             ["Min vote", "minimumVoteConsensus", 40, 90, 1],
           ].map(([label, key, min, max, step]) => (
             <label key={key}>
