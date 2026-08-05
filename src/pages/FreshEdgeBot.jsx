@@ -430,7 +430,7 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge V7.1 is ready with corrected replay initialization."
+    "FreshEdge V7.2 is ready with selected replay state fixed."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
@@ -494,6 +494,17 @@ export default function FreshEdgeBot() {
   const [timeline, setTimeline] = useState([]);
   const [confidenceTrail, setConfidenceTrail] = useState([]);
   const [selectedReplayId, setSelectedReplayId] = useState("");
+
+  const selectedReplay = useMemo(
+    () =>
+      stats.history.find(
+        (item) =>
+          `${item.contractId}-${item.settledAt}` ===
+          selectedReplayId
+      ) || null,
+    [stats.history, selectedReplayId]
+  );
+
   const [recoveryState, setRecoveryState] = useState({
     active: false,
     sourceSymbol: "",
@@ -1671,7 +1682,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V7.1</h1>
+            <h1>FreshEdge AI V7.2</h1>
             <p>
               Deep replay · latency telemetry · diagnosis-based recovery
             </p>
@@ -2692,7 +2703,7 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V7.1 fixes replay initialization and records browser-to-API latency, tick replay and diagnosis-based recovery without increasing stake. Replay ticks are captured only while the selected market remains active. Test on Demo.
+          FreshEdge V7.2 fixes selected replay state and records browser-to-API latency, tick replay and diagnosis-based recovery without increasing stake. Replay ticks are captured only while the selected market remains active. Test on Demo.
         </footer>
       </main>
     </div>
