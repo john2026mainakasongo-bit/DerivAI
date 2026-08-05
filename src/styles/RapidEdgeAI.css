@@ -1387,3 +1387,46 @@
   0%, 100% { box-shadow: 0 0 0 1px rgba(44, 231, 209, .14); }
   50% { box-shadow: 0 0 0 2px rgba(44, 231, 209, .28), 0 0 22px rgba(44, 231, 209, .08); }
 }
+
+
+/* RapidEdge V4 Speed Core */
+.oulPage {
+  --rapid-v4: #31f2ba;
+  --rapid-v4-blue: #62a8ff;
+}
+
+.oulToolbar::before {
+  content: "V4 SPEED CORE";
+  border-color: var(--rapid-v4);
+  color: var(--rapid-v4);
+}
+
+.oulDecision.ready {
+  border-color: var(--rapid-v4);
+  box-shadow:
+    0 0 0 1px rgba(49, 242, 186, .2),
+    0 0 20px rgba(49, 242, 186, .07);
+}
+
+.oulStats article:nth-child(5) strong {
+  color: var(--rapid-v4);
+}
+
+.oulCandidates > div:first-child {
+  border-color: var(--rapid-v4);
+  box-shadow:
+    0 0 0 1px rgba(49, 242, 186, .15);
+}
+
+@media (max-width: 760px) {
+  .oulDecisionGrid,
+  .oulControls,
+  .oulStats {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .oulTransactionScroll {
+    max-height: 360px;
+  }
+}
