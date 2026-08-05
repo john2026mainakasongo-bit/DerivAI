@@ -12,8 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v24";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v24";
+const MEMORY_KEY = "edgepilot:over-under-learning:v25";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v25";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -2641,6 +2641,11 @@ export default function OverUnderLearningBot() {
       (item) => item.status === "WATCH"
     );
 
+  const currentPortfolioRow =
+    globalMarketPortfolio.find(
+      (item) => item.market === symbol
+    ) || null;
+
   const smartRecoveryActive =
     recovery.active &&
     recoveryMode === "SMART";
@@ -2889,10 +2894,98 @@ export default function OverUnderLearningBot() {
     ]
   );
 
+  const portfolioBridgeCandidate = useMemo(() => {
+    if (
+      !currentPortfolioRow ||
+      !["ELITE", "GOOD"].includes(
+        currentPortfolioRow.status
+      )
+    ) {
+      return null;
+    }
+
+    const exactCandidate =
+      rankedCandidates.find(
+        (candidate) =>
+          String(candidate?.side || "") ===
+            String(
+              currentPortfolioRow.side || ""
+            ) &&
+          Number(candidate?.barrier ?? -1) ===
+            Number(
+              currentPortfolioRow.barrier ?? -2
+            )
+      ) || null;
+
+    if (!exactCandidate) return null;
+
+    return {
+      ...exactCandidate,
+      probability: Math.max(
+        Number(exactCandidate.probability || 0),
+        Number(
+          currentPortfolioRow.probability || 0
+        )
+      ),
+      agreementVotes: Math.max(
+        Number(
+          exactCandidate.agreementVotes || 0
+        ),
+        Number(currentPortfolioRow.votes || 0)
+      ),
+      payoutEdge: Math.max(
+        Number(exactCandidate.payoutEdge || 0),
+        Number(
+          currentPortfolioRow.expectedValue || 0
+        ) * 100
+      ),
+      layered: {
+        ...(exactCandidate.layered || {}),
+        weightedProbability: Math.max(
+          Number(
+            exactCandidate.layered
+              ?.weightedProbability || 0
+          ),
+          Number(
+            currentPortfolioRow.probability || 0
+          )
+        ),
+        simulation: {
+          ...(
+            exactCandidate.layered
+              ?.simulation || {}
+          ),
+          expectedValue: Math.max(
+            Number(
+              exactCandidate.layered
+                ?.simulation
+                ?.expectedValue || -1
+            ),
+            Number(
+              currentPortfolioRow.expectedValue || 0
+            )
+          ),
+        },
+      },
+      bridgeTier:
+        currentPortfolioRow.status,
+      bridgeQualified: true,
+    };
+  }, [
+    currentPortfolioRow,
+    rankedCandidates,
+  ]);
+
+  const unifiedSelectedCandidate =
+    universalDecision.selected ||
+    portfolioBridgeCandidate ||
+    null;
+
+
   const best =
     (
       universalPoolEnabled
-        ? universalDecision.selected
+        ? unifiedSelectedCandidate
         : balancedDecision.selected
     ) || {
       side: "WAIT",
@@ -3201,13 +3294,38 @@ export default function OverUnderLearningBot() {
     !smartRecoveryActive ||
     bestKey !== recovery.previousLossKey;
 
-  const entryReady =
+  const portfolioBridgeActive = Boolean(
+    portfolioBridgeCandidate &&
+    currentPortfolioRow &&
+    ["ELITE", "GOOD"].includes(
+      currentPortfolioRow.status
+    ) &&
+    bestGlobalMarket?.market === symbol
+  );
+
+  const commonEntrySafety =
+    marketWarmReady &&
     !protectionActive &&
     !marketRunLocked &&
     !setupRepeated &&
     !sameBarrierRepeated &&
     String(best.side || "WAIT") !== "WAIT" &&
     Number(best.barrier ?? -1) >= 0 &&
+    analysis.total >= 30 &&
+    (
+      !predictiveGuardEnabled ||
+      (
+        activeGuard.state !== "BLOCK" &&
+        Number(activeGuard.risk || 0) <
+          Number(guardThreshold || 58)
+      )
+    ) &&
+    !best.learned.blocked &&
+    !blockedByLastLoss &&
+    recoverySetupPass;
+
+  const strictEntryReady =
+    commonEntrySafety &&
     (
       !universalPoolEnabled ||
       Boolean(universalDecision.selected)
@@ -3223,28 +3341,20 @@ export default function OverUnderLearningBot() {
       !globalSelectionEnabled ||
       currentMarketDecision.qualified
     ) &&
-    analysis.total >= 30 &&
-    best.side !== "WAIT" &&
     Number(analysis.confidence || 0) >=
       recoveryConfidenceGate &&
     Number(best.adaptiveScore || 0) >=
       recoveryScoreGate &&
     Number(best.probability || 0) >=
-      Number(best.learned.requiredProbability || 100) +
+      Number(
+        best.learned.requiredProbability || 100
+      ) +
         (smartRecoveryActive ? 4 : 0) &&
     Number(best.payoutEdge || 0) >=
       (smartRecoveryActive ? 4 : 1.5) &&
     Number(regimeAnalysis.riskPenalty || 0) <=
       (smartRecoveryActive ? 18 : 25) &&
     Number(regimeAnalysis.sample || 0) >= 30 &&
-    (
-      !predictiveGuardEnabled ||
-      (
-        activeGuard.state !== "BLOCK" &&
-        Number(activeGuard.risk || 0) <
-          Number(guardThreshold || 58)
-      )
-    ) &&
     (
       !multiLayerEnabled ||
       (
@@ -3261,10 +3371,56 @@ export default function OverUnderLearningBot() {
             best.learned.requiredProbability || 100
           )
       )
+    );
+
+  const bridgeProbabilityGate =
+    currentPortfolioRow?.status === "ELITE"
+      ? 88
+      : 78;
+
+  const bridgeVotesGate =
+    currentPortfolioRow?.status === "ELITE"
+      ? 6
+      : 5;
+
+  const bridgeRiskGate =
+    currentPortfolioRow?.status === "ELITE"
+      ? 25
+      : 35;
+
+  const bridgeEntryReady =
+    commonEntrySafety &&
+    portfolioBridgeActive &&
+    Number(
+      currentPortfolioRow?.probability || 0
+    ) >= bridgeProbabilityGate &&
+    Number(
+      currentPortfolioRow?.expectedValue || 0
+    ) > Number(evFloor || 0) &&
+    Number(
+      currentPortfolioRow?.votes || 0
+    ) >= bridgeVotesGate &&
+    Number(
+      currentPortfolioRow?.risk || 100
+    ) <= bridgeRiskGate &&
+    Number(
+      portfolioBridgeCandidate
+        ?.adaptiveScore || 0
+    ) >= Math.max(
+      55,
+      Number(recoveryScoreGate || 0) - 8
     ) &&
-    !best.learned.blocked &&
-    !blockedByLastLoss &&
-    recoverySetupPass;
+    Number(analysis.confidence || 0) >=
+      Math.max(
+        50,
+        Number(
+          recoveryConfidenceGate || 0
+        ) - 8
+      );
+
+  const entryReady =
+    strictEntryReady ||
+    bridgeEntryReady;
 
   useEffect(() => {
     if (!running || !entryReady) {
@@ -3296,7 +3452,13 @@ export default function OverUnderLearningBot() {
   const confirmed =
     entryReady &&
     confirmationRef.current.key === bestKey &&
-    confirmationRef.current.ticks >= 2;
+    confirmationRef.current.ticks >=
+      Math.max(
+        2,
+        Number(
+          readyLiveConfirmationTicks || 4
+        )
+      );
 
   const hasOpenTrade = trades.some(
     (trade) => trade.status === "OPEN"
@@ -4764,7 +4926,7 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
     setMessage(
-      "V24 running: live digits, auto-unlock, expiring market locks and continuous portfolio rescan."
+      "V25 running: unified portfolio metrics, live candidate bridge, auto-unlock and continuous rescan."
     );
   }
 
@@ -4996,8 +5158,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V24"
-          subtitle="Auto-unlock engine · expiring market locks · continuous portfolio rescan"
+          title="Over/Under Adaptive Learning Bot V25"
+          subtitle="Unified live entry bridge · portfolio and candidate engine synchronized"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -5079,8 +5241,10 @@ export default function OverUnderLearningBot() {
                     bestGlobalMarket.market !== symbol
                   )
                 ? "GLOBAL PORTFOLIO — Current market is not the top ELITE/GOOD market. Trade blocked while switching."
+                : portfolioBridgeActive
+                ? `LIVE BRIDGE — ${currentPortfolioRow.status} ${best.side} ${best.barrier} synchronized with portfolio metrics.`
                 : universalPoolEnabled &&
-                  !universalDecision.selected
+                  !unifiedSelectedCandidate
                 ? "UNIVERSAL POOL — No ELITE or GOOD OVER/UNDER candidate passed every gate. Trade skipped."
                 : marketRunLocked
                 ? "ONE-RUN LIMIT — This market already traded. Switching to a different market."
@@ -6163,8 +6327,10 @@ export default function OverUnderLearningBot() {
                     bestGlobalMarket.market !== symbol
                   )
                 ? "PORTFOLIO SWITCH"
+                : bridgeEntryReady
+                ? "LIVE BRIDGE CONFIRM"
                 : universalPoolEnabled &&
-                  !universalDecision.selected
+                  !unifiedSelectedCandidate
                 ? "UNIVERSAL SKIP"
                 : globalSelectionEnabled &&
                   !currentMarketDecision.qualified
@@ -6540,6 +6706,32 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 NONE / WAIT can never execute
+              </small>
+            </article>
+
+            <article>
+              <span>Live entry bridge</span>
+              <strong>
+                {portfolioBridgeActive
+                  ? "SYNCHRONIZED"
+                  : "WAIT"}
+              </strong>
+              <small>
+                {portfolioBridgeCandidate
+                  ? `${portfolioBridgeCandidate.bridgeTier} ${portfolioBridgeCandidate.side} ${portfolioBridgeCandidate.barrier}`
+                  : "Portfolio and live candidate not aligned"}
+              </small>
+            </article>
+
+            <article>
+              <span>Bridge gate</span>
+              <strong>
+                {bridgeEntryReady
+                  ? "PASS"
+                  : "WAIT"}
+              </strong>
+              <small>
+                Portfolio probability, EV, votes, risk and live ticks
               </small>
             </article>
 
