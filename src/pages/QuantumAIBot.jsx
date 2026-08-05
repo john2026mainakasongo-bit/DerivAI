@@ -839,11 +839,11 @@ export default function QuantumAIBot() {
   const [message, setMessage] = useState("Quantum AI is ready.");
   const [settings, setSettings] = useState({
     stake: 0.35,
-    minConfidence: 72,
+    minConfidence: 60,
     maxNoise: 66,
     maxReversalRisk: 60,
     maxOpenTrades: 2,
-    marketSwitchSeconds: 4,
+    marketSwitchSeconds: 18,
     minimumTradeGapSeconds: 3,
     takeProfit: 5,
     stopLoss: 3,
@@ -861,13 +861,13 @@ export default function QuantumAIBot() {
     recoveryCooldownSeconds: 20,
     recoveryStakeMultiplier: 2,
     scanCycleSeconds: 120,
-    fastLaneSeconds: 30,
-    balancedLaneSeconds: 60,
-    opportunityLaneSeconds: 90,
-    fastConfidence: 70,
-    balancedConfidence: 68,
-    opportunityConfidence: 66,
-    selectiveConfidence: 65,
+    fastLaneSeconds: 15,
+    balancedLaneSeconds: 30,
+    opportunityLaneSeconds: 45,
+    fastConfidence: 62,
+    balancedConfidence: 60,
+    opportunityConfidence: 58,
+    selectiveConfidence: 58,
     entryQueueTicks: 1,
     minimumVoteConsensus: 52,
     maximumFastNoise: 72,
@@ -884,16 +884,16 @@ export default function QuantumAIBot() {
     patternMaximumPenalty: 7,
     historicalMinimumSamples: 4,
     historicalMaximumBonus: 6,
-    weightedQualityMinimum: 62,
+    weightedQualityMinimum: 54,
     hardNoiseLimit: 86,
     hardReversalLimit: 82,
     smartRecoveryOppositeBonus: 4,
-    adaptiveEntryStartSeconds: 25,
-    adaptiveEntryStepSeconds: 10,
+    adaptiveEntryStartSeconds: 12,
+    adaptiveEntryStepSeconds: 8,
     adaptiveEntryDropPerStep: 1.5,
-    adaptiveEntryFloor: 62,
-    adaptiveQualityFloor: 58,
-    adaptiveVoteFloor: 54,
+    adaptiveEntryFloor: 56,
+    adaptiveQualityFloor: 50,
+    adaptiveVoteFloor: 52,
     marketDecisionDeadlineSeconds: 45,
     marketRecheckCooldownSeconds: 8,
     topMarketMinimumScore: 58,
@@ -903,13 +903,17 @@ export default function QuantumAIBot() {
     auditPostTicks: 30,
     auditLatencyWarningMs: 1800,
     auditExcludeAnomaliesFromLearning: true,
-    opportunityMinimumTicks: 12,
-    opportunityScoreGate: 57,
-    opportunityConfidenceGate: 60,
-    opportunityAgreementGate: 66,
-    opportunityMaximumNoise: 68,
-    opportunityMaximumReversal: 62,
+    opportunityMinimumTicks: 10,
+    opportunityScoreGate: 54,
+    opportunityConfidenceGate: 55,
+    opportunityAgreementGate: 60,
+    opportunityMaximumNoise: 72,
+    opportunityMaximumReversal: 66,
     opportunityConfirmTicks: 2,
+    minimumMarketWarmupSeconds: 14,
+    hardRiskQuickSkipSeconds: 7,
+    minimumQuickEntryScore: 52,
+    maximumQuickEntryRisk: 64,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -1264,6 +1268,24 @@ export default function QuantumAIBot() {
     100
   );
 
+  const calibratedEntryConfidence = clampNumber(
+    Number(finalLearnedConfidence || 0) * 0.55 +
+      Number(marketDna.score || 0) * 0.20 +
+      Number(marketDna.agreement || 0) * 0.15 +
+      Number(liveQualityScore || 0) * 0.10,
+    0,
+    99
+  );
+
+  const quickEntryQuality = clampNumber(
+    Number(opportunityScore || 0) * 0.50 +
+      Number(marketDna.continuation || 0) * 0.20 +
+      Number(marketDna.efficiency || 0) * 0.15 +
+      Number(marketDna.agreement || 0) * 0.15,
+    0,
+    100
+  );
+
   const opportunityBaseReady =
     marketDna.ready &&
     Number(profile30.ticks || 0) >=
@@ -1273,8 +1295,12 @@ export default function QuantumAIBot() {
       Number(settings.opportunityAgreementGate) &&
     opportunityScore >=
       Number(settings.opportunityScoreGate) &&
-    finalLearnedConfidence >=
+    calibratedEntryConfidence >=
       Number(settings.opportunityConfidenceGate) &&
+    quickEntryQuality >=
+      Number(settings.minimumQuickEntryScore) &&
+    opportunityRisk <=
+      Number(settings.maximumQuickEntryRisk) &&
     Number(marketDna.noise || 100) <=
       Number(settings.opportunityMaximumNoise) &&
     Number(marketDna.reversal || 100) <=
@@ -1360,7 +1386,7 @@ export default function QuantumAIBot() {
   const dynamicRequiredConfidence = recovery.active
     ? recoveryRequiredConfidence
     : Math.max(
-        Number(settings.minConfidence || 72),
+        Number(settings.adaptiveEntryFloor || 56),
         phaseConfidence
       );
 
@@ -1825,6 +1851,8 @@ export default function QuantumAIBot() {
     marketDna,
     opportunityScore,
     opportunityRisk,
+    calibratedEntryConfidence,
+    quickEntryQuality,
     opportunityDirection,
     opportunityReady,
   ]);
@@ -2348,9 +2376,26 @@ export default function QuantumAIBot() {
         }
       }
 
+      const warmupComplete =
+        marketElapsed >=
+        Number(settings.minimumMarketWarmupSeconds);
+
+      const hardRiskQuickSkip =
+        hardRiskBlock &&
+        marketElapsed >=
+          Number(settings.hardRiskQuickSkipSeconds);
+
+      if (
+        !warmupComplete &&
+        !hardRiskQuickSkip
+      ) {
+        return;
+      }
+
       if (
         marketElapsed <
-        Number(settings.marketSwitchSeconds || 7)
+          Number(settings.marketSwitchSeconds || 18) &&
+        !hardRiskQuickSkip
       ) {
         return;
       }
@@ -2367,7 +2412,9 @@ export default function QuantumAIBot() {
 
       if (next?.id && next.id !== symbol) {
         setMessage(
-          `${scanPhase} scan: switching to ${next.label} after ${settings.marketSwitchSeconds}s.`
+          `${hardRiskQuickSkip ? "RISK SKIP" : scanPhase} scan: switching to ${next.label} after ${marketElapsed.toFixed(
+          0
+        )}s.`
         );
         scanStartedAtRef.current = Date.now();
         marketDecisionStartedAtRef.current =
@@ -2630,6 +2677,8 @@ export default function QuantumAIBot() {
             },
             opportunityScore,
             opportunityRisk,
+            calibratedEntryConfidence,
+            quickEntryQuality,
             opportunityDirection,
             opportunityEntry:
               Boolean(opportunityReady),
@@ -2732,7 +2781,7 @@ export default function QuantumAIBot() {
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
-          title="MetaBinary Quantum AI V21.1"
+          title="MetaBinary Quantum AI V22.1"
           subtitle="Tick audit · latency monitor · anomaly-safe learning"
           connected={connected}
           connecting={connecting}
@@ -2743,7 +2792,7 @@ export default function QuantumAIBot() {
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
             <small>METABINARY SYNTHETIC INTELLIGENCE</small>
-            <h1>MetaBinary Quantum AI V21.1</h1>
+            <h1>MetaBinary Quantum AI V22.1</h1>
             <p>
               Compares each live setup with settled history, calculates
               market-direction probability and uses a fresh confirmed
@@ -2804,10 +2853,79 @@ export default function QuantumAIBot() {
           </div>
         </section>
 
+        <section className="quantumV22Status">
+          <header>
+            <div>
+              <small>V22 CLEAN ENTRY LOGIC</small>
+              <h3>Warm market first, then trade or skip</h3>
+            </div>
+            <strong>
+              {hardRiskBlock
+                ? "HARD RISK"
+                : opportunityReady
+                ? `ENTRY ${opportunityDirection}`
+                : "LEARNING"}
+            </strong>
+          </header>
+
+          <div className="quantumV22Grid">
+            <article>
+              <span>Phase gate</span>
+              <strong>
+                {dynamicRequiredConfidence.toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Final confidence</span>
+              <strong>
+                {finalLearnedConfidence.toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Calibrated confidence</span>
+              <strong>
+                {calibratedEntryConfidence.toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Quick quality</span>
+              <strong>{quickEntryQuality.toFixed(1)}</strong>
+            </article>
+            <article>
+              <span>Opportunity score</span>
+              <strong>{opportunityScore.toFixed(1)}</strong>
+            </article>
+            <article>
+              <span>Opportunity risk</span>
+              <strong>{opportunityRisk.toFixed(1)}</strong>
+            </article>
+            <article>
+              <span>Market warmup</span>
+              <strong>
+                {Math.min(
+                  scanClock,
+                  Number(settings.minimumMarketWarmupSeconds)
+                ).toFixed(1)}
+                /{settings.minimumMarketWarmupSeconds}s
+              </strong>
+            </article>
+            <article>
+              <span>Decision</span>
+              <strong>
+                {opportunityReady
+                  ? "FAST ENTRY"
+                  : hardRiskBlock
+                  ? "SKIP"
+                  : "WAIT"}
+              </strong>
+            </article>
+          </div>
+        </section>
+
         <section className="quantumV21Dna">
           <header>
             <div>
-              <small>V21 30-SECOND MARKET DNA</small>
+              <small>V22 QUICK MARKET DNA</small>
               <h3>Fast learning + opportunity entry</h3>
             </div>
             <strong>
@@ -2827,6 +2945,8 @@ export default function QuantumAIBot() {
             <article><span>Reversal</span><strong>{marketDna.reversal.toFixed(1)}</strong></article>
             <article><span>DNA score</span><strong>{marketDna.score.toFixed(1)}</strong></article>
             <article><span>Opportunity</span><strong>{opportunityScore.toFixed(1)}</strong></article>
+            <article><span>Calibrated conf</span><strong>{calibratedEntryConfidence.toFixed(1)}%</strong></article>
+            <article><span>Quick quality</span><strong>{quickEntryQuality.toFixed(1)}</strong></article>
             <article><span>Risk</span><strong>{opportunityRisk.toFixed(1)}</strong></article>
             <article><span>Confirm</span><strong>{opportunityHold.ticks}/{settings.opportunityConfirmTicks}</strong></article>
             <article><span>Engine</span><strong>{opportunityReady ? "30S FAST" : "STANDARD"}</strong></article>
@@ -3253,6 +3373,10 @@ export default function QuantumAIBot() {
             ["DNA max noise", "opportunityMaximumNoise", 30, 95, 1],
             ["DNA max reversal", "opportunityMaximumReversal", 30, 95, 1],
             ["Opportunity ticks", "opportunityConfirmTicks", 1, 5, 1],
+            ["Market warmup", "minimumMarketWarmupSeconds", 5, 60, 1],
+            ["Risk quick skip", "hardRiskQuickSkipSeconds", 3, 30, 1],
+            ["Quick quality", "minimumQuickEntryScore", 35, 90, 1],
+            ["Quick max risk", "maximumQuickEntryRisk", 30, 90, 1],
             ["Min vote", "minimumVoteConsensus", 40, 90, 1],
           ].map(([label, key, min, max, step]) => (
             <label key={key}>
