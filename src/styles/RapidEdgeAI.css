@@ -1662,3 +1662,17 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* RapidEdge V4.10 multi-timeframe portfolio */
+.oulPortfolioGrid article {
+  min-height: 82px;
+}
+
+.oulPortfolioGrid small + small {
+  margin-top: 2px;
+}
+
+.oulDecision.ready::after {
+  content: "MULTI-TIMEFRAME CONSENSUS PASSED";
+}

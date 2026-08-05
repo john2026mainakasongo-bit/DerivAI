@@ -273,6 +273,146 @@ function marketSnapshotScore(snapshot) {
   );
 }
 
+
+function contractRiskClass(candidate) {
+  const side = String(candidate?.side || "");
+  const barrier = Number(candidate?.barrier ?? -1);
+
+  if (
+    (side === "OVER" && barrier <= 2) ||
+    (side === "UNDER" && barrier >= 7)
+  ) {
+    return "LOW";
+  }
+
+  if (
+    (side === "OVER" && barrier === 3) ||
+    (side === "UNDER" && barrier === 6)
+  ) {
+    return "MEDIUM";
+  }
+
+  return "HIGH";
+}
+
+function aggregateMarketWindow(
+  history,
+  now,
+  windowMs
+) {
+  const rows = (Array.isArray(history) ? history : [])
+    .filter(
+      (row) =>
+        now - Number(row?.updatedAt || 0) <=
+        windowMs
+    );
+
+  if (!rows.length) {
+    return {
+      samples: 0,
+      quality: 0,
+      execution: 0,
+      probability: 0,
+      risk: 100,
+      ev: -1,
+      score: -999,
+      contract: "NONE",
+    };
+  }
+
+  const weightOf = (row) => {
+    const age =
+      now - Number(row?.updatedAt || 0);
+
+    return Math.max(
+      0.15,
+      1 - age / Math.max(1, windowMs)
+    );
+  };
+
+  const totalWeight = rows.reduce(
+    (sum, row) => sum + weightOf(row),
+    0
+  );
+
+  const average = (field, fallback = 0) =>
+    rows.reduce(
+      (sum, row) =>
+        sum +
+        Number(row?.[field] ?? fallback) *
+          weightOf(row),
+      0
+    ) / Math.max(0.0001, totalWeight);
+
+  const contractVotes = {};
+
+  for (const row of rows) {
+    const contract =
+      String(row?.bestContract || "NONE");
+    contractVotes[contract] =
+      Number(contractVotes[contract] || 0) +
+      weightOf(row);
+  }
+
+  const contract =
+    Object.entries(contractVotes).sort(
+      (a, b) => b[1] - a[1]
+    )[0]?.[0] || "NONE";
+
+  const result = {
+    samples: rows.length,
+    quality: average("bestQuality"),
+    execution: average("bestExecution"),
+    probability: average(
+      "bestProbability"
+    ),
+    risk: average("bestRisk", 100),
+    ev: average("bestEv", -1),
+    lossStreak: average("lossStreak"),
+    contract,
+  };
+
+  result.score =
+    result.quality * 0.30 +
+    result.execution * 0.24 +
+    result.probability * 0.18 +
+    Math.max(
+      -20,
+      Math.min(20, result.ev * 100)
+    ) * 0.18 -
+    result.risk * 0.28 -
+    result.lossStreak * 10;
+
+  return result;
+}
+
+function portfolioConsensusScore(
+  oneMinute,
+  fiveMinutes,
+  tenMinutes
+) {
+  const available = [
+    [oneMinute, 0.50],
+    [fiveMinutes, 0.30],
+    [tenMinutes, 0.20],
+  ].filter(([window]) => window.samples > 0);
+
+  if (!available.length) return -999;
+
+  const weight = available.reduce(
+    (sum, [, value]) => sum + value,
+    0
+  );
+
+  return (
+    available.reduce(
+      (sum, [window, value]) =>
+        sum + window.score * value,
+      0
+    ) / weight
+  );
+}
+
 function enrichCandidate(
   candidate,
   trades,
@@ -366,6 +506,7 @@ function enrichCandidate(
     executionConfidence,
     adaptiveRisk,
     barrierPenalty,
+    riskClass: contractRiskClass(candidate),
     qualityScore,
     calibratedProbability,
     contractWinRate: contract.winRate,
@@ -604,6 +745,7 @@ export default function RapidEdgeAI() {
   const [switches, setSwitches] = useState(0);
   const [lastSwitchAt, setLastSwitchAt] = useState(0);
   const [marketPortfolio, setMarketPortfolio] = useState({});
+  const [marketHistory, setMarketHistory] = useState({});
   const [preferredMarket, setPreferredMarket] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [pauseUntil, setPauseUntil] = useState(0);
@@ -791,6 +933,46 @@ export default function RapidEdgeAI() {
       ...current,
       [symbol]: snapshot,
     }));
+
+    setMarketHistory((current) => {
+      const now = Date.now();
+      const previous = Array.isArray(
+        current[symbol]
+      )
+        ? current[symbol]
+        : [];
+
+      const latest =
+        previous[previous.length - 1];
+
+      const shouldAppend =
+        !latest ||
+        now - Number(latest.updatedAt || 0) >=
+          1500 ||
+        latest.bestContract !==
+          snapshot.bestContract;
+
+      if (!shouldAppend) {
+        return current;
+      }
+
+      const retained = [
+        ...previous,
+        snapshot,
+      ]
+        .filter(
+          (row) =>
+            now -
+              Number(row?.updatedAt || 0) <=
+            10 * 60 * 1000
+        )
+        .slice(-240);
+
+      return {
+        ...current,
+        [symbol]: retained,
+      };
+    });
   }, [
     symbol,
     digitQuality.ready,
@@ -810,26 +992,98 @@ export default function RapidEdgeAI() {
 
     return marketSymbols
       .map((marketSymbol) => {
-        const snapshot = marketPortfolio[marketSymbol];
+        const snapshot =
+          marketPortfolio[marketSymbol];
 
-        if (!snapshot) {
+        const history =
+          marketHistory[marketSymbol] || [];
+
+        const oneMinute =
+          aggregateMarketWindow(
+            history,
+            now,
+            60 * 1000
+          );
+
+        const fiveMinutes =
+          aggregateMarketWindow(
+            history,
+            now,
+            5 * 60 * 1000
+          );
+
+        const tenMinutes =
+          aggregateMarketWindow(
+            history,
+            now,
+            10 * 60 * 1000
+          );
+
+        if (!snapshot && !history.length) {
           return {
             symbol: marketSymbol,
             status: "UNSEEN",
             score: -999,
+            consensusScore: -999,
+            oneMinute,
+            fiveMinutes,
+            tenMinutes,
           };
         }
 
-        const ageMs =
-          now - Number(snapshot.updatedAt || 0);
+        const updatedAt = Number(
+          snapshot?.updatedAt ||
+            history[history.length - 1]
+              ?.updatedAt ||
+            0
+        );
+
+        const ageMs = now - updatedAt;
+
+        const consensusScore =
+          portfolioConsensusScore(
+            oneMinute,
+            fiveMinutes,
+            tenMinutes
+          );
+
+        const latestRiskClass =
+          snapshot?.bestContract
+            ? contractRiskClass({
+                side: String(
+                  snapshot.bestContract
+                ).startsWith("OVER")
+                  ? "OVER"
+                  : "UNDER",
+                barrier: Number(
+                  String(
+                    snapshot.bestContract
+                  ).match(/\d+/)?.[0] || -1
+                ),
+              })
+            : "HIGH";
 
         return {
           ...snapshot,
+          symbol: marketSymbol,
           ageMs,
-          status: ageMs <= 90000 ? "READY" : "STALE",
+          status:
+            ageMs <= 90000
+              ? "READY"
+              : "STALE",
+          oneMinute,
+          fiveMinutes,
+          tenMinutes,
+          consensusScore,
+          latestRiskClass,
           score:
-            marketSnapshotScore(snapshot) -
-            Math.min(25, ageMs / 10000),
+            consensusScore -
+            Math.min(20, ageMs / 15000) -
+            (latestRiskClass === "HIGH"
+              ? 18
+              : latestRiskClass === "MEDIUM"
+              ? 5
+              : 0),
         };
       })
       .sort(
@@ -837,15 +1091,28 @@ export default function RapidEdgeAI() {
           Number(b.score || -999) -
           Number(a.score || -999)
       );
-  }, [marketSymbols, marketPortfolio, clock]);
+  }, [
+    marketSymbols,
+    marketPortfolio,
+    marketHistory,
+    clock,
+  ]);
 
   const portfolioBest =
     portfolioRanking.find(
       (row) =>
         row.status === "READY" &&
-        Number(row.bestRisk || 100) < 48 &&
-        Number(row.bestQuality || 0) >= 52 &&
-        Number(row.bestEv || -1) >= -0.03
+        row.latestRiskClass !== "HIGH" &&
+        Number(row.oneMinute?.samples || 0) >=
+          2 &&
+        Number(row.oneMinute?.risk || 100) <
+          42 &&
+        Number(row.oneMinute?.quality || 0) >=
+          55 &&
+        Number(row.oneMinute?.ev || -1) >=
+          -0.02 &&
+        Number(row.consensusScore || -999) >
+          15
     ) || null;
 
   useEffect(() => {
@@ -886,6 +1153,22 @@ export default function RapidEdgeAI() {
     Number(best.marketLossStreak || 0) < 2 &&
     postLossRevalidated;
 
+  const currentPortfolioRow =
+    portfolioRanking.find(
+      (row) => row.symbol === symbol
+    ) || null;
+
+  const highRiskOverride =
+    best?.riskClass === "HIGH" &&
+    Number(
+      currentPortfolioRow?.consensusScore ||
+        -999
+    ) >= 58 &&
+    Number(best.calibratedProbability || 0) >=
+      92 &&
+    Number(best.expectedValue || -1) > 0.08 &&
+    Number(best.adaptiveRisk || 100) < 24;
+
   const guardedAttemptReady =
     Boolean(best) &&
     digitQuality.ready &&
@@ -893,7 +1176,10 @@ export default function RapidEdgeAI() {
     Number(best.calibratedProbability || 0) >= 68 &&
     Number(best.expectedValue || -1) >= -0.05 &&
     Number(best.adaptiveRisk || 100) < 48 &&
-    Number(best.barrierPenalty || 0) <= 20 &&
+    (
+      Number(best.barrierPenalty || 0) <= 20 ||
+      highRiskOverride
+    ) &&
     Number(best.contractLossStreak || 0) < 2 &&
     Number(best.marketLossStreak || 0) < 2;
 
@@ -1666,11 +1952,27 @@ export default function RapidEdgeAI() {
       const currentSnapshot =
         marketPortfolio[symbol];
 
+      const currentRow =
+        portfolioRanking.find(
+          (row) => row.symbol === symbol
+        );
+
       const currentIsStrong =
         Boolean(currentSnapshot) &&
-        Number(currentSnapshot.bestQuality || 0) >= 68 &&
-        Number(currentSnapshot.bestRisk || 100) < 35 &&
-        Number(currentSnapshot.bestEv || -1) > 0;
+        Boolean(currentRow) &&
+        currentRow.latestRiskClass !== "HIGH" &&
+        Number(
+          currentRow.oneMinute?.samples || 0
+        ) >= 2 &&
+        Number(
+          currentRow.consensusScore || -999
+        ) >= 28 &&
+        Number(
+          currentRow.oneMinute?.risk || 100
+        ) < 35 &&
+        Number(
+          currentRow.oneMinute?.ev || -1
+        ) > 0;
 
       if (unseenExists || !currentIsStrong) {
         void rotateMarket(
@@ -1689,6 +1991,7 @@ export default function RapidEdgeAI() {
     lastSwitchAt,
     marketSymbols,
     marketPortfolio,
+    portfolioRanking,
     symbol,
     rotateMarket,
   ]);
@@ -1712,14 +2015,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.9 started · continuous multi-market portfolio scan active."
+      "RapidEdge V4.10 started · 1m/5m/10m portfolio memory active."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.9 stopped.");
+    setMessage("RapidEdge V4.10 stopped.");
   }
 
   function reset() {
@@ -1731,6 +2034,7 @@ export default function RapidEdgeAI() {
     setMarketBlocks({});
     setContractBlocks({});
     setMarketPortfolio({});
+    setMarketHistory({});
     setPreferredMarket("");
     setLastSwitchAt(0);
     setPostLossAnchorCount(null);
@@ -1745,7 +2049,7 @@ export default function RapidEdgeAI() {
     setLastExecutionError("");
     setLastBuyRequestAt(0);
     setLoopStatus("IDLE");
-    setMessage("RapidEdge V4.9 session reset.");
+    setMessage("RapidEdge V4.10 session reset.");
   }
 
   return (
@@ -1754,8 +2058,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.9 · Portfolio Market Scanner"
-          subtitle="Cycles every market · retains rolling 60-digit evidence · trades the strongest safer setup"
+          title="RapidEdge AI V4.10 · Multi-Timeframe Portfolio"
+          subtitle="Continuous market cycle · 1m/5m/10m retained memory · explicit LOW/MEDIUM/HIGH contract risk"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1810,7 +2114,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.9 PORTFOLIO SCANNER</small>
+            <small>V4.10 MULTI-TIMEFRAME PORTFOLIO</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -2191,14 +2495,24 @@ export default function RapidEdgeAI() {
                 <span>{row.symbol}</span>
                 <b>{row.bestContract || row.status}</b>
                 <small>
-                  Q {pct(row.bestQuality)} · E{" "}
-                  {pct(row.bestExecution)} · R{" "}
-                  {pct(row.bestRisk)}
+                  1m Q {pct(row.oneMinute?.quality)} ·
+                  R {pct(row.oneMinute?.risk)}
                 </small>
                 <small>
-                  EV {Number(row.bestEv || 0).toFixed(3)}
-                  {" · "}Score{" "}
-                  {Number(row.score || 0).toFixed(1)}
+                  5m {Number(
+                    row.fiveMinutes?.score || -999
+                  ).toFixed(1)}
+                  {" · "}10m{" "}
+                  {Number(
+                    row.tenMinutes?.score || -999
+                  ).toFixed(1)}
+                </small>
+                <small>
+                  {row.latestRiskClass || "HIGH"} ·
+                  Consensus{" "}
+                  {Number(
+                    row.consensusScore || -999
+                  ).toFixed(1)}
                 </small>
               </article>
             ))}
@@ -2291,6 +2605,10 @@ export default function RapidEdgeAI() {
                         candidate.barrierPenalty || 0
                       ).toFixed(0)}
                     </span>
+                    <span>
+                      Contract risk{" "}
+                      {candidate.riskClass}
+                    </span>
                   </div>
                 ))}
             </div>
@@ -2301,7 +2619,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.9 Trades</h2>
+              <h2>RapidEdge V4.10 Trades</h2>
             </div>
           </header>
 
@@ -2345,14 +2663,14 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.9 transactions yet.
+                No RapidEdge V4.10 transactions yet.
               </p>
             )}
           </div>
         </section>
 
         <p className="oulDisclaimer">
-          V4.9 continuously scans markets, remembers each market's rolling 60-digit data, and prefers safer positive-EV entries. OVER 4+ and UNDER 5- are heavily penalized. Profit is not guaranteed. Test on demo.
+          V4.10 cycles markets and retains timestamped 1m/5m/10m evidence. LOW-risk contracts are preferred; OVER 4+ and UNDER 5- require an exceptional override. The current hook streams one active market at a time, so markets are revisited continuously rather than subscribed simultaneously. Profit is not guaranteed.
         </p>
       </main>
     </div>
