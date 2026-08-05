@@ -562,7 +562,22 @@ export default function useDerivTicks() {
          * deducted, instead of waiting for a websocket contract event.
          */
         setOpenContracts((current) => {
-          const optimistic = ;
+          const optimistic = {
+            ...response,
+            contract_id:
+              response?.contractId ||
+              response?.buy?.contract_id ||
+              response?.contract_id ||
+              "",
+            id:
+              response?.contractId ||
+              response?.buy?.contract_id ||
+              response?.contract_id ||
+              "",
+            status: "open",
+            is_sold: 0,
+            is_expired: 0,
+          };
 
           const rest = current.filter(
             (item) =>
@@ -711,5 +726,6 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
+
 
 
