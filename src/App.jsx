@@ -19,6 +19,7 @@ import Login from "./pages/Login";
 import "./index.css";
 
 import FreshEdgeBot from "./pages/FreshEdgeBot";
+import RapidEdgeAI from "./pages/RapidEdgeAI";
 export default function App() {
   return (
     <BrowserRouter>
@@ -56,7 +57,8 @@ export default function App() {
         <Route
           path="/fresh-edge-ai"
           element={<FreshEdgeBot />}
-        /></Routes>
+        />          <Route path="/rapid-edge-ai" element={<RapidEdgeAI />} />
+</Routes>
     </BrowserRouter>
   );
 }

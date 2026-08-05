@@ -9,6 +9,7 @@ const links = [
     icon: "â†—",
   },
   { to: "/over-under-learning-bot", label: "O/U Learning Bot", icon: "OU" },
+  { to: "/rapid-edge-ai", label: "RapidEdge AI", icon: "OU" },
   { to: "/over-under-analysis", label: "Over/Under", icon: "Ã¢â€ â€¢" },
   { to: "/bot", label: "Auto Bot", icon: "âš¡" },
 { to: "/differs-one-shot", label: "Differs 1 Run", icon: "1" },
