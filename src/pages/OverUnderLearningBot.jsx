@@ -12,8 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v21";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v21";
+const MEMORY_KEY = "edgepilot:over-under-learning:v22";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v22";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1985,6 +1985,10 @@ export default function OverUnderLearningBot() {
     useState(900);
   const [readyLiveConfirmationTicks, setReadyLiveConfirmationTicks] =
     useState(4);
+  const [idleRescanSeconds, setIdleRescanSeconds] =
+    useState(18);
+  const lastPortfolioActivityRef =
+    useRef(Date.now());
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -3192,11 +3196,61 @@ export default function OverUnderLearningBot() {
   function nextMarket() {
     if (!marketSymbols.length) return "";
 
+    const portfolioRefreshTarget =
+      portfolioReadyMarkets.find(
+        (item) => item.market !== symbol
+      ) ||
+      portfolioWatchMarkets.find(
+        (item) =>
+          item.market !== symbol &&
+          !item.blocked &&
+          !item.weak
+      ) ||
+      globalMarketPortfolio.find(
+        (item) =>
+          item.market !== symbol &&
+          !item.blocked &&
+          !item.weak
+      ) ||
+      null;
+
     if (
       portfolioWatchEnabled &&
-      portfolioReadyMarkets.length === 0
+      portfolioRefreshTarget
     ) {
-      return "";
+      const refreshMarket =
+        portfolioRefreshTarget.market;
+
+      const refreshUsed =
+        Boolean(
+          oneRunPerMarket &&
+          lastTradeByMarket?.[
+            refreshMarket
+          ]
+        );
+
+      const refreshBlocked =
+        marketBlockRemaining(
+          marketBlocks,
+          refreshMarket
+        ) > 0 ||
+        Number(
+          dynamicMarketBlacklist?.[
+            refreshMarket
+          ] || 0
+        ) > Date.now() ||
+        Boolean(
+          marketHealth?.[
+            refreshMarket
+          ]?.weak
+        );
+
+      if (
+        !refreshUsed &&
+        !refreshBlocked
+      ) {
+        return refreshMarket;
+      }
     }
 
     if (
@@ -3306,6 +3360,8 @@ export default function OverUnderLearningBot() {
     if (!next || next === symbol) return;
 
     switchBusyRef.current = true;
+    lastPortfolioActivityRef.current =
+      Date.now();
     lastSwitchAtRef.current = Date.now();
     scanStartedAtRef.current = Date.now();
     marketEnteredAtRef.current = Date.now();
@@ -3470,6 +3526,9 @@ export default function OverUnderLearningBot() {
         [trade, ...current].slice(0, 50)
       );
 
+      lastPortfolioActivityRef.current =
+        Date.now();
+
       setTradesOnCurrentMarket(
         (current) => current + 1
       );
@@ -3617,6 +3676,59 @@ export default function OverUnderLearningBot() {
       !running ||
       !portfolioWatchEnabled ||
       hasOpenTrade ||
+      tradeBusy
+    ) {
+      return;
+    }
+
+    const watchdog = window.setInterval(() => {
+      const idleMilliseconds =
+        Date.now() -
+        Number(
+          lastPortfolioActivityRef.current ||
+          Date.now()
+        );
+
+      if (
+        idleMilliseconds >=
+          Math.max(
+            8,
+            Number(idleRescanSeconds || 18)
+          ) *
+            1000 &&
+        !switchBusyRef.current
+      ) {
+        lastPortfolioActivityRef.current =
+          Date.now();
+
+        void switchMarket(
+          portfolioReadyMarkets.length
+            ? "IDLE WATCHDOG · moving to the strongest READY market"
+            : portfolioWatchMarkets.length
+            ? "IDLE WATCHDOG · refreshing the strongest WATCH market"
+            : "IDLE WATCHDOG · warming the next available market"
+        );
+      }
+    }, 1000);
+
+    return () =>
+      window.clearInterval(watchdog);
+  }, [
+    running,
+    portfolioWatchEnabled,
+    hasOpenTrade,
+    tradeBusy,
+    idleRescanSeconds,
+    portfolioReadyMarkets,
+    portfolioWatchMarkets,
+    symbol,
+  ]);
+
+  useEffect(() => {
+    if (
+      !running ||
+      !portfolioWatchEnabled ||
+      hasOpenTrade ||
       tradeBusy ||
       switchBusyRef.current
     ) {
@@ -3634,6 +3746,33 @@ export default function OverUnderLearningBot() {
         void switchMarket(
           `PORTFOLIO READY · ${leader.market} ${leader.contract} · ${leader.probability.toFixed(1)}%`
         );
+        return;
+      }
+
+      const watchTarget =
+        portfolioWatchMarkets.find(
+          (item) => item.market !== symbol
+        );
+
+      if (
+        !leader &&
+        watchTarget &&
+        (
+          Date.now() -
+          Number(
+            lastPortfolioActivityRef.current ||
+            Date.now()
+          )
+        ) >=
+          Math.max(
+            4,
+            Number(idleRescanSeconds || 18)
+          ) *
+            1000
+      ) {
+        void switchMarket(
+          `PORTFOLIO WATCH REFRESH · ${watchTarget.market} ${watchTarget.contract}`
+        );
       }
     }, Math.max(
       350,
@@ -3650,8 +3789,10 @@ export default function OverUnderLearningBot() {
     hasOpenTrade,
     tradeBusy,
     portfolioReadyMarkets,
+    portfolioWatchMarkets,
     symbol,
     watchRefreshMilliseconds,
+    idleRescanSeconds,
   ]);
 
   useEffect(() => {
@@ -4360,15 +4501,17 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
 
-    if (
-      result === "LOST" &&
-      runningRef.current
-    ) {
+    lastPortfolioActivityRef.current =
+      Date.now();
+
+    if (runningRef.current) {
       window.setTimeout(() => {
         void switchMarket(
-          "Loss market blocked; searching fresh recovery entry"
+          result === "WON"
+            ? "WIN settled; rotating to refresh portfolio and find a new READY setup"
+            : "LOSS settled; rotating to search a fresh recovery setup"
         );
-      }, 900);
+      }, result === "WON" ? 650 : 900);
     }
   }, [openContracts]);
 
@@ -4631,8 +4774,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V21"
-          subtitle="Portfolio watch engine · READY/WATCH/BLOCKED/STALE · live-confirmed entry"
+          title="Over/Under Adaptive Learning Bot V22"
+          subtitle="Continuous portfolio scanner · post-settlement rotation · idle watchdog"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -4707,7 +4850,7 @@ export default function OverUnderLearningBot() {
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
                 : portfolioWatchEnabled &&
                   portfolioReadyMarkets.length === 0
-                ? "PORTFOLIO WATCH — No READY market. Scanning continues without opening a trade."
+                ? "PORTFOLIO WATCH — No READY market. Refreshing WATCH markets without opening a trade."
                 : globalPortfolioEnabled &&
                   (
                     !bestGlobalMarket ||
@@ -4900,6 +5043,26 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Idle rescan seconds</span>
+            <input
+              type="number"
+              min="8"
+              max="120"
+              step="1"
+              value={idleRescanSeconds}
+              onChange={(event) =>
+                setIdleRescanSeconds(
+                  clamp(
+                    event.target.value,
+                    8,
+                    120
+                  )
                 )
               }
             />
@@ -5966,6 +6129,24 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Continuous scanner</span>
+              <strong>ACTIVE</strong>
+              <small>
+                WIN or LOSS triggers a new market scan
+              </small>
+            </article>
+
+            <article>
+              <span>Idle watchdog</span>
+              <strong>
+                {idleRescanSeconds}s
+              </strong>
+              <small>
+                Forces a refresh when the bot becomes idle
               </small>
             </article>
 
