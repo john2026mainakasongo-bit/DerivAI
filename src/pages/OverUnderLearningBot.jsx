@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v2";
+const MEMORY_KEY = "edgepilot:over-under-learning:v3";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -143,6 +143,25 @@ function setupCooldownRemaining(row) {
   return Math.max(0, blockedUntil - Date.now());
 }
 
+function recoveryStakeAmount(
+  baseStake,
+  recovery,
+  maximumStake
+) {
+  if (!recovery?.active) {
+    return Math.max(0.35, Number(baseStake || 0.35));
+  }
+
+  const multiplier =
+    Number(recovery.attempts || 0) <= 1 ? 1.5 : 2;
+
+  return Math.min(
+    Math.max(0.35, Number(maximumStake || 1.4)),
+    Math.max(0.35, Number(baseStake || 0.35)) *
+      multiplier
+  );
+}
+
 function loadMemory() {
   try {
     const parsed = JSON.parse(
@@ -209,6 +228,24 @@ function memoryStats(memory, symbol, side, barrier) {
       setupCooldownRemaining(row) > 0,
     cooldownMs:
       setupCooldownRemaining(row),
+    recentResults: Array.isArray(row.recentResults)
+      ? row.recentResults
+      : [],
+    recentWinRate:
+      Array.isArray(row.recentResults) &&
+      row.recentResults.length
+        ? (
+            row.recentResults.filter(
+              (item) => item === "WON"
+            ).length /
+            row.recentResults.length
+          ) *
+          100
+        : 50,
+    rollingScore: Number(row.rollingScore || 50),
+    rollingConfidence: Number(
+      row.rollingConfidence || 50
+    ),
     lastResult: row.lastResult || "—",
   };
 }
@@ -273,6 +310,18 @@ function updateMemory(
       lastResult: result,
       lastConfidence: Number(confidence || 0),
       lastScore: Number(score || 0),
+      rollingScore:
+        Number(previous.rollingScore || 50) * 0.7 +
+        Number(score || 0) * 0.3,
+      rollingConfidence:
+        Number(previous.rollingConfidence || 50) * 0.7 +
+        Number(confidence || 0) * 0.3,
+      recentResults: [
+        ...(Array.isArray(previous.recentResults)
+          ? previous.recentResults
+          : []),
+        result,
+      ].slice(-20),
       updatedAt: Date.now(),
     },
   };
@@ -293,16 +342,26 @@ function candidateScore(candidate, memoryRow) {
     100
   );
 
+  const recentScore = clamp(
+    Number(memoryRow.recentWinRate || 50),
+    0,
+    100
+  );
+
   return clamp(
-    Number(candidate?.score || 0) * 0.38 +
-      probability * 0.18 +
+    Number(candidate?.score || 0) * 0.30 +
+      probability * 0.16 +
       Number(candidate?.probabilityEdge || 0) *
-        0.10 +
+        0.08 +
       Number(candidate?.transitionEdge || 0) *
-        0.07 +
+        0.06 +
       Number(candidate?.consistency || 0) *
-        0.07 +
-      evScore * 0.20 +
+        0.06 +
+      evScore * 0.18 +
+      recentScore * 0.08 +
+      Number(memoryRow.rollingScore || 50) * 0.04 +
+      Number(memoryRow.rollingConfidence || 50) *
+        0.04 +
       Number(memoryRow.adjustment || 0),
     0,
     100
@@ -359,6 +418,14 @@ export default function OverUnderLearningBot() {
     );
   const [consecutiveLosses, setConsecutiveLosses] =
     useState(0);
+  const [recovery, setRecovery] = useState({
+    active: false,
+    attempts: 0,
+    previousLossKey: "",
+    previousLossAmount: 0,
+  });
+  const [maximumRecoveryStake, setMaximumRecoveryStake] =
+    useState(1.4);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -491,17 +558,31 @@ export default function OverUnderLearningBot() {
   const blockedByLastLoss =
     lastLossKeyRef.current === bestKey;
 
+  const recoveryScoreGate =
+    Number(minimumScore) +
+    (recovery.active ? 6 : 0);
+
+  const recoveryConfidenceGate =
+    Number(minimumConfidence) +
+    (recovery.active ? 5 : 0);
+
+  const recoverySetupPass =
+    !recovery.active ||
+    bestKey !== recovery.previousLossKey;
+
   const entryReady =
     analysis.total >= 30 &&
     best.side !== "WAIT" &&
     Number(analysis.confidence || 0) >=
-      Number(minimumConfidence) &&
+      recoveryConfidenceGate &&
     Number(best.adaptiveScore || 0) >=
-      Number(minimumScore) &&
+      recoveryScoreGate &&
     Number(best.probability || 0) >=
-      Number(best.learned.requiredProbability || 100) &&
+      Number(best.learned.requiredProbability || 100) +
+        (recovery.active ? 3 : 0) &&
     !best.learned.blocked &&
-    !blockedByLastLoss;
+    !blockedByLastLoss &&
+    recoverySetupPass;
 
   useEffect(() => {
     if (!running || !entryReady) {
@@ -646,9 +727,10 @@ export default function OverUnderLearningBot() {
       const result = await placeTrade({
         symbol,
         contractType,
-        amount: Math.max(
-          0.35,
-          Number(stake) || 0.35
+        amount: recoveryStakeAmount(
+          stake,
+          recovery,
+          maximumRecoveryStake
         ),
         basis: "stake",
         duration: Math.max(
@@ -674,10 +756,13 @@ export default function OverUnderLearningBot() {
         barrier: best.barrier,
         contract: `${best.side} ${best.barrier}`,
         duration: `${durationTicks} TICK`,
-        stake: Math.max(
-          0.35,
-          Number(stake) || 0.35
+        stake: recoveryStakeAmount(
+          stake,
+          recovery,
+          maximumRecoveryStake
         ),
+        recoveryMode: recovery.active,
+        recoveryAttempt: recovery.attempts,
         confidence:
           analysis.confidence,
         score: best.adaptiveScore,
@@ -698,7 +783,11 @@ export default function OverUnderLearningBot() {
       }));
 
       setMessage(
-        `${best.side} ${best.barrier} opened · score ${best.adaptiveScore.toFixed(
+        `${recovery.active ? `RECOVERY ${recovery.attempts}/2` : "NORMAL"} · ${best.side} ${best.barrier} opened · stake ${recoveryStakeAmount(
+          stake,
+          recovery,
+          maximumRecoveryStake
+        ).toFixed(2)} · score ${best.adaptiveScore.toFixed(
           1
         )}% · memory ${best.learned.trades} trades.`
       );
@@ -901,12 +990,33 @@ export default function OverUnderLearningBot() {
 
     if (result === "WON") {
       setConsecutiveLosses(0);
+      setRecovery({
+        active: false,
+        attempts: 0,
+        previousLossKey: "",
+        previousLossAmount: 0,
+      });
       lastLossKeyRef.current = "";
       setMessage(
         `WIN ${settled.contract}. Learning updated; scanning continues.`
       );
     } else {
       setConsecutiveLosses((current) => current + 1);
+      setRecovery((current) => ({
+        active: true,
+        attempts: Math.min(
+          2,
+          Number(current.attempts || 0) + 1
+        ),
+        previousLossKey: memoryKey(
+          settled.symbol,
+          settled.side,
+          settled.barrier
+        ),
+        previousLossAmount: Math.abs(
+          Number(settled.profit || 0)
+        ),
+      }));
       lastLossKeyRef.current =
         memoryKey(
           settled.symbol,
@@ -921,10 +1031,16 @@ export default function OverUnderLearningBot() {
 
     if (
       result === "LOST" &&
-      consecutiveLosses >= 2
+      (
+        consecutiveLosses >= 2 ||
+        (
+          settled.recoveryMode &&
+          Number(settled.recoveryAttempt || 0) >= 2
+        )
+      )
     ) {
       stop(
-        "Three consecutive losses reached. Bot paused for review."
+        "Recovery safety limit reached. Bot paused for review."
       );
       return;
     }
@@ -980,6 +1096,12 @@ export default function OverUnderLearningBot() {
   function reset() {
     setTrades([]);
     setConsecutiveLosses(0);
+    setRecovery({
+      active: false,
+      attempts: 0,
+      previousLossKey: "",
+      previousLossAmount: 0,
+    });
     setStats({
       runs: 0,
       wins: 0,
@@ -1006,8 +1128,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V2"
-          subtitle="EV-aware barrier selection · loss cooldown · continuous market learning"
+          title="Over/Under Adaptive Learning Bot V3"
+          subtitle="Persistent market memory · adaptive ranking · capped recovery"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1133,6 +1255,14 @@ export default function OverUnderLearningBot() {
                 {market?.label || symbol}
               </strong>
             </article>
+            <article>
+              <span>Recovery gate</span>
+              <strong>
+                {recovery.active
+                  ? `Score ${recoveryScoreGate} · Conf ${recoveryConfidenceGate}`
+                  : "NORMAL"}
+              </strong>
+            </article>
           </div>
         </section>
 
@@ -1213,6 +1343,22 @@ export default function OverUnderLearningBot() {
           </label>
 
           <label>
+            <span>Max recovery stake</span>
+            <input
+              type="number"
+              min="0.35"
+              max="10"
+              step="0.05"
+              value={maximumRecoveryStake}
+              onChange={(event) =>
+                setMaximumRecoveryStake(
+                  event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
             <span>Real execution</span>
             <input
               type="checkbox"
@@ -1271,6 +1417,14 @@ export default function OverUnderLearningBot() {
             <span>Stored setups</span>
             <strong>
               {Object.keys(memory).length}
+            </strong>
+          </article>
+          <article>
+            <span>Recovery</span>
+            <strong>
+              {recovery.active
+                ? `${recovery.attempts}/2 ACTIVE`
+                : "OFF"}
             </strong>
           </article>
         </section>
@@ -1345,6 +1499,15 @@ export default function OverUnderLearningBot() {
                         ? "COOLDOWN"
                         : "EV PASS"}
                     </span>
+                    <span>
+                      Recent{" "}
+                      {pct(
+                        candidate.learned.recentWinRate
+                      )} · roll{" "}
+                      {pct(
+                        candidate.learned.rollingScore
+                      )}
+                    </span>
                   </div>
                 ))}
             </div>
@@ -1382,6 +1545,9 @@ export default function OverUnderLearningBot() {
                 </span>
                 <span>{trade.symbol}</span>
                 <strong>
+                  {trade.recoveryMode
+                    ? `REC ${trade.recoveryAttempt} · `
+                    : ""}
                   {trade.contract}
                 </strong>
                 <span>

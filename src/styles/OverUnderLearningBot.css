@@ -88,7 +88,7 @@
 .oulControls,
 .oulStats {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -137,7 +137,7 @@
 
 .oulStats {
   padding: 8px;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
 }
 
 .oulMainGrid {
@@ -284,4 +284,13 @@
   .oulCandidates {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+
+.oulDecision.ready h1 {
+  color: #38d8a8;
+}
+
+.oulStats article:last-child strong {
+  color: #f0cf67;
 }
