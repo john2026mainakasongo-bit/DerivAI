@@ -1165,9 +1165,9 @@ function marketHealthMap(trades, minimumSample = 3) {
     row.weak =
       row.trades >= Number(minimumSample || 3) &&
       (
-        row.lossStreak >= 3 ||
-        row.winRate < 35 ||
-        row.profit < -1.2
+        row.lossStreak >= 2 ||
+        row.winRate < 42 ||
+        row.profit < -0.8
       );
   }
 
@@ -2030,7 +2030,7 @@ export default function RapidEdgeAI() {
   const [recoveryMultiplier, setRecoveryMultiplier] =
     useState(1.5);
   const [maximumRecoveryAttempts, setMaximumRecoveryAttempts] =
-    useState(3);
+    useState(2);
   const [tradesOnCurrentMarket, setTradesOnCurrentMarket] =
     useState(0);
   const [proactiveRotationTrades, setProactiveRotationTrades] =
@@ -2040,7 +2040,7 @@ export default function RapidEdgeAI() {
   const [predictiveGuardEnabled, setPredictiveGuardEnabled] =
     useState(true);
   const [guardThreshold, setGuardThreshold] =
-    useState(66);
+    useState(72);
   const [multiLayerEnabled, setMultiLayerEnabled] =
     useState(true);
   const [minimumLayerAgreement, setMinimumLayerAgreement] =
@@ -2052,11 +2052,11 @@ export default function RapidEdgeAI() {
   const [protectionEnabled, setProtectionEnabled] =
     useState(true);
   const [minimumRecentWinRate, setMinimumRecentWinRate] =
-    useState(45);
+    useState(52);
   const [maximumLossCascade, setMaximumLossCascade] =
-    useState(4);
+    useState(3);
   const [protectionPauseSeconds, setProtectionPauseSeconds] =
-    useState(5);
+    useState(4);
   const [protectionUntil, setProtectionUntil] =
     useState(0);
   const [dynamicMarketBlacklist, setDynamicMarketBlacklist] =
@@ -2064,9 +2064,9 @@ export default function RapidEdgeAI() {
   const [globalSelectionEnabled, setGlobalSelectionEnabled] =
     useState(true);
   const [minimumQualifiedProbability, setMinimumQualifiedProbability] =
-    useState(82);
+    useState(88);
   const [minimumQualifiedVotes, setMinimumQualifiedVotes] =
-    useState(5);
+    useState(6);
   const [maximumQualifiedRisk, setMaximumQualifiedRisk] =
     useState(45);
   const [globalMarketScores, setGlobalMarketScores] =
@@ -2080,7 +2080,7 @@ export default function RapidEdgeAI() {
   const [rotateAfterEverySettlement, setRotateAfterEverySettlement] =
     useState(false);
   const [freshTicksRequired, setFreshTicksRequired] =
-    useState(3);
+    useState(4);
   const [lastTradeByMarket, setLastTradeByMarket] =
     useState({});
   const [lastSetupKeyByMarket, setLastSetupKeyByMarket] =
@@ -2102,13 +2102,13 @@ export default function RapidEdgeAI() {
   const [universalPoolEnabled, setUniversalPoolEnabled] =
     useState(true);
   const [universalMinimumProbability, setUniversalMinimumProbability] =
-    useState(74);
+    useState(80);
   const [universalMinimumVotes, setUniversalMinimumVotes] =
     useState(5);
   const [universalMaximumRisk, setUniversalMaximumRisk] =
-    useState(42);
+    useState(34);
   const [setupBlacklistSeconds, setSetupBlacklistSeconds] =
-    useState(12);
+    useState(8);
   const [dynamicSetupBlacklist, setDynamicSetupBlacklist] =
     useState({});
   const [globalPortfolioEnabled, setGlobalPortfolioEnabled] =
@@ -2116,23 +2116,23 @@ export default function RapidEdgeAI() {
   const [portfolioMinimumLead, setPortfolioMinimumLead] =
     useState(2);
   const [portfolioSwitchCooldownMs, setPortfolioSwitchCooldownMs] =
-    useState(220);
+    useState(350);
   const [portfolioWatchEnabled, setPortfolioWatchEnabled] =
     useState(true);
   const [watchRefreshMilliseconds, setWatchRefreshMilliseconds] =
-    useState(150);
+    useState(180);
   const [readyLiveConfirmationTicks, setReadyLiveConfirmationTicks] =
-    useState(1);
+    useState(2);
   const [idleRescanSeconds, setIdleRescanSeconds] =
     useState(1);
   const [marketRearmSeconds, setMarketRearmSeconds] =
-    useState(2);
+    useState(3);
   const [postSettlementRearmMs, setPostSettlementRearmMs] =
-    useState(150);
+    useState(350);
   const [adaptiveArmingEnabled, setAdaptiveArmingEnabled] =
     useState(true);
   const [adaptiveMinimumProbability, setAdaptiveMinimumProbability] =
-    useState(68);
+    useState(76);
   const [adaptiveMinimumVotes, setAdaptiveMinimumVotes] =
     useState(4);
   const [adaptiveMaximumRisk, setAdaptiveMaximumRisk] =
@@ -2140,7 +2140,7 @@ export default function RapidEdgeAI() {
   const [adaptiveStableTicks, setAdaptiveStableTicks] =
     useState(1);
   const [adaptiveConfirmTicks, setAdaptiveConfirmTicks] =
-    useState(1);
+    useState(2);
   const [oneMinuteEngineEnabled, setOneMinuteEngineEnabled] =
     useState(true);
   const [oneMinuteMinimumSamples, setOneMinuteMinimumSamples] =
@@ -2154,7 +2154,7 @@ export default function RapidEdgeAI() {
   const [maximumRunsPerMinute, setMaximumRunsPerMinute] =
     useState(20);
   const [minimumEntryGapMs, setMinimumEntryGapMs] =
-    useState(2500);
+    useState(2800);
   const recentRunTimesRef =
     useRef([]);
   const [recentRunsThisMinute, setRecentRunsThisMinute] =
@@ -5485,7 +5485,7 @@ export default function RapidEdgeAI() {
       setMarketBlocks((current) => ({
         ...current,
         [settled.symbol]:
-          Date.now() + 5000,
+          Date.now() + 3000,
       }));
       playTradeSound("RECOVERY");
 
@@ -5525,7 +5525,7 @@ export default function RapidEdgeAI() {
     if (
       result === "LOST" &&
       (
-        consecutiveLosses >= 4 ||
+        consecutiveLosses >= 2 ||
         (
           settled.recoveryMode &&
           Number(settled.recoveryAttempt || 0) >=
@@ -5852,8 +5852,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V1.3.1 · Fast Adaptive"
-          subtitle="Up to 20 qualified sequential entries per 60 seconds · fast recovery scan · OVER + UNDER"
+          title="RapidEdge AI V1.4 · Quality Speed"
+          subtitle="Up to 20 qualified entries per minute · stronger probability gate · fast loss rotation · OVER + UNDER"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
