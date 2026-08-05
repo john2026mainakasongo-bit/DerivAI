@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -501,25 +501,29 @@ export default function FreshEdgeBot() {
     duration: 20,
     durationUnit: "s",
     minimumTicks: 12,
-    minimumConfidence: 75,
-    minimumQuality: 68,
-    minimumVotes: 70,
-    minimumContinuation: 72,
+    minimumConfidence: 69,
+    minimumQuality: 60,
+    minimumVotes: 62,
+    minimumContinuation: 65,
     maximumNoise: 60,
     maximumReversal: 50,
     maximumSpikeRatio: 6,
-    confirmationTicks: 3,
-    maximumMarketSeconds: 32,
-    decisionCycleSeconds: 55,
+    confirmationTicks: 2,
+    maximumMarketSeconds: 12,
+    decisionCycleSeconds: 45,
+    oneMinuteTargetSeconds: 60,
+    fastLaneAfterSeconds: 42,
+    fastLaneMinimumConfidence: 66,
+    fastLaneMinimumQuality: 57,
     durationFastSeconds: 12,
     durationNormalSeconds: 20,
     durationPatientSeconds: 30,
     durationStrongSeconds: 16,
     durationBalancedSeconds: 22,
     latencyEntryLimitMs: 1600,
-    hardRiskHoldSeconds: 15,
-    weakSetupHoldSeconds: 14,
-    strongerMarketDelaySeconds: 25,
+    hardRiskHoldSeconds: 6,
+    weakSetupHoldSeconds: 6,
+    strongerMarketDelaySeconds: 8,
     strongerMarketMargin: 12,
     marketBlockSeconds: 15,
     maximumOpenTrades: 1,
@@ -527,24 +531,24 @@ export default function FreshEdgeBot() {
     stopLoss: 1.4,
     rankingTopMarkets: 5,
     rankingFreshnessSeconds: 20,
-    rankingSwitchMargin: 3,
-    rankingMinimumScore: 48,
+    rankingSwitchMargin: 2,
+    rankingMinimumScore: 44,
     timelineLimit: 60,
-    freshRecoveryTicks: 12,
-    marketWarmupTicks: 10,
-    minimumExpiryConfidence: 78,
-    minimumExpiryQuality: 70,
+    freshRecoveryTicks: 8,
+    marketWarmupTicks: 7,
+    minimumExpiryConfidence: 69,
+    minimumExpiryQuality: 60,
     sameDirectionLossBlockSeconds: 18,
     recoveryMarketBlockSeconds: 20,
     replayLimit: 12,
-    waitEstimateSeconds: 5,
-    stabilityTicks: 5,
-    trajectoryTicks: 6,
-    minimumTrendAgeTicks: 8,
+    waitEstimateSeconds: 4,
+    stabilityTicks: 3,
+    trajectoryTicks: 4,
+    minimumTrendAgeTicks: 5,
     maximumMomentumDrop: 6,
     maximumVotesDrop: 5,
     maximumContinuationDrop: 5,
-    lossCooldownSeconds: 8,
+    lossCooldownSeconds: 5,
     maximumConfidenceDrop: 3.5,
     minimumConfidenceGrowth: -0.5,
     scannerBoardMarkets: 8,
@@ -610,6 +614,8 @@ export default function FreshEdgeBot() {
   const lossCooldownUntilV85Ref = useRef(0);
   const hardRiskStartedAtRef = useRef(0);
   const weakSetupStartedAtRef = useRef(0);
+  const lastEntryAttemptV87Ref = useRef(Date.now());
+  const oneMinuteSwitchBusyV87Ref = useRef(false);
 
   useEffect(() => {
     try {
@@ -895,10 +901,10 @@ export default function FreshEdgeBot() {
       reason: ready
         ? `Stable ${trend >= 0 ? "+" : ""}${trend.toFixed(
             1
-          )}% · max drop ${maximumDrop.toFixed(1)}%.`
+          )}% Â· max drop ${maximumDrop.toFixed(1)}%.`
         : `Confidence unstable: trend ${trend.toFixed(
             1
-          )}% · max drop ${maximumDrop.toFixed(1)}%.`,
+          )}% Â· max drop ${maximumDrop.toFixed(1)}%.`,
     };
   }, [
     confidenceTrail,
@@ -1499,7 +1505,7 @@ export default function FreshEdgeBot() {
         "SIGNAL",
         `${analysis.direction} candidate ${analysis.confidence.toFixed(
           1
-        )}% · confirmation ${nextConfirmationTicks}/${
+        )}% Â· confirmation ${nextConfirmationTicks}/${
           settings.confirmationTicks
         }.`,
         {
@@ -1557,7 +1563,7 @@ export default function FreshEdgeBot() {
       setMessage(`${reason} Switching to ${nextLabel}.`);
       appendTimeline(
         "SWITCH",
-        `${reason} ${symbol} → ${nextLabel}.`,
+        `${reason} ${symbol} â†’ ${nextLabel}.`,
         {
           from: symbol,
           to: nextSymbol,
@@ -1877,17 +1883,17 @@ export default function FreshEdgeBot() {
         setMessage(
           `${analysis.direction} opened on ${market?.label || symbol} at ${analysis.confidence.toFixed(
             1
-          )}% confidence · order response ${orderLatencyMs.toFixed(
+          )}% confidence Â· order response ${orderLatencyMs.toFixed(
             0
           )}ms.`
         );
         appendTimeline(
           "OPEN",
-          `${analysis.direction} opened · C ${analysis.confidence.toFixed(
+          `${analysis.direction} opened Â· C ${analysis.confidence.toFixed(
             1
-          )}% · Q ${analysis.quality.toFixed(
+          )}% Â· Q ${analysis.quality.toFixed(
             1
-          )}% · order response ${orderLatencyMs.toFixed(
+          )}% Â· order response ${orderLatencyMs.toFixed(
             0
           )}ms.`,
           {
@@ -1895,6 +1901,8 @@ export default function FreshEdgeBot() {
             direction: analysis.direction,
           }
         );
+        // FreshEdge V8.7 entry activity
+        lastEntryAttemptV87Ref.current = Date.now();
         setConfirmation({ key: "", ticks: 0 });
       } catch (error) {
         setMessage(
@@ -1941,6 +1949,174 @@ export default function FreshEdgeBot() {
     placeTrade,
   ]);
 
+  // FreshEdge V8.7 one-minute watchdog.
+  // It targets one qualified opportunity per minute without forcing
+  // a random trade when risk remains unsafe.
+  useEffect(() => {
+    if (
+      !running ||
+      sessionStopped ||
+      activeBotTrades.length > 0 ||
+      tradeBusy ||
+      buyingRef.current ||
+      !markets.length
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      const idleMs =
+        Date.now() -
+        Number(
+          lastEntryAttemptV87Ref.current ||
+          marketStartedAt ||
+          Date.now()
+        );
+
+      const fastLaneMs =
+        Number(
+          settings.fastLaneAfterSeconds || 42
+        ) * 1000;
+
+      const hardTargetMs =
+        Number(
+          settings.oneMinuteTargetSeconds || 60
+        ) * 1000;
+
+      const riskAcceptable =
+        Number(analysis.noise || 100) <=
+          Number(settings.maximumNoise || 60) &&
+        Number(analysis.reversalRisk || 100) <=
+          Number(settings.maximumReversal || 50);
+
+      const fastLaneQualified =
+        Boolean(analysis.ready) &&
+        Boolean(analysis.direction) &&
+        analysis.direction !== "WAIT" &&
+        riskAcceptable &&
+        Number(analysis.confidence || 0) >=
+          Number(
+            settings.fastLaneMinimumConfidence || 66
+          ) &&
+        Number(analysis.quality || 0) >=
+          Number(
+            settings.fastLaneMinimumQuality || 57
+          ) &&
+        Number(analysis.voteConsensus || 0) >= 58 &&
+        Number(analysis.continuation || 0) >= 60;
+
+      if (
+        idleMs >= fastLaneMs &&
+        fastLaneQualified
+      ) {
+        setConfirmation((current) => ({
+          key:
+            current.key ||
+            `${symbol}:${analysis.direction}:V87`,
+          ticks: Math.max(
+            Number(current.ticks || 0),
+            Number(settings.confirmationTicks || 2)
+          ),
+        }));
+
+        setMessage(
+          `FreshEdge V8.7 fast lane ready after ${Math.floor(
+            idleMs / 1000
+          )}s. Executing only if all live entry guards remain clear.`
+        );
+
+        lastEntryAttemptV87Ref.current =
+          Date.now();
+        return;
+      }
+
+      if (
+        idleMs >= hardTargetMs &&
+        !oneMinuteSwitchBusyV87Ref.current
+      ) {
+        oneMinuteSwitchBusyV87Ref.current = true;
+
+        const ranked = Object.values(
+          marketScores || {}
+        )
+          .filter(
+            (item) =>
+              item?.symbol &&
+              item.symbol !== symbol &&
+              Date.now() -
+                Number(item.updatedAt || 0) <
+                120000
+          )
+          .sort(
+            (a, b) =>
+              Number(b.score || 0) -
+              Number(a.score || 0)
+          );
+
+        const currentIndex = Math.max(
+          0,
+          markets.findIndex(
+            (item) => item.id === symbol
+          )
+        );
+
+        const nextSymbol =
+          ranked[0]?.symbol ||
+          markets[
+            (currentIndex + 1) %
+              markets.length
+          ]?.id;
+
+        setConfirmation({
+          key: "",
+          ticks: 0,
+        });
+        hardRiskStartedAtRef.current = 0;
+        weakSetupStartedAtRef.current = 0;
+        setConfidenceTrail([]);
+        setMarketStartedAt(Date.now());
+        lastEntryAttemptV87Ref.current =
+          Date.now();
+
+        setMessage(
+          `FreshEdge V8.7 one-minute target: no safe entry on ${market?.label || symbol}. Switching immediately to refresh the strongest market.`
+        );
+
+        if (
+          nextSymbol &&
+          nextSymbol !== symbol
+        ) {
+          void changeSymbol(nextSymbol)
+            .catch(() => {})
+            .finally(() => {
+              window.setTimeout(() => {
+                oneMinuteSwitchBusyV87Ref.current =
+                  false;
+              }, 900);
+            });
+        } else {
+          oneMinuteSwitchBusyV87Ref.current =
+            false;
+        }
+      }
+    }, 1000);
+
+    return () =>
+      window.clearInterval(timer);
+  }, [
+    running,
+    sessionStopped,
+    activeBotTrades.length,
+    tradeBusy,
+    markets,
+    symbol,
+    market?.label,
+    marketStartedAt,
+    analysis,
+    settings,
+    marketScores,
+    changeSymbol,
+  ]);
   useEffect(() => {
     const settled = openContracts.filter(
       (contract) =>
@@ -1958,6 +2134,9 @@ export default function FreshEdgeBot() {
       if (!original) continue;
 
       processedRef.current.add(id);
+      // FreshEdge V8.7 settlement rescan clock
+      lastEntryAttemptV87Ref.current = Date.now();
+      oneMinuteSwitchBusyV87Ref.current = false;
       botContractsRef.current.delete(id);
 
       const result = resultOf(contract);
@@ -2033,11 +2212,11 @@ export default function FreshEdgeBot() {
         }));
 
         setMessage(
-          `${original.market} lost · ${diagnosis.code}: ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades. ${diagnosis.nextAction}`
+          `${original.market} lost Â· ${diagnosis.code}: ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades. ${diagnosis.nextAction}`
         );
         appendTimeline(
           "LOST",
-          `${original.market} · ${diagnosis.code} · ${diagnosis.summary}`,
+          `${original.market} Â· ${diagnosis.code} Â· ${diagnosis.summary}`,
           {
             contractId: original.contractId,
             profit,
@@ -2070,7 +2249,7 @@ export default function FreshEdgeBot() {
           Number(settings.lossCooldownSeconds || 8) * 1000;
 
         setMessage(
-          `${original.market} lost · ${diagnosis.code}. Cooling down for ${Number(
+          `${original.market} lost Â· ${diagnosis.code}. Cooling down for ${Number(
             settings.lossCooldownSeconds || 8
           )}s before rebuilding from fresh data.`
         );
@@ -2082,11 +2261,11 @@ export default function FreshEdgeBot() {
         }, cooldownMs);
       } else {
         setMessage(
-          `${original.market} won ${profit.toFixed(2)} USD · ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades.`
+          `${original.market} won ${profit.toFixed(2)} USD Â· ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades.`
         );
         appendTimeline(
           "WON",
-          `${original.market} · ${diagnosis.summary}`,
+          `${original.market} Â· ${diagnosis.summary}`,
           {
             contractId: original.contractId,
             profit,
@@ -2171,10 +2350,10 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V8.5</h1>
+            <h1>FreshEdge AI V8.7</h1>
             <small>STRICT ENTRY GUARD</small>
             <p>
-              Deep replay · latency telemetry · diagnosis-based recovery
+              Deep replay Â· latency telemetry Â· diagnosis-based recovery
             </p>
           </div>
 
@@ -2281,7 +2460,7 @@ export default function FreshEdgeBot() {
                 ? Number(currentPrice).toFixed(
                     market?.decimals || 3
                   )
-                : "—"}
+                : "â€”"}
             </strong>
           </article>
 
@@ -2530,9 +2709,9 @@ export default function FreshEdgeBot() {
                     <b>{Number(item.score || 0).toFixed(1)}</b>
                   </div>
                   <span>
-                    {item.direction} · C{" "}
+                    {item.direction} Â· C{" "}
                     {Number(item.confidence || 0).toFixed(1)}
-                    % · Q{" "}
+                    % Â· Q{" "}
                     {Number(item.quality || 0).toFixed(1)}%
                   </span>
                   <small>{item.rejectionReason}</small>
@@ -2566,11 +2745,11 @@ export default function FreshEdgeBot() {
                     {Number(item.score || 0).toFixed(1)}
                   </b>
                   <small>
-                    {item.direction} · C{" "}
+                    {item.direction} Â· C{" "}
                     {Number(
                       item.confidence || 0
                     ).toFixed(1)}
-                    % · Q{" "}
+                    % Â· Q{" "}
                     {Number(
                       item.quality || 0
                     ).toFixed(1)}
@@ -2629,7 +2808,7 @@ export default function FreshEdgeBot() {
                 <article key={item.label}>
                   <span>{item.label}</span>
                   <strong>
-                    {item.base.toFixed(1)}% →{" "}
+                    {item.base.toFixed(1)}% â†’{" "}
                     {item.learned.toFixed(1)}%
                   </strong>
                   <b className={delta > 0 ? "raised" : "same"}>
@@ -2887,7 +3066,7 @@ export default function FreshEdgeBot() {
                   ? `${Number(
                       stats.history[0].orderLatencyMs
                     ).toFixed(0)} ms`
-                  : "—"}
+                  : "â€”"}
               </strong>
             </article>
             <article>
@@ -2910,7 +3089,7 @@ export default function FreshEdgeBot() {
             </article>
             <article>
               <span>Measurement</span>
-              <strong>CLIENT → API RESPONSE</strong>
+              <strong>CLIENT â†’ API RESPONSE</strong>
             </article>
           </div>
           <p>
@@ -2999,8 +3178,8 @@ export default function FreshEdgeBot() {
 
             return (
               <div className="freshEdgeReplayBody">
-                <article><span>Market / side</span><strong>{trade.market} · {trade.direction}</strong></article>
-                <article><span>Entry edge</span><strong>C {Number(trade.confidence || 0).toFixed(1)}% · Q {Number(trade.quality || 0).toFixed(1)}%</strong></article>
+                <article><span>Market / side</span><strong>{trade.market} Â· {trade.direction}</strong></article>
+                <article><span>Entry edge</span><strong>C {Number(trade.confidence || 0).toFixed(1)}% Â· Q {Number(trade.quality || 0).toFixed(1)}%</strong></article>
                 <article><span>Result</span><strong className={trade.result === "WON" ? "won" : "lost"}>{trade.result} {Number(trade.profit || 0).toFixed(2)}</strong></article>
                 <article><span>Diagnosis</span><strong>{trade.diagnosis?.code || "SETTLED"}</strong></article>
                 <div className="freshEdgeReplaySteps">
@@ -3028,7 +3207,7 @@ export default function FreshEdgeBot() {
               <div>
                 <small>V7 TICK-BY-TICK REPLAY</small>
                 <h3>
-                  {selectedReplay.market} ·{" "}
+                  {selectedReplay.market} Â·{" "}
                   {selectedReplay.direction}
                 </h3>
               </div>
@@ -3194,14 +3373,14 @@ export default function FreshEdgeBot() {
 
                 <div>
                   <span>
-                    Why entered · memory{" "}
+                    Why entered Â· memory{" "}
                     {trade.learningTrades || 0} trades
                   </span>
                   <strong>
-                    {(trade.entryReasons || []).join(" · ") ||
+                    {(trade.entryReasons || []).join(" Â· ") ||
                       `C ${Number(trade.confidence).toFixed(
                         1
-                      )}% · Q ${Number(trade.quality).toFixed(
+                      )}% Â· Q ${Number(trade.quality).toFixed(
                         1
                       )}%`}
                   </strong>
@@ -3241,12 +3420,13 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V8.5 uses clean hook order, warm-up, trajectory confirmation, adaptive expiry and bounded cooldown without increasing stake. Test on Demo.
+          FreshEdge V8.7 targets a qualified opportunity inside each minute using a fast lane and forced market refresh, but never guarantees or forces a winning trade. Test on Demo.
         </footer>
       </main>
     </div>
   );
 }
+
 
 
 
