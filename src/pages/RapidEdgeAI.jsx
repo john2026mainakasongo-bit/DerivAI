@@ -2113,7 +2113,7 @@ export default function RapidEdgeAI() {
   const [dynamicMarketBlacklist, setDynamicMarketBlacklist] =
     useState({});
   const [globalSelectionEnabled, setGlobalSelectionEnabled] =
-    useState(true);
+    useState(false);
   const [minimumQualifiedProbability, setMinimumQualifiedProbability] =
     useState(88);
   const [minimumQualifiedVotes, setMinimumQualifiedVotes] =
@@ -2131,7 +2131,7 @@ export default function RapidEdgeAI() {
   const [rotateAfterEverySettlement, setRotateAfterEverySettlement] =
     useState(false);
   const [freshTicksRequired, setFreshTicksRequired] =
-    useState(4);
+    useState(3);
   const [lastTradeByMarket, setLastTradeByMarket] =
     useState({});
   const [lastSetupKeyByMarket, setLastSetupKeyByMarket] =
@@ -2167,19 +2167,19 @@ export default function RapidEdgeAI() {
   const [portfolioMinimumLead, setPortfolioMinimumLead] =
     useState(2);
   const [portfolioSwitchCooldownMs, setPortfolioSwitchCooldownMs] =
-    useState(350);
+    useState(180);
   const [portfolioWatchEnabled, setPortfolioWatchEnabled] =
     useState(true);
   const [watchRefreshMilliseconds, setWatchRefreshMilliseconds] =
-    useState(180);
+    useState(120);
   const [readyLiveConfirmationTicks, setReadyLiveConfirmationTicks] =
-    useState(2);
+    useState(1);
   const [idleRescanSeconds, setIdleRescanSeconds] =
     useState(1);
   const [marketRearmSeconds, setMarketRearmSeconds] =
-    useState(3);
+    useState(2);
   const [postSettlementRearmMs, setPostSettlementRearmMs] =
-    useState(350);
+    useState(220);
   const [adaptiveArmingEnabled, setAdaptiveArmingEnabled] =
     useState(true);
   const [adaptiveMinimumProbability, setAdaptiveMinimumProbability] =
@@ -2191,11 +2191,11 @@ export default function RapidEdgeAI() {
   const [adaptiveStableTicks, setAdaptiveStableTicks] =
     useState(1);
   const [adaptiveConfirmTicks, setAdaptiveConfirmTicks] =
-    useState(2);
+    useState(1);
   const [oneMinuteEngineEnabled, setOneMinuteEngineEnabled] =
     useState(true);
   const [oneMinuteMinimumSamples, setOneMinuteMinimumSamples] =
-    useState(12);
+    useState(10);
   const [negativeEvRotateSeconds, setNegativeEvRotateSeconds] =
     useState(2);
   const [regimeResetSensitivity, setRegimeResetSensitivity] =
@@ -2205,7 +2205,7 @@ export default function RapidEdgeAI() {
   const [maximumRunsPerMinute, setMaximumRunsPerMinute] =
     useState(20);
   const [minimumEntryGapMs, setMinimumEntryGapMs] =
-    useState(2800);
+    useState(2600);
   const recentRunTimesRef =
     useRef([]);
   const [recentRunsThisMinute, setRecentRunsThisMinute] =
@@ -4382,10 +4382,10 @@ export default function RapidEdgeAI() {
     speedCandidateValid &&
     speedBalancedActive &&
     Number(analysis?.total || 0) >= 12 &&
-    speedProbability >= 74 &&
-    speedExpectedValue >= 0.003 &&
-    speedVotes >= 3 &&
-    speedRisk <= 54;
+    speedProbability >= 68 &&
+    speedExpectedValue >= 0 &&
+    speedVotes >= 2 &&
+    speedRisk <= 60;
 
   const fallbackSpeedEntry =
     speedCandidateValid &&
@@ -4401,9 +4401,9 @@ export default function RapidEdgeAI() {
     speedDeadlineActive &&
     Number(analysis?.total || 0) >= 8 &&
     speedProbability >= 66 &&
-    speedExpectedValue > -0.005 &&
+    speedExpectedValue > -0.002 &&
     speedVotes >= 2 &&
-    speedRisk <= 62;
+    speedRisk <= 60;
 
   const recoverySpeedEntry =
     speedCandidateValid &&
@@ -5366,6 +5366,7 @@ useEffect(() => {
       !hasOpenTrade &&
       (
         speedEntryReady ||
+        entryReady ||
         !globalSelectionEnabled ||
         (
           selectedGlobalSetup?.market === symbol &&
@@ -5472,10 +5473,14 @@ useEffect(() => {
 
     const timer = window.setTimeout(() => {
       setProtectionUntil(0);
-      scanStartedAtRef.current = Date.now();
       confirmationRef.current = {
-        key: "",
-        ticks: 0,
+        ...confirmationRef.current,
+        ticks: Math.max(
+          0,
+          Number(
+            confirmationRef.current?.ticks || 0
+          ) - 1
+        ),
       };
       setMessage(
         "PROTECTION RELEASED · Fresh market must pass predictive guard, layer agreement and EV before trading."
@@ -6265,8 +6270,8 @@ useEffect(() => {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V3.0.2 · Execution Unlocked"
-          subtitle="60-second speed ladder bypasses stale global qualification · fast sequential OVER + UNDER execution"
+          title="RapidEdge AI V3.1 · Independent Fast Scan"
+          subtitle="Independent local-market execution · 60-tick rolling evidence · fast rescan · up to 20 qualified runs/min"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
