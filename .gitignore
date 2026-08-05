@@ -28,3 +28,11 @@ edgepilot-oauth-backend/.env
 edgepilot-oauth-backend/node_modules/
 
 *-BACKUP-*/
+
+APP-RAPIDEDGE-BACKUP-*/
+
+REMOVE-QUANTUM-BACKUP-*/
+
+OVER-UNDER-V*-BACKUP-*/
+
+FRESH-EDGE-V*-BACKUP-*/
