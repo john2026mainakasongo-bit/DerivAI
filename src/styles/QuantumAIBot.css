@@ -1063,3 +1063,112 @@ html:has(.quantumShell),
   }
 }
 
+
+
+
+/* QUANTUM AI V20 â€” tiered entry engine */
+.quantumTierPanel {
+  margin: 7px 0;
+  padding: 9px;
+  border: 1px solid #2f758c;
+  border-radius: 12px;
+  background: #062235;
+}
+
+.quantumTierPanel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quantumTierPanel small {
+  color: #3de0b4;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.quantumTierPanel h3 {
+  margin: 3px 0 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.quantumTierPanel header > strong {
+  color: #f0cf67;
+  font-size: 11px;
+}
+
+.quantumTierGrid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.quantumTierGrid article {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #184f67;
+  border-radius: 8px;
+  background: #041a29;
+}
+
+.quantumTierGrid span {
+  display: block;
+  color: #7faec0;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumTierGrid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.quantumTierRules {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.quantumTierRules span {
+  padding: 6px;
+  border: 1px solid #755f18;
+  border-radius: 7px;
+  background: #2b260d;
+  color: #e3c85f;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.quantumTierRules span.pass {
+  border-color: #178d70;
+  background: #073d34;
+  color: #4be2b8;
+}
+
+.quantumTierRules span.blocked {
+  border-color: #8c3450;
+  background: #3a1322;
+  color: #ff7894;
+}
+
+@media (max-width: 1100px) {
+  .quantumTierGrid,
+  .quantumTierRules {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .quantumTierGrid,
+  .quantumTierRules {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
