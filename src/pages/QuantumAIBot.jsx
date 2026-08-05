@@ -742,23 +742,6 @@ export default function QuantumAIBot() {
     auditPostTicks: 30,
     auditLatencyWarningMs: 1800,
     auditExcludeAnomaliesFromLearning: true,
-    tierAConfidence: 74,
-    tierAQuality: 68,
-    tierAVotes: 70,
-    tierBConfidence: 67,
-    tierBQuality: 60,
-    tierBVotes: 62,
-    tierCConfidence: 60,
-    tierCQuality: 54,
-    tierCVotes: 56,
-    tierCStartSeconds: 40,
-    tierDMaximumConfidence: 59,
-    bayesianPriorWins: 3,
-    bayesianPriorLosses: 3,
-    continuationMinimum: 56,
-    fakeBreakoutMaximum: 62,
-    liquiditySweepMaximum: 66,
-    structureRiskMaximum: 68,
   });
   const [activeTrades, setActiveTrades] = useState([]);
   const [stats, setStats] = useState(INITIAL_STATS);
@@ -1047,49 +1030,6 @@ export default function QuantumAIBot() {
     Number(analysis.reversalRisk || 0) >
       Number(settings.hardReversalLimit);
 
-  const adaptiveSteps =
-    decisionClock >=
-    Number(settings.adaptiveEntryStartSeconds)
-      ? Math.floor(
-          (
-            decisionClock -
-            Number(settings.adaptiveEntryStartSeconds)
-          ) /
-            Math.max(
-              1,
-              Number(settings.adaptiveEntryStepSeconds)
-            )
-        ) + 1
-      : 0;
-
-  const adaptiveEntryRelief =
-    adaptiveSteps *
-    Number(settings.adaptiveEntryDropPerStep);
-
-  const timeAwareConfidenceGate = recovery.active
-    ? dynamicRequiredConfidence
-    : Math.max(
-        Number(settings.adaptiveEntryFloor),
-        dynamicRequiredConfidence -
-          adaptiveEntryRelief
-      );
-
-  const timeAwareQualityGate = Math.max(
-    Number(settings.adaptiveQualityFloor),
-    Number(settings.weightedQualityMinimum) -
-      adaptiveEntryRelief * 0.5
-  );
-
-  const timeAwareVoteGate = Math.max(
-    Number(settings.adaptiveVoteFloor),
-    requiredVotes -
-      adaptiveEntryRelief * 0.6
-  );
-
-  const deadlineReached =
-    decisionClock >=
-    Number(settings.marketDecisionDeadlineSeconds);
-
   const smartRecoveryDirection =
     recovery.active &&
     oppositeHistorical.trades >= 4 &&
@@ -1149,130 +1089,56 @@ export default function QuantumAIBot() {
     ? Number(settings.finalSafeMaximumReversal)
     : Number(settings.maximumFastReversal);
 
-  const historicalWins =
-    Number(currentLearning.wins || 0);
-
-  const historicalLosses =
-    Number(currentLearning.losses || 0);
-
-  const bayesianProbability =
-    (
-      historicalWins +
-      Number(settings.bayesianPriorWins)
-    ) /
-    Math.max(
-      1,
-      historicalWins +
-        historicalLosses +
-        Number(settings.bayesianPriorWins) +
-        Number(settings.bayesianPriorLosses)
-    );
-
-  const continuationScore = clampNumber(
-    Number(
-      analysis.metrics?.transition ||
-        analysis.metrics?.continuation ||
-        0
-    ),
-    0,
-    100
-  );
-
-  const breakoutStrength = clampNumber(
-    Number(
-      analysis.metrics?.breakoutStrength ||
-        analysis.metrics?.trendStrength ||
-        0
-    ),
-    0,
-    100
-  );
-
-  const rangePosition = clampNumber(
-    Number(analysis.metrics?.rangePosition || 50),
-    0,
-    100
-  );
-
-  const fakeBreakoutRisk = clampNumber(
-    Number(analysis.reversalRisk || 0) * 0.45 +
-      Number(analysis.noiseScore || 0) * 0.25 +
-      Math.max(0, 55 - continuationScore) * 0.30,
-    0,
-    100
-  );
-
-  const liquiditySweepRisk = clampNumber(
-    Math.abs(50 - rangePosition) * 0.55 +
-      Number(analysis.reversalRisk || 0) * 0.25 +
-      Math.max(0, 50 - breakoutStrength) * 0.20,
-    0,
-    100
-  );
-
-  const structureRiskScore = clampNumber(
-    fakeBreakoutRisk * 0.45 +
-      liquiditySweepRisk * 0.35 +
-      Number(analysis.noiseScore || 0) * 0.20,
-    0,
-    100
-  );
-
-  const tierAReady =
-    finalLearnedConfidence >=
-      Number(settings.tierAConfidence) &&
-    liveQualityScore >=
-      Number(settings.tierAQuality) &&
-    fastVoteConsensus >=
-      Number(settings.tierAVotes);
-
-  const tierBReady =
-    finalLearnedConfidence >=
-      Number(settings.tierBConfidence) &&
-    liveQualityScore >=
-      Number(settings.tierBQuality) &&
-    fastVoteConsensus >=
-      Number(settings.tierBVotes) &&
-    continuationScore >=
-      Number(settings.continuationMinimum);
-
-  const tierCReady =
+  const adaptiveSteps =
     decisionClock >=
-      Number(settings.tierCStartSeconds) &&
-    finalLearnedConfidence >=
-      Number(settings.tierCConfidence) &&
-    liveQualityScore >=
-      Number(settings.tierCQuality) &&
-    fastVoteConsensus >=
-      Number(settings.tierCVotes) &&
-    bayesianProbability >= 0.52;
+    Number(settings.adaptiveEntryStartSeconds)
+      ? Math.floor(
+          (
+            decisionClock -
+            Number(settings.adaptiveEntryStartSeconds)
+          ) /
+            Math.max(
+              1,
+              Number(settings.adaptiveEntryStepSeconds)
+            )
+        ) + 1
+      : 0;
 
-  const activeEntryTier =
-    tierAReady
-      ? "A"
-      : tierBReady
-      ? "B"
-      : tierCReady
-      ? "C"
-      : finalLearnedConfidence <=
-        Number(settings.tierDMaximumConfidence)
-      ? "D"
-      : "WAIT";
+  const adaptiveEntryRelief =
+    adaptiveSteps *
+    Number(settings.adaptiveEntryDropPerStep);
 
-  const tierEntryPass =
-    tierAReady || tierBReady || tierCReady;
+  const timeAwareConfidenceGate = recovery.active
+    ? dynamicRequiredConfidence
+    : Math.max(
+        Number(settings.adaptiveEntryFloor),
+        dynamicRequiredConfidence -
+          adaptiveEntryRelief
+      );
 
-  const structureRiskPass =
-    fakeBreakoutRisk <=
-      Number(settings.fakeBreakoutMaximum) &&
-    liquiditySweepRisk <=
-      Number(settings.liquiditySweepMaximum) &&
-    structureRiskScore <=
-      Number(settings.structureRiskMaximum);
+  const timeAwareQualityGate = Math.max(
+    Number(settings.adaptiveQualityFloor),
+    Number(settings.weightedQualityMinimum) -
+      adaptiveEntryRelief * 0.5
+  );
+
+  const timeAwareVoteGate = Math.max(
+    Number(settings.adaptiveVoteFloor),
+    requiredVotes -
+      adaptiveEntryRelief * 0.6
+  );
+
+  const deadlineReached =
+    decisionClock >=
+    Number(settings.marketDecisionDeadlineSeconds);
 
   const phaseSignalPass =
-    tierEntryPass &&
-    structureRiskPass &&
+    finalLearnedConfidence >=
+      timeAwareConfidenceGate &&
+    liveQualityScore >=
+      timeAwareQualityGate &&
+    fastVoteConsensus >=
+      timeAwareVoteGate &&
     Number(analysis.noiseScore || 100) <=
       allowedNoise &&
     Number(analysis.reversalRisk || 100) <=
@@ -1324,7 +1190,7 @@ export default function QuantumAIBot() {
 
 
   const learningEntryPass =
-    tierEntryPass &&
+    learnedConfidence >= dynamicRequiredConfidence &&
     phaseSignalPass &&
     entryQueuePass;
 
@@ -1501,15 +1367,15 @@ export default function QuantumAIBot() {
         )}%.`;
     } else if (!learningEntryPass) {
       reason =
-        `Tier ${activeEntryTier} · confidence ${finalLearnedConfidence.toFixed(
+        `${scanPhase} stage needs ${timeAwareConfidenceGate.toFixed(
           1
-        )}% · quality ${liveQualityScore.toFixed(
-          1
-        )} · votes ${fastVoteConsensus.toFixed(
+        )}% confidence, ${timeAwareVoteGate.toFixed(
           0
-        )}% · Bayesian ${(bayesianProbability * 100).toFixed(
+        )}% votes and ${timeAwareQualityGate.toFixed(
           1
-        )}% · structure risk ${structureRiskScore.toFixed(
+        )} quality. Current final confidence: ${finalLearnedConfidence.toFixed(
+          1
+        )}%; quality: ${liveQualityScore.toFixed(
           1
         )}%.`;
     }
@@ -2414,13 +2280,6 @@ export default function QuantumAIBot() {
             timeAwareQualityGate,
             timeAwareVoteGate,
             decisionSeconds: decisionClock,
-            entryTier: activeEntryTier,
-            bayesianProbability:
-              bayesianProbability * 100,
-            continuationScore,
-            fakeBreakoutRisk,
-            liquiditySweepRisk,
-            structureRiskScore,
           },
           openedAt: Date.now(),
         };
@@ -2520,8 +2379,8 @@ export default function QuantumAIBot() {
       <Sidebar />
       <main className="mainContent quantumPage">
         <Topbar
-          title="MetaBinary Quantum AI V20.1"
-          subtitle="Tiered entry · Bayesian probability · structure-risk filters"
+          title="MetaBinary Quantum AI V20.1.1"
+          subtitle="Tick audit · latency monitor · anomaly-safe learning"
           connected={connected}
           connecting={connecting}
           onConnect={connect}
@@ -2531,7 +2390,7 @@ export default function QuantumAIBot() {
         <section className={`quantumHero ${running ? "running" : "idle"}`}>
           <div>
             <small>METABINARY SYNTHETIC INTELLIGENCE</small>
-            <h1>MetaBinary Quantum AI V20.1</h1>
+            <h1>MetaBinary Quantum AI V20.1.1</h1>
             <p>
               Compares each live setup with settled history, calculates
               market-direction probability and uses a fresh confirmed
@@ -2563,81 +2422,32 @@ export default function QuantumAIBot() {
           <button className="quantumReset" onClick={resetSession} disabled={running || activeTrades.length > 0}>RESET</button>
         </section>
 
-        <section className="quantumTierPanel">
+        <section className="quantumTdzStable">
           <header>
             <div>
-              <small>V20 TIERED ENTRY ENGINE</small>
-              <h3>Adaptive A/B/C qualification</h3>
+              <small>V20.1 TDZ RUNTIME FIX</small>
+              <h3>Declaration order verified</h3>
             </div>
-            <strong>
-              TIER {activeEntryTier}
-            </strong>
+            <strong>STABLE</strong>
           </header>
 
-          <div className="quantumTierGrid">
+          <div className="quantumTdzStableGrid">
             <article>
-              <span>Final confidence</span>
-              <strong>
-                {finalLearnedConfidence.toFixed(1)}%
-              </strong>
+              <span>Recovery confidence</span>
+              <strong>READY</strong>
             </article>
             <article>
-              <span>Quality</span>
-              <strong>
-                {liveQualityScore.toFixed(1)}
-              </strong>
+              <span>Dynamic confidence</span>
+              <strong>READY</strong>
             </article>
             <article>
-              <span>Votes</span>
-              <strong>
-                {fastVoteConsensus.toFixed(0)}%
-              </strong>
+              <span>Required votes</span>
+              <strong>READY</strong>
             </article>
             <article>
-              <span>Bayesian probability</span>
-              <strong>
-                {(bayesianProbability * 100).toFixed(1)}%
-              </strong>
+              <span>Adaptive gates</span>
+              <strong>READY</strong>
             </article>
-            <article>
-              <span>Continuation</span>
-              <strong>
-                {continuationScore.toFixed(1)}%
-              </strong>
-            </article>
-            <article>
-              <span>Fake breakout risk</span>
-              <strong>
-                {fakeBreakoutRisk.toFixed(1)}%
-              </strong>
-            </article>
-            <article>
-              <span>Liquidity sweep risk</span>
-              <strong>
-                {liquiditySweepRisk.toFixed(1)}%
-              </strong>
-            </article>
-            <article>
-              <span>Structure risk</span>
-              <strong>
-                {structureRiskScore.toFixed(1)}%
-              </strong>
-            </article>
-          </div>
-
-          <div className="quantumTierRules">
-            <span className={tierAReady ? "pass" : ""}>
-              A · 74% confidence · 68 quality · 70 votes
-            </span>
-            <span className={tierBReady ? "pass" : ""}>
-              B · 67% confidence · 60 quality · continuation
-            </span>
-            <span className={tierCReady ? "pass" : ""}>
-              C · after 40s · 60% confidence · Bayesian ≥52%
-            </span>
-            <span className={activeEntryTier === "D" ? "blocked" : ""}>
-              D · below 60% · skip
-            </span>
           </div>
         </section>
 
@@ -3040,17 +2850,6 @@ export default function QuantumAIBot() {
             ["Audit pre ticks", "auditPreTicks", 10, 100, 5],
             ["Audit post ticks", "auditPostTicks", 10, 100, 5],
             ["Latency warning", "auditLatencyWarningMs", 250, 10000, 250],
-            ["Tier A confidence", "tierAConfidence", 60, 95, 1],
-            ["Tier A quality", "tierAQuality", 50, 90, 1],
-            ["Tier B confidence", "tierBConfidence", 55, 90, 1],
-            ["Tier B quality", "tierBQuality", 45, 85, 1],
-            ["Tier C confidence", "tierCConfidence", 50, 85, 1],
-            ["Tier C quality", "tierCQuality", 40, 80, 1],
-            ["Tier C start", "tierCStartSeconds", 10, 120, 5],
-            ["Continuation min", "continuationMinimum", 40, 90, 1],
-            ["Fake breakout max", "fakeBreakoutMaximum", 30, 90, 1],
-            ["Liquidity sweep max", "liquiditySweepMaximum", 30, 90, 1],
-            ["Structure risk max", "structureRiskMaximum", 30, 90, 1],
             ["Min vote", "minimumVoteConsensus", 40, 90, 1],
           ].map(([label, key, min, max, step]) => (
             <label key={key}>
