@@ -1056,6 +1056,10 @@ export default function OverUnderLearningBot() {
     [markets]
   );
 
+  const smartRecoveryActive =
+    recovery.active &&
+    recoveryMode === "SMART";
+
   const rankedCandidates = useMemo(
     () =>
       analysis.candidates
@@ -1167,6 +1171,8 @@ export default function OverUnderLearningBot() {
       marketBlocks,
       regimeAnalysis,
       recovery.active,
+      recoveryMode,
+      smartRecoveryActive,
     ]
   );
 
@@ -1192,10 +1198,6 @@ export default function OverUnderLearningBot() {
 
   const blockedByLastLoss =
     lastLossKeyRef.current === bestKey;
-
-  const smartRecoveryActive =
-    recovery.active &&
-    recoveryMode === "SMART";
 
   const recoveryScoreGate =
     Number(minimumScore) +
@@ -2116,8 +2118,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V10"
-          subtitle="Recovery state fix · proactive market rotation · barrier lanes"
+          title="Over/Under Adaptive Learning Bot V10.1"
+          subtitle="TDZ hotfix · recovery state · proactive market rotation"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
