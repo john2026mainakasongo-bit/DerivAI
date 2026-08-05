@@ -12,10 +12,10 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:isolated:over-under:v28-1:learning";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v28-1:market-cache";
+const MEMORY_KEY = "edgepilot:isolated:over-under:v28-2:learning";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:isolated:over-under:v28-2:market-cache";
 const OVER_UNDER_NAMESPACE =
-  "edgepilot:isolated:over-under:v28-1";
+  "edgepilot:isolated:over-under:v28-2";
 const OVER_UNDER_SESSION_KEY =
   `${OVER_UNDER_NAMESPACE}:session`;
 const OVER_UNDER_AUDIO_KEY =
@@ -3318,7 +3318,7 @@ export default function OverUnderLearningBot() {
         Date.now();
       nextEntryAtRef.current =
         Date.now() + 500;
-      setStatusMessage(
+      setMessage(
         "REGIME CHANGE DETECTED · Old setup cleared · rebuilding one-minute evidence"
       );
     }
@@ -5544,7 +5544,7 @@ export default function OverUnderLearningBot() {
       ticks: 0,
     };
     setMessage(
-      "V28.1 running: runtime-order hotfix, one-minute evidence, regime reset and fast negative-EV rotation."
+      "V28.2 running: Start runtime hotfix, one-minute evidence, regime reset and fast negative-EV rotation."
     );
   }
 
@@ -5787,8 +5787,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V28.1"
-          subtitle="V28.1 runtime hotfix · one-minute regime engine · continuous scanner"
+          title="Over/Under Adaptive Learning Bot V28.2"
+          subtitle="V28.2 Start hotfix · one-minute regime engine · continuous scanner"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
