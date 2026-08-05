@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v4";
+const MEMORY_KEY = "edgepilot:over-under-learning:v5";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -190,6 +190,135 @@ function recoveryStakeAmount(
   );
 }
 
+
+function diagnoseOverUnderOutcome(trade, result) {
+  const snapshot = trade?.entrySnapshot || {};
+
+  if (result === "WON") {
+    return {
+      code: "SETUP_HELD",
+      title: "Setup remained valid",
+      summary:
+        "Digit probability, transition edge and consistency held through settlement.",
+      nextAction:
+        "Store the pattern and keep bounded weights for similar fresh setups.",
+    };
+  }
+
+  const score = Number(trade?.score || 0);
+  const confidence = Number(trade?.confidence || 0);
+  const probability = Number(trade?.probability || 0);
+  const probabilityEdge = Number(snapshot.probabilityEdge || 0);
+  const transitionEdge = Number(snapshot.transitionEdge || 0);
+  const consistency = Number(snapshot.consistency || 0);
+  const recentWinRate = Number(snapshot.recentWinRate || 50);
+
+  if (probabilityEdge < 2.5) {
+    return {
+      code: "THIN_PROBABILITY_EDGE",
+      title: "Probability edge was too thin",
+      summary:
+        "The selected barrier barely exceeded its learned break-even requirement.",
+      nextAction:
+        "Raise the required probability margin and avoid this exact setup temporarily.",
+    };
+  }
+
+  if (transitionEdge < 52) {
+    return {
+      code: "TRANSITION_FAILED",
+      title: "Digit transition did not continue",
+      summary:
+        "The recent digit transition pattern weakened after the order opened.",
+      nextAction:
+        "Increase transition weight and require two stronger confirmations.",
+    };
+  }
+
+  if (consistency < 55) {
+    return {
+      code: "LOW_CONSISTENCY",
+      title: "Digit flow was inconsistent",
+      summary:
+        "The winning-digit distribution was not stable enough for the short duration.",
+      nextAction:
+        "Wait for a cleaner digit window or rotate to another market.",
+    };
+  }
+
+  if (recentWinRate < 55) {
+    return {
+      code: "WEAK_MEMORY_PATTERN",
+      title: "Learned setup history was weak",
+      summary:
+        "This market, side and barrier had insufficient recent support.",
+      nextAction:
+        "Reduce its ranking and prefer candidates with stronger learned performance.",
+    };
+  }
+
+  if (confidence < 70 || score < 70 || probability < 70) {
+    return {
+      code: "MARGINAL_ENTRY",
+      title: "Entry safety margin was marginal",
+      summary:
+        "The setup passed, but confidence, score or probability was close to its gate.",
+      nextAction:
+        "Increase the adaptive gate for the next fresh candidate.",
+    };
+  }
+
+  return {
+    code: "DIGIT_VARIANCE",
+    title: "Qualified setup lost to digit variance",
+    summary:
+      "The live setup was strong, but the settlement digit landed outside the expected set.",
+    nextAction:
+      "Do not repeat the same setup; rotate markets and rebuild the signal from fresh digits.",
+  };
+}
+
+function aggregateLearning(memory = {}) {
+  const rows = Object.values(memory || {});
+  const causes = {};
+  let trades = 0;
+  let wins = 0;
+  let losses = 0;
+
+  rows.forEach((row) => {
+    trades += Number(row?.trades || 0);
+    wins += Number(row?.wins || 0);
+    losses += Number(row?.losses || 0);
+
+    Object.entries(row?.causes || {}).forEach(
+      ([code, count]) => {
+        causes[code] =
+          Number(causes[code] || 0) +
+          Number(count || 0);
+      }
+    );
+  });
+
+  const winRate = trades ? (wins / trades) * 100 : 50;
+  const lossPressure = trades ? losses / trades : 0;
+
+  return {
+    trades,
+    wins,
+    losses,
+    winRate,
+    causes,
+    weights: {
+      liveScore: clamp(34 - lossPressure * 8, 24, 38),
+      probability: clamp(24 + lossPressure * 7, 22, 34),
+      transition: clamp(18 + lossPressure * 6, 16, 28),
+      consistency: clamp(14 + lossPressure * 4, 12, 22),
+      memory: clamp(10 + lossPressure * 5, 8, 18),
+    },
+    adaptiveGate: clamp(62 + lossPressure * 12, 62, 78),
+  };
+}
+
 function loadMemory() {
   try {
     const parsed = JSON.parse(
@@ -289,6 +418,7 @@ function updateMemory(
     stake,
     confidence,
     score,
+    diagnosis,
   }
 ) {
   const key = memoryKey(
@@ -350,6 +480,19 @@ function updateMemory(
           : []),
         result,
       ].slice(-20),
+      causes: {
+        ...(previous.causes || {}),
+        [diagnosis?.code ||
+        (won ? "SETUP_HELD" : "DIGIT_VARIANCE")]:
+          Number(
+            previous.causes?.[
+              diagnosis?.code ||
+                (won
+                  ? "SETUP_HELD"
+                  : "DIGIT_VARIANCE")
+            ] || 0
+          ) + 1,
+      },
       updatedAt: Date.now(),
     },
   };
@@ -442,7 +585,7 @@ export default function OverUnderLearningBot() {
   });
   const [message, setMessage] =
     useState(
-      "Adaptive Over/Under bot is ready."
+      "Over/Under AI V5 is ready with explainable learning."
     );
   const [consecutiveLosses, setConsecutiveLosses] =
     useState(0);
@@ -456,6 +599,7 @@ export default function OverUnderLearningBot() {
     useState(1.4);
   const [marketBlocks, setMarketBlocks] = useState({});
   const [recoveryTarget, setRecoveryTarget] = useState(0);
+  const [timeline, setTimeline] = useState([]);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -501,6 +645,27 @@ export default function OverUnderLearningBot() {
       ),
     [prices]
   );
+
+  const learningSummary = useMemo(
+    () => aggregateLearning(memory),
+    [memory]
+  );
+
+  const appendTimeline = (type, detail) => {
+    setTimeline((current) =>
+      [
+        {
+          id: `${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2)}`,
+          time: Date.now(),
+          type,
+          detail,
+        },
+        ...current,
+      ].slice(0, 80)
+    );
+  };
 
   const marketSymbols = useMemo(
     () =>
@@ -593,7 +758,10 @@ export default function OverUnderLearningBot() {
     lastLossKeyRef.current === bestKey;
 
   const recoveryScoreGate =
-    Number(minimumScore) +
+    Math.max(
+      Number(minimumScore),
+      Number(learningSummary.adaptiveGate || 62)
+    ) +
     (recovery.active ? 6 : 0);
 
   const recoveryConfidenceGate =
@@ -649,6 +817,22 @@ export default function OverUnderLearningBot() {
     entryReady &&
     confirmationRef.current.key === bestKey &&
     confirmationRef.current.ticks >= 2;
+
+  const nextEntry = {
+    market: symbol,
+    contract:
+      best.side === "WAIT"
+        ? "WAIT"
+        : `${best.side} ${best.barrier}`,
+    score: Number(best.adaptiveScore || 0),
+    probability: Number(best.probability || 0),
+    confirmations:
+      confirmationRef.current.key === bestKey
+        ? confirmationRef.current.ticks
+        : 0,
+    requiredConfirmations: 2,
+    ready: confirmed,
+  };
 
   const hasOpenTrade = trades.some(
     (trade) => trade.status === "OPEN"
@@ -828,6 +1012,21 @@ export default function OverUnderLearningBot() {
         probability: best.probability,
         learnedTrades:
           best.learned.trades,
+        whyEntered: [
+          `Adaptive score ${best.adaptiveScore.toFixed(1)}%`,
+          `Probability ${best.probability.toFixed(1)}%`,
+          `Required ${best.learned.requiredProbability.toFixed(1)}%`,
+          `Transition ${Number(best.transitionEdge || 0).toFixed(1)}%`,
+          `Consistency ${Number(best.consistency || 0).toFixed(1)}%`,
+          `Memory ${best.learned.trades} trades · ${best.learned.recentWinRate.toFixed(1)}% recent`,
+        ],
+        entrySnapshot: {
+          probabilityEdge: Number(best.probabilityEdge || 0),
+          transitionEdge: Number(best.transitionEdge || 0),
+          consistency: Number(best.consistency || 0),
+          recentWinRate: Number(best.learned.recentWinRate || 50),
+          requiredProbability: Number(best.learned.requiredProbability || 0),
+        },
         status: "OPEN",
         profit: 0,
       };
@@ -851,6 +1050,11 @@ export default function OverUnderLearningBot() {
         ).toFixed(2)} · score ${best.adaptiveScore.toFixed(
           1
         )}% · memory ${best.learned.trades} trades.`
+      );
+
+      appendTimeline(
+        "OPEN",
+        `${best.side} ${best.barrier} on ${symbol} · score ${best.adaptiveScore.toFixed(1)}% · probability ${best.probability.toFixed(1)}%.`
       );
 
       nextEntryAtRef.current =
@@ -1015,6 +1219,12 @@ export default function OverUnderLearningBot() {
         ? "WON"
         : "LOST";
 
+    const diagnosis =
+      diagnoseOverUnderOutcome(
+        settled,
+        result
+      );
+
     setMemory((current) =>
       updateMemory(current, {
         symbol: settled.symbol,
@@ -1026,6 +1236,7 @@ export default function OverUnderLearningBot() {
         confidence:
           settled.confidence,
         score: settled.score,
+        diagnosis,
       })
     );
 
@@ -1046,6 +1257,7 @@ export default function OverUnderLearningBot() {
               ...trade,
               learnedTrades:
                 updatedSetupTrades,
+              diagnosis,
             }
           : trade
       )
@@ -1075,7 +1287,11 @@ export default function OverUnderLearningBot() {
       setRecoveryTarget(0);
       lastLossKeyRef.current = "";
       setMessage(
-        `WIN ${settled.contract}. Learning updated; searching the next fresh entry immediately.`
+        `WIN ${settled.contract} · ${diagnosis.title}. ${diagnosis.nextAction}`
+      );
+      appendTimeline(
+        "WON",
+        `${settled.contract} on ${settled.symbol} · ${diagnosis.summary}`
       );
     } else {
       setConsecutiveLosses((current) => current + 1);
@@ -1111,7 +1327,11 @@ export default function OverUnderLearningBot() {
         );
 
       setMessage(
-        `LOSS ${settled.contract}. ${settled.symbol} blocked for 60s; rotating through all markets for a clear recovery setup.`
+        `LOSS ${settled.contract} · ${diagnosis.code}: ${diagnosis.summary} ${diagnosis.nextAction}`
+      );
+      appendTimeline(
+        "LOST",
+        `${settled.contract} on ${settled.symbol} · ${diagnosis.code} · ${diagnosis.summary}`
       );
     }
 
@@ -1546,6 +1766,68 @@ export default function OverUnderLearningBot() {
           </article>
         </section>
 
+        <section className="oulV5Learning">
+          <header>
+            <div>
+              <small>V5 EXPLAINABLE LEARNING</small>
+              <h2>What the bot has learned</h2>
+            </div>
+            <strong>{learningSummary.trades} TRADES</strong>
+          </header>
+
+          <div className="oulV5Stats">
+            <article><span>Learned win rate</span><strong>{pct(learningSummary.winRate)}</strong></article>
+            <article><span>Adaptive score gate</span><strong>{pct(learningSummary.adaptiveGate)}</strong></article>
+            <article><span>Live-score weight</span><strong>{pct(learningSummary.weights.liveScore)}</strong></article>
+            <article><span>Probability weight</span><strong>{pct(learningSummary.weights.probability)}</strong></article>
+            <article><span>Transition weight</span><strong>{pct(learningSummary.weights.transition)}</strong></article>
+            <article><span>Consistency weight</span><strong>{pct(learningSummary.weights.consistency)}</strong></article>
+            <article><span>Memory weight</span><strong>{pct(learningSummary.weights.memory)}</strong></article>
+          </div>
+
+          <div className="oulV5Causes">
+            {Object.entries(learningSummary.causes).length ?
+              Object.entries(learningSummary.causes).map(([code, count]) => (
+                <article key={code}><span>{code}</span><strong>{count}</strong></article>
+              )) : <p>No settled learning patterns yet.</p>}
+          </div>
+        </section>
+
+        <section className="oulV5NextEntry">
+          <header>
+            <div>
+              <small>NEXT ENTRY PREDICTION</small>
+              <h2>{nextEntry.contract}</h2>
+            </div>
+            <strong>{nextEntry.ready ? "READY" : "BUILDING"}</strong>
+          </header>
+          <div>
+            <article><span>Market</span><strong>{nextEntry.market}</strong></article>
+            <article><span>Score</span><strong>{pct(nextEntry.score)}</strong></article>
+            <article><span>Probability</span><strong>{pct(nextEntry.probability)}</strong></article>
+            <article><span>Confirmation</span><strong>{nextEntry.confirmations}/{nextEntry.requiredConfirmations} ticks</strong></article>
+          </div>
+        </section>
+
+        <section className="oulV5Timeline">
+          <header>
+            <div>
+              <small>DECISION TIMELINE</small>
+              <h2>Open, win, loss and learning events</h2>
+            </div>
+            <strong>{timeline.length}</strong>
+          </header>
+          <div>
+            {timeline.length ? timeline.map((event) => (
+              <article key={event.id}>
+                <time>{new Date(event.time).toLocaleTimeString()}</time>
+                <b>{event.type}</b>
+                <span>{event.detail}</span>
+              </article>
+            )) : <p>No timeline events yet.</p>}
+          </div>
+        </section>
+
         <section className="oulRotation">
           <header>
             <div>
@@ -1737,6 +2019,36 @@ export default function OverUnderLearningBot() {
                     trade.profit || 0
                   ).toFixed(2)}
                 </b>
+
+                <section className="oulTradeExplain">
+                  <div>
+                    <span>WHY ENTERED</span>
+                    <strong>
+                      {(trade.whyEntered || []).join(" · ") ||
+                        "Waiting for entry explanation."}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>WHY WON / LOST</span>
+                    <strong>
+                      {trade.diagnosis?.code ||
+                        (trade.status === "OPEN"
+                          ? "TRADE OPEN"
+                          : "SETTLED")}
+                    </strong>
+                    <small>
+                      {trade.diagnosis?.summary ||
+                        "Outcome diagnosis appears after settlement."}
+                    </small>
+                  </div>
+                  <div>
+                    <span>NEXT PROTECTION</span>
+                    <strong>
+                      {trade.diagnosis?.nextAction ||
+                        "Continue monitoring fresh digits."}
+                    </strong>
+                  </div>
+                </section>
               </div>
             ))}
 
