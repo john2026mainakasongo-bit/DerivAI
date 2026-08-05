@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -410,55 +410,7 @@ function freshEdgeRecoveryPolicy(code, settings) {
   }
 }
 
-function freshEdgeAdaptiveDuration(
-  analysis,
-  settings,
-  recoveryPolicy
-) {
-  const confidence = Number(analysis.confidence || 0);
-  const quality = Number(analysis.quality || 0);
-  const momentum = Number(
-    analysis.componentScores?.momentum || 0
-  );
-  const continuation = Number(
-    analysis.continuation || 0
-  );
-  const noise = Number(analysis.noise || 0);
-  const reversal = Number(
-    analysis.reversalRisk || 0
-  );
-
-  const strongImpulse =
-    confidence >= 82 &&
-    quality >= 76 &&
-    momentum >= 78 &&
-    continuation >= 80 &&
-    noise <= 48 &&
-    reversal <= 38;
-
-  const patientSetup =
-    recoveryPolicy?.action === "LONGER_EXPIRY" ||
-    continuation < 78 ||
-    momentum < 72 ||
-    reversal > 42;
-
-  if (strongImpulse) {
-    return Number(
-      settings.durationFastSeconds || 12
-    );
-  }
-
-  if (patientSetup) {
-    return Number(
-      settings.durationPatientSeconds || 30
-    );
-  }
-
-  return Number(
-    settings.durationNormalSeconds || 20
-  );
-}
-function freshEdgeAdaptiveDurationV83(
+function freshEdgeAdaptiveDurationV85(
   analysis,
   settings,
   recoveryPolicy,
@@ -542,7 +494,7 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge V7.2 is ready with selected replay state fixed."
+    "FreshEdge V8.5 is ready with stable timing and clean hook order."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
@@ -652,10 +604,10 @@ export default function FreshEdgeBot() {
   const botContractsRef = useRef(new Map());
   const activeReplayTicksRef = useRef(new Map());
   const lastObservedPriceRef = useRef(null);
-  const marketWarmupCountV841Ref = useRef(0);
-  const lastLossDirectionV841Ref = useRef("");
-  const lastLossDirectionUntilV841Ref = useRef(0);
-  const lossCooldownUntilV83Ref = useRef(0);
+  const marketWarmupCountV85Ref = useRef(0);
+  const lastLossDirectionV85Ref = useRef("");
+  const lastLossDirectionUntilV85Ref = useRef(0);
+  const lossCooldownUntilV85Ref = useRef(0);
   const hardRiskStartedAtRef = useRef(0);
   const weakSetupStartedAtRef = useRef(0);
 
@@ -943,10 +895,10 @@ export default function FreshEdgeBot() {
       reason: ready
         ? `Stable ${trend >= 0 ? "+" : ""}${trend.toFixed(
             1
-          )}% Â· max drop ${maximumDrop.toFixed(1)}%.`
+          )}% · max drop ${maximumDrop.toFixed(1)}%.`
         : `Confidence unstable: trend ${trend.toFixed(
             1
-          )}% Â· max drop ${maximumDrop.toFixed(1)}%.`,
+          )}% · max drop ${maximumDrop.toFixed(1)}%.`,
     };
   }, [
     confidenceTrail,
@@ -955,7 +907,7 @@ export default function FreshEdgeBot() {
     settings.minimumConfidenceGrowth,
   ]);
 
-  const signalTrajectoryV83 = useMemo(() => {
+  const signalTrajectoryV85 = useMemo(() => {
     const trajectoryTicks = Math.max(
       4,
       Number(settings.trajectoryTicks || 6)
@@ -1061,14 +1013,14 @@ export default function FreshEdgeBot() {
     settings.maximumVotesDrop,
     settings.maximumContinuationDrop,
   ]);
-  const entryTimingGuardV841 = useMemo(() => {
+  const entryTimingGuardV85 = useMemo(() => {
     const requiredWarmup = Math.max(
       6,
       Number(settings.marketWarmupTicks || 10)
     );
 
     const warmupCount =
-      marketWarmupCountV841Ref.current;
+      marketWarmupCountV85Ref.current;
 
     const warmupReady =
       warmupCount >= requiredWarmup;
@@ -1084,10 +1036,10 @@ export default function FreshEdgeBot() {
     const sameDirectionBlocked =
       Date.now() <
         Number(
-          lastLossDirectionUntilV841Ref.current || 0
+          lastLossDirectionUntilV85Ref.current || 0
         ) &&
       analysis.direction ===
-        lastLossDirectionV841Ref.current;
+        lastLossDirectionV85Ref.current;
 
     const latestTrade = stats.history[0];
 
@@ -1125,7 +1077,7 @@ export default function FreshEdgeBot() {
     settings.latencyEntryLimitMs,
   ]);
 
-  const expiryQualifiedV841 = useMemo(
+  const expiryQualifiedV85 = useMemo(
     () =>
       Number(analysis.confidence || 0) >=
         Number(settings.minimumExpiryConfidence || 78) &&
@@ -1221,22 +1173,22 @@ export default function FreshEdgeBot() {
       {
         label: "Warm-up and expiry guard",
         pass:
-          entryTimingGuardV841.ready &&
-          expiryQualifiedV841,
-        detail: !entryTimingGuardV841.warmupReady
-          ? `Building fresh ticks ${entryTimingGuardV841.warmupCount}/${entryTimingGuardV841.requiredWarmup}.`
-          : entryTimingGuardV841.sameDirectionBlocked
+          entryTimingGuardV85.ready &&
+          expiryQualifiedV85,
+        detail: !entryTimingGuardV85.warmupReady
+          ? `Building fresh ticks ${entryTimingGuardV85.warmupCount}/${entryTimingGuardV85.requiredWarmup}.`
+          : entryTimingGuardV85.sameDirectionBlocked
           ? "Previous losing direction is temporarily blocked."
-          : entryTimingGuardV841.latencyBlocked
+          : entryTimingGuardV85.latencyBlocked
           ? "Recent API response latency is above the entry limit."
-          : !expiryQualifiedV841
+          : !expiryQualifiedV85
           ? "Signal does not qualify for a safe short expiry."
           : "Warm-up and expiry checks passed.",
       },
       {
-        label: "Trend trajectory V8.3",
-        pass: signalTrajectoryV83.ready,
-        detail: signalTrajectoryV83.reason,
+        label: "Trend trajectory V8.5",
+        pass: signalTrajectoryV85.ready,
+        detail: signalTrajectoryV85.reason,
       }
     );
 
@@ -1245,7 +1197,9 @@ export default function FreshEdgeBot() {
     analysis,
     settings,
     confidenceStability,
-    signalTrajectoryV83,
+    signalTrajectoryV85,
+    entryTimingGuardV85,
+    expiryQualifiedV85,
   ]);
 
   const missingWaitReasons = waitReasons.filter((item) => !item.pass);
@@ -1307,41 +1261,19 @@ export default function FreshEdgeBot() {
     [recoveryState.cause, settings]
   );
 
-  const adaptiveDuration = useMemo(
+  const adaptiveDurationV85 = useMemo(
     () =>
       Math.max(
         10,
         Math.min(
           30,
-          freshEdgeAdaptiveDuration(
-            analysis,
-            settings,
-            recoveryState.active
-              ? recoveryPolicy
-              : null
-          )
-        )
-      ),
-    [
-      analysis,
-      settings,
-      recoveryState.active,
-      recoveryPolicy,
-    ]
-  );
-  const adaptiveDurationV83 = useMemo(
-    () =>
-      Math.max(
-        10,
-        Math.min(
-          30,
-          freshEdgeAdaptiveDurationV83(
+          freshEdgeAdaptiveDurationV85(
             analysis,
             settings,
             recoveryState.active
               ? recoveryPolicy
               : null,
-            signalTrajectoryV83
+            signalTrajectoryV85
           )
         )
       ),
@@ -1350,7 +1282,7 @@ export default function FreshEdgeBot() {
       settings,
       recoveryState.active,
       recoveryPolicy,
-      signalTrajectoryV83,
+      signalTrajectoryV85,
     ]
   );
   const recoveryReady =
@@ -1374,9 +1306,9 @@ export default function FreshEdgeBot() {
 
     lastObservedPriceRef.current = numericPrice;
 
-    marketWarmupCountV841Ref.current = Math.min(
+    marketWarmupCountV85Ref.current = Math.min(
       999,
-      marketWarmupCountV841Ref.current + 1
+      marketWarmupCountV85Ref.current + 1
     );
 
     for (const [contractId, trade] of botContractsRef.current.entries()) {
@@ -1567,7 +1499,7 @@ export default function FreshEdgeBot() {
         "SIGNAL",
         `${analysis.direction} candidate ${analysis.confidence.toFixed(
           1
-        )}% Â· confirmation ${nextConfirmationTicks}/${
+        )}% · confirmation ${nextConfirmationTicks}/${
           settings.confirmationTicks
         }.`,
         {
@@ -1625,7 +1557,7 @@ export default function FreshEdgeBot() {
       setMessage(`${reason} Switching to ${nextLabel}.`);
       appendTimeline(
         "SWITCH",
-        `${reason} ${symbol} â†’ ${nextLabel}.`,
+        `${reason} ${symbol} → ${nextLabel}.`,
         {
           from: symbol,
           to: nextSymbol,
@@ -1634,7 +1566,7 @@ export default function FreshEdgeBot() {
       setConfirmation({ key: "", ticks: 0 });
       hardRiskStartedAtRef.current = 0;
       weakSetupStartedAtRef.current = 0;
-      marketWarmupCountV841Ref.current = 0;
+      marketWarmupCountV85Ref.current = 0;
       setMarketStartedAt(Date.now());
 
       await changeSymbol(nextSymbol);
@@ -1819,17 +1751,10 @@ export default function FreshEdgeBot() {
       !authenticatedFeed ||
       !recoveryReady ||
       !confidenceStability.ready ||
-      !entryTimingGuardV841.ready ||
-      !expiryQualifiedV841 ||
-      !signalTrajectoryV83.ready ||
-      Date.now() < lossCooldownUntilV83Ref.current ||
-      (
-        Number(stats.history[0]?.orderLatencyMs || 0) >
-          Number(settings.latencyEntryLimitMs || 1800) &&
-        Date.now() -
-          Number(stats.history[0]?.settledAt || 0) <
-          30000
-      ) ||
+      !entryTimingGuardV85.ready ||
+      !expiryQualifiedV85 ||
+      !signalTrajectoryV85.ready ||
+      Date.now() < lossCooldownUntilV85Ref.current ||
       tradeBusy ||
       buyingRef.current ||
       activeBotTrades.length >=
@@ -1868,7 +1793,7 @@ export default function FreshEdgeBot() {
             Number(settings.stake || 0.35)
           ),
           basis: "stake",
-          duration: adaptiveDurationV83,
+          duration: adaptiveDurationV85,
           durationUnit: settings.durationUnit || "s",
           symbol,
         });
@@ -1919,7 +1844,7 @@ export default function FreshEdgeBot() {
             rankedMarkets.findIndex(
               (item) => item.symbol === symbol
             ) + 1,
-          adaptiveDurationAtEntry: adaptiveDuration,
+          adaptiveDurationAtEntry: adaptiveDurationV85,
           decisionAgeSeconds:
             (Date.now() - marketStartedAt) / 1000,
           entryPrice: Number(currentPrice),
@@ -1952,17 +1877,17 @@ export default function FreshEdgeBot() {
         setMessage(
           `${analysis.direction} opened on ${market?.label || symbol} at ${analysis.confidence.toFixed(
             1
-          )}% confidence Â· order response ${orderLatencyMs.toFixed(
+          )}% confidence · order response ${orderLatencyMs.toFixed(
             0
           )}ms.`
         );
         appendTimeline(
           "OPEN",
-          `${analysis.direction} opened Â· C ${analysis.confidence.toFixed(
+          `${analysis.direction} opened · C ${analysis.confidence.toFixed(
             1
-          )}% Â· Q ${analysis.quality.toFixed(
+          )}% · Q ${analysis.quality.toFixed(
             1
-          )}% Â· order response ${orderLatencyMs.toFixed(
+          )}% · order response ${orderLatencyMs.toFixed(
             0
           )}ms.`,
           {
@@ -2006,6 +1931,13 @@ export default function FreshEdgeBot() {
     timeline,
     confidenceTrail,
     waitReasons,
+    adaptiveDurationV85,
+    entryTimingGuardV85,
+    expiryQualifiedV85,
+    signalTrajectoryV85,
+    marketStartedAt,
+    stats.history,
+    settings.latencyEntryLimitMs,
     placeTrade,
   ]);
 
@@ -2080,16 +2012,16 @@ export default function FreshEdgeBot() {
       }));
 
       if (result === "LOST") {
-        lastLossDirectionV841Ref.current =
+        lastLossDirectionV85Ref.current =
           original.direction || "";
 
-        lastLossDirectionUntilV841Ref.current =
+        lastLossDirectionUntilV85Ref.current =
           Date.now() +
           Number(
             settings.sameDirectionLossBlockSeconds || 18
           ) *
             1000;
-        lossCooldownUntilV83Ref.current =
+        lossCooldownUntilV85Ref.current =
           Date.now() +
           Number(settings.lossCooldownSeconds || 8) *
             1000;
@@ -2101,11 +2033,11 @@ export default function FreshEdgeBot() {
         }));
 
         setMessage(
-          `${original.market} lost Â· ${diagnosis.code}: ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades. ${diagnosis.nextAction}`
+          `${original.market} lost · ${diagnosis.code}: ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades. ${diagnosis.nextAction}`
         );
         appendTimeline(
           "LOST",
-          `${original.market} Â· ${diagnosis.code} Â· ${diagnosis.summary}`,
+          `${original.market} · ${diagnosis.code} · ${diagnosis.summary}`,
           {
             contractId: original.contractId,
             profit,
@@ -2134,14 +2066,27 @@ export default function FreshEdgeBot() {
             Number(settings.recoveryMarketBlockSeconds || 20) * 1000,
         }));
 
-        void switchMarket("Loss rearm.");
+        const cooldownMs =
+          Number(settings.lossCooldownSeconds || 8) * 1000;
+
+        setMessage(
+          `${original.market} lost · ${diagnosis.code}. Cooling down for ${Number(
+            settings.lossCooldownSeconds || 8
+          )}s before rebuilding from fresh data.`
+        );
+
+        window.setTimeout(() => {
+          void switchMarket(
+            "Loss cooldown completed; rebuilding on a fresh market."
+          );
+        }, cooldownMs);
       } else {
         setMessage(
-          `${original.market} won ${profit.toFixed(2)} USD Â· ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades.`
+          `${original.market} won ${profit.toFixed(2)} USD · ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades.`
         );
         appendTimeline(
           "WON",
-          `${original.market} Â· ${diagnosis.summary}`,
+          `${original.market} · ${diagnosis.summary}`,
           {
             contractId: original.contractId,
             profit,
@@ -2156,8 +2101,11 @@ export default function FreshEdgeBot() {
           sourceDirection: "",
         });
         hardRiskStartedAtRef.current = 0;
-      weakSetupStartedAtRef.current = 0;
-      marketWarmupCountV841Ref.current = 0;
+        weakSetupStartedAtRef.current = 0;
+        marketWarmupCountV85Ref.current = 0;
+        lossCooldownUntilV85Ref.current = 0;
+        lastLossDirectionV85Ref.current = "";
+        lastLossDirectionUntilV85Ref.current = 0;
       setMarketStartedAt(Date.now());
       }
     }
@@ -2205,7 +2153,12 @@ export default function FreshEdgeBot() {
     });
     processedRef.current.clear();
     botContractsRef.current.clear();
-    setMessage("FreshEdge session reset.");
+    activeReplayTicksRef.current.clear();
+    marketWarmupCountV85Ref.current = 0;
+    lossCooldownUntilV85Ref.current = 0;
+    lastLossDirectionV85Ref.current = "";
+    lastLossDirectionUntilV85Ref.current = 0;
+    setMessage("FreshEdge V8.5 session reset.");
   };
 
   return (
@@ -2218,10 +2171,10 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V8.4.2</h1>
+            <h1>FreshEdge AI V8.5</h1>
             <small>STRICT ENTRY GUARD</small>
             <p>
-              Deep replay Â· latency telemetry Â· diagnosis-based recovery
+              Deep replay · latency telemetry · diagnosis-based recovery
             </p>
           </div>
 
@@ -2266,7 +2219,7 @@ export default function FreshEdgeBot() {
 
                 hardRiskStartedAtRef.current = 0;
       weakSetupStartedAtRef.current = 0;
-      marketWarmupCountV841Ref.current = 0;
+      marketWarmupCountV85Ref.current = 0;
       setMarketStartedAt(Date.now());
                 setRunning(true);
 
@@ -2303,7 +2256,7 @@ export default function FreshEdgeBot() {
               setConfirmation({ key: "", ticks: 0 });
               hardRiskStartedAtRef.current = 0;
       weakSetupStartedAtRef.current = 0;
-      marketWarmupCountV841Ref.current = 0;
+      marketWarmupCountV85Ref.current = 0;
       setMarketStartedAt(Date.now());
               void changeSymbol(value);
             }}
@@ -2328,7 +2281,7 @@ export default function FreshEdgeBot() {
                 ? Number(currentPrice).toFixed(
                     market?.decimals || 3
                   )
-                : "â€”"}
+                : "—"}
             </strong>
           </article>
 
@@ -2577,9 +2530,9 @@ export default function FreshEdgeBot() {
                     <b>{Number(item.score || 0).toFixed(1)}</b>
                   </div>
                   <span>
-                    {item.direction} Â· C{" "}
+                    {item.direction} · C{" "}
                     {Number(item.confidence || 0).toFixed(1)}
-                    % Â· Q{" "}
+                    % · Q{" "}
                     {Number(item.quality || 0).toFixed(1)}%
                   </span>
                   <small>{item.rejectionReason}</small>
@@ -2613,11 +2566,11 @@ export default function FreshEdgeBot() {
                     {Number(item.score || 0).toFixed(1)}
                   </b>
                   <small>
-                    {item.direction} Â· C{" "}
+                    {item.direction} · C{" "}
                     {Number(
                       item.confidence || 0
                     ).toFixed(1)}
-                    % Â· Q{" "}
+                    % · Q{" "}
                     {Number(
                       item.quality || 0
                     ).toFixed(1)}
@@ -2676,7 +2629,7 @@ export default function FreshEdgeBot() {
                 <article key={item.label}>
                   <span>{item.label}</span>
                   <strong>
-                    {item.base.toFixed(1)}% â†’{" "}
+                    {item.base.toFixed(1)}% →{" "}
                     {item.learned.toFixed(1)}%
                   </strong>
                   <b className={delta > 0 ? "raised" : "same"}>
@@ -2934,7 +2887,7 @@ export default function FreshEdgeBot() {
                   ? `${Number(
                       stats.history[0].orderLatencyMs
                     ).toFixed(0)} ms`
-                  : "â€”"}
+                  : "—"}
               </strong>
             </article>
             <article>
@@ -2957,7 +2910,7 @@ export default function FreshEdgeBot() {
             </article>
             <article>
               <span>Measurement</span>
-              <strong>CLIENT â†’ API RESPONSE</strong>
+              <strong>CLIENT → API RESPONSE</strong>
             </article>
           </div>
           <p>
@@ -3046,8 +2999,8 @@ export default function FreshEdgeBot() {
 
             return (
               <div className="freshEdgeReplayBody">
-                <article><span>Market / side</span><strong>{trade.market} Â· {trade.direction}</strong></article>
-                <article><span>Entry edge</span><strong>C {Number(trade.confidence || 0).toFixed(1)}% Â· Q {Number(trade.quality || 0).toFixed(1)}%</strong></article>
+                <article><span>Market / side</span><strong>{trade.market} · {trade.direction}</strong></article>
+                <article><span>Entry edge</span><strong>C {Number(trade.confidence || 0).toFixed(1)}% · Q {Number(trade.quality || 0).toFixed(1)}%</strong></article>
                 <article><span>Result</span><strong className={trade.result === "WON" ? "won" : "lost"}>{trade.result} {Number(trade.profit || 0).toFixed(2)}</strong></article>
                 <article><span>Diagnosis</span><strong>{trade.diagnosis?.code || "SETTLED"}</strong></article>
                 <div className="freshEdgeReplaySteps">
@@ -3075,7 +3028,7 @@ export default function FreshEdgeBot() {
               <div>
                 <small>V7 TICK-BY-TICK REPLAY</small>
                 <h3>
-                  {selectedReplay.market} Â·{" "}
+                  {selectedReplay.market} ·{" "}
                   {selectedReplay.direction}
                 </h3>
               </div>
@@ -3241,14 +3194,14 @@ export default function FreshEdgeBot() {
 
                 <div>
                   <span>
-                    Why entered Â· memory{" "}
+                    Why entered · memory{" "}
                     {trade.learningTrades || 0} trades
                   </span>
                   <strong>
-                    {(trade.entryReasons || []).join(" Â· ") ||
+                    {(trade.entryReasons || []).join(" · ") ||
                       `C ${Number(trade.confidence).toFixed(
                         1
-                      )}% Â· Q ${Number(trade.quality).toFixed(
+                      )}% · Q ${Number(trade.quality).toFixed(
                         1
                       )}%`}
                   </strong>
@@ -3288,7 +3241,7 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V7.2 fixes selected replay state and records browser-to-API latency, tick replay and diagnosis-based recovery without increasing stake. Replay ticks are captured only while the selected market remains active. Test on Demo.
+          FreshEdge V8.5 uses clean hook order, warm-up, trajectory confirmation, adaptive expiry and bounded cooldown without increasing stake. Test on Demo.
         </footer>
       </main>
     </div>
