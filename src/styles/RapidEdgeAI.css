@@ -1450,3 +1450,20 @@
   font-weight: 900;
   letter-spacing: .08em;
 }
+
+
+/* RapidEdge V4.2 direct buy-loop status */
+.oulDecision.ready {
+  animation: rapidV42Pulse 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes rapidV42Pulse {
+  from {
+    box-shadow: 0 0 0 1px rgba(49, 242, 186, .18);
+  }
+  to {
+    box-shadow:
+      0 0 0 1px rgba(49, 242, 186, .42),
+      0 0 18px rgba(49, 242, 186, .12);
+  }
+}

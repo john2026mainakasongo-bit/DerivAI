@@ -347,7 +347,6 @@ export default function RapidEdgeAI() {
   const processedRef = useRef(new Set());
   const recentRunTimesRef = useRef([]);
   const audioRef = useRef(null);
-  const executeTradeRef = useRef(null);
 
   const marketSymbols = useMemo(
     () =>
@@ -755,30 +754,43 @@ export default function RapidEdgeAI() {
   );
 
   useEffect(() => {
-    executeTradeRef.current = executeTrade;
-  }, [executeTrade]);
-
-  useEffect(() => {
     if (!running) return undefined;
 
-    const executionTimer = window.setInterval(() => {
+    const runDirectBuyCheck = () => {
       if (
+        connected &&
+        authenticatedFeed &&
+        selectedAccountId &&
         ladder.qualified &&
+        best &&
         !hasOpenTrade &&
         !tradeBusy &&
         !busyRef.current
       ) {
-        void executeTradeRef.current?.();
+        void executeTrade();
       }
-    }, 200);
+    };
+
+    runDirectBuyCheck();
+
+    const executionTimer = window.setInterval(
+      runDirectBuyCheck,
+      200
+    );
 
     return () =>
       window.clearInterval(executionTimer);
   }, [
     running,
+    connected,
+    authenticatedFeed,
+    selectedAccountId,
     ladder.qualified,
+    best?.side,
+    best?.barrier,
     hasOpenTrade,
     tradeBusy,
+    executeTrade,
   ]);
 
   useEffect(() => {
@@ -800,6 +812,17 @@ export default function RapidEdgeAI() {
     if (!running) return;
 
     if (
+      ladder.qualified &&
+      !hasOpenTrade &&
+      !busyRef.current
+    ) {
+      setMessage(
+        `QUALIFIED · ${best?.contract || "candidate"} · direct buy loop firing`
+      );
+      return;
+    }
+
+    if (
       !ladder.qualified &&
       scanAgeMs >= 8000 &&
       !hasOpenTrade &&
@@ -813,6 +836,7 @@ export default function RapidEdgeAI() {
   }, [
     running,
     ladder.qualified,
+    best?.contract,
     hasOpenTrade,
     scanAgeMs,
     rotateMarket,
@@ -883,14 +907,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.1 started · direct execution loop armed."
+      "RapidEdge V4.2 started · direct buy check running every 200ms."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.1 stopped.");
+    setMessage("RapidEdge V4.2 stopped.");
   }
 
   function reset() {
@@ -904,7 +928,7 @@ export default function RapidEdgeAI() {
     setExecutionAttempts(0);
     setLastExecutionError("");
     setLastBuyRequestAt(0);
-    setMessage("RapidEdge V4.1 session reset.");
+    setMessage("RapidEdge V4.2 session reset.");
   }
 
   return (
@@ -913,8 +937,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.1 · Direct Execution"
-          subtitle="200ms direct execution loop · authenticated buy diagnostics · one open trade · up to 20 runs/min"
+          title="RapidEdge AI V4.2 · Direct Buy Loop"
+          subtitle="Immediate buy check + 200ms interval · authenticated Deriv execution · one open trade"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -962,7 +986,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.1 DIRECT EXECUTION</small>
+            <small>V4.2 DIRECT BUY LOOP</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -1028,6 +1052,20 @@ export default function RapidEdgeAI() {
                 {authenticatedFeed && selectedAccountId
                   ? "READY"
                   : "BLOCKED"}
+              </strong>
+            </article>
+            <article>
+              <span>Buy Loop</span>
+              <strong>
+                {running &&
+                connected &&
+                authenticatedFeed &&
+                selectedAccountId &&
+                ladder.qualified &&
+                !hasOpenTrade &&
+                !tradeBusy
+                  ? "FIRING"
+                  : "WAIT"}
               </strong>
             </article>
             <article>
@@ -1211,7 +1249,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.1 Trades</h2>
+              <h2>RapidEdge V4.2 Trades</h2>
             </div>
           </header>
 
@@ -1255,7 +1293,7 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.1 transactions yet.
+                No RapidEdge V4.2 transactions yet.
               </p>
             )}
           </div>
