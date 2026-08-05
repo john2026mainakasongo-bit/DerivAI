@@ -12,8 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v22";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v22";
+const MEMORY_KEY = "edgepilot:over-under-learning:v23";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v23";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1141,7 +1141,8 @@ function classifyPortfolioStatus(item) {
   if (!item) return "STALE";
   if (item.blocked || item.weak) return "BLOCKED";
   if (!item.fresh) return "STALE";
-  if (item.qualified) return "READY";
+  if (item.eliteQualified) return "ELITE";
+  if (item.goodQualified) return "GOOD";
   return "WATCH";
 }
 
@@ -1199,19 +1200,33 @@ function buildGlobalMarketPortfolio({
           marketHealth?.[marketName]?.weak
         );
 
-      const qualified =
+      const baseQualified =
         fresh &&
         !blocked &&
         !weak &&
-        Boolean(row?.qualified) &&
-        probability >=
-          Number(minimumProbability || 86) &&
-        votes >=
-          Number(minimumVotes || 6) &&
-        risk <=
-          Number(maximumRisk || 25) &&
+        String(row?.side || "WAIT") !== "WAIT" &&
+        Number(row?.barrier ?? -1) >= 0 &&
         expectedValue >
           Number(minimumEV || 0);
+
+      const eliteQualified =
+        baseQualified &&
+        probability >= 88 &&
+        votes >= 6 &&
+        risk <= 25;
+
+      const goodQualified =
+        baseQualified &&
+        probability >=
+          Number(minimumProbability || 78) &&
+        votes >=
+          Number(minimumVotes || 5) &&
+        risk <=
+          Number(maximumRisk || 35);
+
+      const qualified =
+        eliteQualified ||
+        goodQualified;
 
       const score =
         probability * 0.40 +
@@ -1250,8 +1265,22 @@ function buildGlobalMarketPortfolio({
         fresh,
         blocked,
         weak,
+        eliteQualified,
+        goodQualified,
         qualified,
-        score,
+        tier:
+          eliteQualified
+            ? "ELITE"
+            : goodQualified
+            ? "GOOD"
+            : "WATCH",
+        score:
+          score +
+          (eliteQualified
+            ? 18
+            : goodQualified
+            ? 8
+            : 0),
       };
 
       return {
@@ -1306,13 +1335,28 @@ function universalCandidateDecision({
     const blocked =
       Number(blockedSetups?.[setupKey] || 0) >
       Date.now();
-    const qualified =
+    const baseQualified =
       !blocked &&
-      probability >= Number(minimumProbability || 86) &&
       expectedValue > Number(minimumEV || 0) &&
-      votes >= Number(minimumVotes || 6) &&
-      risk <= Number(maximumRisk || 25) &&
-      !candidate?.learned?.blocked;
+      !candidate?.learned?.blocked &&
+      String(candidate?.side || "WAIT") !== "WAIT" &&
+      Number(candidate?.barrier ?? -1) >= 0;
+
+    const eliteQualified =
+      baseQualified &&
+      probability >= 88 &&
+      votes >= 6 &&
+      risk <= 25;
+
+    const goodQualified =
+      baseQualified &&
+      probability >= Number(minimumProbability || 78) &&
+      votes >= Number(minimumVotes || 5) &&
+      risk <= Number(maximumRisk || 35);
+
+    const qualified =
+      eliteQualified ||
+      goodQualified;
     const universalScore =
       Number(candidate?.adaptiveScore || 0) * 0.40 +
       probability * 0.30 +
@@ -1326,12 +1370,26 @@ function universalCandidateDecision({
     return {
       candidate,
       qualified,
+      eliteQualified,
+      goodQualified,
+      tier:
+        eliteQualified
+          ? "ELITE"
+          : goodQualified
+          ? "GOOD"
+          : "WATCH",
       blocked,
       probability,
       expectedValue,
       votes,
       risk,
-      universalScore,
+      universalScore:
+        universalScore +
+        (eliteQualified
+          ? 18
+          : goodQualified
+          ? 8
+          : 0),
       setupKey,
     };
   });
@@ -1964,11 +2022,11 @@ export default function OverUnderLearningBot() {
   const [universalPoolEnabled, setUniversalPoolEnabled] =
     useState(true);
   const [universalMinimumProbability, setUniversalMinimumProbability] =
-    useState(86);
+    useState(78);
   const [universalMinimumVotes, setUniversalMinimumVotes] =
-    useState(6);
+    useState(5);
   const [universalMaximumRisk, setUniversalMaximumRisk] =
-    useState(25);
+    useState(35);
   const [setupBlacklistSeconds, setSetupBlacklistSeconds] =
     useState(90);
   const [dynamicSetupBlacklist, setDynamicSetupBlacklist] =
@@ -2527,10 +2585,20 @@ export default function OverUnderLearningBot() {
       (item) => item.qualified
     ) || null;
 
-  const portfolioReadyMarkets =
+  const portfolioEliteMarkets =
     globalMarketPortfolio.filter(
-      (item) => item.status === "READY"
+      (item) => item.status === "ELITE"
     );
+
+  const portfolioGoodMarkets =
+    globalMarketPortfolio.filter(
+      (item) => item.status === "GOOD"
+    );
+
+  const portfolioReadyMarkets = [
+    ...portfolioEliteMarkets,
+    ...portfolioGoodMarkets,
+  ];
 
   const portfolioWatchMarkets =
     globalMarketPortfolio.filter(
@@ -3256,7 +3324,7 @@ export default function OverUnderLearningBot() {
     if (
       globalPortfolioEnabled &&
       bestGlobalMarket &&
-      bestGlobalMarket.status === "READY" &&
+      ["ELITE", "GOOD"].includes(bestGlobalMarket.status) &&
       bestGlobalMarket.market !== symbol
     ) {
       const portfolioCandidate =
@@ -3703,7 +3771,7 @@ export default function OverUnderLearningBot() {
 
         void switchMarket(
           portfolioReadyMarkets.length
-            ? "IDLE WATCHDOG · moving to the strongest READY market"
+            ? "IDLE WATCHDOG · moving to the strongest ELITE/GOOD market"
             : portfolioWatchMarkets.length
             ? "IDLE WATCHDOG · refreshing the strongest WATCH market"
             : "IDLE WATCHDOG · warming the next available market"
@@ -3744,7 +3812,7 @@ export default function OverUnderLearningBot() {
         leader.market !== symbol
       ) {
         void switchMarket(
-          `PORTFOLIO READY · ${leader.market} ${leader.contract} · ${leader.probability.toFixed(1)}%`
+          `PORTFOLIO TRADE-READY · ${leader.market} ${leader.contract} · ${leader.probability.toFixed(1)}%`
         );
         return;
       }
@@ -3818,7 +3886,7 @@ export default function OverUnderLearningBot() {
       Number(currentPortfolioRow?.score || 0);
 
     if (
-      bestGlobalMarket.status === "READY" &&
+      ["ELITE", "GOOD"].includes(bestGlobalMarket.status) &&
       (
         !currentPortfolioRow?.qualified ||
         lead >=
@@ -4774,8 +4842,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V22"
-          subtitle="Continuous portfolio scanner · post-settlement rotation · idle watchdog"
+          title="Over/Under Adaptive Learning Bot V23"
+          subtitle="Tiered entry engine · ELITE first · GOOD fallback · continuous scan"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -4850,16 +4918,16 @@ export default function OverUnderLearningBot() {
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
                 : portfolioWatchEnabled &&
                   portfolioReadyMarkets.length === 0
-                ? "PORTFOLIO WATCH — No READY market. Refreshing WATCH markets without opening a trade."
+                ? "PORTFOLIO WATCH — No ELITE or GOOD market. Refreshing WATCH markets without opening a trade."
                 : globalPortfolioEnabled &&
                   (
                     !bestGlobalMarket ||
                     bestGlobalMarket.market !== symbol
                   )
-                ? "GLOBAL PORTFOLIO — Current market is not the top READY market. Trade blocked while switching."
+                ? "GLOBAL PORTFOLIO — Current market is not the top ELITE/GOOD market. Trade blocked while switching."
                 : universalPoolEnabled &&
                   !universalDecision.selected
-                ? "UNIVERSAL POOL — No OVER or UNDER candidate passed every gate. Trade skipped."
+                ? "UNIVERSAL POOL — No ELITE or GOOD OVER/UNDER candidate passed every gate. Trade skipped."
                 : marketRunLocked
                 ? "ONE-RUN LIMIT — This market already traded. Switching to a different market."
                 : setupRepeated
@@ -5083,7 +5151,7 @@ export default function OverUnderLearningBot() {
               }
             >
               <option value="ON">
-                ON — wait for READY market
+                ON — wait for ELITE or GOOD market
               </option>
               <option value="OFF">
                 OFF — normal rotation
@@ -5112,7 +5180,7 @@ export default function OverUnderLearningBot() {
           </label>
 
           <label>
-            <span>READY live confirmation ticks</span>
+            <span>Trade-ready live confirmation ticks</span>
             <input
               type="number"
               min="2"
@@ -5214,7 +5282,7 @@ export default function OverUnderLearningBot() {
           </label>
 
           <label>
-            <span>Universal minimum probability</span>
+            <span>GOOD minimum probability</span>
             <input
               type="number"
               min="70"
@@ -5230,7 +5298,7 @@ export default function OverUnderLearningBot() {
           </label>
 
           <label>
-            <span>Universal minimum votes</span>
+            <span>GOOD minimum votes</span>
             <input
               type="number"
               min="3"
@@ -5246,7 +5314,7 @@ export default function OverUnderLearningBot() {
           </label>
 
           <label>
-            <span>Universal maximum risk</span>
+            <span>GOOD maximum risk</span>
             <input
               type="number"
               min="5"
@@ -6151,12 +6219,32 @@ export default function OverUnderLearningBot() {
             </article>
 
             <article>
-              <span>Portfolio READY</span>
+              <span>ELITE markets</span>
+              <strong>
+                {portfolioEliteMarkets.length}
+              </strong>
+              <small>
+                88%+ probability · 6/7 votes · risk ≤25
+              </small>
+            </article>
+
+            <article>
+              <span>GOOD markets</span>
+              <strong>
+                {portfolioGoodMarkets.length}
+              </strong>
+              <small>
+                78%+ probability · 5/7 votes · risk ≤35
+              </small>
+            </article>
+
+            <article>
+              <span>Trade-ready markets</span>
               <strong>
                 {portfolioReadyMarkets.length}
               </strong>
               <small>
-                Markets eligible for live confirmation
+                ELITE and GOOD markets awaiting live confirmation
               </small>
             </article>
 
@@ -6178,7 +6266,7 @@ export default function OverUnderLearningBot() {
                   : "OFF"}
               </strong>
               <small>
-                No READY market means no trade
+                No ELITE or GOOD market means no trade
               </small>
             </article>
 
@@ -6247,12 +6335,12 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 {universalDecision.selectedMeta
-                  ? `P ${pct(
+                  ? `${universalDecision.selectedMeta.tier} · P ${pct(
                       universalDecision.selectedMeta.probability
                     )} · EV ${Number(
                       universalDecision.selectedMeta.expectedValue
                     ).toFixed(3)}`
-                  : "No candidate passed all gates"}
+                  : "No ELITE or GOOD candidate passed all gates"}
               </small>
             </article>
 
@@ -6936,6 +7024,8 @@ export default function OverUnderLearningBot() {
                     </strong>
                     <span>
                       {item.contract}
+                      {" · "}
+                      {item.status}
                     </span>
                     <span>
                       P {pct(item.probability)}
@@ -6991,7 +7081,7 @@ export default function OverUnderLearningBot() {
                       {item.blocked
                         ? "BLACKLISTED"
                         : item.qualified
-                        ? "QUALIFIED"
+                        ? item.tier
                         : "REJECTED"}
                     </em>
                   </article>
