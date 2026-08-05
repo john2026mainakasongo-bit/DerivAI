@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v13";
+const MEMORY_KEY = "edgepilot:over-under-learning:v14";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1060,6 +1060,85 @@ function marketHealthMap(trades, minimumSample = 3) {
   return groups;
 }
 
+
+function qualifiedMarketDecision({
+  market,
+  candidate,
+  protectionActive,
+  blacklisted,
+  weakMarket,
+  minimumProbability,
+  minimumEV,
+  minimumVotes,
+  maximumRisk,
+}) {
+  const probability = Number(
+    candidate?.layered?.weightedProbability ??
+      candidate?.probability ??
+      0
+  );
+
+  const expectedValue = Number(
+    candidate?.layered?.simulation?.expectedValue ??
+      candidate?.payoutEdge ??
+      -1
+  );
+
+  const votes = Number(
+    candidate?.agreementVotes || 0
+  );
+
+  const risk = Number(
+    candidate?.guardRisk ??
+      candidate?.risk ??
+      100
+  );
+
+  const qualified =
+    Boolean(market) &&
+    !protectionActive &&
+    !blacklisted &&
+    !weakMarket &&
+    probability >= Number(minimumProbability || 88) &&
+    expectedValue >= Number(minimumEV || 0.015) &&
+    votes >= Number(minimumVotes || 6) &&
+    risk <= Number(maximumRisk || 45) &&
+    !candidate?.learned?.blocked;
+
+  const reasons = [];
+
+  if (!market) reasons.push("NO_MARKET");
+  if (protectionActive) reasons.push("PROTECTION_ACTIVE");
+  if (blacklisted) reasons.push("BLACKLISTED");
+  if (weakMarket) reasons.push("WEAK_MARKET");
+  if (probability < Number(minimumProbability || 88)) {
+    reasons.push("PROBABILITY_LOW");
+  }
+  if (expectedValue < Number(minimumEV || 0.015)) {
+    reasons.push("EV_LOW");
+  }
+  if (votes < Number(minimumVotes || 6)) {
+    reasons.push("LAYERS_LOW");
+  }
+  if (risk > Number(maximumRisk || 45)) {
+    reasons.push("RISK_HIGH");
+  }
+  if (candidate?.learned?.blocked) {
+    reasons.push("SETUP_BLOCKED");
+  }
+
+  return {
+    market,
+    candidate,
+    probability,
+    expectedValue,
+    votes,
+    risk,
+    qualified,
+    reasons,
+  };
+}
+
 function setupCooldownRemaining(row) {
   const blockedUntil = Number(row?.blockedUntil || 0);
   return Math.max(0, blockedUntil - Date.now());
@@ -1431,6 +1510,20 @@ export default function OverUnderLearningBot() {
     useState(0);
   const [dynamicMarketBlacklist, setDynamicMarketBlacklist] =
     useState({});
+  const [globalSelectionEnabled, setGlobalSelectionEnabled] =
+    useState(true);
+  const [minimumQualifiedProbability, setMinimumQualifiedProbability] =
+    useState(88);
+  const [minimumQualifiedVotes, setMinimumQualifiedVotes] =
+    useState(6);
+  const [maximumQualifiedRisk, setMaximumQualifiedRisk] =
+    useState(45);
+  const [globalMarketScores, setGlobalMarketScores] =
+    useState({});
+  const [selectedGlobalSetup, setSelectedGlobalSetup] =
+    useState(null);
+  const [lastSkipReason, setLastSkipReason] =
+    useState("WAITING_FOR_MARKET_DATA");
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -1983,6 +2076,9 @@ export default function OverUnderLearningBot() {
             bayesian,
             layered,
             agreementVotes,
+            guardRisk:
+              Number(resultRisk.risk || 0) +
+              Number(regimeAnalysis.riskPenalty || 0),
             regimeAdjustedScore,
             adaptiveScore:
               regimeAdjustedScore,
@@ -2075,6 +2171,48 @@ export default function OverUnderLearningBot() {
     ]
   );
 
+  const currentMarketDecision = useMemo(() => {
+    const blacklistRemaining =
+      Math.max(
+        0,
+        Number(
+          dynamicMarketBlacklist?.[symbol] || 0
+        ) - Date.now()
+      );
+
+    return qualifiedMarketDecision({
+      market: symbol,
+      candidate: {
+        ...best,
+        guardRisk: Number(activeGuard.risk || 0),
+      },
+      protectionActive,
+      blacklisted: blacklistRemaining > 0,
+      weakMarket:
+        Boolean(marketHealth?.[symbol]?.weak),
+      minimumProbability:
+        minimumQualifiedProbability,
+      minimumEV: evFloor,
+      minimumVotes:
+        minimumQualifiedVotes,
+      maximumRisk:
+        maximumQualifiedRisk,
+    });
+  }, [
+    symbol,
+    best,
+    activeGuard.risk,
+    dynamicMarketBlacklist,
+    protectionActive,
+    marketHealth,
+    minimumQualifiedProbability,
+    evFloor,
+    minimumQualifiedVotes,
+    maximumQualifiedRisk,
+  ]);
+
+
+
   const bestKey = memoryKey(
     symbol,
     best.side,
@@ -2098,6 +2236,10 @@ export default function OverUnderLearningBot() {
 
   const entryReady =
     !protectionActive &&
+    (
+      !globalSelectionEnabled ||
+      currentMarketDecision.qualified
+    ) &&
     analysis.total >= 30 &&
     best.side !== "WAIT" &&
     Number(analysis.confidence || 0) >=
@@ -2522,10 +2664,101 @@ export default function OverUnderLearningBot() {
   ]);
 
   useEffect(() => {
+    if (!running || !globalSelectionEnabled) {
+      return undefined;
+    }
+
+    setGlobalMarketScores((current) => ({
+      ...current,
+      [symbol]: {
+        market: symbol,
+        contract:
+          best.contract ||
+          `${best.side || ""} ${best.barrier ?? ""}`.trim(),
+        probability:
+          currentMarketDecision.probability,
+        expectedValue:
+          currentMarketDecision.expectedValue,
+        votes:
+          currentMarketDecision.votes,
+        risk:
+          currentMarketDecision.risk,
+        qualified:
+          currentMarketDecision.qualified,
+        reasons:
+          currentMarketDecision.reasons,
+        updatedAt: Date.now(),
+      },
+    }));
+
+    if (
+      currentMarketDecision.qualified
+    ) {
+      setSelectedGlobalSetup({
+        market: symbol,
+        contract:
+          best.contract ||
+          `${best.side || ""} ${best.barrier ?? ""}`.trim(),
+        probability:
+          currentMarketDecision.probability,
+        expectedValue:
+          currentMarketDecision.expectedValue,
+        votes:
+          currentMarketDecision.votes,
+        risk:
+          currentMarketDecision.risk,
+      });
+      setLastSkipReason("");
+      return undefined;
+    }
+
+    setSelectedGlobalSetup(null);
+    setLastSkipReason(
+      currentMarketDecision.reasons.join(", ") ||
+        "NO_QUALIFIED_SETUP"
+    );
+
+    if (
+      hasOpenTrade ||
+      tradeBusy ||
+      marketSymbols.length < 2
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      void switchMarket(
+        `NO QUALIFIED MARKET · ${currentMarketDecision.reasons.join(
+          ", "
+        ) || "setup rejected"}`
+      );
+    }, 900);
+
+    return () =>
+      window.clearTimeout(timer);
+  }, [
+    running,
+    globalSelectionEnabled,
+    symbol,
+    best,
+    currentMarketDecision,
+    hasOpenTrade,
+    tradeBusy,
+    marketSymbols,
+  ]);
+
+  useEffect(() => {
     if (
       running &&
       confirmed &&
-      !hasOpenTrade
+      !hasOpenTrade &&
+      (
+        !globalSelectionEnabled ||
+        (
+          selectedGlobalSetup?.market === symbol &&
+          currentMarketDecision.qualified
+        )
+      )
     ) {
       void executeTrade();
     }
@@ -3206,8 +3439,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V13"
-          subtitle="Adaptive protection · market blacklist · loss-cascade control"
+          title="Over/Under Adaptive Learning Bot V14"
+          subtitle="Global market selector · qualified-entry only · skip engine"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -3280,6 +3513,11 @@ export default function OverUnderLearningBot() {
                 ? confirmed
                   ? "Fresh recovery setup passed stricter EV, confidence and confirmation gates."
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
+                : globalSelectionEnabled &&
+                  !currentMarketDecision.qualified
+                ? `NO QUALIFIED MARKET — TRADE SKIPPED. ${currentMarketDecision.reasons.join(
+                    ", "
+                  ) || "Current setup rejected."}`
                 : multiLayerEnabled &&
                   Number(best.agreementVotes || 0) <
                     Number(minimumLayerAgreement || 5)
@@ -3452,6 +3690,73 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Global market selector</span>
+            <select
+              value={globalSelectionEnabled ? "ON" : "OFF"}
+              onChange={(event) =>
+                setGlobalSelectionEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — qualified market only
+              </option>
+              <option value="OFF">
+                OFF — current market only
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Minimum qualified probability</span>
+            <input
+              type="number"
+              min="70"
+              max="99"
+              step="1"
+              value={minimumQualifiedProbability}
+              onChange={(event) =>
+                setMinimumQualifiedProbability(
+                  clamp(event.target.value, 70, 99)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Minimum qualified layers</span>
+            <input
+              type="number"
+              min="3"
+              max="7"
+              step="1"
+              value={minimumQualifiedVotes}
+              onChange={(event) =>
+                setMinimumQualifiedVotes(
+                  clamp(event.target.value, 3, 7)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Maximum qualified risk</span>
+            <input
+              type="number"
+              min="10"
+              max="80"
+              step="1"
+              value={maximumQualifiedRisk}
+              onChange={(event) =>
+                setMaximumQualifiedRisk(
+                  clamp(event.target.value, 10, 80)
                 )
               }
             />
@@ -3839,6 +4144,9 @@ export default function OverUnderLearningBot() {
             <strong>
               {hasOpenTrade
                 ? "MONITORING"
+                : globalSelectionEnabled &&
+                  !currentMarketDecision.qualified
+                ? "SKIP / SWITCH"
                 : protectionActive
                 ? "PROTECTED WAIT"
                 : predictiveGuardEnabled &&
@@ -4061,6 +4369,64 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Global decision</span>
+              <strong>
+                {currentMarketDecision.qualified
+                  ? "QUALIFIED"
+                  : "SKIP"}
+              </strong>
+              <small>
+                {currentMarketDecision.qualified
+                  ? `${symbol} selected`
+                  : lastSkipReason || "No qualified setup"}
+              </small>
+            </article>
+
+            <article>
+              <span>Selected market</span>
+              <strong>
+                {selectedGlobalSetup?.market || "NONE"}
+              </strong>
+              <small>
+                {selectedGlobalSetup?.contract ||
+                  "Scanning every market"}
+              </small>
+            </article>
+
+            <article>
+              <span>Qualified probability</span>
+              <strong>
+                {pct(
+                  currentMarketDecision.probability
+                )}
+              </strong>
+              <small>
+                Required {pct(
+                  minimumQualifiedProbability
+                )}
+              </small>
+            </article>
+
+            <article>
+              <span>Qualified EV / risk</span>
+              <strong>
+                {Number(
+                  currentMarketDecision.expectedValue || 0
+                ) >= 0
+                  ? "+"
+                  : ""}
+                {Number(
+                  currentMarketDecision.expectedValue || 0
+                ).toFixed(3)}
+                {" / "}
+                {pct(currentMarketDecision.risk)}
+              </strong>
+              <small>
+                Layers {currentMarketDecision.votes}/7
               </small>
             </article>
 
@@ -4294,6 +4660,66 @@ export default function OverUnderLearningBot() {
               </small>
             </article>
           </div>
+        </section>
+
+        <section className="oulGlobalSelector">
+          <header>
+            <div>
+              <small>GLOBAL MARKET SELECTOR</small>
+              <h2>
+                Best qualified setup across markets
+              </h2>
+            </div>
+            <strong>
+              {selectedGlobalSetup
+                ? "TRADE READY"
+                : "SKIP / SCANNING"}
+            </strong>
+          </header>
+
+          <div className="oulGlobalScoreGrid">
+            {marketSymbols.map((market) => {
+              const item =
+                globalMarketScores[market];
+
+              return (
+                <article
+                  key={market}
+                  className={
+                    item?.qualified
+                      ? "qualified"
+                      : ""
+                  }
+                >
+                  <strong>{market}</strong>
+                  <span>
+                    {item?.contract || "SCANNING"}
+                  </span>
+                  <small>
+                    P {pct(item?.probability || 0)}
+                    {" · "}
+                    EV {Number(
+                      item?.expectedValue || 0
+                    ).toFixed(3)}
+                    {" · "}
+                    L {item?.votes || 0}/7
+                  </small>
+                  <small>
+                    {item?.qualified
+                      ? "QUALIFIED"
+                      : item?.reasons?.join(", ") ||
+                        "WAITING"}
+                  </small>
+                </article>
+              );
+            })}
+          </div>
+
+          {!selectedGlobalSetup && (
+            <div className="oulSkipBanner">
+              NO QUALIFIED MARKET — TRADE SKIPPED
+            </div>
+          )}
         </section>
 
         <section className="oulRotation">
