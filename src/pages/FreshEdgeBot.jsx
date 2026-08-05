@@ -430,7 +430,7 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge V7 is ready with deep replay and latency telemetry."
+    "FreshEdge V7.1 is ready with corrected replay initialization."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
@@ -520,54 +520,6 @@ export default function FreshEdgeBot() {
     }
   }, [stats]);
 
-
-  useEffect(() => {
-    const numericPrice = Number(currentPrice);
-
-    if (!Number.isFinite(numericPrice)) return;
-    if (lastObservedPriceRef.current === numericPrice) return;
-
-    lastObservedPriceRef.current = numericPrice;
-
-    for (const [contractId, trade] of botContractsRef.current.entries()) {
-      if (trade.symbol !== symbol) continue;
-
-      const current =
-        activeReplayTicksRef.current.get(contractId) || [];
-
-      activeReplayTicksRef.current.set(
-        contractId,
-        [
-          ...current,
-          {
-            time: Date.now(),
-            price: numericPrice,
-            confidence: Number(analysis.confidence || 0),
-            quality: Number(analysis.quality || 0),
-            continuation: Number(analysis.continuation || 0),
-            noise: Number(analysis.noise || 0),
-            reversal: Number(analysis.reversalRisk || 0),
-            direction: analysis.direction || "WAIT",
-          },
-        ].slice(
-          -Math.max(
-            10,
-            Number(settings.replayTickLimit || 40)
-          )
-        )
-      );
-    }
-  }, [
-    currentPrice,
-    symbol,
-    analysis.confidence,
-    analysis.quality,
-    analysis.continuation,
-    analysis.noise,
-    analysis.reversalRisk,
-    analysis.direction,
-    settings.replayTickLimit,
-  ]);
 
   const appendTimeline = useCallback(
     (type, detail, extra = {}) => {
@@ -985,6 +937,55 @@ export default function FreshEdgeBot() {
       )
     );
 
+
+
+  useEffect(() => {
+    const numericPrice = Number(currentPrice);
+
+    if (!Number.isFinite(numericPrice)) return;
+    if (lastObservedPriceRef.current === numericPrice) return;
+
+    lastObservedPriceRef.current = numericPrice;
+
+    for (const [contractId, trade] of botContractsRef.current.entries()) {
+      if (trade.symbol !== symbol) continue;
+
+      const current =
+        activeReplayTicksRef.current.get(contractId) || [];
+
+      activeReplayTicksRef.current.set(
+        contractId,
+        [
+          ...current,
+          {
+            time: Date.now(),
+            price: numericPrice,
+            confidence: Number(analysis.confidence || 0),
+            quality: Number(analysis.quality || 0),
+            continuation: Number(analysis.continuation || 0),
+            noise: Number(analysis.noise || 0),
+            reversal: Number(analysis.reversalRisk || 0),
+            direction: analysis.direction || "WAIT",
+          },
+        ].slice(
+          -Math.max(
+            10,
+            Number(settings.replayTickLimit || 40)
+          )
+        )
+      );
+    }
+  }, [
+    currentPrice,
+    symbol,
+    analysis.confidence,
+    analysis.quality,
+    analysis.continuation,
+    analysis.noise,
+    analysis.reversalRisk,
+    analysis.direction,
+    settings.replayTickLimit,
+  ]);
 
 
   const directionHeatmap = useMemo(() => {
@@ -1670,7 +1671,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V7</h1>
+            <h1>FreshEdge AI V7.1</h1>
             <p>
               Deep replay · latency telemetry · diagnosis-based recovery
             </p>
@@ -2691,7 +2692,7 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V7 records browser-to-API latency, tick replay and diagnosis-based recovery without increasing stake. Replay ticks are captured only while the selected market remains active. Test on Demo.
+          FreshEdge V7.1 fixes replay initialization and records browser-to-API latency, tick replay and diagnosis-based recovery without increasing stake. Replay ticks are captured only while the selected market remains active. Test on Demo.
         </footer>
       </main>
     </div>
