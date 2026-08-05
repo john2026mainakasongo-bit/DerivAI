@@ -4799,11 +4799,17 @@ export default function RapidEdgeAI() {
           250,
           Number(minimumEntryGapMs || 900)
         );
-      scanStartedAtRef.current =
-        Date.now();
+      // Preserve the rolling analysis clock after entry.
+      // Only reduce confirmation slightly to prevent duplicate entry
+      // on exactly the same tick.
       confirmationRef.current = {
-        key: "",
-        ticks: 0,
+        ...confirmationRef.current,
+        ticks: Math.max(
+          0,
+          Number(
+            confirmationRef.current?.ticks || 0
+          ) - 1
+        ),
       };
     } catch (error) {
       setMessage(
@@ -5566,16 +5572,31 @@ export default function RapidEdgeAI() {
       settledSnapshot
     );
 
-    // V24: settlement is a complete execution boundary.
-    // Clear transient locks immediately while preserving learning/cache.
+    // RapidEdge V2: settlement is an execution boundary,
+    // not an analysis reset. Preserve the rolling tick window,
+    // live candidate ranking and accumulated confirmation evidence.
     busyRef.current = false;
     switchBusyRef.current = false;
-    nextEntryAtRef.current = 0;
+
+    nextEntryAtRef.current =
+      Date.now() +
+      Math.max(
+        150,
+        Number(postSettlementRearmMs || 350)
+      );
+
     confirmationRef.current = {
-      key: "",
-      ticks: 0,
+      ...confirmationRef.current,
+      ticks: Math.max(
+        0,
+        Number(
+          confirmationRef.current?.ticks || 0
+        ) - 1
+      ),
     };
-    scanStartedAtRef.current = Date.now();
+
+    // Keep scanStartedAtRef unchanged so the one-minute
+    // evidence engine remains warm after every settlement.
     lastPortfolioActivityRef.current =
       Date.now();
 
@@ -6120,8 +6141,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V1.6 · Self Learning EV"
-          subtitle="Rolling contract profitability learning · three-run diversity control · EV-ranked OVER + UNDER entries"
+          title="RapidEdge AI V2 · Continuous Scan"
+          subtitle="Rolling tick intelligence stays warm after settlement · continuous ranking · fast sequential OVER + UNDER entries"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
