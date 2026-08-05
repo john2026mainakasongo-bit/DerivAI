@@ -437,15 +437,15 @@ export default function FreshEdgeBot() {
     duration: 20,
     durationUnit: "s",
     minimumTicks: 12,
-    minimumConfidence: 59,
-    minimumQuality: 55,
-    minimumVotes: 55,
-    minimumContinuation: 53,
-    maximumNoise: 76,
-    maximumReversal: 70,
+    minimumConfidence: 75,
+    minimumQuality: 68,
+    minimumVotes: 70,
+    minimumContinuation: 72,
+    maximumNoise: 60,
+    maximumReversal: 50,
     maximumSpikeRatio: 6,
-    confirmationTicks: 2,
-    maximumMarketSeconds: 5,
+    confirmationTicks: 3,
+    maximumMarketSeconds: 6,
     marketBlockSeconds: 15,
     maximumOpenTrades: 1,
     takeProfit: 2,
@@ -1683,6 +1683,7 @@ export default function FreshEdgeBot() {
           <div>
             <small>STANDALONE BOT</small>
             <h1>FreshEdge AI V7.2</h1>
+            <small>STRICT ENTRY GUARD</small>
             <p>
               Deep replay Â· latency telemetry Â· diagnosis-based recovery
             </p>
@@ -2745,4 +2746,5 @@ export default function FreshEdgeBot() {
     </div>
   );
 }
+
 

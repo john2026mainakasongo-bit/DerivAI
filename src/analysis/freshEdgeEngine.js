@@ -1,4 +1,4 @@
-const clamp = (value, minimum = 0, maximum = 100) =>
+﻿const clamp = (value, minimum = 0, maximum = 100) =>
   Math.max(minimum, Math.min(maximum, Number(value) || 0));
 
 const average = (values = []) => {
@@ -208,33 +208,13 @@ export function analyzeFreshEdge(
     ) / weightTotal
   );
 
-  const adaptiveMinimumConfidence = clamp(
-    Number(options.minimumConfidence || 60) +
-      Number(learning.confidenceAdjustment || 0),
-    54,
-    82
-  );
+  const adaptiveMinimumConfidence = clamp(Number(options.minimumConfidence || 75) + Number(learning.confidenceAdjustment || 0), 70, 82);
 
-  const adaptiveMinimumQuality = clamp(
-    Number(options.minimumQuality || 56) +
-      Number(learning.qualityAdjustment || 0),
-    50,
-    78
-  );
+  const adaptiveMinimumQuality = clamp(Number(options.minimumQuality || 68) + Number(learning.qualityAdjustment || 0), 64, 78);
 
-  const adaptiveMinimumVotes = clamp(
-    Number(options.minimumVotes || 56) +
-      Number(learning.voteAdjustment || 0),
-    52,
-    78
-  );
+  const adaptiveMinimumVotes = clamp(Number(options.minimumVotes || 70) + Number(learning.voteAdjustment || 0), 66, 78);
 
-  const adaptiveMinimumContinuation = clamp(
-    Number(options.minimumContinuation || 54) +
-      Number(learning.continuationAdjustment || 0),
-    50,
-    78
-  );
+  const adaptiveMinimumContinuation = clamp(Number(options.minimumContinuation || 72) + Number(learning.continuationAdjustment || 0), 68, 78);
 
   const hardRisk =
     noise >= Number(options.maximumNoise || 76) ||
@@ -296,7 +276,7 @@ export function analyzeFreshEdge(
     },
     learnedWeights: weights,
     reason: qualified
-      ? `${direction} confirmed: ${entryReasons.join(" · ")}.`
+      ? `${direction} confirmed: ${entryReasons.join(" Â· ")}.`
       : hardRisk
       ? "Fresh setup rejected by live risk protection."
       : !direction
@@ -319,3 +299,4 @@ export function analyzeFreshEdge(
     },
   };
 }
+
