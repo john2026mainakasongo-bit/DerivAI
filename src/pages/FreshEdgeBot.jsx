@@ -13,7 +13,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeFreshEdge } from "../analysis/freshEdgeEngine";
 import "../styles/FreshEdgeBot.css";
 
-const STORAGE_KEY = "fresh-edge-ai-v2-history";
+const STORAGE_KEY = "fresh-edge-ai-v3-learning-history";
 
 const INITIAL_STATS = {
   runs: 0,
@@ -142,6 +142,189 @@ function diagnoseFreshEdgeTrade(trade, result) {
   };
 }
 
+
+const EMPTY_LEARNING = {
+  totalTrades: 0,
+  wins: 0,
+  losses: 0,
+  winRate: 50,
+  confidenceAdjustment: 0,
+  qualityAdjustment: 0,
+  voteAdjustment: 0,
+  continuationAdjustment: 0,
+  weights: {
+    quality: 0.42,
+    votes: 0.22,
+    continuation: 0.20,
+    risk: 0.16,
+  },
+  causes: {
+    SETUP_HELD: 0,
+    SPIKE_ENTRY: 0,
+    REVERSAL_PRESSURE: 0,
+    HIGH_NOISE: 0,
+    WEAK_FOLLOW_THROUGH: 0,
+    MARGINAL_EDGE: 0,
+    EXPIRY_VARIANCE: 0,
+  },
+  directions: {
+    RISE: { trades: 0, wins: 0, rate: 50 },
+    FALL: { trades: 0, wins: 0, rate: 50 },
+  },
+};
+
+function buildFreshEdgeLearning(history = []) {
+  const settled = Array.isArray(history)
+    ? history.filter(
+        (trade) =>
+          trade?.result === "WON" ||
+          trade?.result === "LOST"
+      )
+    : [];
+
+  if (!settled.length) {
+    return EMPTY_LEARNING;
+  }
+
+  const recent = settled.slice(0, 60);
+  const wins = recent.filter(
+    (trade) => trade.result === "WON"
+  ).length;
+  const losses = recent.length - wins;
+  const winRate = (wins / recent.length) * 100;
+
+  const causes = {
+    ...EMPTY_LEARNING.causes,
+  };
+
+  const directions = {
+    RISE: { trades: 0, wins: 0, rate: 50 },
+    FALL: { trades: 0, wins: 0, rate: 50 },
+  };
+
+  let confidenceLossPressure = 0;
+  let qualityLossPressure = 0;
+  let voteLossPressure = 0;
+  let continuationLossPressure = 0;
+
+  recent.forEach((trade, index) => {
+    const recencyWeight =
+      1 - index / Math.max(80, recent.length * 1.5);
+    const code =
+      trade?.diagnosis?.code ||
+      (trade.result === "WON"
+        ? "SETUP_HELD"
+        : "EXPIRY_VARIANCE");
+
+    causes[code] = Number(causes[code] || 0) + 1;
+
+    const side =
+      trade.direction === "RISE" ? "RISE" : "FALL";
+    directions[side].trades += 1;
+
+    if (trade.result === "WON") {
+      directions[side].wins += 1;
+    } else {
+      if (Number(trade.confidence || 0) < 68) {
+        confidenceLossPressure += recencyWeight;
+      }
+
+      if (Number(trade.quality || 0) < 64) {
+        qualityLossPressure += recencyWeight;
+      }
+
+      if (Number(trade.voteConsensus || 0) < 64) {
+        voteLossPressure += recencyWeight;
+      }
+
+      if (Number(trade.continuation || 0) < 62) {
+        continuationLossPressure += recencyWeight;
+      }
+    }
+  });
+
+  for (const side of ["RISE", "FALL"]) {
+    directions[side].rate = directions[side].trades
+      ? (directions[side].wins /
+          directions[side].trades) *
+        100
+      : 50;
+  }
+
+  const lossBase = Math.max(1, losses);
+
+  const confidenceAdjustment = Math.min(
+    10,
+    (confidenceLossPressure / lossBase) * 4
+  );
+  const qualityAdjustment = Math.min(
+    8,
+    (qualityLossPressure / lossBase) * 3
+  );
+  const voteAdjustment = Math.min(
+    8,
+    (voteLossPressure / lossBase) * 3
+  );
+  const continuationAdjustment = Math.min(
+    8,
+    (continuationLossPressure / lossBase) * 3
+  );
+
+  const normalize = (weights) => {
+    const total = Object.values(weights).reduce(
+      (sum, value) => sum + Number(value || 0),
+      0
+    );
+
+    return Object.fromEntries(
+      Object.entries(weights).map(([key, value]) => [
+        key,
+        Number(value || 0) / Math.max(0.01, total),
+      ])
+    );
+  };
+
+  const weights = normalize({
+    quality:
+      0.42 +
+      Math.min(0.10, qualityLossPressure * 0.012),
+    votes:
+      0.22 +
+      Math.min(0.08, voteLossPressure * 0.010),
+    continuation:
+      0.20 +
+      Math.min(
+        0.10,
+        continuationLossPressure * 0.012
+      ),
+    risk:
+      0.16 +
+      Math.min(
+        0.12,
+        (
+          Number(causes.HIGH_NOISE || 0) +
+          Number(causes.REVERSAL_PRESSURE || 0) +
+          Number(causes.SPIKE_ENTRY || 0)
+        ) *
+          0.006
+      ),
+  });
+
+  return {
+    totalTrades: recent.length,
+    wins,
+    losses,
+    winRate,
+    confidenceAdjustment,
+    qualityAdjustment,
+    voteAdjustment,
+    continuationAdjustment,
+    weights,
+    causes,
+    directions,
+  };
+}
+
 export default function FreshEdgeBot() {
   const {
     markets,
@@ -162,7 +345,7 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge V2 is ready for fast fresh-tick analysis."
+    "FreshEdge V3 is ready with adaptive learning."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
@@ -227,10 +410,56 @@ export default function FreshEdgeBot() {
     }
   }, [connected, connect]);
 
-  const analysis = useMemo(
-    () => analyzeFreshEdge(prices, settings),
-    [prices, settings]
+  const learning = useMemo(
+    () => buildFreshEdgeLearning(stats.history),
+    [stats.history]
   );
+
+  const analysis = useMemo(
+    () =>
+      analyzeFreshEdge(
+        prices,
+        settings,
+        learning
+      ),
+    [prices, settings, learning]
+  );
+
+  const directionHeatmap = useMemo(() => {
+    const riseHistory =
+      learning.directions.RISE.rate;
+    const fallHistory =
+      learning.directions.FALL.rate;
+
+    const liveRise =
+      analysis.direction === "RISE"
+        ? analysis.confidence
+        : Math.max(
+            0,
+            100 - analysis.confidence
+          );
+
+    const liveFall =
+      analysis.direction === "FALL"
+        ? analysis.confidence
+        : Math.max(
+            0,
+            100 - analysis.confidence
+          );
+
+    return {
+      RISE:
+        liveRise * 0.72 +
+        riseHistory * 0.28,
+      FALL:
+        liveFall * 0.72 +
+        fallHistory * 0.28,
+    };
+  }, [
+    analysis.direction,
+    analysis.confidence,
+    learning.directions,
+  ]);
 
   const activeBotTrades = useMemo(
     () =>
@@ -429,6 +658,12 @@ export default function FreshEdgeBot() {
           voteConsensus: analysis.voteConsensus,
           spikeRatio: analysis.spikeRatio,
           entryReasons: analysis.entryReasons || [],
+          adaptiveThresholds:
+            analysis.adaptiveThresholds || {},
+          learnedWeights:
+            analysis.learnedWeights || {},
+          learningTrades:
+            learning.totalTrades,
           openedAt: Date.now(),
           stake: Number(settings.stake || 0.35),
         });
@@ -520,13 +755,13 @@ export default function FreshEdgeBot() {
         }));
 
         setMessage(
-          `${original.market} lost · ${diagnosis.code}: ${diagnosis.summary} ${diagnosis.nextAction}`
+          `${original.market} lost · ${diagnosis.code}: ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades. ${diagnosis.nextAction}`
         );
 
         void switchMarket("Loss rearm.");
       } else {
         setMessage(
-          `${original.market} won ${profit.toFixed(2)} USD · ${diagnosis.summary}`
+          `${original.market} won ${profit.toFixed(2)} USD · ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades.`
         );
         setMarketStartedAt(Date.now());
       }
@@ -535,6 +770,7 @@ export default function FreshEdgeBot() {
     openContracts,
     settings.marketBlockSeconds,
     switchMarket,
+    learning.totalTrades,
   ]);
 
   useEffect(() => {
@@ -572,9 +808,9 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V2</h1>
+            <h1>FreshEdge AI V3</h1>
             <p>
-              Fast fresh-tick analysis · explainable entries · isolated memory
+              Adaptive learning · live probability · explainable outcomes
             </p>
           </div>
 
@@ -666,12 +902,146 @@ export default function FreshEdgeBot() {
               ["Noise", `${analysis.noise.toFixed(1)}%`],
               ["Reversal", `${analysis.reversalRisk.toFixed(1)}%`],
               ["Spike ratio", Number(analysis.spikeRatio || 0).toFixed(2)],
+              [
+                "Adaptive gate",
+                `${Number(
+                  analysis.adaptiveThresholds?.confidence ||
+                    settings.minimumConfidence
+                ).toFixed(1)}%`,
+              ],
             ].map(([label, value]) => (
               <article key={label}>
                 <span>{label}</span>
                 <strong>{value}</strong>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="freshEdgeLearning">
+          <header>
+            <div>
+              <small>V3 ADAPTIVE LEARNING</small>
+              <h3>What FreshEdge has learned</h3>
+            </div>
+            <strong>
+              {learning.totalTrades} TRADES
+            </strong>
+          </header>
+
+          <div className="freshEdgeLearningGrid">
+            <article>
+              <span>Learned win rate</span>
+              <strong>
+                {learning.winRate.toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Required confidence</span>
+              <strong>
+                {Number(
+                  analysis.adaptiveThresholds
+                    ?.confidence ||
+                    settings.minimumConfidence
+                ).toFixed(1)}
+                %
+              </strong>
+            </article>
+            <article>
+              <span>Required quality</span>
+              <strong>
+                {Number(
+                  analysis.adaptiveThresholds
+                    ?.quality ||
+                    settings.minimumQuality
+                ).toFixed(1)}
+                %
+              </strong>
+            </article>
+            <article>
+              <span>Required votes</span>
+              <strong>
+                {Number(
+                  analysis.adaptiveThresholds
+                    ?.votes ||
+                    settings.minimumVotes
+                ).toFixed(1)}
+                %
+              </strong>
+            </article>
+            <article>
+              <span>Quality weight</span>
+              <strong>
+                {(
+                  learning.weights.quality * 100
+                ).toFixed(1)}
+                %
+              </strong>
+            </article>
+            <article>
+              <span>Votes weight</span>
+              <strong>
+                {(
+                  learning.weights.votes * 100
+                ).toFixed(1)}
+                %
+              </strong>
+            </article>
+            <article>
+              <span>Continuation weight</span>
+              <strong>
+                {(
+                  learning.weights.continuation *
+                  100
+                ).toFixed(1)}
+                %
+              </strong>
+            </article>
+            <article>
+              <span>Risk weight</span>
+              <strong>
+                {(
+                  learning.weights.risk * 100
+                ).toFixed(1)}
+                %
+              </strong>
+            </article>
+          </div>
+
+          <div className="freshEdgeHeatmap">
+            <article>
+              <span>RISE probability</span>
+              <strong>
+                {directionHeatmap.RISE.toFixed(1)}%
+              </strong>
+              <small>
+                Learned {learning.directions.RISE.rate.toFixed(
+                  1
+                )}%
+              </small>
+            </article>
+            <article>
+              <span>FALL probability</span>
+              <strong>
+                {directionHeatmap.FALL.toFixed(1)}%
+              </strong>
+              <small>
+                Learned {learning.directions.FALL.rate.toFixed(
+                  1
+                )}%
+              </small>
+            </article>
+          </div>
+
+          <div className="freshEdgeCauseGrid">
+            {Object.entries(learning.causes).map(
+              ([code, count]) => (
+                <article key={code}>
+                  <span>{code}</span>
+                  <strong>{count}</strong>
+                </article>
+              )
+            )}
           </div>
         </section>
 
@@ -823,7 +1193,10 @@ export default function FreshEdgeBot() {
                 </div>
 
                 <div>
-                  <span>Why entered</span>
+                  <span>
+                    Why entered · memory{" "}
+                    {trade.learningTrades || 0} trades
+                  </span>
                   <strong>
                     {(trade.entryReasons || []).join(" · ") ||
                       `C ${Number(trade.confidence).toFixed(
@@ -868,8 +1241,7 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge is isolated from Quantum AI and Higher High.
-          Test on Demo before Real execution.
+          FreshEdge V3 learning is isolated from Quantum AI and Higher High. Learning adjusts filters; it does not guarantee future wins. Test on Demo.
         </footer>
       </main>
     </div>

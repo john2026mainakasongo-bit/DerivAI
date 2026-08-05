@@ -48,7 +48,11 @@ const standardDeviation = (values = []) => {
   );
 };
 
-export function analyzeFreshEdge(prices = [], options = {}) {
+export function analyzeFreshEdge(
+  prices = [],
+  options = {},
+  learning = {}
+) {
   const clean = prices
     .map(Number)
     .filter(Number.isFinite)
@@ -177,10 +181,59 @@ export function analyzeFreshEdge(prices = [], options = {}) {
       Math.max(0, 100 - noise) * 0.10
   );
 
+  const weights = {
+    quality: Number(learning.weights?.quality || 0.42),
+    votes: Number(learning.weights?.votes || 0.22),
+    continuation: Number(
+      learning.weights?.continuation || 0.20
+    ),
+    risk: Number(learning.weights?.risk || 0.16),
+  };
+
+  const weightTotal = Math.max(
+    0.01,
+    weights.quality +
+      weights.votes +
+      weights.continuation +
+      weights.risk
+  );
+
   const confidence = clamp(
-    quality * 0.66 +
-      voteConsensus * 0.20 +
-      Math.max(0, 100 - reversalRisk) * 0.14
+    (
+      quality * weights.quality +
+      voteConsensus * weights.votes +
+      continuation * weights.continuation +
+      Math.max(0, 100 - reversalRisk) *
+        weights.risk
+    ) / weightTotal
+  );
+
+  const adaptiveMinimumConfidence = clamp(
+    Number(options.minimumConfidence || 60) +
+      Number(learning.confidenceAdjustment || 0),
+    54,
+    82
+  );
+
+  const adaptiveMinimumQuality = clamp(
+    Number(options.minimumQuality || 56) +
+      Number(learning.qualityAdjustment || 0),
+    50,
+    78
+  );
+
+  const adaptiveMinimumVotes = clamp(
+    Number(options.minimumVotes || 56) +
+      Number(learning.voteAdjustment || 0),
+    52,
+    78
+  );
+
+  const adaptiveMinimumContinuation = clamp(
+    Number(options.minimumContinuation || 54) +
+      Number(learning.continuationAdjustment || 0),
+    50,
+    78
   );
 
   const hardRisk =
@@ -199,10 +252,10 @@ export function analyzeFreshEdge(prices = [], options = {}) {
 
   const qualified =
     Boolean(direction) &&
-    confidence >= Number(options.minimumConfidence || 62) &&
-    quality >= Number(options.minimumQuality || 58) &&
-    voteConsensus >= Number(options.minimumVotes || 58) &&
-    continuation >= Number(options.minimumContinuation || 56) &&
+    confidence >= adaptiveMinimumConfidence &&
+    quality >= adaptiveMinimumQuality &&
+    voteConsensus >= adaptiveMinimumVotes &&
+    continuation >= adaptiveMinimumContinuation &&
     !hardRisk;
 
   return {
@@ -218,6 +271,13 @@ export function analyzeFreshEdge(prices = [], options = {}) {
     voteConsensus,
     spikeRatio,
     entryReasons,
+    adaptiveThresholds: {
+      confidence: adaptiveMinimumConfidence,
+      quality: adaptiveMinimumQuality,
+      votes: adaptiveMinimumVotes,
+      continuation: adaptiveMinimumContinuation,
+    },
+    learnedWeights: weights,
     reason: qualified
       ? `${direction} confirmed: ${entryReasons.join(" · ")}.`
       : hardRisk

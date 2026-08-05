@@ -404,3 +404,119 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+
+/* FreshEdge AI V3 — adaptive learning */
+.freshEdgeLearning {
+  margin: 8px 14px;
+  padding: 10px;
+  border: 1px solid #2c756f;
+  border-radius: 12px;
+  background: #052034;
+}
+
+.freshEdgeLearning header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.freshEdgeLearning small {
+  color: #39dfb5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.freshEdgeLearning h3 {
+  margin: 3px 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.freshEdgeLearning header > strong {
+  color: #39dfb5;
+  font-size: 10px;
+}
+
+.freshEdgeLearningGrid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.freshEdgeLearningGrid article,
+.freshEdgeHeatmap article,
+.freshEdgeCauseGrid article {
+  padding: 7px;
+  border: 1px solid #174d65;
+  border-radius: 8px;
+  background: #031827;
+}
+
+.freshEdgeLearningGrid span,
+.freshEdgeHeatmap span,
+.freshEdgeCauseGrid span {
+  display: block;
+  color: #82adbf;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.freshEdgeLearningGrid strong,
+.freshEdgeHeatmap strong,
+.freshEdgeCauseGrid strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.freshEdgeHeatmap {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.freshEdgeHeatmap article {
+  border-color: #327b6c;
+}
+
+.freshEdgeHeatmap strong {
+  color: #39dfb5;
+  font-size: 18px;
+}
+
+.freshEdgeHeatmap small {
+  display: block;
+  margin-top: 3px;
+  color: #8fb6c8;
+  font-size: 8px;
+}
+
+.freshEdgeCauseGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 6px;
+}
+
+@media (max-width: 1200px) {
+  .freshEdgeLearningGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .freshEdgeCauseGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  .freshEdgeLearningGrid,
+  .freshEdgeCauseGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
