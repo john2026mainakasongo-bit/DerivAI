@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v12";
+const MEMORY_KEY = "edgepilot:over-under-learning:v13";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -897,6 +897,169 @@ function multiLayerCandidateScore({
     finalScore,
   };
 }
+
+function sessionProtectionAnalysis(trades, sampleSize = 20) {
+  const settled = (Array.isArray(trades) ? trades : [])
+    .filter((trade) =>
+      ["WON", "LOST"].includes(
+        String(trade.status || "").toUpperCase()
+      )
+    )
+    .slice(0, Math.max(5, Number(sampleSize || 20)));
+
+  const wins = settled.filter(
+    (trade) =>
+      String(trade.status || "").toUpperCase() === "WON"
+  ).length;
+
+  const losses = settled.length - wins;
+
+  let lossStreak = 0;
+  let winStreak = 0;
+
+  for (const trade of settled) {
+    const status = String(trade.status || "").toUpperCase();
+
+    if (status === "LOST" && winStreak === 0) {
+      lossStreak += 1;
+    } else if (status === "WON" && lossStreak === 0) {
+      winStreak += 1;
+    } else {
+      break;
+    }
+  }
+
+  const netProfit = settled.reduce(
+    (total, trade) =>
+      total + Number(trade.profit || 0),
+    0
+  );
+
+  const winRate = settled.length
+    ? (wins / settled.length) * 100
+    : 100;
+
+  const averageWin = wins
+    ? settled
+        .filter(
+          (trade) =>
+            String(trade.status || "").toUpperCase() === "WON"
+        )
+        .reduce(
+          (total, trade) =>
+            total + Math.max(0, Number(trade.profit || 0)),
+          0
+        ) / wins
+    : 0;
+
+  const averageLoss = losses
+    ? settled
+        .filter(
+          (trade) =>
+            String(trade.status || "").toUpperCase() === "LOST"
+        )
+        .reduce(
+          (total, trade) =>
+            total + Math.abs(Math.min(0, Number(trade.profit || 0))),
+          0
+        ) / losses
+    : 0;
+
+  const payoffPressure =
+    averageLoss > 0
+      ? averageWin / averageLoss
+      : 1;
+
+  return {
+    sample: settled.length,
+    wins,
+    losses,
+    winRate,
+    lossStreak,
+    winStreak,
+    netProfit,
+    averageWin,
+    averageLoss,
+    payoffPressure,
+  };
+}
+
+function marketHealthMap(trades, minimumSample = 3) {
+  const groups = {};
+
+  for (const trade of Array.isArray(trades) ? trades : []) {
+    const status = String(trade.status || "").toUpperCase();
+
+    if (!["WON", "LOST"].includes(status)) continue;
+
+    const market = String(trade.symbol || "");
+
+    if (!market) continue;
+
+    if (!groups[market]) {
+      groups[market] = {
+        market,
+        trades: 0,
+        wins: 0,
+        losses: 0,
+        profit: 0,
+        lossStreak: 0,
+      };
+    }
+
+    const row = groups[market];
+    row.trades += 1;
+    row.profit += Number(trade.profit || 0);
+
+    if (status === "WON") {
+      row.wins += 1;
+    } else {
+      row.losses += 1;
+    }
+  }
+
+  for (const market of Object.keys(groups)) {
+    const row = groups[market];
+
+    const latest = (Array.isArray(trades) ? trades : [])
+      .filter(
+        (trade) =>
+          String(trade.symbol || "") === market &&
+          ["WON", "LOST"].includes(
+            String(trade.status || "").toUpperCase()
+          )
+      )
+      .slice(0, 6);
+
+    let streak = 0;
+
+    for (const trade of latest) {
+      if (
+        String(trade.status || "").toUpperCase() === "LOST"
+      ) {
+        streak += 1;
+      } else {
+        break;
+      }
+    }
+
+    row.lossStreak = streak;
+    row.winRate = row.trades
+      ? (row.wins / row.trades) * 100
+      : 0;
+
+    row.weak =
+      row.trades >= Number(minimumSample || 3) &&
+      (
+        row.lossStreak >= 2 ||
+        row.winRate < 48 ||
+        row.profit < -0.5
+      );
+  }
+
+  return groups;
+}
+
 function setupCooldownRemaining(row) {
   const blockedUntil = Number(row?.blockedUntil || 0);
   return Math.max(0, blockedUntil - Date.now());
@@ -1256,6 +1419,18 @@ export default function OverUnderLearningBot() {
     useState(0.015);
   const [adaptiveCooldownSeconds, setAdaptiveCooldownSeconds] =
     useState(3);
+  const [protectionEnabled, setProtectionEnabled] =
+    useState(true);
+  const [minimumRecentWinRate, setMinimumRecentWinRate] =
+    useState(58);
+  const [maximumLossCascade, setMaximumLossCascade] =
+    useState(2);
+  const [protectionPauseSeconds, setProtectionPauseSeconds] =
+    useState(18);
+  const [protectionUntil, setProtectionUntil] =
+    useState(0);
+  const [dynamicMarketBlacklist, setDynamicMarketBlacklist] =
+    useState({});
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -1612,6 +1787,20 @@ export default function OverUnderLearningBot() {
     [trades, symbol]
   );
 
+  const protectionStats = useMemo(
+    () => sessionProtectionAnalysis(trades, 20),
+    [trades]
+  );
+
+  const marketHealth = useMemo(
+    () => marketHealthMap(trades, 3),
+    [trades]
+  );
+
+  const protectionActive =
+    protectionEnabled &&
+    Number(protectionUntil || 0) > Date.now();
+
   const multiWindowFrequency = useMemo(
     () => ({
       short: frequencyWindow(
@@ -1908,6 +2097,7 @@ export default function OverUnderLearningBot() {
     bestKey !== recovery.previousLossKey;
 
   const entryReady =
+    !protectionActive &&
     analysis.total >= 30 &&
     best.side !== "WAIT" &&
     Number(analysis.confidence || 0) >=
@@ -2012,13 +2202,26 @@ export default function OverUnderLearningBot() {
             marketSymbols.length
         ];
 
+      const blacklistRemaining =
+        Math.max(
+          0,
+          Number(
+            dynamicMarketBlacklist?.[candidate] || 0
+          ) - Date.now()
+        );
+
+      const weakMarket =
+        Boolean(marketHealth?.[candidate]?.weak);
+
       if (
         candidate &&
         candidate !== symbol &&
         marketBlockRemaining(
           marketBlocks,
           candidate
-        ) <= 0
+        ) <= 0 &&
+        blacklistRemaining <= 0 &&
+        !weakMarket
       ) {
         return candidate;
       }
@@ -2233,6 +2436,93 @@ export default function OverUnderLearningBot() {
 
   useEffect(() => {
     if (
+      !running ||
+      hasOpenTrade ||
+      tradeBusy ||
+      !protectionEnabled
+    ) {
+      return undefined;
+    }
+
+    const cascadeTriggered =
+      Number(protectionStats.lossStreak || 0) >=
+      Number(maximumLossCascade || 2);
+
+    const weakRecentRate =
+      Number(protectionStats.sample || 0) >= 8 &&
+      Number(protectionStats.winRate || 100) <
+        Number(minimumRecentWinRate || 58);
+
+    const negativePayoff =
+      Number(protectionStats.sample || 0) >= 8 &&
+      Number(protectionStats.netProfit || 0) < -0.7;
+
+    if (
+      !cascadeTriggered &&
+      !weakRecentRate &&
+      !negativePayoff
+    ) {
+      return undefined;
+    }
+
+    const now = Date.now();
+    const pauseUntil =
+      now +
+      Math.max(
+        8,
+        Number(protectionPauseSeconds || 18)
+      ) *
+        1000;
+
+    setProtectionUntil(pauseUntil);
+
+    if (symbol) {
+      setDynamicMarketBlacklist((current) => ({
+        ...current,
+        [symbol]:
+          now +
+          Math.max(
+            25,
+            Number(protectionPauseSeconds || 18) + 12
+          ) *
+            1000,
+      }));
+    }
+
+    setMessage(
+      `PROTECTION MODE · ${cascadeTriggered
+        ? `${protectionStats.lossStreak} consecutive losses`
+        : weakRecentRate
+        ? `recent win rate ${Number(
+            protectionStats.winRate || 0
+          ).toFixed(1)}%`
+        : `recent P/L ${Number(
+            protectionStats.netProfit || 0
+          ).toFixed(2)} USD`
+      }. Pausing entries, blacklisting ${symbol}, and scanning a fresh market.`
+    );
+
+    const timer = window.setTimeout(() => {
+      void switchMarket(
+        "Adaptive protection moved away from a weakening market"
+      );
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    running,
+    hasOpenTrade,
+    tradeBusy,
+    protectionEnabled,
+    protectionStats,
+    maximumLossCascade,
+    minimumRecentWinRate,
+    protectionPauseSeconds,
+    symbol,
+  ]);
+
+  useEffect(() => {
+    if (
       running &&
       confirmed &&
       !hasOpenTrade
@@ -2245,6 +2535,39 @@ export default function OverUnderLearningBot() {
     hasOpenTrade,
     bestKey,
     symbol,
+  ]);
+
+  useEffect(() => {
+    if (
+      !running ||
+      !protectionActive
+    ) {
+      return undefined;
+    }
+
+    const remaining =
+      Math.max(
+        0,
+        Number(protectionUntil || 0) - Date.now()
+      );
+
+    const timer = window.setTimeout(() => {
+      setProtectionUntil(0);
+      scanStartedAtRef.current = Date.now();
+      confirmationRef.current = {
+        key: "",
+        ticks: 0,
+      };
+      setMessage(
+        "PROTECTION RELEASED · Fresh market must pass predictive guard, layer agreement and EV before trading."
+      );
+    }, remaining + 100);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    running,
+    protectionActive,
+    protectionUntil,
   ]);
 
   useEffect(() => {
@@ -2883,8 +3206,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V12.3"
-          subtitle="V12.3 syntax-clean · Markov · Bayesian · EV"
+          title="Over/Under Adaptive Learning Bot V13"
+          subtitle="Adaptive protection · market blacklist · loss-cascade control"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -3129,6 +3452,71 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Adaptive protection</span>
+            <select
+              value={protectionEnabled ? "ON" : "OFF"}
+              onChange={(event) =>
+                setProtectionEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — pause loss cascades
+              </option>
+              <option value="OFF">OFF</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Minimum recent win rate</span>
+            <input
+              type="number"
+              min="45"
+              max="80"
+              step="1"
+              value={minimumRecentWinRate}
+              onChange={(event) =>
+                setMinimumRecentWinRate(
+                  clamp(event.target.value, 45, 80)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Max consecutive losses</span>
+            <input
+              type="number"
+              min="1"
+              max="4"
+              step="1"
+              value={maximumLossCascade}
+              onChange={(event) =>
+                setMaximumLossCascade(
+                  clamp(event.target.value, 1, 4)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Protection pause seconds</span>
+            <input
+              type="number"
+              min="8"
+              max="60"
+              step="1"
+              value={protectionPauseSeconds}
+              onChange={(event) =>
+                setProtectionPauseSeconds(
+                  clamp(event.target.value, 8, 60)
                 )
               }
             />
@@ -3451,6 +3839,8 @@ export default function OverUnderLearningBot() {
             <strong>
               {hasOpenTrade
                 ? "MONITORING"
+                : protectionActive
+                ? "PROTECTED WAIT"
                 : predictiveGuardEnabled &&
                   activeGuard.state === "BLOCK"
                 ? "SWITCHING"
@@ -3671,6 +4061,62 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Protection mode</span>
+              <strong>
+                {protectionActive
+                  ? "PAUSED"
+                  : "READY"}
+              </strong>
+              <small>
+                {protectionActive
+                  ? `${Math.ceil(
+                      Math.max(
+                        0,
+                        Number(protectionUntil || 0) -
+                          Date.now()
+                      ) / 1000
+                    )}s remaining`
+                  : "Entries allowed after all gates"}
+              </small>
+            </article>
+
+            <article>
+              <span>Recent session</span>
+              <strong>
+                {pct(protectionStats.winRate)}
+              </strong>
+              <small>
+                {protectionStats.wins}W / {protectionStats.losses}L · {protectionStats.sample} trades
+              </small>
+            </article>
+
+            <article>
+              <span>Loss cascade</span>
+              <strong>
+                {protectionStats.lossStreak}/
+                {maximumLossCascade}
+              </strong>
+              <small>
+                Protection triggers at the limit
+              </small>
+            </article>
+
+            <article>
+              <span>Recent net P/L</span>
+              <strong>
+                {Number(protectionStats.netProfit || 0) >= 0
+                  ? "+"
+                  : ""}
+                {Number(
+                  protectionStats.netProfit || 0
+                ).toFixed(2)}
+              </strong>
+              <small>
+                Last {protectionStats.sample} settled trades
               </small>
             </article>
 

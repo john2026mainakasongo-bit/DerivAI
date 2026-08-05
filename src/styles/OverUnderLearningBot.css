@@ -895,3 +895,45 @@
 .oulAdvancedAnalysis article strong {
   overflow-wrap: anywhere;
 }
+
+
+.oulAdvancedAnalysis > div {
+  grid-template-columns:
+    repeat(6, minmax(0, 1fr));
+}
+
+.oulAdvancedAnalysis article {
+  min-height: 72px;
+}
+
+.oulAdvancedAnalysis article strong {
+  overflow-wrap: anywhere;
+}
+
+.oulCandidate small + small {
+  margin-top: 3px;
+  color: #f0cf67;
+}
+
+@media (max-width: 1200px) {
+  .oulAdvancedAnalysis > div {
+    grid-template-columns:
+      repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .oulAdvancedAnalysis > div {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+.oulProtectionPaused {
+  border-color: #f0cf67 !important;
+}
+
+.oulAdvancedAnalysis article strong {
+  overflow-wrap: anywhere;
+}
