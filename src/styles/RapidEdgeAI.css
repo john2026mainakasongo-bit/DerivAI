@@ -1467,3 +1467,50 @@
       0 0 18px rgba(49, 242, 186, .12);
   }
 }
+
+
+/* RapidEdge V4.3 visible execution diagnostics */
+.oulExecutionDiagnostic {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid #2a6682;
+  border-radius: 12px;
+  background: #061d2a;
+}
+
+.oulExecutionDiagnostic > div {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #174b63;
+  border-radius: 8px;
+  background: #041722;
+}
+
+.oulExecutionDiagnostic small,
+.oulExecutionDiagnostic span {
+  display: block;
+  color: #82b5c8;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.oulExecutionDiagnostic strong,
+.oulExecutionDiagnostic b {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #31f2ba;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .oulExecutionDiagnostic {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

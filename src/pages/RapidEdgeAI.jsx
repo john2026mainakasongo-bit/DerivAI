@@ -340,8 +340,11 @@ export default function RapidEdgeAI() {
   const [switches, setSwitches] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [executionAttempts, setExecutionAttempts] = useState(0);
+  const [executionSuccesses, setExecutionSuccesses] = useState(0);
+  const [executionFailures, setExecutionFailures] = useState(0);
   const [lastExecutionError, setLastExecutionError] = useState("");
   const [lastBuyRequestAt, setLastBuyRequestAt] = useState(0);
+  const [loopStatus, setLoopStatus] = useState("IDLE");
 
   const busyRef = useRef(false);
   const processedRef = useRef(new Set());
@@ -564,7 +567,6 @@ export default function RapidEdgeAI() {
         !best ||
         !ladder.qualified ||
         hasOpenTrade ||
-        tradeBusy ||
         busyRef.current
       ) {
         return false;
@@ -622,6 +624,7 @@ export default function RapidEdgeAI() {
       }
 
       busyRef.current = true;
+      setLoopStatus("BUY_SENT");
       setLastBuyRequestAt(now);
       setExecutionAttempts((value) => value + 1);
       setLastExecutionError("");
@@ -715,6 +718,8 @@ export default function RapidEdgeAI() {
           ).catch(() => {});
         }
 
+        setExecutionSuccesses((value) => value + 1);
+        setLoopStatus("BUY_SUCCESS");
         void playTone("OPEN");
         return true;
       } catch (error) {
@@ -723,7 +728,9 @@ export default function RapidEdgeAI() {
             ? error.message
             : tradeError || "Trade failed.";
 
+        setExecutionFailures((value) => value + 1);
         setLastExecutionError(failure);
+        setLoopStatus("BUY_FAILED");
         setMessage(`BUY FAILED · ${failure}`);
         return false;
       } finally {
@@ -738,7 +745,6 @@ export default function RapidEdgeAI() {
       best,
       ladder,
       hasOpenTrade,
-      tradeBusy,
       selectedAccountType,
       allowReal,
       lastEntryAt,
@@ -753,44 +759,49 @@ export default function RapidEdgeAI() {
     ]
   );
 
-  useEffect(() => {
-    if (!running) return undefined;
-
-    const runDirectBuyCheck = () => {
-      if (
-        connected &&
-        authenticatedFeed &&
-        selectedAccountId &&
-        ladder.qualified &&
-        best &&
-        !hasOpenTrade &&
-        !tradeBusy &&
-        !busyRef.current
-      ) {
-        void executeTrade();
-      }
-    };
-
-    runDirectBuyCheck();
-
-    const executionTimer = window.setInterval(
-      runDirectBuyCheck,
-      200
-    );
-
-    return () =>
-      window.clearInterval(executionTimer);
+  const executionBlockReason = useMemo(() => {
+    if (!running) return "BOT_STOPPED";
+    if (!connected) return "FEED_OFFLINE";
+    if (!authenticatedFeed) return "AUTH_NOT_READY";
+    if (!selectedAccountId) return "ACCOUNT_NOT_SELECTED";
+    if (!best) return "NO_CANDIDATE";
+    if (!ladder.qualified) return "NOT_QUALIFIED";
+    if (hasOpenTrade) return "OPEN_TRADE_EXISTS";
+    if (busyRef.current) return "LOCAL_BUY_BUSY";
+    if (Date.now() - lastEntryAt < 2200) {
+      return "ENTRY_GAP";
+    }
+    if (
+      selectedAccountType !== "demo" &&
+      !allowReal
+    ) {
+      return "REAL_LOCKED";
+    }
+    return "READY_TO_BUY";
   }, [
     running,
     connected,
     authenticatedFeed,
     selectedAccountId,
+    best,
     ladder.qualified,
-    best?.side,
-    best?.barrier,
     hasOpenTrade,
-    tradeBusy,
+    lastEntryAt,
+    selectedAccountType,
+    allowReal,
+    clock,
+  ]);
+
+  useEffect(() => {
+    setLoopStatus(executionBlockReason);
+
+    if (executionBlockReason === "READY_TO_BUY") {
+      void executeTrade();
+    }
+  }, [
+    executionBlockReason,
     executeTrade,
+    clock,
   ]);
 
   useEffect(() => {
@@ -902,19 +913,33 @@ export default function RapidEdgeAI() {
     }
   }, [openContracts, playTone]);
 
+  async function testQualifiedBuy() {
+    setMessage("MANUAL TEST BUY · checking current qualified candidate");
+
+    if (!best || !ladder.qualified) {
+      setLoopStatus("MANUAL_TEST_NOT_QUALIFIED");
+      setLastExecutionError(
+        "Current candidate is not qualified."
+      );
+      return;
+    }
+
+    await executeTrade();
+  }
+
   function start() {
     setRunning(true);
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.2 started · direct buy check running every 200ms."
+      "RapidEdge V4.3 started · diagnostic execution check active."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.2 stopped.");
+    setMessage("RapidEdge V4.3 stopped.");
   }
 
   function reset() {
@@ -926,9 +951,12 @@ export default function RapidEdgeAI() {
     recentRunTimesRef.current = [];
     processedRef.current.clear();
     setExecutionAttempts(0);
+    setExecutionSuccesses(0);
+    setExecutionFailures(0);
     setLastExecutionError("");
     setLastBuyRequestAt(0);
-    setMessage("RapidEdge V4.2 session reset.");
+    setLoopStatus("IDLE");
+    setMessage("RapidEdge V4.3 session reset.");
   }
 
   return (
@@ -937,8 +965,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.2 · Direct Buy Loop"
-          subtitle="Immediate buy check + 200ms interval · authenticated Deriv execution · one open trade"
+          title="RapidEdge AI V4.3 · Execution Diagnostics"
+          subtitle="Visible execution blockers · direct qualified buy · manual test button · one open trade"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -977,6 +1005,13 @@ export default function RapidEdgeAI() {
             >
               {running ? "STOP BOT" : "START BOT"}
             </button>
+            <button
+              type="button"
+              className="oulReset"
+              onClick={testQualifiedBuy}
+            >
+              TEST BUY NOW
+            </button>
           </div>
         </section>
 
@@ -986,7 +1021,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.2 DIRECT BUY LOOP</small>
+            <small>V4.3 EXECUTION DIAGNOSTICS</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -1055,17 +1090,9 @@ export default function RapidEdgeAI() {
               </strong>
             </article>
             <article>
-              <span>Buy Loop</span>
-              <strong>
-                {running &&
-                connected &&
-                authenticatedFeed &&
-                selectedAccountId &&
-                ladder.qualified &&
-                !hasOpenTrade &&
-                !tradeBusy
-                  ? "FIRING"
-                  : "WAIT"}
+              <span>Execution State</span>
+              <strong title={loopStatus}>
+                {loopStatus}
               </strong>
             </article>
             <article>
@@ -1073,11 +1100,48 @@ export default function RapidEdgeAI() {
               <strong>{executionAttempts}</strong>
             </article>
             <article>
+              <span>Buy Success</span>
+              <strong>{executionSuccesses}</strong>
+            </article>
+            <article>
+              <span>Buy Failed</span>
+              <strong>{executionFailures}</strong>
+            </article>
+            <article>
               <span>Last Buy Error</span>
               <strong title={lastExecutionError}>
                 {lastExecutionError || "NONE"}
               </strong>
             </article>
+          </div>
+        </section>
+
+        <section className="oulExecutionDiagnostic">
+          <div>
+            <small>EXECUTION PIPELINE</small>
+            <strong>{loopStatus}</strong>
+          </div>
+          <div>
+            <span>Auth</span>
+            <b>
+              {authenticatedFeed && selectedAccountId
+                ? "READY"
+                : "BLOCKED"}
+            </b>
+          </div>
+          <div>
+            <span>Hook tradeBusy</span>
+            <b>{tradeBusy ? "TRUE" : "FALSE"}</b>
+          </div>
+          <div>
+            <span>Local busy</span>
+            <b>{busyRef.current ? "TRUE" : "FALSE"}</b>
+          </div>
+          <div>
+            <span>Last Error</span>
+            <b title={lastExecutionError}>
+              {lastExecutionError || "NONE"}
+            </b>
           </div>
         </section>
 
@@ -1249,7 +1313,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.2 Trades</h2>
+              <h2>RapidEdge V4.3 Trades</h2>
             </div>
           </header>
 
@@ -1293,7 +1357,7 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.2 transactions yet.
+                No RapidEdge V4.3 transactions yet.
               </p>
             )}
           </div>
