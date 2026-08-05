@@ -12,7 +12,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v8";
+const MEMORY_KEY = "edgepilot:over-under-learning:v9";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -149,6 +149,174 @@ function breakEvenProbability(profitRatio) {
   return 100 / (1 + Math.max(0.01, profitRatio));
 }
 
+
+function digitEntropy(digits) {
+  if (!Array.isArray(digits) || !digits.length) {
+    return 100;
+  }
+
+  const counts = Array.from(
+    { length: 10 },
+    () => 0
+  );
+
+  for (const digit of digits) {
+    const value = Number(digit);
+
+    if (value >= 0 && value <= 9) {
+      counts[value] += 1;
+    }
+  }
+
+  let entropy = 0;
+
+  for (const count of counts) {
+    if (!count) continue;
+
+    const probability = count / digits.length;
+    entropy -= probability * Math.log2(probability);
+  }
+
+  return clamp(
+    (entropy / Math.log2(10)) * 100,
+    0,
+    100
+  );
+}
+
+function digitRegimeAnalysis(recentDigits) {
+  const digits = Array.isArray(recentDigits)
+    ? recentDigits
+        .map(Number)
+        .filter(
+          (digit) =>
+            Number.isFinite(digit) &&
+            digit >= 0 &&
+            digit <= 9
+        )
+        .slice(-80)
+    : [];
+
+  if (digits.length < 12) {
+    return {
+      sample: digits.length,
+      entropy: 100,
+      concentration: 0,
+      persistence: 0,
+      transitionQuality: 0,
+      lowShare: 50,
+      highShare: 50,
+      regime: "WARMING",
+      riskPenalty: 20,
+      qualityBonus: 0,
+    };
+  }
+
+  const counts = Array.from(
+    { length: 10 },
+    () => 0
+  );
+
+  for (const digit of digits) {
+    counts[digit] += 1;
+  }
+
+  const maximumCount = Math.max(...counts);
+  const concentration =
+    (maximumCount / digits.length) * 100;
+
+  let repeats = 0;
+  let directionalTransitions = 0;
+  let stableTransitions = 0;
+
+  for (let index = 1; index < digits.length; index++) {
+    if (digits[index] === digits[index - 1]) {
+      repeats += 1;
+    }
+
+    const difference =
+      digits[index] - digits[index - 1];
+
+    if (difference !== 0) {
+      directionalTransitions += 1;
+    }
+
+    if (Math.abs(difference) <= 4) {
+      stableTransitions += 1;
+    }
+  }
+
+  const persistence =
+    (repeats / Math.max(1, digits.length - 1)) *
+    100;
+
+  const transitionQuality =
+    (stableTransitions /
+      Math.max(1, digits.length - 1)) *
+    100;
+
+  const lowShare =
+    (digits.filter((digit) => digit <= 4).length /
+      digits.length) *
+    100;
+
+  const highShare = 100 - lowShare;
+  const entropy = digitEntropy(digits);
+
+  const regime =
+    entropy >= 92
+      ? "RANDOM"
+      : concentration >= 24 || persistence >= 24
+      ? "CLUSTERED"
+      : transitionQuality >= 72
+      ? "ORDERLY"
+      : "MIXED";
+
+  const riskPenalty = clamp(
+    (entropy >= 94 ? 13 : 0) +
+      (concentration >= 30 ? 14 : 0) +
+      (persistence >= 30 ? 12 : 0) +
+      (transitionQuality < 52 ? 10 : 0),
+    0,
+    35
+  );
+
+  const qualityBonus = clamp(
+    (entropy >= 82 && entropy <= 92 ? 6 : 0) +
+      (transitionQuality >= 68 ? 8 : 0) +
+      (concentration >= 14 &&
+      concentration <= 24
+        ? 5
+        : 0),
+    0,
+    18
+  );
+
+  return {
+    sample: digits.length,
+    entropy,
+    concentration,
+    persistence,
+    transitionQuality,
+    lowShare,
+    highShare,
+    regime,
+    riskPenalty,
+    qualityBonus,
+  };
+}
+
+function barrierSafetyScore(side, barrier) {
+  const numericBarrier = Number(barrier);
+
+  const theoreticalWinRate =
+    side === "OVER"
+      ? ((9 - numericBarrier) / 10) * 100
+      : (numericBarrier / 10) * 100;
+
+  return clamp(theoreticalWinRate, 0, 100);
+}
+
 function setupCooldownRemaining(row) {
   const blockedUntil = Number(row?.blockedUntil || 0);
   return Math.max(0, blockedUntil - Date.now());
@@ -167,7 +335,8 @@ function recoveryStakeAmount(
   recovery,
   maximumStake,
   recoveryTarget = 0,
-  expectedProfitRatio = 0.34
+  expectedProfitRatio = 0.34,
+  recoveryMultiplier = 1.5
 ) {
   const base = Math.max(
     0.35,
@@ -178,10 +347,19 @@ function recoveryStakeAmount(
     return base;
   }
 
-  const attemptMultiplier =
-    Number(recovery.attempts || 0) <= 1
-      ? 1.5
-      : 2;
+  const attempt = Math.max(
+    1,
+    Number(recovery.attempts || 1)
+  );
+
+  const cappedMultiplier = clamp(
+    Number(recoveryMultiplier || 1.5),
+    1,
+    2
+  );
+
+  const progressiveStake =
+    base * Math.pow(cappedMultiplier, attempt);
 
   const targetStake =
     Number(recoveryTarget || 0) > 0
@@ -190,14 +368,11 @@ function recoveryStakeAmount(
           0.05,
           Number(expectedProfitRatio || 0.34)
         )
-      : base * attemptMultiplier;
+      : progressiveStake;
 
   return Math.min(
     Math.max(0.35, Number(maximumStake || 1.4)),
-    Math.max(
-      base * attemptMultiplier,
-      targetStake
-    )
+    Math.max(progressiveStake, targetStake)
   );
 }
 
@@ -477,6 +652,12 @@ export default function OverUnderLearningBot() {
     useState("");
   const [lastSoundEvent, setLastSoundEvent] =
     useState("NONE");
+  const [recoveryMode, setRecoveryMode] =
+    useState("SMART");
+  const [recoveryMultiplier, setRecoveryMultiplier] =
+    useState(1.5);
+  const [maximumRecoveryAttempts, setMaximumRecoveryAttempts] =
+    useState(2);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -820,6 +1001,14 @@ export default function OverUnderLearningBot() {
     [prices]
   );
 
+  const regimeAnalysis = useMemo(
+    () =>
+      digitRegimeAnalysis(
+        analysis.recentDigits
+      ),
+    [analysis.recentDigits]
+  );
+
   const marketSymbols = useMemo(
     () =>
       (Array.isArray(markets)
@@ -855,15 +1044,46 @@ export default function OverUnderLearningBot() {
             barrier
           );
 
+          const safetyScore =
+            barrierSafetyScore(
+              side,
+              barrier
+            );
+
+          const payoutEdge =
+            Number(candidate.probability || 0) -
+            Number(
+              learned.requiredProbability || 100
+            );
+
+          const regimeAdjustedScore = clamp(
+            candidateScore(
+              candidate,
+              learned
+            ) +
+              regimeAnalysis.qualityBonus -
+              regimeAnalysis.riskPenalty +
+              (
+                recovery.active
+                  ? safetyScore * 0.10 +
+                    payoutEdge * 0.35
+                  : safetyScore * 0.04 +
+                    payoutEdge * 0.20
+              ),
+            0,
+            100
+          );
+
           return {
             ...candidate,
             side,
             barrier,
             learned,
-            adaptiveScore: candidateScore(
-              candidate,
-              learned
-            ),
+            safetyScore,
+            payoutEdge,
+            regimeAdjustedScore,
+            adaptiveScore:
+              regimeAdjustedScore,
           };
         })
         .filter(
@@ -879,12 +1099,34 @@ export default function OverUnderLearningBot() {
             Number(item.probability || 0) >=
               Number(item.learned.requiredProbability || 100)
         )
-        .sort(
-          (a, b) =>
-            b.adaptiveScore -
-            a.adaptiveScore
-        ),
-    [analysis.candidates, memory, symbol, marketBlocks]
+        .sort((a, b) => {
+          if (recovery.active) {
+            const recoveryA =
+              Number(a.adaptiveScore || 0) * 0.65 +
+              Number(a.safetyScore || 0) * 0.25 +
+              Number(a.payoutEdge || 0) * 0.10;
+
+            const recoveryB =
+              Number(b.adaptiveScore || 0) * 0.65 +
+              Number(b.safetyScore || 0) * 0.25 +
+              Number(b.payoutEdge || 0) * 0.10;
+
+            return recoveryB - recoveryA;
+          }
+
+          return (
+            Number(b.adaptiveScore || 0) -
+            Number(a.adaptiveScore || 0)
+          );
+        }),
+    [
+      analysis.candidates,
+      memory,
+      symbol,
+      marketBlocks,
+      regimeAnalysis,
+      recovery.active,
+    ]
   );
 
   const best =
@@ -910,16 +1152,20 @@ export default function OverUnderLearningBot() {
   const blockedByLastLoss =
     lastLossKeyRef.current === bestKey;
 
+  const smartRecoveryActive =
+    recovery.active &&
+    recoveryMode === "SMART";
+
   const recoveryScoreGate =
     Number(minimumScore) +
-    (recovery.active ? 6 : 0);
+    (smartRecoveryActive ? 6 : 0);
 
   const recoveryConfidenceGate =
     Number(minimumConfidence) +
-    (recovery.active ? 5 : 0);
+    (smartRecoveryActive ? 5 : 0);
 
   const recoverySetupPass =
-    !recovery.active ||
+    !smartRecoveryActive ||
     bestKey !== recovery.previousLossKey;
 
   const entryReady =
@@ -931,7 +1177,12 @@ export default function OverUnderLearningBot() {
       recoveryScoreGate &&
     Number(best.probability || 0) >=
       Number(best.learned.requiredProbability || 100) +
-        (recovery.active ? 3 : 0) &&
+        (smartRecoveryActive ? 4 : 0) &&
+    Number(best.payoutEdge || 0) >=
+      (smartRecoveryActive ? 4 : 1.5) &&
+    Number(regimeAnalysis.riskPenalty || 0) <=
+      (smartRecoveryActive ? 18 : 25) &&
+    Number(regimeAnalysis.sample || 0) >= 30 &&
     !best.learned.blocked &&
     !blockedByLastLoss &&
     recoverySetupPass;
@@ -1104,10 +1355,13 @@ export default function OverUnderLearningBot() {
         contractType,
         amount: recoveryStakeAmount(
           stake,
-          recovery,
+          recoveryMode === "SMART"
+            ? recovery
+            : { active: false },
           maximumRecoveryStake,
           recoveryTarget,
-          best.learned.profitRatio
+          best.learned.profitRatio,
+          recoveryMultiplier
         ),
         basis: "stake",
         duration: Math.max(
@@ -1135,10 +1389,13 @@ export default function OverUnderLearningBot() {
         duration: `${durationTicks} TICK`,
         stake: recoveryStakeAmount(
           stake,
-          recovery,
+          recoveryMode === "SMART"
+            ? recovery
+            : { active: false },
           maximumRecoveryStake,
           recoveryTarget,
-          best.learned.profitRatio
+          best.learned.profitRatio,
+          recoveryMultiplier
         ),
         recoveryMode: recovery.active,
         recoveryAttempt: recovery.attempts,
@@ -1171,10 +1428,13 @@ export default function OverUnderLearningBot() {
       setMessage(
         `${recovery.active ? `RECOVERY ${recovery.attempts}/2` : "NORMAL"} · ${best.side} ${best.barrier} opened · stake ${recoveryStakeAmount(
           stake,
-          recovery,
+          recoveryMode === "SMART"
+            ? recovery
+            : { active: false },
           maximumRecoveryStake,
           recoveryTarget,
-          best.learned.profitRatio
+          best.learned.profitRatio,
+          recoveryMultiplier
         ).toFixed(2)} · score ${best.adaptiveScore.toFixed(
           1
         )}% · memory ${best.learned.trades} trades.`
@@ -1420,7 +1680,7 @@ export default function OverUnderLearningBot() {
       setRecovery((current) => ({
         active: true,
         attempts: Math.min(
-          2,
+          maximumRecoveryAttempts,
           Number(current.attempts || 0) + 1
         ),
         previousLossKey: memoryKey(
@@ -1450,7 +1710,8 @@ export default function OverUnderLearningBot() {
         consecutiveLosses >= 2 ||
         (
           settled.recoveryMode &&
-          Number(settled.recoveryAttempt || 0) >= 2
+          Number(settled.recoveryAttempt || 0) >=
+            maximumRecoveryAttempts
         )
       )
     ) {
@@ -1718,8 +1979,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V8"
-          subtitle="Journal-driven WIN/LOSS alerts · persistent sound engine"
+          title="Over/Under Adaptive Learning Bot V9"
+          subtitle="Multi-analysis decision engine · EV-aware smart recovery"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1947,6 +2208,61 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Recovery mode</span>
+            <select
+              value={recoveryMode}
+              onChange={(event) =>
+                setRecoveryMode(
+                  event.target.value
+                )
+              }
+            >
+              <option value="SMART">
+                SMART — clear setup only
+              </option>
+              <option value="OFF">
+                OFF — base stake only
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Recovery multiplier</span>
+            <input
+              type="number"
+              min="1"
+              max="2"
+              step="0.1"
+              value={recoveryMultiplier}
+              onChange={(event) =>
+                setRecoveryMultiplier(
+                  event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Max recovery attempts</span>
+            <input
+              type="number"
+              min="1"
+              max="2"
+              step="1"
+              value={maximumRecoveryAttempts}
+              onChange={(event) =>
+                setMaximumRecoveryAttempts(
+                  clamp(
+                    event.target.value,
+                    1,
+                    2
+                  )
                 )
               }
             />
@@ -2207,6 +2523,111 @@ export default function OverUnderLearningBot() {
           </div>
         </section>
 
+
+        <section className="oulAdvancedAnalysis">
+          <header>
+            <div>
+              <small>MULTI-ANALYSIS ENGINE</small>
+              <h2>
+                Market regime and entry quality
+              </h2>
+            </div>
+            <strong>
+              {regimeAnalysis.regime}
+            </strong>
+          </header>
+
+          <div>
+            <article>
+              <span>Entropy</span>
+              <strong>
+                {pct(regimeAnalysis.entropy)}
+              </strong>
+              <small>
+                Randomness of recent digits
+              </small>
+            </article>
+
+            <article>
+              <span>Concentration</span>
+              <strong>
+                {pct(
+                  regimeAnalysis.concentration
+                )}
+              </strong>
+              <small>
+                Dominant digit pressure
+              </small>
+            </article>
+
+            <article>
+              <span>Persistence</span>
+              <strong>
+                {pct(
+                  regimeAnalysis.persistence
+                )}
+              </strong>
+              <small>
+                Repeat-digit behaviour
+              </small>
+            </article>
+
+            <article>
+              <span>Transition quality</span>
+              <strong>
+                {pct(
+                  regimeAnalysis.transitionQuality
+                )}
+              </strong>
+              <small>
+                Stability between ticks
+              </small>
+            </article>
+
+            <article>
+              <span>Low / high digits</span>
+              <strong>
+                {pct(regimeAnalysis.lowShare)}
+                {" / "}
+                {pct(regimeAnalysis.highShare)}
+              </strong>
+              <small>
+                Current distribution balance
+              </small>
+            </article>
+
+            <article>
+              <span>Risk penalty</span>
+              <strong>
+                {regimeAnalysis.riskPenalty}
+              </strong>
+              <small>
+                Lower is safer
+              </small>
+            </article>
+
+            <article>
+              <span>Best safety</span>
+              <strong>
+                {pct(best.safetyScore)}
+              </strong>
+              <small>
+                Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>EV margin</span>
+              <strong>
+                {best.payoutEdge >= 0 ? "+" : ""}
+                {pct(best.payoutEdge)}
+              </strong>
+              <small>
+                Probability above break-even
+              </small>
+            </article>
+          </div>
+        </section>
 
         <section className="oulRotation">
           <header>
