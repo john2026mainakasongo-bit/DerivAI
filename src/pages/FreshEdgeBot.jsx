@@ -509,10 +509,10 @@ export default function FreshEdgeBot() {
     maximumReversal: 50,
     maximumSpikeRatio: 6,
     confirmationTicks: 2,
-    maximumMarketSeconds: 12,
-    decisionCycleSeconds: 45,
-    oneMinuteTargetSeconds: 60,
-    fastLaneAfterSeconds: 42,
+    maximumMarketSeconds: 8,
+    decisionCycleSeconds: 20,
+    oneMinuteTargetSeconds: 45,
+    fastLaneAfterSeconds: 25,
     fastLaneMinimumConfidence: 66,
     fastLaneMinimumQuality: 57,
     durationFastSeconds: 12,
@@ -523,7 +523,7 @@ export default function FreshEdgeBot() {
     latencyEntryLimitMs: 1600,
     hardRiskHoldSeconds: 6,
     weakSetupHoldSeconds: 6,
-    strongerMarketDelaySeconds: 8,
+    strongerMarketDelaySeconds: 5,
     strongerMarketMargin: 12,
     marketBlockSeconds: 15,
     maximumOpenTrades: 1,
@@ -535,13 +535,13 @@ export default function FreshEdgeBot() {
     rankingMinimumScore: 44,
     timelineLimit: 60,
     freshRecoveryTicks: 8,
-    marketWarmupTicks: 7,
+    marketWarmupTicks: 6,
     minimumExpiryConfidence: 69,
     minimumExpiryQuality: 60,
     sameDirectionLossBlockSeconds: 18,
     recoveryMarketBlockSeconds: 20,
     replayLimit: 12,
-    waitEstimateSeconds: 4,
+    waitEstimateSeconds: 3,
     stabilityTicks: 3,
     trajectoryTicks: 4,
     minimumTrendAgeTicks: 5,
@@ -617,6 +617,8 @@ export default function FreshEdgeBot() {
   const lastEntryAttemptV87Ref = useRef(Date.now());
   const oneMinuteSwitchBusyV87Ref = useRef(false);
 
+  const rapidPortfolioLastMoveV88Ref = useRef(Date.now());
+  const rapidPortfolioBusyV88Ref = useRef(false);
   useEffect(() => {
     try {
       window.localStorage.setItem(
@@ -2117,6 +2119,144 @@ export default function FreshEdgeBot() {
     marketScores,
     changeSymbol,
   ]);
+  // FreshEdge V8.8 rapid portfolio scanner.
+  // The current hook subscribes to one live market at a time, so this
+  // performs fast sequential portfolio rotation using cached scores.
+  useEffect(() => {
+    if (
+      !running ||
+      sessionStopped ||
+      activeBotTrades.length > 0 ||
+      tradeBusy ||
+      buyingRef.current ||
+      !Array.isArray(markets) ||
+      markets.length < 2
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const heldMs =
+        now -
+        Number(
+          rapidPortfolioLastMoveV88Ref.current ||
+          marketStartedAt ||
+          now
+        );
+
+      const highRisk =
+        Number(analysis.noise || 0) >
+          Number(settings.maximumNoise || 60) ||
+        Number(analysis.reversalRisk || 0) >
+          Number(settings.maximumReversal || 50);
+
+      const noConfirmedEntry =
+        !analysis.ready ||
+        !analysis.direction ||
+        analysis.direction === "WAIT";
+
+      const mustMove =
+        (
+          highRisk &&
+          heldMs >= 6000
+        ) ||
+        (
+          noConfirmedEntry &&
+          heldMs >= 20000
+        );
+
+      if (
+        !mustMove ||
+        rapidPortfolioBusyV88Ref.current
+      ) {
+        return;
+      }
+
+      rapidPortfolioBusyV88Ref.current = true;
+      rapidPortfolioLastMoveV88Ref.current =
+        now;
+
+      const ranked = Object.values(
+        marketScores || {}
+      )
+        .filter(
+          (row) =>
+            row?.symbol &&
+            row.symbol !== symbol &&
+            now -
+              Number(row.updatedAt || 0) <
+              120000
+        )
+        .sort(
+          (a, b) =>
+            Number(b.score || 0) -
+            Number(a.score || 0)
+        );
+
+      const currentIndex = Math.max(
+        0,
+        markets.findIndex(
+          (item) => item.id === symbol
+        )
+      );
+
+      const nextSymbol =
+        ranked[0]?.symbol ||
+        markets[
+          (currentIndex + 1) %
+            markets.length
+        ]?.id;
+
+      setConfirmation({
+        key: "",
+        ticks: 0,
+      });
+      hardRiskStartedAtRef.current = 0;
+      weakSetupStartedAtRef.current = 0;
+      setConfidenceTrail([]);
+      setMarketStartedAt(now);
+
+      setMessage(
+        highRisk
+          ? `FreshEdge V8.8: ${market?.label || symbol} stayed high-risk for 6s. Rotating immediately.`
+          : `FreshEdge V8.8: no confirmed entry in 20s. Refreshing the strongest cached market.`
+      );
+
+      if (
+        nextSymbol &&
+        nextSymbol !== symbol
+      ) {
+        void changeSymbol(nextSymbol)
+          .catch(() => {})
+          .finally(() => {
+            window.setTimeout(() => {
+              rapidPortfolioBusyV88Ref.current =
+                false;
+            }, 700);
+          });
+      } else {
+        rapidPortfolioBusyV88Ref.current =
+          false;
+      }
+    }, 1000);
+
+    return () =>
+      window.clearInterval(timer);
+  }, [
+    running,
+    sessionStopped,
+    activeBotTrades.length,
+    tradeBusy,
+    markets,
+    symbol,
+    market?.label,
+    marketStartedAt,
+    analysis,
+    settings,
+    marketScores,
+    changeSymbol,
+  ]);
   useEffect(() => {
     const settled = openContracts.filter(
       (contract) =>
@@ -2133,7 +2273,12 @@ export default function FreshEdgeBot() {
 
       if (!original) continue;
 
-      processedRef.current.add(id);
+      processedRef.current.add(id);
+      // FreshEdge V8.8 post-settlement rotation
+      rapidPortfolioLastMoveV88Ref.current = 0;
+      rapidPortfolioBusyV88Ref.current = false;
+      hardRiskStartedAtRef.current = 0;
+      weakSetupStartedAtRef.current = 0;
       // FreshEdge V8.7 settlement rescan clock
       lastEntryAttemptV87Ref.current = Date.now();
       oneMinuteSwitchBusyV87Ref.current = false;
@@ -2350,7 +2495,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V8.7</h1>
+            <h1>FreshEdge AI V8.8</h1>
             <small>STRICT ENTRY GUARD</small>
             <p>
               Deep replay Â· latency telemetry Â· diagnosis-based recovery
@@ -3420,12 +3565,14 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V8.7 targets a qualified opportunity inside each minute using a fast lane and forced market refresh, but never guarantees or forces a winning trade. Test on Demo.
+          FreshEdge V8.8 uses rapid sequential portfolio rotation, cached ranking, six-second risk exits and twenty-second no-entry refresh. It filters entries but cannot guarantee wins. Test on Demo.
         </footer>
       </main>
     </div>
   );
 }
+
+
 
 
 
