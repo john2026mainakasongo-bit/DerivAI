@@ -1573,3 +1573,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+/* RapidEdge V4.7 dynamic speed gate */
+.oulDecision.ready::after {
+  content: "DYNAMIC GATE PASSED";
+}
+
+.oulDecisionGrid article:nth-child(2) strong {
+  color: #62a8ff;
+}
+
+.oulCandidates > div {
+  min-height: 102px;
+}

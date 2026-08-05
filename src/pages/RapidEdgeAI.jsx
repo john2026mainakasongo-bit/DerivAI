@@ -560,6 +560,7 @@ export default function RapidEdgeAI() {
   const [marketEnteredAt, setMarketEnteredAt] =
     useState(Date.now());
   const [switches, setSwitches] = useState(0);
+  const [lastSwitchAt, setLastSwitchAt] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [pauseUntil, setPauseUntil] = useState(0);
   const [marketBlocks, setMarketBlocks] = useState({});
@@ -719,7 +720,7 @@ export default function RapidEdgeAI() {
     scanAgeMs
   );
 
-  const qualityReady =
+  const strictQualityReady =
     Boolean(best) &&
     Number(best.expectedValue || -1) > 0 &&
     Number(best.marketQuality || 0) >= 75 &&
@@ -728,23 +729,43 @@ export default function RapidEdgeAI() {
     ) >= 80 &&
     Number(best.adaptiveRisk || 100) < 20 &&
     Number(best.qualityScore || 0) >= 78 &&
-    Number(best.contractLossStreak || 0) ===
-      0 &&
+    Number(best.contractLossStreak || 0) === 0 &&
     Number(best.marketLossStreak || 0) === 0 &&
     postLossRevalidated;
 
+  const fastQualityReady =
+    Boolean(best) &&
+    Number(best.expectedValue || -1) >= -0.005 &&
+    Number(best.marketQuality || 0) >= 65 &&
+    Number(
+      best.executionConfidence || 0
+    ) >= 72 &&
+    Number(best.adaptiveRisk || 100) < 30 &&
+    Number(best.qualityScore || 0) >= 68 &&
+    Number(best.contractLossStreak || 0) < 2 &&
+    Number(best.marketLossStreak || 0) < 2 &&
+    postLossRevalidated;
+
+  const dynamicFastWindow =
+    scanAgeMs >= 10000;
+
+  const qualityReady =
+    strictQualityReady ||
+    (dynamicFastWindow && fastQualityReady);
+
   const immediateQualityEntry =
-    qualityReady &&
+    strictQualityReady &&
     Number(best.calibratedProbability || 0) >=
-      90 &&
+      88 &&
     Number(best.executionConfidence || 0) >=
-      88;
+      84;
 
   const confirmationRequired =
+    Boolean(best) &&
     qualityReady &&
+    !immediateQualityEntry &&
     Number(best.calibratedProbability || 0) >=
-      82 &&
-    Number(best.calibratedProbability || 0) < 90;
+      76;
 
   const confirmedQualityEntry =
     confirmationRequired &&
@@ -753,11 +774,11 @@ export default function RapidEdgeAI() {
   const oneMinuteFallback =
     Boolean(best) &&
     digitQuality.ready &&
-    qualityReady &&
+    fastQualityReady &&
     scanAgeMs >= 45000 &&
     Number(best.calibratedProbability || 0) >=
-      80 &&
-    Number(best.qualityScore || 0) >= 80 &&
+      74 &&
+    Number(best.qualityScore || 0) >= 66 &&
     confirmationTicksCollected >= 2;
 
   const ladder = {
@@ -767,15 +788,20 @@ export default function RapidEdgeAI() {
       confirmedQualityEntry ||
       oneMinuteFallback,
     stage: immediateQualityEntry
-      ? "QUALITY_FAST"
+      ? "STRICT_FAST"
       : oneMinuteFallback
-      ? "60S_QUALITY"
+      ? "60S_BALANCED"
+      : confirmedQualityEntry &&
+        strictQualityReady
+      ? "STRICT_CONFIRM"
       : confirmedQualityEntry
-      ? "QUALITY_2T_CONFIRM"
+      ? "FAST_CONFIRM"
       : confirmationRequired
       ? "WAIT_2_TICKS"
       : postLossRevalidated
-      ? baseLadder.stage
+      ? dynamicFastWindow
+        ? "FAST_SCAN"
+        : "STRICT_SCAN"
       : "POST_LOSS_RECHECK",
   };
 
@@ -887,10 +913,13 @@ export default function RapidEdgeAI() {
 
   const rotateMarket = useCallback(
     async (reason) => {
+      const now = Date.now();
+
       if (
         !marketSymbols.length ||
         loadingMarket ||
-        hasOpenTrade
+        hasOpenTrade ||
+        now - Number(lastSwitchAt || 0) < 8000
       ) {
         return;
       }
@@ -911,7 +940,8 @@ export default function RapidEdgeAI() {
       setMessage(
         `${reason} · switching ${symbol} → ${next}`
       );
-      setMarketEnteredAt(Date.now());
+      setLastSwitchAt(now);
+      setMarketEnteredAt(now);
       setSwitches((value) => value + 1);
 
       try {
@@ -927,6 +957,7 @@ export default function RapidEdgeAI() {
       marketSymbols,
       loadingMarket,
       hasOpenTrade,
+      lastSwitchAt,
       symbol,
       changeSymbol,
     ]
@@ -1202,12 +1233,10 @@ export default function RapidEdgeAI() {
     const needsConfirmation =
       Boolean(best) &&
       qualityReady &&
+      !immediateQualityEntry &&
       Number(
         best.calibratedProbability || 0
-      ) >= 82 &&
-      Number(
-        best.calibratedProbability || 0
-      ) < 90;
+      ) >= 76;
 
     if (needsConfirmation) {
       if (confirmationAnchor === null) {
@@ -1221,6 +1250,7 @@ export default function RapidEdgeAI() {
     best?.barrier,
     best?.calibratedProbability,
     qualityReady,
+    immediateQualityEntry,
     digits.length,
     confirmationAnchor,
   ]);
@@ -1286,12 +1316,12 @@ export default function RapidEdgeAI() {
     if (
       digitQuality.ready &&
       !ladder.qualified &&
-      scanAgeMs >= 8000 &&
+      scanAgeMs >= 20000 &&
       !hasOpenTrade &&
       !busyRef.current
     ) {
       void rotateMarket(
-        "8s watchdog found no acceptable entry"
+        "20s dynamic gate found no acceptable entry"
       );
       setLastSettlementAt(Date.now());
     }
@@ -1452,14 +1482,14 @@ export default function RapidEdgeAI() {
     setLastSettlementAt(Date.now());
     setMarketEnteredAt(Date.now());
     setMessage(
-      "RapidEdge V4.6 started · calibrated probability and post-loss revalidation active."
+      "RapidEdge V4.7 started · strict-to-fast dynamic gate active."
     );
     void playTone("OPEN");
   }
 
   function stop() {
     setRunning(false);
-    setMessage("RapidEdge V4.6 stopped.");
+    setMessage("RapidEdge V4.7 stopped.");
   }
 
   function reset() {
@@ -1470,6 +1500,7 @@ export default function RapidEdgeAI() {
     setPauseUntil(0);
     setMarketBlocks({});
     setContractBlocks({});
+    setLastSwitchAt(0);
     setPostLossAnchorCount(null);
     setPostLossMarket("");
     setConfirmationAnchor(null);
@@ -1482,7 +1513,7 @@ export default function RapidEdgeAI() {
     setLastExecutionError("");
     setLastBuyRequestAt(0);
     setLoopStatus("IDLE");
-    setMessage("RapidEdge V4.6 session reset.");
+    setMessage("RapidEdge V4.7 session reset.");
   }
 
   return (
@@ -1491,8 +1522,8 @@ export default function RapidEdgeAI() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="RapidEdge AI V4.6 · Quality Revalidation"
-          subtitle="Calibrated probability · strict quality gate · 2-tick confirmation · 24-tick post-loss recheck"
+          title="RapidEdge AI V4.7 · Dynamic Speed Gate"
+          subtitle="Strict gate for 10s · balanced fast gate after 10s · market switch after 20s"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -1547,7 +1578,7 @@ export default function RapidEdgeAI() {
           }`}
         >
           <div>
-            <small>V4.6 QUALITY REVALIDATION</small>
+            <small>V4.7 DYNAMIC SPEED GATE</small>
             <h1>
               {best
                 ? `${best.contract} · ${pct(
@@ -1564,6 +1595,26 @@ export default function RapidEdgeAI() {
             <article>
               <span>Stage</span>
               <strong>{ladder.stage}</strong>
+            </article>
+            <article>
+              <span>Gate Mode</span>
+              <strong>
+                {dynamicFastWindow
+                  ? "FAST"
+                  : "STRICT"}
+              </strong>
+            </article>
+            <article>
+              <span>Next Switch</span>
+              <strong>
+                {Math.max(
+                  0,
+                  Math.ceil(
+                    (20000 - scanAgeMs) /
+                      1000
+                  )
+                )}s
+              </strong>
             </article>
             <article>
               <span>Sample</span>
@@ -1945,6 +1996,16 @@ export default function RapidEdgeAI() {
                       )}
                     </span>
                     <span>
+                      Gate{" "}
+                      {Number(candidate.marketQuality || 0) >=
+                        75 &&
+                      Number(candidate.executionConfidence || 0) >=
+                        80 &&
+                      Number(candidate.adaptiveRisk || 100) < 20
+                        ? "STRICT"
+                        : "FAST"}
+                    </span>
+                    <span>
                       Risk{" "}
                       {pct(
                         candidate.adaptiveRisk
@@ -1960,7 +2021,7 @@ export default function RapidEdgeAI() {
           <header className="oulTransactionHeader">
             <div>
               <small>TRANSACTION MONITOR</small>
-              <h2>RapidEdge V4.6 Trades</h2>
+              <h2>RapidEdge V4.7 Trades</h2>
             </div>
           </header>
 
@@ -2004,14 +2065,14 @@ export default function RapidEdgeAI() {
               ))
             ) : (
               <p className="oulNoTransactions">
-                No RapidEdge V4.6 transactions yet.
+                No RapidEdge V4.7 transactions yet.
               </p>
             )}
           </div>
         </section>
 
         <p className="oulDisclaimer">
-          V4.6 waits for 24 new ticks after a loss and uses calibrated probability plus stricter quality limits. It may trade less often. Profit and win rate are not guaranteed. Test on demo first.
+          V4.7 starts with a strict gate, relaxes to a balanced fast gate after 10 seconds, and switches market after 20 seconds without an entry. Profit and win rate are not guaranteed. Test on demo first.
         </p>
       </main>
     </div>
