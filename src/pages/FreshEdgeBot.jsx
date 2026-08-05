@@ -13,7 +13,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeFreshEdge } from "../analysis/freshEdgeEngine";
 import "../styles/FreshEdgeBot.css";
 
-const STORAGE_KEY = "fresh-edge-ai-v5-learning-history";
+const STORAGE_KEY = "fresh-edge-ai-v6-learning-history";
 
 const INITIAL_STATS = {
   runs: 0,
@@ -345,7 +345,7 @@ export default function FreshEdgeBot() {
 
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState(
-    "FreshEdge V5 is ready with live decision replay and fresh recovery."
+    "FreshEdge V6 is ready with confidence stability protection."
   );
   const [settings, setSettings] = useState({
     stake: 0.35,
@@ -374,6 +374,12 @@ export default function FreshEdgeBot() {
     recoveryMarketBlockSeconds: 20,
     replayLimit: 12,
     waitEstimateSeconds: 5,
+    stabilityTicks: 3,
+    maximumConfidenceDrop: 3.5,
+    minimumConfidenceGrowth: -0.5,
+    scannerBoardMarkets: 8,
+    scannerSnapshotSeconds: 45,
+    lossLearningWindow: 20,
   });
   const [stats, setStats] = useState(() => {
     try {
@@ -549,6 +555,98 @@ export default function FreshEdgeBot() {
     ]
   );
 
+  const scannerBoard = useMemo(() => {
+    const now = Date.now();
+
+    return Object.values(marketScores)
+      .filter(
+        (item) =>
+          item?.symbol &&
+          now - Number(item.updatedAt || 0) <=
+            Number(settings.scannerSnapshotSeconds || 45) *
+              1000
+      )
+      .map((item) => {
+        const reasons = [];
+
+        if (!item.direction || item.direction === "WAIT") {
+          reasons.push("mixed direction");
+        }
+
+        if (
+          Number(item.confidence || 0) <
+          Number(settings.minimumConfidence || 59)
+        ) {
+          reasons.push("low confidence");
+        }
+
+        if (
+          Number(item.quality || 0) <
+          Number(settings.minimumQuality || 55)
+        ) {
+          reasons.push("low quality");
+        }
+
+        if (
+          Number(item.votes || 0) <
+          Number(settings.minimumVotes || 55)
+        ) {
+          reasons.push("weak votes");
+        }
+
+        if (
+          Number(item.continuation || 0) <
+          Number(settings.minimumContinuation || 53)
+        ) {
+          reasons.push("weak continuation");
+        }
+
+        if (
+          Number(item.noise || 0) >=
+          Number(settings.maximumNoise || 76)
+        ) {
+          reasons.push("high noise");
+        }
+
+        if (
+          Number(item.reversal || 0) >=
+          Number(settings.maximumReversal || 70)
+        ) {
+          reasons.push("reversal risk");
+        }
+
+        return {
+          ...item,
+          status: reasons.length ? "REJECTED" : "CANDIDATE",
+          rejectionReason:
+            reasons.join(", ") || "fresh setup passed",
+        };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.score || 0) -
+          Number(a.score || 0)
+      )
+      .slice(
+        0,
+        Math.max(
+          1,
+          Number(settings.scannerBoardMarkets || 8)
+        )
+      );
+  }, [
+    marketScores,
+    settings.scannerSnapshotSeconds,
+    settings.scannerBoardMarkets,
+    settings.minimumConfidence,
+    settings.minimumQuality,
+    settings.minimumVotes,
+    settings.minimumContinuation,
+    settings.maximumNoise,
+    settings.maximumReversal,
+    currentPrice,
+  ]);
+
   const waitReasons = useMemo(() => {
     const thresholds = analysis.adaptiveThresholds || {};
     const reasons = [];
@@ -617,11 +715,16 @@ export default function FreshEdgeBot() {
           Number(analysis.reversalRisk || 0) <
           Number(settings.maximumReversal),
         detail: `${Number(analysis.reversalRisk || 0).toFixed(1)} / max ${settings.maximumReversal}%`,
+      },
+      {
+        label: "Confidence stability",
+        pass: confidenceStability.ready,
+        detail: confidenceStability.reason,
       }
     );
 
     return reasons;
-  }, [analysis, settings]);
+  }, [analysis, settings, confidenceStability]);
 
   const missingWaitReasons = waitReasons.filter((item) => !item.pass);
 
@@ -661,6 +764,67 @@ export default function FreshEdgeBot() {
     (symbol !== recoveryState.sourceSymbol &&
       recoveryState.freshTicks >= recoveryState.requiredTicks);
 
+  const confidenceStability = useMemo(() => {
+    const requiredTicks = Math.max(
+      2,
+      Number(settings.stabilityTicks || 3)
+    );
+    const points = confidenceTrail.slice(-requiredTicks);
+
+    if (points.length < requiredTicks) {
+      return {
+        ready: false,
+        trend: 0,
+        drop: 0,
+        reason: `Collecting stability ${points.length}/${requiredTicks}.`,
+      };
+    }
+
+    const first = Number(points[0]?.confidence || 0);
+    const last = Number(points.at(-1)?.confidence || 0);
+    const trend = last - first;
+
+    let maximumDrop = 0;
+
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = Number(
+        points[index - 1]?.confidence || 0
+      );
+      const current = Number(
+        points[index]?.confidence || 0
+      );
+
+      maximumDrop = Math.max(
+        maximumDrop,
+        previous - current
+      );
+    }
+
+    const ready =
+      maximumDrop <=
+        Number(settings.maximumConfidenceDrop || 3.5) &&
+      trend >=
+        Number(settings.minimumConfidenceGrowth || -0.5);
+
+    return {
+      ready,
+      trend,
+      drop: maximumDrop,
+      reason: ready
+        ? `Stable ${trend >= 0 ? "+" : ""}${trend.toFixed(
+            1
+          )}% · max drop ${maximumDrop.toFixed(1)}%.`
+        : `Confidence unstable: trend ${trend.toFixed(
+            1
+          )}% · max drop ${maximumDrop.toFixed(1)}%.`,
+    };
+  }, [
+    confidenceTrail,
+    settings.stabilityTicks,
+    settings.maximumConfidenceDrop,
+    settings.minimumConfidenceGrowth,
+  ]);
+
   const directionHeatmap = useMemo(() => {
     const riseHistory =
       learning.directions.RISE.rate;
@@ -696,6 +860,74 @@ export default function FreshEdgeBot() {
     analysis.confidence,
     learning.directions,
   ]);
+
+  const learningChanges = useMemo(
+    () => [
+      {
+        label: "Confidence gate",
+        base: Number(settings.minimumConfidence || 0),
+        learned: Number(
+          analysis.adaptiveThresholds?.confidence ||
+            settings.minimumConfidence ||
+            0
+        ),
+      },
+      {
+        label: "Quality gate",
+        base: Number(settings.minimumQuality || 0),
+        learned: Number(
+          analysis.adaptiveThresholds?.quality ||
+            settings.minimumQuality ||
+            0
+        ),
+      },
+      {
+        label: "Votes gate",
+        base: Number(settings.minimumVotes || 0),
+        learned: Number(
+          analysis.adaptiveThresholds?.votes ||
+            settings.minimumVotes ||
+            0
+        ),
+      },
+      {
+        label: "Continuation gate",
+        base: Number(settings.minimumContinuation || 0),
+        learned: Number(
+          analysis.adaptiveThresholds?.continuation ||
+            settings.minimumContinuation ||
+            0
+        ),
+      },
+    ],
+    [
+      settings.minimumConfidence,
+      settings.minimumQuality,
+      settings.minimumVotes,
+      settings.minimumContinuation,
+      analysis.adaptiveThresholds,
+    ]
+  );
+
+  const dominantLossCause = useMemo(() => {
+    const entries = Object.entries(learning.causes || {})
+      .filter(([code]) => code !== "SETUP_HELD")
+      .sort(
+        (a, b) =>
+          Number(b[1] || 0) -
+          Number(a[1] || 0)
+      );
+
+    return entries[0]?.[1]
+      ? {
+          code: entries[0][0],
+          count: Number(entries[0][1] || 0),
+        }
+      : {
+          code: "NONE",
+          count: 0,
+        };
+  }, [learning.causes]);
 
   const activeBotTrades = useMemo(
     () =>
@@ -900,6 +1132,7 @@ export default function FreshEdgeBot() {
       sessionStopped ||
       !authenticatedFeed ||
       !recoveryReady ||
+      !confidenceStability.ready ||
       tradeBusy ||
       buyingRef.current ||
       activeBotTrades.length >=
@@ -964,6 +1197,15 @@ export default function FreshEdgeBot() {
           confidenceTrail: confidenceTrail.slice(-12),
           waitReasons: waitReasons.map((item) => ({ ...item })),
           recoveryEntry: recoveryState.active,
+          stabilityAtEntry: {
+            trend: confidenceStability.trend,
+            maximumDrop: confidenceStability.drop,
+            ready: confidenceStability.ready,
+          },
+          scannerRankAtEntry:
+            rankedMarkets.findIndex(
+              (item) => item.symbol === symbol
+            ) + 1,
           openedAt: Date.now(),
           stake: Number(settings.stake || 0.35),
         });
@@ -1013,6 +1255,7 @@ export default function FreshEdgeBot() {
     market?.label,
     appendTimeline,
     recoveryReady,
+    confidenceStability.ready,
     recoveryState,
     timeline,
     confidenceTrail,
@@ -1176,9 +1419,9 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeHeader">
           <div>
             <small>STANDALONE BOT</small>
-            <h1>FreshEdge AI V5</h1>
+            <h1>FreshEdge AI V6</h1>
             <p>
-              Live confidence · WAIT reasons · trade replay · fresh recovery
+              Confidence stability · scanner reasons · learning changes · replay
             </p>
           </div>
 
@@ -1289,7 +1532,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeV5Decision">
           <header>
             <div>
-              <small>V5 LIVE DECISION</small>
+              <small>V6 LIVE DECISION</small>
               <h3>Confidence movement and WAIT reasons</h3>
             </div>
             <strong>
@@ -1319,6 +1562,34 @@ export default function FreshEdgeBot() {
             })}
           </div>
 
+          <div className={`freshEdgeStability ${confidenceStability.ready ? "pass" : "wait"}`}>
+            <article>
+              <span>Confidence stability</span>
+              <strong>
+                {confidenceStability.ready ? "ENTRY SAFE" : "ENTRY BLOCKED"}
+              </strong>
+            </article>
+            <article>
+              <span>Trend</span>
+              <strong>
+                {confidenceStability.trend >= 0 ? "+" : ""}
+                {confidenceStability.trend.toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Maximum drop</span>
+              <strong>
+                {confidenceStability.drop.toFixed(1)}%
+              </strong>
+            </article>
+            <article>
+              <span>Protection</span>
+              <strong>
+                max {settings.maximumConfidenceDrop}% drop
+              </strong>
+            </article>
+          </div>
+
           <div className="freshEdgeWaitGrid">
             {waitReasons.map((item) => (
               <article
@@ -1344,7 +1615,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeRecoveryPanel">
           <header>
             <div>
-              <small>V5 FRESH RECOVERY</small>
+              <small>V6 FRESH RECOVERY</small>
               <h3>No old-signal recovery</h3>
             </div>
             <strong>{recoveryState.active ? "REBUILDING" : "NORMAL"}</strong>
@@ -1391,6 +1662,46 @@ export default function FreshEdgeBot() {
                 </strong>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="freshEdgeScannerBoard">
+          <header>
+            <div>
+              <small>V6 MARKET SCANNER</small>
+              <h3>Recent market decisions and rejection reasons</h3>
+            </div>
+            <strong>{scannerBoard.length} SNAPSHOTS</strong>
+          </header>
+
+          <div className="freshEdgeScannerGrid">
+            {scannerBoard.length ? (
+              scannerBoard.map((item) => (
+                <article
+                  key={item.symbol}
+                  className={
+                    item.status === "CANDIDATE"
+                      ? "candidate"
+                      : "rejected"
+                  }
+                >
+                  <div>
+                    <strong>{item.label}</strong>
+                    <b>{Number(item.score || 0).toFixed(1)}</b>
+                  </div>
+                  <span>
+                    {item.direction} · C{" "}
+                    {Number(item.confidence || 0).toFixed(1)}
+                    % · Q{" "}
+                    {Number(item.quality || 0).toFixed(1)}%
+                  </span>
+                  <small>{item.rejectionReason}</small>
+                  <em>{item.status}</em>
+                </article>
+              ))
+            ) : (
+              <p>Visit markets to build fresh scanner snapshots.</p>
+            )}
           </div>
         </section>
 
@@ -1457,6 +1768,49 @@ export default function FreshEdgeBot() {
               <p>No timeline events yet.</p>
             )}
           </div>
+        </section>
+
+        <section className="freshEdgeLearningChanges">
+          <header>
+            <div>
+              <small>V6 SELF-CORRECTION</small>
+              <h3>How settled trades changed the filters</h3>
+            </div>
+            <strong>
+              {learning.totalTrades} LEARNED TRADES
+            </strong>
+          </header>
+
+          <div className="freshEdgeLearningChangesGrid">
+            {learningChanges.map((item) => {
+              const delta = item.learned - item.base;
+
+              return (
+                <article key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>
+                    {item.base.toFixed(1)}% →{" "}
+                    {item.learned.toFixed(1)}%
+                  </strong>
+                  <b className={delta > 0 ? "raised" : "same"}>
+                    {delta > 0 ? "+" : ""}
+                    {delta.toFixed(1)}
+                  </b>
+                </article>
+              );
+            })}
+            <article>
+              <span>Dominant loss cause</span>
+              <strong>{dominantLossCause.code}</strong>
+              <b>{dominantLossCause.count} trades</b>
+            </article>
+          </div>
+
+          <p>
+            Learning only adjusts bounded gates and weights. Every new
+            entry still needs current ticks, confirmation and confidence
+            stability.
+          </p>
         </section>
 
         <section className="freshEdgeLearning">
@@ -1634,6 +1988,8 @@ export default function FreshEdgeBot() {
             ["Stop loss", "stopLoss", 0.5, 100, 0.5],
             ["Rank switch", "rankingSwitchMargin", 1, 15, 0.5],
             ["Rank min", "rankingMinimumScore", 30, 90, 1],
+            ["Stability ticks", "stabilityTicks", 2, 8, 1],
+            ["Max confidence drop", "maximumConfidenceDrop", 0.5, 15, 0.5],
             ["Recovery ticks", "freshRecoveryTicks", 6, 40, 1],
             ["Wait estimate", "waitEstimateSeconds", 1, 15, 1],
           ].map(([label, key, min, max, step]) => (
@@ -1723,7 +2079,7 @@ export default function FreshEdgeBot() {
         <section className="freshEdgeReplay">
           <header>
             <div>
-              <small>V5 TRADE REPLAY</small>
+              <small>V6 TRADE REPLAY</small>
               <h3>Open a settled trade to inspect its signal</h3>
             </div>
             <strong>{selectedReplayId ? "OPEN" : "SELECT TRADE"}</strong>
@@ -1843,7 +2199,7 @@ export default function FreshEdgeBot() {
         </section>
 
         <footer className="freshEdgeFooter">
-          FreshEdge V5 uses fresh confirmation, bounded learning and recent market snapshots. It does not guarantee wins. Test on Demo before Real execution.
+          FreshEdge V6 blocks falling-confidence entries, explains scanner rejections and shows bounded learning changes. Recent snapshots are not simultaneous multi-market feeds. Test on Demo.
         </footer>
       </main>
     </div>

@@ -853,3 +853,187 @@
   .freshEdgeReplayBody { grid-template-columns: 1fr; }
   .freshEdgeReplaySteps > div { grid-template-columns: 70px 55px 1fr; }
 }
+
+
+/* FreshEdge AI V6 — stability, scanner reasons and learning changes */
+.freshEdgeStability {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 7px 0;
+  padding: 7px;
+  border: 1px solid #6d5c18;
+  border-radius: 9px;
+  background: #27230c;
+}
+
+.freshEdgeStability.pass {
+  border-color: #287966;
+  background: #062c27;
+}
+
+.freshEdgeStability article {
+  padding: 6px;
+  border: 1px solid #174d65;
+  border-radius: 7px;
+  background: #031827;
+}
+
+.freshEdgeStability span,
+.freshEdgeLearningChanges span {
+  display: block;
+  color: #82adbf;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.freshEdgeStability strong,
+.freshEdgeLearningChanges strong {
+  display: block;
+  margin-top: 4px;
+  color: #fff;
+  font-size: 10px;
+}
+
+.freshEdgeScannerBoard,
+.freshEdgeLearningChanges {
+  margin: 8px 14px;
+  padding: 10px;
+  border: 1px solid #2a6c7f;
+  border-radius: 12px;
+  background: #052034;
+}
+
+.freshEdgeScannerBoard header,
+.freshEdgeLearningChanges header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.freshEdgeScannerBoard small,
+.freshEdgeLearningChanges small {
+  color: #39dfb5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.freshEdgeScannerBoard h3,
+.freshEdgeLearningChanges h3 {
+  margin: 3px 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+.freshEdgeScannerBoard header > strong,
+.freshEdgeLearningChanges header > strong {
+  color: #f0c952;
+  font-size: 10px;
+}
+
+.freshEdgeScannerGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.freshEdgeScannerGrid article {
+  position: relative;
+  padding: 8px;
+  border: 1px solid #674f20;
+  border-radius: 8px;
+  background: #251f0b;
+}
+
+.freshEdgeScannerGrid article.candidate {
+  border-color: #287966;
+  background: #062c27;
+}
+
+.freshEdgeScannerGrid article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.freshEdgeScannerGrid strong {
+  color: #fff;
+  font-size: 10px;
+}
+
+.freshEdgeScannerGrid b {
+  color: #39dfb5;
+  font-size: 11px;
+}
+
+.freshEdgeScannerGrid span,
+.freshEdgeScannerGrid small {
+  display: block;
+  margin-top: 5px;
+  color: #9abccc;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.freshEdgeScannerGrid em {
+  display: inline-block;
+  margin-top: 6px;
+  color: #f0c952;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.freshEdgeScannerGrid article.candidate em {
+  color: #39dfb5;
+}
+
+.freshEdgeLearningChangesGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.freshEdgeLearningChangesGrid article {
+  padding: 8px;
+  border: 1px solid #174d65;
+  border-radius: 8px;
+  background: #031827;
+}
+
+.freshEdgeLearningChangesGrid b {
+  display: block;
+  margin-top: 4px;
+  color: #82adbf;
+  font-size: 9px;
+}
+
+.freshEdgeLearningChangesGrid b.raised {
+  color: #f0c952;
+}
+
+.freshEdgeLearningChanges p {
+  margin: 7px 0 0;
+  color: #8fb6c8;
+  font-size: 9px;
+}
+
+@media (max-width: 1100px) {
+  .freshEdgeScannerGrid,
+  .freshEdgeLearningChangesGrid,
+  .freshEdgeStability {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  .freshEdgeScannerGrid,
+  .freshEdgeLearningChangesGrid,
+  .freshEdgeStability {
+    grid-template-columns: 1fr;
+  }
+}
