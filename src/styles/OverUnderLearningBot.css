@@ -1178,3 +1178,70 @@
       repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.oulPortfolioRanking {
+  display: grid;
+  grid-template-columns:
+    repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 9px;
+}
+
+.oulPortfolioRanking article {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #174b63;
+  border-radius: 9px;
+  background: #041521;
+}
+
+.oulPortfolioRanking article.qualified {
+  border-color: #22d3a6;
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 166, .18);
+}
+
+.oulPortfolioRanking article.stale {
+  opacity: .48;
+}
+
+.oulPortfolioRanking small,
+.oulPortfolioRanking strong,
+.oulPortfolioRanking span,
+.oulPortfolioRanking em {
+  display: block;
+}
+
+.oulPortfolioRanking small {
+  color: #39d9af;
+  font-size: 7px;
+  font-weight: 900;
+}
+
+.oulPortfolioRanking strong {
+  margin-top: 3px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.oulPortfolioRanking span {
+  margin-top: 3px;
+  color: #9fc6d6;
+  font-size: 8px;
+}
+
+.oulPortfolioRanking em {
+  margin-top: 4px;
+  color: #f0cf67;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+@media (max-width: 1050px) {
+  .oulPortfolioRanking {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}

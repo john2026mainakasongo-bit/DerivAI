@@ -12,8 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v19";
-const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v19";
+const MEMORY_KEY = "edgepilot:over-under-learning:v20";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v20";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -1135,6 +1135,122 @@ function marketHealthMap(trades, minimumSample = 3) {
 
 
 
+
+function buildGlobalMarketPortfolio({
+  marketSymbols,
+  marketCache,
+  currentMarket,
+  freshnessSeconds,
+  minimumProbability,
+  minimumVotes,
+  maximumRisk,
+  minimumEV,
+  marketBlacklist,
+  marketHealth,
+}) {
+  const now = Date.now();
+
+  return (
+    Array.isArray(marketSymbols)
+      ? marketSymbols
+      : []
+  )
+    .map((marketName) => {
+      const row =
+        marketCache?.[marketName] || null;
+
+      const ageMilliseconds =
+        now - Number(row?.updatedAt || 0);
+
+      const fresh =
+        Boolean(row) &&
+        ageMilliseconds <=
+          Math.max(
+            10,
+            Number(freshnessSeconds || 90)
+          ) *
+            1000;
+
+      const probability =
+        Number(row?.probability || 0);
+      const expectedValue =
+        Number(row?.expectedValue || 0);
+      const votes =
+        Number(row?.votes || 0);
+      const risk =
+        Number(row?.risk || 100);
+
+      const blocked =
+        Number(
+          marketBlacklist?.[marketName] || 0
+        ) > now;
+
+      const weak =
+        Boolean(
+          marketHealth?.[marketName]?.weak
+        );
+
+      const qualified =
+        fresh &&
+        !blocked &&
+        !weak &&
+        Boolean(row?.qualified) &&
+        probability >=
+          Number(minimumProbability || 86) &&
+        votes >=
+          Number(minimumVotes || 6) &&
+        risk <=
+          Number(maximumRisk || 25) &&
+        expectedValue >
+          Number(minimumEV || 0);
+
+      const score =
+        probability * 0.40 +
+        votes * 5 +
+        Math.max(
+          -20,
+          Math.min(
+            20,
+            expectedValue * 100
+          )
+        ) -
+        risk * 0.25 -
+        Math.min(
+          20,
+          ageMilliseconds / 5000
+        ) +
+        (
+          marketName === currentMarket
+            ? 0.5
+            : 0
+        );
+
+      return {
+        market: marketName,
+        contract:
+          row?.contract || "WAIT",
+        side:
+          row?.side || "WAIT",
+        barrier:
+          Number(row?.barrier ?? -1),
+        probability,
+        expectedValue,
+        votes,
+        risk,
+        ageMilliseconds,
+        fresh,
+        blocked,
+        weak,
+        qualified,
+        score,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.score - a.score
+    );
+}
+
 function universalCandidateDecision({
   rankedCandidates,
   blockedSetups,
@@ -1840,6 +1956,12 @@ export default function OverUnderLearningBot() {
     useState(90);
   const [dynamicSetupBlacklist, setDynamicSetupBlacklist] =
     useState({});
+  const [globalPortfolioEnabled, setGlobalPortfolioEnabled] =
+    useState(true);
+  const [portfolioMinimumLead, setPortfolioMinimumLead] =
+    useState(2);
+  const [portfolioSwitchCooldownMs, setPortfolioSwitchCooldownMs] =
+    useState(700);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -2334,6 +2456,45 @@ export default function OverUnderLearningBot() {
         .filter(Boolean),
     [markets]
   );
+
+  const globalMarketPortfolio = useMemo(
+    () =>
+      buildGlobalMarketPortfolio({
+        marketSymbols,
+        marketCache:
+          marketBrowserCache,
+        currentMarket: symbol,
+        freshnessSeconds:
+          cacheFreshnessSeconds,
+        minimumProbability:
+          universalMinimumProbability,
+        minimumVotes:
+          universalMinimumVotes,
+        maximumRisk:
+          universalMaximumRisk,
+        minimumEV: evFloor,
+        marketBlacklist:
+          dynamicMarketBlacklist,
+        marketHealth,
+      }),
+    [
+      marketSymbols,
+      marketBrowserCache,
+      symbol,
+      cacheFreshnessSeconds,
+      universalMinimumProbability,
+      universalMinimumVotes,
+      universalMaximumRisk,
+      evFloor,
+      dynamicMarketBlacklist,
+      marketHealth,
+    ]
+  );
+
+  const bestGlobalMarket =
+    globalMarketPortfolio.find(
+      (item) => item.qualified
+    ) || null;
 
   const smartRecoveryActive =
     recovery.active &&
@@ -2889,9 +3050,18 @@ export default function OverUnderLearningBot() {
     !marketRunLocked &&
     !setupRepeated &&
     !sameBarrierRepeated &&
+    String(best.side || "WAIT") !== "WAIT" &&
+    Number(best.barrier ?? -1) >= 0 &&
     (
       !universalPoolEnabled ||
       Boolean(universalDecision.selected)
+    ) &&
+    (
+      !globalPortfolioEnabled ||
+      (
+        Boolean(bestGlobalMarket) &&
+        bestGlobalMarket.market === symbol
+      )
     ) &&
     (
       !globalSelectionEnabled ||
@@ -2984,6 +3154,46 @@ export default function OverUnderLearningBot() {
 
   function nextMarket() {
     if (!marketSymbols.length) return "";
+
+    if (
+      globalPortfolioEnabled &&
+      bestGlobalMarket &&
+      bestGlobalMarket.market !== symbol
+    ) {
+      const portfolioCandidate =
+        bestGlobalMarket.market;
+
+      const portfolioUsed =
+        Boolean(
+          oneRunPerMarket &&
+          lastTradeByMarket?.[
+            portfolioCandidate
+          ]
+        );
+
+      const portfolioBlocked =
+        marketBlockRemaining(
+          marketBlocks,
+          portfolioCandidate
+        ) > 0 ||
+        Number(
+          dynamicMarketBlacklist?.[
+            portfolioCandidate
+          ] || 0
+        ) > Date.now() ||
+        Boolean(
+          marketHealth?.[
+            portfolioCandidate
+          ]?.weak
+        );
+
+      if (
+        !portfolioUsed &&
+        !portfolioBlocked
+      ) {
+        return portfolioCandidate;
+      }
+    }
 
     const currentIndex =
       marketSymbols.indexOf(symbol);
@@ -3091,9 +3301,13 @@ export default function OverUnderLearningBot() {
       window.setTimeout(() => {
         switchBusyRef.current = false;
       }, Math.max(
-      250,
-      Number(fastScanMilliseconds || 650)
-    ));
+        250,
+        Number(
+          portfolioSwitchCooldownMs ||
+          fastScanMilliseconds ||
+          700
+        )
+      ));
     }
   }
 
@@ -3351,6 +3565,51 @@ export default function OverUnderLearningBot() {
     minimumRecentWinRate,
     protectionPauseSeconds,
     symbol,
+  ]);
+
+  useEffect(() => {
+    if (
+      !running ||
+      !globalPortfolioEnabled ||
+      hasOpenTrade ||
+      tradeBusy ||
+      switchBusyRef.current ||
+      !bestGlobalMarket ||
+      bestGlobalMarket.market === symbol
+    ) {
+      return;
+    }
+
+    const currentPortfolioRow =
+      globalMarketPortfolio.find(
+        (item) => item.market === symbol
+      );
+
+    const lead =
+      Number(bestGlobalMarket.score || 0) -
+      Number(currentPortfolioRow?.score || 0);
+
+    if (
+      bestGlobalMarket.qualified &&
+      (
+        !currentPortfolioRow?.qualified ||
+        lead >=
+          Number(portfolioMinimumLead || 2)
+      )
+    ) {
+      void switchMarket(
+        `GLOBAL PORTFOLIO · ${bestGlobalMarket.market} ${bestGlobalMarket.contract} · score lead ${lead.toFixed(1)}`
+      );
+    }
+  }, [
+    running,
+    globalPortfolioEnabled,
+    hasOpenTrade,
+    tradeBusy,
+    bestGlobalMarket,
+    globalMarketPortfolio,
+    symbol,
+    portfolioMinimumLead,
   ]);
 
   useEffect(() => {
@@ -4285,8 +4544,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V19"
-          subtitle="Universal candidate pool · rank #1 only · adaptive blacklist"
+          title="Over/Under Adaptive Learning Bot V20"
+          subtitle="Global market portfolio · universal OVER + UNDER · live-confirmed entry"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -4359,6 +4618,12 @@ export default function OverUnderLearningBot() {
                 ? confirmed
                   ? "Fresh recovery setup passed stricter EV, confidence and confirmation gates."
                   : "Recovery is scanning all available markets. No trade will be forced without a clear setup."
+                : globalPortfolioEnabled &&
+                  (
+                    !bestGlobalMarket ||
+                    bestGlobalMarket.market !== symbol
+                  )
+                ? "GLOBAL PORTFOLIO — Current market is not the top qualified market. Trade blocked while switching."
                 : universalPoolEnabled &&
                   !universalDecision.selected
                 ? "UNIVERSAL POOL — No OVER or UNDER candidate passed every gate. Trade skipped."
@@ -4545,6 +4810,65 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Global market portfolio</span>
+            <select
+              value={
+                globalPortfolioEnabled
+                  ? "ON"
+                  : "OFF"
+              }
+              onChange={(event) =>
+                setGlobalPortfolioEnabled(
+                  event.target.value === "ON"
+                )
+              }
+            >
+              <option value="ON">
+                ON — choose best cached market
+              </option>
+              <option value="OFF">
+                OFF — sequential rotation
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Portfolio score lead</span>
+            <input
+              type="number"
+              min="0"
+              max="20"
+              step="0.5"
+              value={portfolioMinimumLead}
+              onChange={(event) =>
+                setPortfolioMinimumLead(
+                  clamp(event.target.value, 0, 20)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Portfolio switch cooldown ms</span>
+            <input
+              type="number"
+              min="250"
+              max="5000"
+              step="50"
+              value={portfolioSwitchCooldownMs}
+              onChange={(event) =>
+                setPortfolioSwitchCooldownMs(
+                  clamp(
+                    event.target.value,
+                    250,
+                    5000
+                  )
                 )
               }
             />
@@ -5252,6 +5576,12 @@ export default function OverUnderLearningBot() {
             <strong>
               {hasOpenTrade
                 ? "MONITORING"
+                : globalPortfolioEnabled &&
+                  (
+                    !bestGlobalMarket ||
+                    bestGlobalMarket.market !== symbol
+                  )
+                ? "PORTFOLIO SWITCH"
                 : universalPoolEnabled &&
                   !universalDecision.selected
                 ? "UNIVERSAL SKIP"
@@ -5480,6 +5810,62 @@ export default function OverUnderLearningBot() {
               </strong>
               <small>
                 Barrier theoretical coverage
+              </small>
+            </article>
+
+            <article>
+              <span>Global portfolio leader</span>
+              <strong>
+                {bestGlobalMarket
+                  ? bestGlobalMarket.market
+                  : "NONE"}
+              </strong>
+              <small>
+                {bestGlobalMarket
+                  ? `${bestGlobalMarket.contract} · ${pct(
+                      bestGlobalMarket.probability
+                    )}`
+                  : "No cached market passed all gates"}
+              </small>
+            </article>
+
+            <article>
+              <span>Portfolio qualified</span>
+              <strong>
+                {globalMarketPortfolio.filter(
+                  (item) => item.qualified
+                ).length}
+              </strong>
+              <small>
+                Markets ready for live confirmation
+              </small>
+            </article>
+
+            <article>
+              <span>Current portfolio rank</span>
+              <strong>
+                {Math.max(
+                  0,
+                  globalMarketPortfolio.findIndex(
+                    (item) =>
+                      item.market === symbol
+                  ) + 1
+                ) || "—"}
+              </strong>
+              <small>
+                {symbol || "No active market"}
+              </small>
+            </article>
+
+            <article>
+              <span>Hard WAIT lock</span>
+              <strong>
+                {String(best.side || "WAIT") === "WAIT"
+                  ? "BLOCKED"
+                  : "CLEAR"}
+              </strong>
+              <small>
+                NONE / WAIT can never execute
               </small>
             </article>
 
@@ -6159,6 +6545,56 @@ export default function OverUnderLearningBot() {
                     : "WAIT"}
                 </span>
               </article>
+            </div>
+
+            <div className="oulPortfolioRanking">
+              {globalMarketPortfolio
+                .slice(0, 10)
+                .map((item, index) => (
+                  <article
+                    key={item.market}
+                    className={
+                      item.qualified
+                        ? "qualified"
+                        : item.fresh
+                        ? ""
+                        : "stale"
+                    }
+                  >
+                    <small>
+                      MARKET #{index + 1}
+                    </small>
+                    <strong>
+                      {item.market}
+                    </strong>
+                    <span>
+                      {item.contract}
+                    </span>
+                    <span>
+                      P {pct(item.probability)}
+                      {" · "}
+                      EV {Number(
+                        item.expectedValue
+                      ).toFixed(3)}
+                    </span>
+                    <span>
+                      V {item.votes}/7
+                      {" · "}
+                      R {pct(item.risk)}
+                    </span>
+                    <em>
+                      {item.qualified
+                        ? "PORTFOLIO READY"
+                        : item.blocked
+                        ? "BLACKLISTED"
+                        : item.weak
+                        ? "WEAK MARKET"
+                        : item.fresh
+                        ? "WAIT"
+                        : "STALE"}
+                    </em>
+                  </article>
+                ))}
             </div>
 
             <div className="oulUniversalRanking">
