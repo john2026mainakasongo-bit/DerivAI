@@ -3,6 +3,12 @@ import "../styles/BotDashboardCatalog.css";
 
 const bots = [
   {
+    tag: "ADAPTIVE",
+    title: "Over/Under Learning Bot",
+    text: "Continuous digit reading, market and barrier memory, automatic next-entry search.",
+    path: "/over-under-learning-bot",
+  },
+  {
     tag: "AUTO",
     title: "MetaBinary Auto Bot",
     text: "Multi-contract automated analysis and execution.",
@@ -66,3 +72,4 @@ export default function BotDashboardCatalog() {
     </section>
   );
 }
+
