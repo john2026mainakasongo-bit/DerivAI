@@ -12,7 +12,8 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { analyzeOverUnder } from "../analysis/overUnderAnalysisEngine";
 import "../styles/OverUnderLearningBot.css";
 
-const MEMORY_KEY = "edgepilot:over-under-learning:v15";
+const MEMORY_KEY = "edgepilot:over-under-learning:v17";
+const MARKET_BROWSER_CACHE_KEY = "edgepilot:over-under-market-cache:v17";
 
 const clamp = (value, minimum, maximum) =>
   Math.min(
@@ -73,6 +74,77 @@ function profitOf(item = {}) {
   );
 
   return Number.isFinite(value) ? value : 0;
+}
+
+
+function loadMarketBrowserCache() {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(
+        MARKET_BROWSER_CACHE_KEY
+      ) || "{}"
+    );
+
+    return parsed && typeof parsed === "object"
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizePriceKey(item, index) {
+  if (item && typeof item === "object") {
+    return String(
+      item.epoch ??
+        item.time ??
+        item.timestamp ??
+        item.id ??
+        `${item.quote ?? item.price ?? ""}:${index}`
+    );
+  }
+
+  return `${String(item)}:${index}`;
+}
+
+function mergeMarketPrices(
+  cachedPrices,
+  livePrices,
+  limit = 320
+) {
+  const merged = [
+    ...(Array.isArray(cachedPrices) ? cachedPrices : []),
+    ...(Array.isArray(livePrices) ? livePrices : []),
+  ];
+
+  const seen = new Set();
+  const output = [];
+
+  for (
+    let index = merged.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    const item = merged[index];
+    const key = normalizePriceKey(item, index);
+
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    output.push(item);
+
+    if (output.length >= limit) break;
+  }
+
+  return output.reverse();
+}
+
+function cacheIsFresh(row, freshnessSeconds) {
+  return Boolean(
+    row &&
+      Date.now() - Number(row.updatedAt || 0) <=
+        Math.max(5, Number(freshnessSeconds || 90)) * 1000
+  );
 }
 
 function safeAnalysis(value) {
@@ -1555,6 +1627,14 @@ export default function OverUnderLearningBot() {
     useState({});
   const [lastSetupKeyByMarket, setLastSetupKeyByMarket] =
     useState({});
+  const [marketBrowserCache, setMarketBrowserCache] =
+    useState(() => loadMarketBrowserCache());
+  const [cacheFreshnessSeconds, setCacheFreshnessSeconds] =
+    useState(90);
+  const [fastScanMilliseconds, setFastScanMilliseconds] =
+    useState(650);
+  const [minimumLiveTicksAfterSwitch, setMinimumLiveTicksAfterSwitch] =
+    useState(4);
 
   const runningRef = useRef(false);
   const busyRef = useRef(false);
@@ -1563,6 +1643,10 @@ export default function OverUnderLearningBot() {
   const scanStartedAtRef = useRef(Date.now());
   const lastSwitchAtRef = useRef(0);
   const switchBusyRef = useRef(false);
+  const cacheWriteTimerRef = useRef(null);
+  const marketEnteredAtRef = useRef(Date.now());
+  const lastRawCacheSignatureRef = useRef("");
+  const lastDecisionCacheSignatureRef = useRef("");
   const lastLossKeyRef = useRef("");
   const confirmationRef = useRef({
     key: "",
@@ -1882,6 +1966,29 @@ export default function OverUnderLearningBot() {
   }, [memory]);
 
   useEffect(() => {
+    if (cacheWriteTimerRef.current) {
+      window.clearTimeout(cacheWriteTimerRef.current);
+    }
+
+    cacheWriteTimerRef.current = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          MARKET_BROWSER_CACHE_KEY,
+          JSON.stringify(marketBrowserCache)
+        );
+      } catch {
+        // Browser storage may be unavailable.
+      }
+    }, 180);
+
+    return () => {
+      if (cacheWriteTimerRef.current) {
+        window.clearTimeout(cacheWriteTimerRef.current);
+      }
+    };
+  }, [marketBrowserCache]);
+
+  useEffect(() => {
     if (
       !connected &&
       typeof connect === "function"
@@ -1890,13 +1997,51 @@ export default function OverUnderLearningBot() {
     }
   }, [connected, connect]);
 
+  const cachedMarketRow =
+    marketBrowserCache?.[symbol] || null;
+
+  const cachedMarketUsable =
+    cacheIsFresh(
+      cachedMarketRow,
+      cacheFreshnessSeconds
+    );
+
+  const effectivePrices = useMemo(
+    () =>
+      mergeMarketPrices(
+        cachedMarketUsable
+          ? cachedMarketRow?.prices
+          : [],
+        prices,
+        320
+      ),
+    [
+      cachedMarketUsable,
+      cachedMarketRow,
+      prices,
+    ]
+  );
+
   const analysis = useMemo(
     () =>
       safeAnalysis(
-        analyzeOverUnder(prices)
+        analyzeOverUnder(effectivePrices)
       ),
-    [prices]
+    [effectivePrices]
   );
+
+  const liveTicksAfterSwitch =
+    Array.isArray(prices)
+      ? prices.length
+      : 0;
+
+  const marketWarmReady =
+    analysis.total >= 30 &&
+    (
+      !cachedMarketUsable ||
+      liveTicksAfterSwitch >=
+        Number(minimumLiveTicksAfterSwitch || 4)
+    );
 
   const regimeAnalysis = useMemo(
     () =>
@@ -2250,6 +2395,155 @@ export default function OverUnderLearningBot() {
     best.barrier
   );
 
+  useEffect(() => {
+    if (
+      !symbol ||
+      !Array.isArray(effectivePrices) ||
+      effectivePrices.length < 8
+    ) {
+      return;
+    }
+
+    const lastLiveItem =
+      Array.isArray(prices) && prices.length
+        ? prices[prices.length - 1]
+        : null;
+
+    const signature = [
+      symbol,
+      prices.length,
+      normalizePriceKey(
+        lastLiveItem,
+        Math.max(0, prices.length - 1)
+      ),
+      effectivePrices.length,
+    ].join(":");
+
+    if (
+      lastRawCacheSignatureRef.current ===
+      signature
+    ) {
+      return;
+    }
+
+    lastRawCacheSignatureRef.current =
+      signature;
+
+    setMarketBrowserCache((current) => ({
+      ...current,
+      [symbol]: {
+        ...(current?.[symbol] || {}),
+        symbol,
+        prices: effectivePrices.slice(-320),
+        recentDigits:
+          analysis.recentDigits.slice(-250),
+        analysisTotal:
+          Number(analysis.total || 0),
+        updatedAt: Date.now(),
+      },
+    }));
+  }, [
+    symbol,
+    prices,
+    effectivePrices,
+    analysis.recentDigits,
+    analysis.total,
+  ]);
+
+  useEffect(() => {
+    if (!symbol || !best) return;
+
+    const snapshot = {
+      market: symbol,
+      contract:
+        best.contract ||
+        `${best.side || ""} ${best.barrier ?? ""}`.trim(),
+      probability:
+        Number(currentMarketDecision.probability || 0),
+      expectedValue:
+        Number(currentMarketDecision.expectedValue || 0),
+      votes:
+        Number(currentMarketDecision.votes || 0),
+      risk:
+        Number(currentMarketDecision.risk || 0),
+      qualified:
+        Boolean(currentMarketDecision.qualified),
+      reasons:
+        currentMarketDecision.reasons || [],
+      updatedAt: Date.now(),
+    };
+
+    const decisionSignature = [
+      symbol,
+      snapshot.contract,
+      snapshot.probability.toFixed(3),
+      snapshot.expectedValue.toFixed(4),
+      snapshot.votes,
+      snapshot.risk.toFixed(3),
+      snapshot.qualified ? "1" : "0",
+      snapshot.reasons.join("|"),
+    ].join(":");
+
+    if (
+      lastDecisionCacheSignatureRef.current ===
+      decisionSignature
+    ) {
+      return;
+    }
+
+    lastDecisionCacheSignatureRef.current =
+      decisionSignature;
+
+    setMarketBrowserCache((current) => ({
+      ...current,
+      [symbol]: {
+        ...(current?.[symbol] || {}),
+        ...snapshot,
+      },
+    }));
+
+    setGlobalMarketScores((current) => ({
+      ...current,
+      [symbol]: snapshot,
+    }));
+  }, [
+    symbol,
+    best,
+    currentMarketDecision,
+  ]);
+
+  useEffect(() => {
+    const hydrated = {};
+
+    for (
+      const [marketName, row]
+      of Object.entries(marketBrowserCache || {})
+    ) {
+      if (cacheIsFresh(row, cacheFreshnessSeconds)) {
+        hydrated[marketName] = {
+          market: marketName,
+          contract: row.contract || "CACHED",
+          probability: Number(row.probability || 0),
+          expectedValue: Number(row.expectedValue || 0),
+          votes: Number(row.votes || 0),
+          risk: Number(row.risk || 0),
+          qualified: Boolean(row.qualified),
+          reasons: row.reasons || [],
+          updatedAt: Number(row.updatedAt || 0),
+          cached: true,
+        };
+      }
+    }
+
+    setGlobalMarketScores((current) => ({
+      ...hydrated,
+      ...current,
+    }));
+  }, [
+    marketBrowserCache,
+    cacheFreshnessSeconds,
+  ]);
+
   const currentFreshSetupKey = useMemo(
     () =>
       freshSetupKey({
@@ -2457,13 +2751,26 @@ export default function OverUnderLearningBot() {
     switchBusyRef.current = true;
     lastSwitchAtRef.current = Date.now();
     scanStartedAtRef.current = Date.now();
+    marketEnteredAtRef.current = Date.now();
+    lastRawCacheSignatureRef.current = "";
+    lastDecisionCacheSignatureRef.current = "";
     confirmationRef.current = {
       key: "",
       ticks: 0,
     };
 
+    const warmRow =
+      marketBrowserCache?.[next];
+
     setMessage(
-      `Switching ${symbol} → ${next} · ${reason}`
+      `Switching ${symbol} → ${next} · ${
+        cacheIsFresh(
+          warmRow,
+          cacheFreshnessSeconds
+        )
+          ? "WARM CACHE READY"
+          : "COLLECTING FRESH DATA"
+      } · ${reason}`
     );
 
     try {
@@ -2481,7 +2788,10 @@ export default function OverUnderLearningBot() {
     } finally {
       window.setTimeout(() => {
         switchBusyRef.current = false;
-      }, 900);
+      }, Math.max(
+      250,
+      Number(fastScanMilliseconds || 650)
+    ));
     }
   }
 
@@ -3401,6 +3711,26 @@ export default function OverUnderLearningBot() {
     );
   }
 
+  function clearBrowserMarketMemory() {
+    lastRawCacheSignatureRef.current = "";
+    lastDecisionCacheSignatureRef.current = "";
+    setMarketBrowserCache({});
+    setGlobalMarketScores({});
+    setSelectedGlobalSetup(null);
+
+    try {
+      window.localStorage.removeItem(
+        MARKET_BROWSER_CACHE_KEY
+      );
+    } catch {
+      // Ignore unavailable storage.
+    }
+
+    setMessage(
+      "Browser market memory cleared. Collecting fresh market data."
+    );
+  }
+
   function reset() {
     setTrades([]);
     setLastSettledTrade(null);
@@ -3609,8 +3939,8 @@ export default function OverUnderLearningBot() {
 
       <main className="mainContent oulPage">
         <Topbar
-          title="Over/Under Adaptive Learning Bot V15.1"
-          subtitle="V15.1 settled-trade hotfix · one-run rotation · fresh entry"
+          title="Over/Under Adaptive Learning Bot V17"
+          subtitle="Browser intelligence · fast warm scan · global qualified ranking"
           connected={connected}
           connecting={loadingMarket}
           onConnect={connect}
@@ -3864,6 +4194,63 @@ export default function OverUnderLearningBot() {
               onChange={(event) =>
                 setMaximumRecoveryStake(
                   event.target.value
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Browser market memory</span>
+            <select value="ON" disabled>
+              <option value="ON">
+                ON — persistent market cache
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Cache freshness seconds</span>
+            <input
+              type="number"
+              min="20"
+              max="600"
+              step="10"
+              value={cacheFreshnessSeconds}
+              onChange={(event) =>
+                setCacheFreshnessSeconds(
+                  clamp(event.target.value, 20, 600)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Fast scan milliseconds</span>
+            <input
+              type="number"
+              min="250"
+              max="3000"
+              step="50"
+              value={fastScanMilliseconds}
+              onChange={(event) =>
+                setFastScanMilliseconds(
+                  clamp(event.target.value, 250, 3000)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            <span>Live ticks after switch</span>
+            <input
+              type="number"
+              min="1"
+              max="20"
+              step="1"
+              value={minimumLiveTicksAfterSwitch}
+              onChange={(event) =>
+                setMinimumLiveTicksAfterSwitch(
+                  clamp(event.target.value, 1, 20)
                 )
               }
             />
@@ -4601,6 +4988,60 @@ export default function OverUnderLearningBot() {
             </article>
 
             <article>
+              <span>Engine version</span>
+              <strong>V17</strong>
+              <small>
+                Browser intelligence active
+              </small>
+            </article>
+
+            <article>
+              <span>Browser cache</span>
+              <strong>
+                {cachedMarketUsable ? "WARM" : "FRESH"}
+              </strong>
+              <small>
+                {cachedMarketUsable
+                  ? `${Math.floor(
+                      (
+                        Date.now() -
+                        Number(cachedMarketRow?.updatedAt || 0)
+                      ) / 1000
+                    )}s old`
+                  : "Building market memory"}
+              </small>
+            </article>
+
+            <article>
+              <span>Warm market data</span>
+              <strong>{effectivePrices.length}</strong>
+              <small>
+                Cached + live price points
+              </small>
+            </article>
+
+            <article>
+              <span>Live confirmation</span>
+              <strong>
+                {liveTicksAfterSwitch}/
+                {minimumLiveTicksAfterSwitch}
+              </strong>
+              <small>
+                Prevents stale-cache execution
+              </small>
+            </article>
+
+            <article>
+              <span>Market warm state</span>
+              <strong>
+                {marketWarmReady ? "READY" : "WARMING"}
+              </strong>
+              <small>
+                Analysis remains available during switches
+              </small>
+            </article>
+
+            <article>
               <span>Market run rule</span>
               <strong>
                 {marketRunLocked
@@ -4959,6 +5400,7 @@ export default function OverUnderLearningBot() {
                     L {item?.votes || 0}/7
                   </small>
                   <small>
+                    {item?.cached ? "CACHE · " : "LIVE · "}
                     {item?.qualified
                       ? "QUALIFIED"
                       : item?.reasons?.join(", ") ||

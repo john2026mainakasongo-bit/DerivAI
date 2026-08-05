@@ -1050,3 +1050,16 @@
   color: #f0cf67;
   font-weight: 900;
 }
+
+
+.oulGlobalScoreGrid article {
+  transition:
+    border-color .15s ease,
+    opacity .15s ease;
+}
+
+.oulAdvancedAnalysis article strong {
+  overflow-wrap: anywhere;
+}
+
+/* V17 Browser Intelligence Engine */
