@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -804,10 +804,10 @@ export default function FreshEdgeBot() {
       reason: ready
         ? `Stable ${trend >= 0 ? "+" : ""}${trend.toFixed(
             1
-          )}% · max drop ${maximumDrop.toFixed(1)}%.`
+          )}% Â· max drop ${maximumDrop.toFixed(1)}%.`
         : `Confidence unstable: trend ${trend.toFixed(
             1
-          )}% · max drop ${maximumDrop.toFixed(1)}%.`,
+          )}% Â· max drop ${maximumDrop.toFixed(1)}%.`,
     };
   }, [
     confidenceTrail,
@@ -1146,7 +1146,7 @@ export default function FreshEdgeBot() {
         "SIGNAL",
         `${analysis.direction} candidate ${analysis.confidence.toFixed(
           1
-        )}% · confirmation ${nextConfirmationTicks}/${
+        )}% Â· confirmation ${nextConfirmationTicks}/${
           settings.confirmationTicks
         }.`,
         {
@@ -1204,7 +1204,7 @@ export default function FreshEdgeBot() {
       setMessage(`${reason} Switching to ${nextLabel}.`);
       appendTimeline(
         "SWITCH",
-        `${reason} ${symbol} → ${nextLabel}.`,
+        `${reason} ${symbol} â†’ ${nextLabel}.`,
         {
           from: symbol,
           to: nextSymbol,
@@ -1432,17 +1432,17 @@ export default function FreshEdgeBot() {
         setMessage(
           `${analysis.direction} opened on ${market?.label || symbol} at ${analysis.confidence.toFixed(
             1
-          )}% confidence · order response ${orderLatencyMs.toFixed(
+          )}% confidence Â· order response ${orderLatencyMs.toFixed(
             0
           )}ms.`
         );
         appendTimeline(
           "OPEN",
-          `${analysis.direction} opened · C ${analysis.confidence.toFixed(
+          `${analysis.direction} opened Â· C ${analysis.confidence.toFixed(
             1
-          )}% · Q ${analysis.quality.toFixed(
+          )}% Â· Q ${analysis.quality.toFixed(
             1
-          )}% · order response ${orderLatencyMs.toFixed(
+          )}% Â· order response ${orderLatencyMs.toFixed(
             0
           )}ms.`,
           {
@@ -1568,11 +1568,11 @@ export default function FreshEdgeBot() {
         }));
 
         setMessage(
-          `${original.market} lost · ${diagnosis.code}: ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades. ${diagnosis.nextAction}`
+          `${original.market} lost Â· ${diagnosis.code}: ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades. ${diagnosis.nextAction}`
         );
         appendTimeline(
           "LOST",
-          `${original.market} · ${diagnosis.code} · ${diagnosis.summary}`,
+          `${original.market} Â· ${diagnosis.code} Â· ${diagnosis.summary}`,
           {
             contractId: original.contractId,
             profit,
@@ -1604,11 +1604,11 @@ export default function FreshEdgeBot() {
         void switchMarket("Loss rearm.");
       } else {
         setMessage(
-          `${original.market} won ${profit.toFixed(2)} USD · ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades.`
+          `${original.market} won ${profit.toFixed(2)} USD Â· ${diagnosis.summary} Learning memory now has ${learning.totalTrades + 1} trades.`
         );
         appendTimeline(
           "WON",
-          `${original.market} · ${diagnosis.summary}`,
+          `${original.market} Â· ${diagnosis.summary}`,
           {
             contractId: original.contractId,
             profit,
@@ -1684,7 +1684,7 @@ export default function FreshEdgeBot() {
             <small>STANDALONE BOT</small>
             <h1>FreshEdge AI V7.2</h1>
             <p>
-              Deep replay · latency telemetry · diagnosis-based recovery
+              Deep replay Â· latency telemetry Â· diagnosis-based recovery
             </p>
           </div>
 
@@ -1696,9 +1696,45 @@ export default function FreshEdgeBot() {
             <button
               type="button"
               onClick={() => {
+                if (sessionStopped) {
+                  setStats((current) => ({
+                    ...INITIAL_STATS,
+                    history: current.history,
+                  }));
+
+                  setConfirmation({
+                    key: "",
+                    ticks: 0,
+                  });
+
+                  setBlockedMarkets({});
+                  setMarketScores({});
+                  setTimeline([]);
+                  setConfidenceTrail([]);
+                  setSelectedReplayId("");
+
+                  setRecoveryState({
+                    active: false,
+                    sourceSymbol: "",
+                    requiredTicks: 0,
+                    freshTicks: 0,
+                    cause: "",
+                    sourceDirection: "",
+                  });
+
+                  processedRef.current.clear();
+                  botContractsRef.current.clear();
+                  activeReplayTicksRef.current.clear();
+                }
+
                 setMarketStartedAt(Date.now());
                 setRunning(true);
-                setMessage("FreshEdge started.");
+
+                setMessage(
+                  sessionStopped
+                    ? "FreshEdge re-armed. New session started; learning history preserved."
+                    : "FreshEdge started."
+                );
               }}
               disabled={running}
             >
@@ -1749,7 +1785,7 @@ export default function FreshEdgeBot() {
                 ? Number(currentPrice).toFixed(
                     market?.decimals || 3
                   )
-                : "—"}
+                : "â€”"}
             </strong>
           </article>
 
@@ -1998,9 +2034,9 @@ export default function FreshEdgeBot() {
                     <b>{Number(item.score || 0).toFixed(1)}</b>
                   </div>
                   <span>
-                    {item.direction} · C{" "}
+                    {item.direction} Â· C{" "}
                     {Number(item.confidence || 0).toFixed(1)}
-                    % · Q{" "}
+                    % Â· Q{" "}
                     {Number(item.quality || 0).toFixed(1)}%
                   </span>
                   <small>{item.rejectionReason}</small>
@@ -2034,11 +2070,11 @@ export default function FreshEdgeBot() {
                     {Number(item.score || 0).toFixed(1)}
                   </b>
                   <small>
-                    {item.direction} · C{" "}
+                    {item.direction} Â· C{" "}
                     {Number(
                       item.confidence || 0
                     ).toFixed(1)}
-                    % · Q{" "}
+                    % Â· Q{" "}
                     {Number(
                       item.quality || 0
                     ).toFixed(1)}
@@ -2097,7 +2133,7 @@ export default function FreshEdgeBot() {
                 <article key={item.label}>
                   <span>{item.label}</span>
                   <strong>
-                    {item.base.toFixed(1)}% →{" "}
+                    {item.base.toFixed(1)}% â†’{" "}
                     {item.learned.toFixed(1)}%
                   </strong>
                   <b className={delta > 0 ? "raised" : "same"}>
@@ -2349,7 +2385,7 @@ export default function FreshEdgeBot() {
                   ? `${Number(
                       stats.history[0].orderLatencyMs
                     ).toFixed(0)} ms`
-                  : "—"}
+                  : "â€”"}
               </strong>
             </article>
             <article>
@@ -2372,7 +2408,7 @@ export default function FreshEdgeBot() {
             </article>
             <article>
               <span>Measurement</span>
-              <strong>CLIENT → API RESPONSE</strong>
+              <strong>CLIENT â†’ API RESPONSE</strong>
             </article>
           </div>
           <p>
@@ -2461,8 +2497,8 @@ export default function FreshEdgeBot() {
 
             return (
               <div className="freshEdgeReplayBody">
-                <article><span>Market / side</span><strong>{trade.market} · {trade.direction}</strong></article>
-                <article><span>Entry edge</span><strong>C {Number(trade.confidence || 0).toFixed(1)}% · Q {Number(trade.quality || 0).toFixed(1)}%</strong></article>
+                <article><span>Market / side</span><strong>{trade.market} Â· {trade.direction}</strong></article>
+                <article><span>Entry edge</span><strong>C {Number(trade.confidence || 0).toFixed(1)}% Â· Q {Number(trade.quality || 0).toFixed(1)}%</strong></article>
                 <article><span>Result</span><strong className={trade.result === "WON" ? "won" : "lost"}>{trade.result} {Number(trade.profit || 0).toFixed(2)}</strong></article>
                 <article><span>Diagnosis</span><strong>{trade.diagnosis?.code || "SETTLED"}</strong></article>
                 <div className="freshEdgeReplaySteps">
@@ -2490,7 +2526,7 @@ export default function FreshEdgeBot() {
               <div>
                 <small>V7 TICK-BY-TICK REPLAY</small>
                 <h3>
-                  {selectedReplay.market} ·{" "}
+                  {selectedReplay.market} Â·{" "}
                   {selectedReplay.direction}
                 </h3>
               </div>
@@ -2656,14 +2692,14 @@ export default function FreshEdgeBot() {
 
                 <div>
                   <span>
-                    Why entered · memory{" "}
+                    Why entered Â· memory{" "}
                     {trade.learningTrades || 0} trades
                   </span>
                   <strong>
-                    {(trade.entryReasons || []).join(" · ") ||
+                    {(trade.entryReasons || []).join(" Â· ") ||
                       `C ${Number(trade.confidence).toFixed(
                         1
-                      )}% · Q ${Number(trade.quality).toFixed(
+                      )}% Â· Q ${Number(trade.quality).toFixed(
                         1
                       )}%`}
                   </strong>
@@ -2709,3 +2745,4 @@ export default function FreshEdgeBot() {
     </div>
   );
 }
+
