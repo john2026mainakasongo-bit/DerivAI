@@ -107,6 +107,7 @@ export default function FinalAnalysisBot() {
   const [message, setMessage] = useState(
     "Final AI is using the shared EdgePilot Deriv connection."
   );
+  const [cooldownUntil, setCooldownUntil] = useState(0);
 
   const lastDecisionRef = useRef("");
   const buyLockRef = useRef(false);
@@ -198,6 +199,8 @@ export default function FinalAnalysisBot() {
       buyLockRef.current ||
       analysis.decision !== "BUY" ||
       analysis.confidence < minimumConfidence ||
+      Date.now() < cooldownUntil ||
+      Date.now() < cooldownUntil ||
       !liveQuote
     ) {
       return;
@@ -273,6 +276,7 @@ export default function FinalAnalysisBot() {
       }$${money(profit)}`
     );
     setPaperTrade(null);
+    setCooldownUntil(Date.now() + 5000);
   }, [liveQuote, numericTicks.length, paperTrade]);
 
   useEffect(() => {
@@ -452,7 +456,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page">
+      <main className="mainContent final-integrated-page final-v7-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -719,6 +723,22 @@ export default function FinalAnalysisBot() {
           <Metric
             label="Regime"
             value={analysis.metrics.regime}
+          />
+          <Metric
+            label="Reversal risk"
+            value={`${analysis.metrics.reversalRisk ?? 0}%`}
+          />
+          <Metric
+            label="Consecutive"
+            value={analysis.metrics.consecutiveDirection ?? 0}
+          />
+          <Metric
+            label="Momentum decay"
+            value={analysis.metrics.momentumDecay ?? "NO"}
+          />
+          <Metric
+            label="Signal age"
+            value={analysis.metrics.signalAge ?? 0}
           />
         </section>
 

@@ -371,6 +371,11 @@ export function analyseTicks(ticks = []) {
       probability >= 64,
       `${Math.round(probability)}%`
     ),
+    check(
+      "Confirmation",
+      confirmQualified,
+      `${consecutiveDirection}/4 aligned · reversal ${Math.round(reversalRisk)}%`
+    ),
   ];
 
   const passedChecks = checks.filter(
@@ -382,13 +387,45 @@ export function analyseTicks(ticks = []) {
     volatility === "HIGH" ||
     !entropyAcceptable;
 
+  const recentDirections = changes
+    .slice(-4)
+    .map((value) => (value > 0 ? "RISE" : value < 0 ? "FALL" : "FLAT"));
+
+  const consecutiveDirection = recentDirections
+    .filter((value) => value === trendContract).length;
+
+  const momentumDecay =
+    Math.abs(shortChanges.at(-1) || 0) <
+    Math.abs(shortChanges.at(-3) || 0);
+
+  const reversalRisk = clamp(
+    (transition.direction !== trendContract ? 34 : 0) +
+      (momentumDecay ? 26 : 0) +
+      (consecutiveDirection < 2 ? 24 : 0) +
+      (volatility === "HIGH" ? 30 : 0),
+    0,
+    100
+  );
+
+  const confirmQualified =
+    trendContract !== "NONE" &&
+    consecutiveDirection >= 2 &&
+    transitionAligned &&
+    !momentumDecay &&
+    reversalRisk <= 38;
+
+  confidence = Math.round(
+    clamp(confidence * 0.88 + probability * 0.12, 1, 94)
+  );
+
   const buyQualified =
     !hardBlock &&
     trendAligned &&
     directionStrong &&
-    probability >= 66 &&
-    confidence >= 78 &&
-    passedChecks >= 5;
+    probability >= 68 &&
+    confidence >= 80 &&
+    passedChecks >= 5 &&
+    confirmQualified;
 
   const prepareQualified =
     !hardBlock &&
@@ -407,13 +444,20 @@ export function analyseTicks(ticks = []) {
       ? "SKIP"
       : "WAIT";
 
+  const confirmStage =
+    prepareQualified &&
+    !buyQualified &&
+    confirmQualified;
+
   const stage = buyQualified
     ? "BUY"
-    : prepareQualified
-      ? "PREPARE"
-      : watchQualified
-        ? "WATCH"
-        : "SCAN";
+    : confirmStage
+      ? "CONFIRM"
+      : prepareQualified
+        ? "PREPARE"
+        : watchQualified
+          ? "WATCH"
+          : "SCAN";
 
   const risk =
     volatility === "HIGH" ||
@@ -433,9 +477,11 @@ export function analyseTicks(ticks = []) {
 
   const reason =
     buyQualified
-      ? `${trendContract} entry confirmed by ${passedChecks}/6 filters`
-      : prepareQualified
-        ? `${trendContract} setup is preparing; one more confirmation needed`
+      ? `${trendContract} entry confirmed by ${passedChecks}/7 filters`
+      : confirmStage
+        ? `${trendContract} setup confirmed; waiting execution gate`
+        : prepareQualified
+          ? `${trendContract} setup is preparing; one more confirmation needed`
         : watchQualified
           ? `${trendContract} direction detected but confirmation is incomplete`
           : trendContract === "NONE"
@@ -474,6 +520,10 @@ export function analyseTicks(ticks = []) {
       ),
       cycle: cycle.length,
       regime,
+      reversalRisk: Math.round(reversalRisk),
+      consecutiveDirection,
+      momentumDecay: momentumDecay ? "YES" : "NO",
+      signalAge: recentDirections.length,
     },
   };
 }
