@@ -561,3 +561,22 @@
     font-size: 7px;
   }
 }
+
+
+/* GeminiX V5.3 lifecycle and continuous scanner */
+.campaignGrid {
+  grid-template-columns:
+    repeat(9, minmax(0, 1fr))
+    150px 150px;
+}
+
+.transactionRow span:nth-child(3) {
+  font-weight: 900;
+}
+
+@media (max-width: 1200px) {
+  .campaignGrid {
+    grid-template-columns:
+      repeat(5, minmax(0, 1fr));
+  }
+}

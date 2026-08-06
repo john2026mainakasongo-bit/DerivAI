@@ -87,6 +87,107 @@ function longestRun(digits) {
   return longest;
 }
 
+function contractIdOf(contract) {
+  return String(
+    contract?.contract_id ||
+      contract?.contractId ||
+      contract?.id ||
+      contract?.proposal_open_contract?.contract_id ||
+      contract?.data?.contract_id ||
+      ""
+  );
+}
+
+function normalizedContract(contract) {
+  return (
+    contract?.proposal_open_contract ||
+    contract?.data?.proposal_open_contract ||
+    contract?.data ||
+    contract ||
+    {}
+  );
+}
+
+function contractIsSettled(contract) {
+  const row = normalizedContract(contract);
+  const status = String(
+    row?.status ||
+      row?.contract_status ||
+      ""
+  ).toUpperCase();
+
+  return Boolean(
+    row?.is_sold ||
+      row?.is_expired ||
+      ["WON", "LOST", "SOLD"].includes(status)
+  );
+}
+
+function contractResult(contract) {
+  const row = normalizedContract(contract);
+  const status = String(
+    row?.status ||
+      row?.contract_status ||
+      ""
+  ).toUpperCase();
+
+  const profit = Number(
+    row?.profit ??
+      row?.profit_loss ??
+      row?.pl ??
+      0
+  );
+
+  if (
+    status === "WON" ||
+    (contractIsSettled(row) && profit > 0)
+  ) {
+    return "WON";
+  }
+
+  if (
+    status === "LOST" ||
+    (contractIsSettled(row) && profit < 0)
+  ) {
+    return "LOST";
+  }
+
+  return contractIsSettled(row)
+    ? "SOLD"
+    : "OPEN";
+}
+
+function contractRows(openContracts) {
+  const rows = Array.isArray(openContracts)
+    ? openContracts
+    : [];
+  const seen = new Set();
+
+  return rows
+    .filter((contract) => {
+      const id = contractIdOf(contract);
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map((contract) => {
+      const row = normalizedContract(contract);
+
+      return {
+        ...row,
+        contractId: contractIdOf(contract),
+        result: contractResult(row),
+        settled: contractIsSettled(row),
+        profit: Number(
+          row?.profit ??
+            row?.profit_loss ??
+            row?.pl ??
+            0
+        ),
+      };
+    });
+}
+
 function settledTradeStatus(trade) {
   const status = String(
     trade?.status ||
@@ -542,6 +643,10 @@ function GeminiXContent({
     useState(0);
   const [lastSettlementKey, setLastSettlementKey] =
     useState("");
+  const [marketMemory, setMarketMemory] =
+    useState({});
+  const [lastMarketSwitchAt, setLastMarketSwitchAt] =
+    useState(0);
   const [engineMessage, setEngineMessage] =
     useState(
       "GeminiX V5 iko ready. Paper mode ndiyo default."
@@ -564,51 +669,61 @@ function GeminiXContent({
     ]
   );
 
+
+  const normalizedContracts = useMemo(
+    () => contractRows(openContracts),
+    [openContracts]
+  );
+
+  const activeContracts = useMemo(
+    () =>
+      normalizedContracts.filter(
+        (contract) => !contract.settled
+      ),
+    [normalizedContracts]
+  );
+
+  const settledContracts = useMemo(
+    () =>
+      normalizedContracts.filter(
+        (contract) => contract.settled
+      ),
+    [normalizedContracts]
+  );
+
   useEffect(() => {
-    const settled =
-      recentPerformance(transactions, 1)
-        .settled[0];
+    const settled = settledContracts[0];
 
     if (!settled) return;
 
-    const key = String(
-      settled.contract_id ||
-        settled.id ||
-        settled.transaction_id ||
-        `${settled.normalizedStatus}:${tradeProfit(
-          settled
-        )}`
-    );
+    const key = settled.contractId;
 
-    if (
-      !key ||
-      key === lastSettlementKey
-    ) {
+    if (!key || key === lastSettlementKey) {
       return;
     }
 
     setLastSettlementKey(key);
     setCampaignRuns((value) => value + 1);
 
-    if (
-      settled.normalizedStatus === "WON"
-    ) {
+    if (settled.result === "WON") {
       setCampaignWins((value) => value + 1);
-      setEngineMessage(
-        "WIN settled · GeminiX inarevalidate kabla ya entry inayofuata."
-      );
       setCooldownUntil(Date.now() + 1500);
+      setEngineMessage(
+        "WIN settled · scanner inaendelea kutafuta entry inayofuata."
+      );
       return;
     }
 
-    setCampaignLosses((value) => value + 1);
-    setRunning(false);
-    setCooldownUntil(Date.now() + 30000);
-    setEngineMessage(
-      "LOSS settled · campaign imesimama na cooldown ya sekunde 30 imeanza."
-    );
+    if (settled.result === "LOST") {
+      setCampaignLosses((value) => value + 1);
+      setRunning(false);
+      setCooldownUntil(Date.now() + 30000);
+      setEngineMessage(
+        "LOSS settled · campaign imesimama na cooldown ya sekunde 30 imeanza."
+      );
+    }
   }, [
-    transactions,
+    settledContracts,
     lastSettlementKey,
   ]);
 
@@ -636,11 +751,132 @@ function GeminiXContent({
     setCampaignLosses(0);
     setCooldownUntil(0);
     setLastSettlementKey("");
+    setMarketMemory({});
+    setLastMarketSwitchAt(0);
     lastAutoTradeKeyRef.current = "";
     setEngineMessage(
       "Campaign reset. GeminiX iko ready."
     );
   };
+
+  useEffect(() => {
+    if (
+      !symbol ||
+      digitHistory.length < 24
+    ) {
+      return;
+    }
+
+    setMarketMemory((current) => ({
+      ...current,
+      [symbol]: {
+        symbol,
+        updatedAt: Date.now(),
+        sample: analysis.sample,
+        decision: analysis.best.label,
+        confidence: analysis.confidence,
+        probability: analysis.probability,
+        risk: analysis.risk,
+        riskClass:
+          analysis.best.riskClass || "HIGH",
+        ready: analysis.ready,
+      },
+    }));
+  }, [
+    symbol,
+    digitHistory.length,
+    analysis.sample,
+    analysis.best.label,
+    analysis.best.riskClass,
+    analysis.confidence,
+    analysis.probability,
+    analysis.risk,
+    analysis.ready,
+  ]);
+
+  const switchToNextMarket = async (
+    reason = "Continuous scan"
+  ) => {
+    if (
+      loadingMarket ||
+      tradeBusy ||
+      activeContracts.length > 0 ||
+      !markets.length
+    ) {
+      return;
+    }
+
+    const currentIndex = Math.max(
+      0,
+      markets.findIndex(
+        (row) => row.id === symbol
+      )
+    );
+
+    const next =
+      markets[
+        (currentIndex + 1) % markets.length
+      ];
+
+    if (!next || next.id === symbol) return;
+
+    setLastMarketSwitchAt(Date.now());
+    setEngineMessage(
+      `${reason}: ${symbol} → ${next.id}`
+    );
+
+    await changeSymbol(next.id);
+  };
+
+  useEffect(() => {
+    if (
+      !running ||
+      activeContracts.length > 0 ||
+      tradeBusy ||
+      loadingMarket
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const current = marketMemory[symbol];
+
+      const currentStrong =
+        Boolean(current) &&
+        current.ready &&
+        Number(current.confidence || 0) >=
+          minConfidence &&
+        Number(current.probability || 0) >=
+          72 &&
+        current.risk !== "HIGH" &&
+        current.riskClass !== "HIGH";
+
+      if (
+        !currentStrong &&
+        now -
+          Number(lastMarketSwitchAt || 0) >=
+          8000
+      ) {
+        void switchToNextMarket(
+          "Scanner imekosa quality entry"
+        );
+      }
+    }, 1000);
+
+    return () =>
+      window.clearInterval(timer);
+  }, [
+    running,
+    activeContracts.length,
+    tradeBusy,
+    loadingMarket,
+    marketMemory,
+    symbol,
+    minConfidence,
+    lastMarketSwitchAt,
+    markets,
+  ]);
 
   const executeCandidate = async (
     candidate = analysis.best,
@@ -672,7 +908,7 @@ function GeminiXContent({
     }
 
     if (
-      openContracts.length > 0
+      activeContracts.length > 0
     ) {
       setEngineMessage(
         "Open trade bado iko active. Entry mpya imezuiwa."
@@ -728,7 +964,7 @@ function GeminiXContent({
       executionMode !== "LIVE" ||
       !analysis.ready ||
       tradeBusy ||
-      openContracts.length > 0 ||
+      activeContracts.length > 0 ||
       Date.now() < cooldownUntil ||
       (
         campaignEnabled &&
@@ -742,6 +978,7 @@ function GeminiXContent({
       symbol,
       analysis.best.label,
       digitHistory.length,
+      lastSettlementKey,
     ].join(":");
 
     if (key === lastAutoTradeKeyRef.current) {
@@ -756,13 +993,14 @@ function GeminiXContent({
     analysis.ready,
     analysis.best,
     tradeBusy,
-    openContracts.length,
+    activeContracts.length,
     cooldownUntil,
     campaignEnabled,
     campaignRuns,
     campaignTarget,
     symbol,
     digitHistory.length,
+    lastSettlementKey,
   ]);
 
   const recentDigits = digitHistory.slice(-12);
@@ -813,7 +1051,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · quality gate · stop-on-loss campaign
+          Shared Deriv feed · continuous market scan · settled contract tracking
         </div>
       </div>
 
@@ -964,7 +1202,7 @@ function GeminiXContent({
           ["Losses", campaignLosses],
           [
             "Open Trade",
-            openContracts.length ? "YES" : "NO",
+            activeContracts.length ? "YES" : "NO",
           ],
           [
             "Cooldown",
@@ -986,6 +1224,10 @@ function GeminiXContent({
             Number(
               analysis.performance.profit || 0
             ).toFixed(2),
+          ],
+          [
+            "Markets Scanned",
+            Object.keys(marketMemory).length,
           ],
         ].map(([label, value]) => (
           <article key={label}>
@@ -1017,7 +1259,7 @@ function GeminiXContent({
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V5 QUALITY CAMPAIGN
+              GEMINIX V5.3 CONTINUOUS CAMPAIGN
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -1204,7 +1446,7 @@ function GeminiXContent({
             GEMINIX TRANSACTIONS
           </span>
           <span className={styles.statusNote}>
-            {transactions.length} records
+            {normalizedContracts.length} contracts
           </span>
         </div>
 
@@ -1217,54 +1459,40 @@ function GeminiXContent({
             <span>P/L</span>
           </div>
 
-          {(Array.isArray(transactions)
-            ? transactions.slice(0, 12)
-            : []
-          ).map((trade, index) => (
-            <div
-              className={styles.transactionRow}
-              key={
-                trade?.contract_id ||
-                trade?.id ||
-                index
-              }
-            >
-              <span>
-                {trade?.symbol ||
-                  trade?.market ||
-                  symbol}
-              </span>
-              <span>
-                {trade?.contract_type ||
-                  trade?.contractType ||
-                  trade?.display_name ||
-                  "—"}
-              </span>
-              <span>
-                {trade?.status ||
-                  trade?.contract_status ||
-                  "OPEN"}
-              </span>
-              <span>
-                {Number(
-                  trade?.buy_price ||
-                    trade?.stake ||
-                    trade?.amount ||
-                    0
-                ).toFixed(2)}
-              </span>
-              <span>
-                {Number(
-                  trade?.profit ??
-                    trade?.profit_loss ??
-                    trade?.pl ??
-                    0
-                ).toFixed(2)}
-              </span>
-            </div>
-          ))}
+          {normalizedContracts
+            .slice(0, 12)
+            .map((trade) => (
+              <div
+                className={styles.transactionRow}
+                key={trade.contractId}
+              >
+                <span>
+                  {trade.symbol ||
+                    trade.underlying ||
+                    symbol}
+                </span>
+                <span>
+                  {trade.contract_type ||
+                    trade.contractType ||
+                    "—"}
+                </span>
+                <span>{trade.result}</span>
+                <span>
+                  {Number(
+                    trade.buy_price ??
+                      trade.purchase_price ??
+                      stake
+                  ).toFixed(2)}
+                </span>
+                <span>
+                  {Number(
+                    trade.profit || 0
+                  ).toFixed(2)}
+                </span>
+              </div>
+            ))}
 
-          {!transactions.length ? (
+          {!normalizedContracts.length ? (
             <div className={styles.emptyTransactions}>
               Bonyeza START GEMINIX. Demo transaction ya kwanza itaingia quality gate ikipita.
             </div>
