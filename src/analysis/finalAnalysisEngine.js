@@ -672,7 +672,12 @@ export function analyseTicks(
     directionStability >= 62 &&
     consecutiveDirection >= requiredConsecutive;
 
+  const signalFresh =
+    recentDirections.length <= 4 &&
+    !momentumDecay;
+
   const adaptiveMarketGate =
+    signalFresh &&
     regime === "TREND" &&
     selectedBayesian >= bayesianThreshold &&
     transition.probability >= transitionThreshold &&
@@ -795,6 +800,13 @@ export function analyseTicks(
       stabilityQualified,
       `${Math.round(directionStability)}% / 62%`
     ),
+    check(
+      "Signal freshness",
+      signalFresh,
+      signalFresh
+        ? "Fresh"
+        : "Stale or momentum decaying"
+    ),
   ];
 
   const passedChecks = checks.filter(
@@ -809,7 +821,7 @@ export function analyseTicks(
     directionStrong &&
     probability >= 74 &&
     confidence >= 84 &&
-    passedChecks >= 14 &&
+    passedChecks >= 15 &&
     confirmQualified &&
     memoryQualified;
 
@@ -838,6 +850,7 @@ export function analyseTicks(
     confirmQualified;
 
   const armedQualified =
+    signalFresh &&
     !protectionPaused &&
     !hardBlock &&
     regime === "TREND" &&
@@ -883,7 +896,7 @@ export function analyseTicks(
     protectionPaused
       ? `Trading paused after ${recentLossStreak} consecutive losses`
       : buyQualified
-        ? `${trendContract} entry confirmed by ${passedChecks}/18 filters`
+        ? `${trendContract} entry confirmed by ${passedChecks}/19 filters`
       : regime === "RANGE"
         ? `${trendContract} blocked because market regime is RANGE`
         : exactBlacklisted
@@ -902,7 +915,9 @@ export function analyseTicks(
                 ? `${trendContract} blocked because expected value is below adaptive +${evThreshold.toFixed(3)}`
                 : !stabilityQualified
                   ? `${trendContract} blocked because direction stability is below 62%`
-                  : !learnedProfitQualified
+                  : !signalFresh
+                    ? `${trendContract} blocked because the signal is stale or momentum is decaying`
+                    : !learnedProfitQualified
                   ? `${trendContract} blocked by negative learned pattern P/L`
                   : !clusterProfitQualified
                     ? `${trendContract} blocked by negative cluster P/L`
@@ -973,6 +988,7 @@ export function analyseTicks(
       stableDirectionalTicks,
       directionStability: Math.round(directionStability),
       stabilityQualified,
+      signalFresh,
       memoryQualified,
       expectedValue: Number(expectedValue.toFixed(3)),
       memorySignature: signature,

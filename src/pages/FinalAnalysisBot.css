@@ -1306,3 +1306,18 @@
   margin-top: 7px;
 }
 
+
+
+/* Final AI V17 one-minute scan */
+.final-v17-page .final-metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)) !important;
+}
+
+.final-v17-page .final-open-card small {
+  line-height: 1.45;
+}
+
+.final-v17-page .final-stage-badges em {
+  min-width: 84px;
+}
+

@@ -190,6 +190,9 @@ export default function FinalAnalysisBot() {
   const [now, setNow] = useState(Date.now());
   const [armedDirection, setArmedDirection] = useState("NONE");
   const [armedTicks, setArmedTicks] = useState(0);
+  const [scanStartedAt, setScanStartedAt] = useState(Date.now());
+  const [scanCycle, setScanCycle] = useState(1);
+  const [bestCandidate, setBestCandidate] = useState(null);
   const protectionRunRef = useRef(-1);
   const lastJournalAtRef = useRef(0);
 
@@ -317,6 +320,71 @@ export default function FinalAnalysisBot() {
     analysis.decision === "BUY" &&
     armedTicks >= 3 &&
     armedDirection === analysis.contract;
+
+  useEffect(() => {
+    if (
+      analysis.contract === "NONE" ||
+      analysis.metrics.regime !== "TREND"
+    ) {
+      return;
+    }
+
+    const candidate = {
+      contract: analysis.contract,
+      confidence: Number(analysis.confidence || 0),
+      probability: Number(analysis.probability || 0),
+      ev: Number(analysis.metrics.expectedValue || 0),
+      stability: Number(
+        analysis.metrics.directionStability || 0
+      ),
+      stage: analysis.stage,
+      capturedAt: Date.now(),
+    };
+
+    const candidateScore =
+      candidate.confidence * 0.32 +
+      candidate.probability * 0.28 +
+      candidate.stability * 0.25 +
+      Math.max(0, candidate.ev) * 100 * 0.15;
+
+    setBestCandidate((current) => {
+      if (!current) {
+        return {
+          ...candidate,
+          score: candidateScore,
+        };
+      }
+
+      return candidateScore > Number(current.score || 0)
+        ? {
+            ...candidate,
+            score: candidateScore,
+          }
+        : current;
+    });
+  }, [
+    analysis.contract,
+    analysis.confidence,
+    analysis.probability,
+    analysis.stage,
+    analysis.metrics.regime,
+    analysis.metrics.expectedValue,
+    analysis.metrics.directionStability,
+  ]);
+
+  useEffect(() => {
+    if (scanElapsedSeconds < 60) return;
+
+    setScanStartedAt(Date.now());
+    setScanCycle((value) => value + 1);
+    setBestCandidate(null);
+    setArmedDirection("NONE");
+    setArmedTicks(0);
+
+    setMessage(
+      "SCAN RESET · no fresh qualified entry was found within 60 seconds. Starting a new market-analysis cycle."
+    );
+  }, [scanElapsedSeconds]);
 
   const stats = useMemo(() => {
     const settled = transactions.filter((item) =>
@@ -500,6 +568,16 @@ export default function FinalAnalysisBot() {
     Math.ceil((protectionUntil - now) / 1000)
   );
 
+  const scanElapsedSeconds = Math.max(
+    0,
+    Math.floor((now - scanStartedAt) / 1000)
+  );
+
+  const scanRemainingSeconds = Math.max(
+    0,
+    60 - scanElapsedSeconds
+  );
+
   const executionReady =
     connected &&
     authenticatedFeed &&
@@ -598,6 +676,8 @@ export default function FinalAnalysisBot() {
       paperTrade ||
       buyLockRef.current ||
       !stableEntryReady ||
+      scanElapsedSeconds >= 60 ||
+      !analysis.metrics.signalFresh ||
       analysis.confidence < minimumConfidence ||
       Date.now() < cooldownUntil ||
       protectionPaused ||
@@ -637,6 +717,7 @@ export default function FinalAnalysisBot() {
   }, [
     analysis,
     stableEntryReady,
+    scanElapsedSeconds,
     liveQuote,
     minimumConfidence,
     mode,
@@ -742,6 +823,11 @@ export default function FinalAnalysisBot() {
     );
     setPaperTrade(null);
     setCooldownUntil(Date.now() + 5000);
+    setScanStartedAt(Date.now());
+    setScanCycle((value) => value + 1);
+    setBestCandidate(null);
+    setArmedDirection("NONE");
+    setArmedTicks(0);
   }, [liveQuote, paperTrade, tickSerial]);
 
   useEffect(() => {
@@ -837,6 +923,8 @@ export default function FinalAnalysisBot() {
 
     if (
       !stableEntryReady ||
+      scanElapsedSeconds >= 60 ||
+      !analysis.metrics.signalFresh ||
       analysis.contract === "NONE" ||
       analysis.confidence < minimumConfidence
     ) {
@@ -913,6 +1001,8 @@ export default function FinalAnalysisBot() {
       buyLockRef.current ||
       tradeBusy ||
       !stableEntryReady ||
+      scanElapsedSeconds >= 60 ||
+      !analysis.metrics.signalFresh ||
       analysis.confidence < minimumConfidence ||
       !currentPatternLiveReady ||
       protectionPaused
@@ -937,7 +1027,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1191,7 +1281,8 @@ export default function FinalAnalysisBot() {
                 : "LEARNING"}
             </small>
             <small>
-              Phase: {learningPhase} · Armed: {armedTicks}/3 · Loss streak:{" "}
+              Phase: {learningPhase} · Scan #{scanCycle}:{" "}
+              {scanRemainingSeconds}s · Armed: {armedTicks}/3 · Loss streak:{" "}
               {recentLossStreak}
               {protectionPaused
                 ? ` · resumes in ${protectionSeconds}s`
@@ -1339,6 +1430,32 @@ export default function FinalAnalysisBot() {
           <Metric
             label="Entry ready"
             value={stableEntryReady ? "YES" : "NO"}
+          />
+          <Metric
+            label="Scan cycle"
+            value={`#${scanCycle}`}
+          />
+          <Metric
+            label="Scan remaining"
+            value={`${scanRemainingSeconds}s`}
+          />
+          <Metric
+            label="Signal freshness"
+            value={
+              analysis.metrics.signalFresh
+                ? "FRESH"
+                : "STALE"
+            }
+          />
+          <Metric
+            label="Best candidate"
+            value={
+              bestCandidate
+                ? `${bestCandidate.contract} ${Math.round(
+                    bestCandidate.score
+                  )}`
+                : "SCANNING"
+            }
           />
           <Metric
             label="Armed"
