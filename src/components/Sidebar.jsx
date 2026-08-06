@@ -1,25 +1,55 @@
 ﻿import { NavLink } from "react-router-dom";
 
 const links = [
-  { to: "/dashboard", label: "Dashboard", icon: "âŒ‚" },
-  { to: "/analysis", label: "Analysis", icon: "â—‰" },
+  { to: "/dashboard", label: "Dashboard", icon: "⌂" },
+  { to: "/analysis", label: "Analysis", icon: "◉" },
   {
     to: "/rise-fall-analysis",
     label: "Rise/Fall",
-    icon: "â†—",
+    icon: "↗",
   },
-  { to: "/over-under-learning-bot", label: "O/U Learning Bot", icon: "OU" },
-  { to: "/rapid-edge-ai", label: "RapidEdge AI", icon: "OU" },
-  { to: "/over-under-analysis", label: "Over/Under", icon: "Ã¢â€ â€¢" },
-  { to: "/bot", label: "Auto Bot", icon: "âš¡" },
-{ to: "/differs-one-shot", label: "Differs 1 Run", icon: "1" },
-  { to: "/target-10-bot", label: "Target 10", icon: "â—Ž" },
-  { to: "/settings", label: "Settings", icon: "âš™" },
+  {
+    to: "/over-under-learning-bot",
+    label: "O/U Learning Bot",
+    icon: "OU",
+  },
+  {
+    to: "/rapid-edge-ai",
+    label: "RapidEdge AI",
+    icon: "RE",
+  },
+  {
+    to: "/final-analysis-bot",
+    label: "Final Analysis",
+    icon: "FA",
+  },
+  {
+    to: "/over-under-analysis",
+    label: "Over/Under",
+    icon: "↕",
+  },
+  { to: "/bot", label: "Auto Bot", icon: "⚡" },
+  {
+    to: "/differs-one-shot",
+    label: "Differs 1 Run",
+    icon: "1",
+  },
+  {
+    to: "/target-10-bot",
+    label: "Target 10",
+    icon: "◎",
+  },
+  {
+    to: "/settings",
+    label: "Settings",
+    icon: "⚙",
+  },
   {
     to: "/fresh-edge-ai",
     label: "FreshEdge AI",
     icon: "F",
-  },];
+  },
+];
 
 export default function Sidebar() {
   return (
@@ -46,7 +76,7 @@ export default function Sidebar() {
             {link.label}
           </NavLink>
         ))}
-</nav>
+      </nav>
 
       <div className="sidebarFooter">
         <span className="statusDot" />
@@ -55,5 +85,3 @@ export default function Sidebar() {
     </aside>
   );
 }
-
-
