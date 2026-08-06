@@ -2,23 +2,27 @@ import React, { useState, useEffect, useRef } from 'react';
 import styles from './GeminiXEngine.module.css';
 
 export default function GeminiXEngine() {
-  // Config States - Standard Deriv Symbols
+  // Config States
   const [market, setMarket] = useState('R_100');
   const [stake, setStake] = useState(0.35);
   const [minConfidence, setMinConfidence] = useState(80);
   const [execMode, setExecMode] = useState('Paper trading');
   const [isBotRunning, setIsBotRunning] = useState(false);
 
-  // Live Data States
+  // Live Tick & Digit Data States
   const [feedStatus, setFeedStatus] = useState('CONNECTING');
   const [liveQuote, setLiveQuote] = useState(null);
-  
-  // Analytics States
+  const [lastDigit, setLastDigit] = useState(null);
+  const [recentDigits, setRecentDigits] = useState([]);
+  const [digitCounts, setDigitCounts] = useState(Array(10).fill(0));
+
+  // Decision & Analysis States
   const [decision, setDecision] = useState('WAIT');
-  const [blockReason, setBlockReason] = useState('Connecting to Deriv WebSocket...');
+  const [blockReason, setBlockReason] = useState('Subscribing to live digit stream...');
   const [confidence, setConfidence] = useState(0);
   const [probability, setProbability] = useState(50);
   const [riskLevel, setRiskLevel] = useState('LOW');
+  const [suggestedContract, setSuggestedContract] = useState('OVER 2');
 
   const [metrics, setMetrics] = useState({
     momentum: 0,
@@ -32,12 +36,12 @@ export default function GeminiXEngine() {
   });
 
   const [gates, setGates] = useState([
-    { name: 'Direction', status: 'Waiting ticks...', passed: false },
-    { name: 'Momentum', status: 'Waiting ticks...', passed: false },
-    { name: 'Transition', status: 'Waiting ticks...', passed: false },
-    { name: 'Volatility', status: 'Waiting ticks...', passed: false },
-    { name: 'Entropy', status: 'Waiting ticks...', passed: false },
-    { name: 'Probability', status: 'Waiting ticks...', passed: false }
+    { name: 'Direction', status: 'Checking...', passed: false },
+    { name: 'Momentum', status: 'Checking...', passed: false },
+    { name: 'Transition', status: 'Checking...', passed: false },
+    { name: 'Volatility', status: 'Checking...', passed: false },
+    { name: 'Entropy', status: 'Checking...', passed: false },
+    { name: 'Probability', status: 'Checking...', passed: false }
   ]);
 
   const ws = useRef(null);
@@ -47,7 +51,9 @@ export default function GeminiXEngine() {
   useEffect(() => {
     setFeedStatus('CONNECTING');
     setLiveQuote(null);
-    setBlockReason('Subscribing to live ticks...');
+    setLastDigit(null);
+    setRecentDigits([]);
+    setDigitCounts(Array(10).fill(0));
     ticksHistoryRef.current = [];
 
     const app_id = 1089;
@@ -72,11 +78,26 @@ export default function GeminiXEngine() {
       }
 
       if (data.msg_type === 'tick' && data.tick) {
-        const newPrice = parseFloat(data.tick.quote);
+        const quoteStr = data.tick.quote.toString();
+        const newPrice = parseFloat(quoteStr);
+        const digit = parseInt(quoteStr.slice(-1), 10);
+
         setLiveQuote(newPrice);
-        
+        setLastDigit(digit);
+
+        // Update Recent Digits (Keep last 12 digits)
+        setRecentDigits((prev) => [...prev.slice(-11), digit]);
+
+        // Update Frequency Counts
+        setDigitCounts((prev) => {
+          const updated = [...prev];
+          updated[digit] += 1;
+          return updated;
+        });
+
+        // Store price history
         ticksHistoryRef.current = [...ticksHistoryRef.current.slice(-49), newPrice];
-        runAnalysisEngine(ticksHistoryRef.current);
+        runAnalysisEngine(ticksHistoryRef.current, digit);
       }
     };
 
@@ -98,19 +119,18 @@ export default function GeminiXEngine() {
     };
   }, [market]);
 
-  // 2. LIVE CALCULATIONS & BAYESIAN ENGINE
-  const runAnalysisEngine = (prices) => {
+  // 2. DIGIT & BAYESIAN ANALYSIS ENGINE
+  const runAnalysisEngine = (prices, latestDigit) => {
     const len = prices.length;
     if (len < 3) {
-      setBlockReason(`Collecting market ticks (${len}/10)...`);
+      setBlockReason(`Buffering market ticks (${len}/10)...`);
       return;
     }
 
     const currentPrice = prices[len - 1];
     const prevPrice = prices[len - 2];
-
     const momentumVal = Math.round((currentPrice - prices[Math.max(0, len - 5)]) * 100);
-    
+
     const sma5 = prices.slice(-5).reduce((a, b) => a + b, 0) / Math.min(len, 5);
     const sma10 = prices.slice(-10).reduce((a, b) => a + b, 0) / Math.min(len, 10);
     const trendDir = sma5 >= sma10 ? 'UP' : 'DOWN';
@@ -145,14 +165,18 @@ export default function GeminiXEngine() {
     setConfidence(calculatedConfidence);
     setProbability(bayesianScore);
 
+    // Dynamic Digit Analysis & Recommendation
+    let contractRec = latestDigit > 4 ? 'OVER 2' : 'UNDER 7';
+    setSuggestedContract(contractRec);
+
     let nextDecision = 'WAIT';
     let reason = '';
 
     if (passedCount >= 5 && calculatedConfidence >= minConfidence) {
       nextDecision = trendDir === 'UP' ? 'RISE' : 'FALL';
-      reason = `${nextDecision} entry verified (${passedCount}/6 gates passed)`;
+      reason = `ENTRY CONFIRMED: ${contractRec} signal verified (${passedCount}/6 gates passed)`;
     } else {
-      reason = `${trendDir} blocked: ${passedCount}/6 gates passed (Requires ${minConfidence}% confidence)`;
+      reason = `ENTRY BLOCKED: ${passedCount}/6 gates passed (Requires ${minConfidence}% confidence)`;
     }
 
     setDecision(nextDecision);
@@ -171,13 +195,14 @@ export default function GeminiXEngine() {
     });
 
     if (isBotRunning && nextDecision !== 'WAIT' && calculatedConfidence >= minConfidence) {
-      executeTrade(nextDecision);
+      executeTrade(nextDecision === 'RISE' ? 'DIGITOVER' : 'DIGITUNDER', 2);
     }
   };
 
-  const executeTrade = (tradeType) => {
+  // 3. MANUAL / AUTO TRADE EXECUTION
+  const executeTrade = (contractType, barrier = 2) => {
     if (execMode === 'Paper trading') {
-      console.log(`[PAPER TRADE] Executed ${tradeType} on ${market} with Stake $${stake}`);
+      alert(`[PAPER TRADE SUCCESS]\nContract: ${contractType}\nMarket: ${market}\nStake: $${stake}\nBarrier: ${barrier}`);
     } else if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({
         buy: 1,
@@ -185,15 +210,18 @@ export default function GeminiXEngine() {
         parameters: {
           amount: stake,
           basis: 'stake',
-          contract_type: tradeType === 'RISE' ? 'CALL' : 'PUT',
+          contract_type: contractType,
           currency: 'USD',
           duration: 1,
           duration_unit: 't',
-          symbol: market
+          symbol: market,
+          barrier: barrier.toString()
         }
       }));
     }
   };
+
+  const totalDigitTicks = digitCounts.reduce((a, b) => a + b, 0) || 1;
 
   return (
     <div className={styles.geminiBotShell}>
@@ -216,7 +244,7 @@ export default function GeminiXEngine() {
           </div>
         </div>
         <div className={styles.statusNote}>
-          GeminiX Engine connected to Deriv WebSocket API.
+          GeminiX Engine connected to Deriv Live Digit WebSocket API.
         </div>
       </div>
 
@@ -268,13 +296,91 @@ export default function GeminiXEngine() {
         </button>
       </div>
 
-      {/* 3. DECISION DASHBOARD */}
+      {/* 3. RECENT DIGITS & MANUAL EXECUTION TOOLBAR */}
+      <div className={styles.geminiPanel} style={{ marginBottom: '16px' }}>
+        <div className={styles.panelHeader}>
+          <span className={styles.title}>LIVE RECENT DIGITS STREAM & QUICK TRADING</span>
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', flexWrap: 'wrap', gap: '12px' }}>
+          {/* Recent Digits Stream */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', color: '#888' }}>Recent Ticks:</span>
+            {recentDigits.map((d, i) => (
+              <span 
+                key={i} 
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: d % 2 === 0 ? '#1b3b2b' : '#3b1b1b',
+                  color: d % 2 === 0 ? '#4caf50' : '#f44336',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  border: i === recentDigits.length - 1 ? '2px solid #00d2ff' : '1px solid #333'
+                }}
+              >
+                {d}
+              </span>
+            ))}
+          </div>
+
+          {/* Quick Manual Trade Buttons */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              onClick={() => executeTrade('DIGITOVER', 2)}
+              style={{ background: '#2e7d32', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              BUY OVER 2
+            </button>
+            <button 
+              onClick={() => executeTrade('DIGITUNDER', 7)}
+              style={{ background: '#c62828', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              BUY UNDER 7
+            </button>
+            <button 
+              onClick={() => executeTrade('DIGITEVEN')}
+              style={{ background: '#0288d1', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              BUY EVEN
+            </button>
+            <button 
+              onClick={() => executeTrade('DIGITODD')}
+              style={{ background: '#ed6c02', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              BUY ODD
+            </button>
+          </div>
+        </div>
+
+        {/* Digit Frequency Bars */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '6px', marginTop: '12px' }}>
+          {digitCounts.map((count, d) => {
+            const pct = Math.round((count / totalDigitTicks) * 100);
+            return (
+              <div key={d} style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', padding: '6px', borderRadius: '4px' }}>
+                <span style={{ fontSize: '11px', color: '#aaa' }}>D{d}</span>
+                <div style={{ height: '4px', background: '#333', borderRadius: '2px', margin: '4px 0', overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: '#00d2ff' }}></div>
+                </div>
+                <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#fff' }}>{pct}%</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. DECISION DASHBOARD */}
       <div className={styles.dashboardGrid}>
         <div className={styles.geminiDecision}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>GEMINIX ENGINE DECISION</span>
             <div className={styles.tags}>
-              <span className={`${styles.tag} ${styles.tagWatch}`}>LIVE</span>
+              <span className={`${styles.tag} ${styles.tagWatch}`}>REC: {suggestedContract}</span>
               <span className={`${styles.tag} ${styles.tagWait}`}>{decision}</span>
             </div>
           </div>
@@ -306,11 +412,14 @@ export default function GeminiXEngine() {
             <p style={{ fontSize: '13px', margin: '6px 0' }}>
               Live Quote: <strong>{liveQuote !== null ? liveQuote : 'Loading...'}</strong>
             </p>
+            <p style={{ fontSize: '13px', margin: '6px 0' }}>
+              Last Digit: <strong style={{ color: '#00d2ff', fontSize: '16px' }}>{lastDigit !== null ? lastDigit : '-'}</strong>
+            </p>
           </div>
         </div>
       </div>
 
-      {/* 4. ANALYTICS ROW */}
+      {/* 5. ANALYTICS ROW */}
       <div className={styles.analyticsRow}>
         {Object.entries(metrics).map(([key, value]) => (
           <div key={key} className={styles.geminiMetric}>
