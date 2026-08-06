@@ -451,6 +451,39 @@ export function analyseTicks(
         ? "RANGE"
         : "TREND";
 
+  const trendStrength =
+    clamp(
+      Math.abs(momentum) * 4 +
+        Math.abs(riseShare - fallShare) * 100,
+      0,
+      100
+    );
+
+  const bayesianThreshold =
+    regime === "RANGE"
+      ? 60
+      : trendStrength >= 75
+        ? 66
+        : 70;
+
+  const transitionThreshold =
+    volatility === "LOW"
+      ? 62
+      : volatility === "NORMAL"
+        ? 66
+        : 72;
+
+  const evThreshold =
+    Math.max(
+      0.05,
+      Math.min(
+        0.22,
+        rollingExpectedValue > 0
+          ? rollingExpectedValue * 0.85
+          : 0.12
+      )
+    );
+
   const hardBlock =
     trendContract === "NONE" ||
     volatility === "HIGH" ||
@@ -483,6 +516,9 @@ export function analyseTicks(
   );
   const protectionPaused = Boolean(
     riskContext?.protectionPaused
+  );
+  const rollingExpectedValue = Number(
+    riskContext?.rollingExpectedValue || 0
   );
 
   const requiredConsecutive =
@@ -614,14 +650,37 @@ export function analyseTicks(
     clustered.sample < 6 ||
     clustered.profit > 0;
 
-  const strictMarketGate =
+  const recentDirectionWindow = changes
+    .slice(-8)
+    .map((value) =>
+      value > 0 ? "RISE" : value < 0 ? "FALL" : "FLAT"
+    );
+
+  const stableDirectionalTicks =
+    recentDirectionWindow.filter(
+      (value) => value === trendContract
+    ).length;
+
+  const directionStability =
+    recentDirectionWindow.length
+      ? (stableDirectionalTicks /
+          recentDirectionWindow.length) *
+        100
+      : 0;
+
+  const stabilityQualified =
+    directionStability >= 62 &&
+    consecutiveDirection >= requiredConsecutive;
+
+  const adaptiveMarketGate =
     regime === "TREND" &&
-    selectedBayesian >= 70 &&
-    transition.probability >= 70 &&
-    reversalRisk <= 25 &&
+    selectedBayesian >= bayesianThreshold &&
+    transition.probability >= transitionThreshold &&
+    reversalRisk <= 30 &&
     consecutiveDirection >= requiredConsecutive &&
-    Math.abs(momentum) >= 5 &&
-    expectedValue >= 0.18 &&
+    Math.abs(momentum) >= 4 &&
+    expectedValue >= evThreshold &&
+    stabilityQualified &&
     learnedProfitQualified &&
     clusterProfitQualified;
 
@@ -642,10 +701,10 @@ export function analyseTicks(
     check(
       "Transition",
       transitionAligned &&
-        transition.probability >= 70,
+        transition.probability >= transitionThreshold,
       `${Math.round(
         transition.probability
-      )}% ${transition.direction}`
+      )}% / ${Math.round(transitionThreshold)}% ${transition.direction}`
     ),
     check(
       "Volatility",
@@ -704,13 +763,13 @@ export function analyseTicks(
     ),
     check(
       "Bayesian gate",
-      selectedBayesian >= 70,
-      `${Math.round(selectedBayesian)}%`
+      selectedBayesian >= bayesianThreshold,
+      `${Math.round(selectedBayesian)}% / ${Math.round(bayesianThreshold)}%`
     ),
     check(
       "Reversal gate",
-      reversalRisk <= 25,
-      `${Math.round(reversalRisk)}%`
+      reversalRisk <= 30,
+      `${Math.round(reversalRisk)}% / 30%`
     ),
     check(
       "Learned P/L",
@@ -728,8 +787,13 @@ export function analyseTicks(
     ),
     check(
       "Expected value",
-      expectedValue >= 0.18,
-      `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(3)}`
+      expectedValue >= evThreshold,
+      `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(3)} / +${evThreshold.toFixed(3)}`
+    ),
+    check(
+      "Direction stability",
+      stabilityQualified,
+      `${Math.round(directionStability)}% / 62%`
     ),
   ];
 
@@ -740,12 +804,12 @@ export function analyseTicks(
   const buyQualified =
     !protectionPaused &&
     !hardBlock &&
-    strictMarketGate &&
+    adaptiveMarketGate &&
     trendAligned &&
     directionStrong &&
-    probability >= 78 &&
-    confidence >= 86 &&
-    passedChecks >= 13 &&
+    probability >= 74 &&
+    confidence >= 84 &&
+    passedChecks >= 14 &&
     confirmQualified &&
     memoryQualified;
 
@@ -758,8 +822,9 @@ export function analyseTicks(
     passedChecks >= 8;
 
   const watchQualified =
+    regime === "TREND" &&
     trendContract !== "NONE" &&
-    confidence >= 55;
+    confidence >= 58;
 
   const decision = buyQualified
     ? "BUY"
@@ -772,17 +837,31 @@ export function analyseTicks(
     !buyQualified &&
     confirmQualified;
 
+  const armedQualified =
+    !protectionPaused &&
+    !hardBlock &&
+    regime === "TREND" &&
+    selectedBayesian >= bayesianThreshold &&
+    transition.probability >= transitionThreshold &&
+    expectedValue >= evThreshold &&
+    directionStability >= 55 &&
+    reversalRisk <= 34 &&
+    confidence >= 78 &&
+    probability >= 68;
+
   const stage = protectionPaused
     ? "PROTECTION"
     : buyQualified
       ? "BUY"
-      : confirmStage
-        ? "CONFIRM"
-        : prepareQualified
-          ? "PREPARE"
-          : watchQualified
-            ? "WATCH"
-            : "SCAN";
+      : armedQualified
+        ? "ARMED"
+        : confirmStage
+          ? "CONFIRM"
+          : prepareQualified
+            ? "PREPARE"
+            : watchQualified
+              ? "WATCH"
+              : "SCAN";
 
   const risk =
     volatility === "HIGH" ||
@@ -804,7 +883,7 @@ export function analyseTicks(
     protectionPaused
       ? `Trading paused after ${recentLossStreak} consecutive losses`
       : buyQualified
-        ? `${trendContract} entry confirmed by ${passedChecks}/17 filters`
+        ? `${trendContract} entry confirmed by ${passedChecks}/18 filters`
       : regime === "RANGE"
         ? `${trendContract} blocked because market regime is RANGE`
         : exactBlacklisted
@@ -813,15 +892,17 @@ export function analyseTicks(
             ? `${trendContract} pattern cluster is blacklisted`
             : !memoryQualified
               ? `${trendContract} blocked by weak historical pattern memory`
-        : selectedBayesian < 70
-          ? `${trendContract} blocked because Bayesian score is below 70%`
-          : transition.probability < 70
-            ? `${trendContract} blocked because transition is below 70%`
-            : reversalRisk > 25
-              ? `${trendContract} blocked because reversal risk is above 25%`
-              : expectedValue < 0.18
-                ? `${trendContract} blocked because expected value is below +0.18`
-                : !learnedProfitQualified
+        : selectedBayesian < bayesianThreshold
+          ? `${trendContract} blocked because Bayesian score is below adaptive ${Math.round(bayesianThreshold)}%`
+          : transition.probability < transitionThreshold
+            ? `${trendContract} blocked because transition is below adaptive ${Math.round(transitionThreshold)}%`
+            : reversalRisk > 30
+              ? `${trendContract} blocked because reversal risk is above 30%`
+              : expectedValue < evThreshold
+                ? `${trendContract} blocked because expected value is below adaptive +${evThreshold.toFixed(3)}`
+                : !stabilityQualified
+                  ? `${trendContract} blocked because direction stability is below 62%`
+                  : !learnedProfitQualified
                   ? `${trendContract} blocked by negative learned pattern P/L`
                   : !clusterProfitQualified
                     ? `${trendContract} blocked by negative cluster P/L`
@@ -882,7 +963,16 @@ export function analyseTicks(
       protectionPaused,
       learnedProfitQualified,
       clusterProfitQualified,
-      strictMarketGate,
+      adaptiveMarketGate,
+      armedQualified,
+      trendStrength: Math.round(trendStrength),
+      bayesianThreshold: Math.round(bayesianThreshold),
+      transitionThreshold: Math.round(transitionThreshold),
+      evThreshold: Number(evThreshold.toFixed(3)),
+      rollingExpectedValue: Number(rollingExpectedValue.toFixed(3)),
+      stableDirectionalTicks,
+      directionStability: Math.round(directionStability),
+      stabilityQualified,
       memoryQualified,
       expectedValue: Number(expectedValue.toFixed(3)),
       memorySignature: signature,

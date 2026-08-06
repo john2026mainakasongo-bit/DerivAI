@@ -8,9 +8,10 @@ import { analyseTicks } from "../analysis/finalAnalysisEngine";
 
 import "./FinalAnalysisBot.css";
 
-const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v13:transactions";
-const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v13:pattern-memory";
-const FINAL_AI_CLUSTER_KEY = "edgepilot:final-ai:v13:cluster-memory";
+const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v15:transactions";
+const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v15:pattern-memory";
+const FINAL_AI_CLUSTER_KEY = "edgepilot:final-ai:v15:cluster-memory";
+const FINAL_AI_SETTINGS_KEY = "edgepilot:final-ai:v16:settings";
 
 const money = (value) =>
   Number(value || 0).toLocaleString("en-US", {
@@ -187,7 +188,10 @@ export default function FinalAnalysisBot() {
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [protectionUntil, setProtectionUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [armedDirection, setArmedDirection] = useState("NONE");
+  const [armedTicks, setArmedTicks] = useState(0);
   const protectionRunRef = useRef(-1);
+  const lastJournalAtRef = useRef(0);
 
   const lastDecisionRef = useRef("");
   const buyLockRef = useRef(false);
@@ -225,6 +229,23 @@ export default function FinalAnalysisBot() {
     [clusterMemory, symbol]
   );
 
+  const rollingExpectedValue = useMemo(() => {
+    const recent = transactions
+      .filter((row) =>
+        ["WON", "LOST"].includes(String(row.result || ""))
+      )
+      .slice(0, 20);
+
+    if (!recent.length) return 0;
+
+    const total = recent.reduce(
+      (sum, row) => sum + Number(row.profit || 0),
+      0
+    );
+
+    return total / recent.length;
+  }, [transactions]);
+
   const recentLossStreak = useMemo(() => {
     let streak = 0;
 
@@ -251,6 +272,7 @@ export default function FinalAnalysisBot() {
         {
           recentLossStreak,
           protectionPaused,
+          rollingExpectedValue,
         }
       ),
     [
@@ -259,8 +281,42 @@ export default function FinalAnalysisBot() {
       marketClusterMemory,
       recentLossStreak,
       protectionPaused,
+      rollingExpectedValue,
     ]
   );
+
+  useEffect(() => {
+    const armedNow =
+      analysis.stage === "ARMED" ||
+      analysis.decision === "BUY";
+
+    if (
+      !armedNow ||
+      analysis.contract === "NONE"
+    ) {
+      setArmedDirection("NONE");
+      setArmedTicks(0);
+      return;
+    }
+
+    if (analysis.contract !== armedDirection) {
+      setArmedDirection(analysis.contract);
+      setArmedTicks(1);
+      return;
+    }
+
+    setArmedTicks((value) => Math.min(9, value + 1));
+  }, [
+    analysis.stage,
+    analysis.decision,
+    analysis.contract,
+    armedDirection,
+  ]);
+
+  const stableEntryReady =
+    analysis.decision === "BUY" &&
+    armedTicks >= 3 &&
+    armedDirection === analysis.contract;
 
   const stats = useMemo(() => {
     const settled = transactions.filter((item) =>
@@ -290,16 +346,21 @@ export default function FinalAnalysisBot() {
 
   useEffect(() => {
     if (
-      recentLossStreak < 3 ||
+      recentLossStreak < 2 ||
       stats.runs === protectionRunRef.current
     ) {
       return;
     }
 
+    const pauseMs =
+      recentLossStreak >= 3 ? 90000 : 45000;
+
     protectionRunRef.current = stats.runs;
-    setProtectionUntil(Date.now() + 45000);
+    setProtectionUntil(Date.now() + pauseMs);
     setMessage(
-      `LOSS PROTECTION · ${recentLossStreak} consecutive losses · paused for 45 seconds`
+      `LOSS PROTECTION · ${recentLossStreak} consecutive losses · paused for ${Math.round(
+        pauseMs / 1000
+      )} seconds`
     );
   }, [recentLossStreak, stats.runs]);
 
@@ -496,14 +557,23 @@ export default function FinalAnalysisBot() {
     if (!analysis.ready) return;
 
     const key = [
+      analysis.stage,
       analysis.decision,
       analysis.contract,
-      analysis.confidence,
       analysis.reason,
     ].join("|");
 
-    if (key === lastDecisionRef.current) return;
+    const nowMs = Date.now();
+
+    if (
+      key === lastDecisionRef.current ||
+      nowMs - lastJournalAtRef.current < 5000
+    ) {
+      return;
+    }
+
     lastDecisionRef.current = key;
+    lastJournalAtRef.current = nowMs;
 
     setJournal((current) =>
       [
@@ -527,7 +597,7 @@ export default function FinalAnalysisBot() {
       mode !== "paper" ||
       paperTrade ||
       buyLockRef.current ||
-      analysis.decision !== "BUY" ||
+      !stableEntryReady ||
       analysis.confidence < minimumConfidence ||
       Date.now() < cooldownUntil ||
       protectionPaused ||
@@ -566,6 +636,7 @@ export default function FinalAnalysisBot() {
     }, 1400);
   }, [
     analysis,
+    stableEntryReady,
     liveQuote,
     minimumConfidence,
     mode,
@@ -765,7 +836,7 @@ export default function FinalAnalysisBot() {
     }
 
     if (
-      analysis.decision !== "BUY" ||
+      !stableEntryReady ||
       analysis.contract === "NONE" ||
       analysis.confidence < minimumConfidence
     ) {
@@ -841,7 +912,7 @@ export default function FinalAnalysisBot() {
       mode !== "live" ||
       buyLockRef.current ||
       tradeBusy ||
-      analysis.decision !== "BUY" ||
+      !stableEntryReady ||
       analysis.confidence < minimumConfidence ||
       !currentPatternLiveReady ||
       protectionPaused
@@ -866,7 +937,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1120,7 +1191,7 @@ export default function FinalAnalysisBot() {
                 : "LEARNING"}
             </small>
             <small>
-              Phase: {learningPhase} · Loss streak:{" "}
+              Phase: {learningPhase} · Armed: {armedTicks}/3 · Loss streak:{" "}
               {recentLossStreak}
               {protectionPaused
                 ? ` · resumes in ${protectionSeconds}s`
@@ -1250,11 +1321,55 @@ export default function FinalAnalysisBot() {
             }
           />
           <Metric
-            label="Strict gate"
+            label="Adaptive gate"
             value={
-              analysis.metrics.strictMarketGate
+              analysis.metrics.adaptiveMarketGate
                 ? "PASSED"
                 : "BLOCKED"
+            }
+          />
+          <Metric
+            label="Direction stability"
+            value={`${analysis.metrics.directionStability ?? 0}%`}
+          />
+          <Metric
+            label="Armed persistence"
+            value={`${armedTicks}/3`}
+          />
+          <Metric
+            label="Entry ready"
+            value={stableEntryReady ? "YES" : "NO"}
+          />
+          <Metric
+            label="Armed"
+            value={
+              analysis.metrics.armedQualified
+                ? "YES"
+                : "NO"
+            }
+          />
+          <Metric
+            label="Trend strength"
+            value={`${analysis.metrics.trendStrength ?? 0}%`}
+          />
+          <Metric
+            label="Bayesian target"
+            value={`${analysis.metrics.bayesianThreshold ?? 70}%`}
+          />
+          <Metric
+            label="Transition target"
+            value={`${analysis.metrics.transitionThreshold ?? 70}%`}
+          />
+          <Metric
+            label="EV target"
+            value={`+${analysis.metrics.evThreshold ?? 0.12}`}
+          />
+          <Metric
+            label="Rolling EV"
+            value={
+              Number(rollingExpectedValue || 0) >= 0
+                ? `+${Number(rollingExpectedValue || 0).toFixed(3)}`
+                : Number(rollingExpectedValue || 0).toFixed(3)
             }
           />
         </section>

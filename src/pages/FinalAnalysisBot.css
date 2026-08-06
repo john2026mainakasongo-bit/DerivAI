@@ -1285,3 +1285,24 @@
   }
 }
 
+
+
+/* Final AI V16 stability recovery */
+.final-v16-page .final-metrics-grid,
+.final-v15-page .final-metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)) !important;
+}
+
+.final-v15-page .final-journal-row {
+  min-height: 34px;
+}
+
+.final-v15-page .final-journal-row p {
+  line-height: 1.25;
+}
+
+.final-v15-page .final-open-card small {
+  display: block;
+  margin-top: 7px;
+}
+
