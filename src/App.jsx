@@ -20,6 +20,7 @@ import "./index.css";
 
 import FreshEdgeBot from "./pages/FreshEdgeBot";
 import RapidEdgeAI from "./pages/RapidEdgeAI";
+import FinalAnalysisBot from "./pages/FinalAnalysisBot";
 export default function App() {
   return (
     <BrowserRouter>
@@ -48,6 +49,10 @@ export default function App() {
 <Route path="/differs-one-shot" element={<DiffersOneShotBot />} />
         <Route path="/settings" element={<Settings />} />
 
+                <Route
+          path="/final-analysis-bot"
+          element={<FinalAnalysisBot />}
+        />
         <Route
           path="*"
           element={<Navigate to="/dashboard" replace />}
@@ -62,5 +67,6 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
 
 
