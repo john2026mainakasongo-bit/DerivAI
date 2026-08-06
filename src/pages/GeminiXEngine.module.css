@@ -580,3 +580,18 @@
       repeat(5, minmax(0, 1fr));
   }
 }
+
+
+/* GeminiX V5.4 non-stop 10-second scanner */
+.campaignGrid {
+  grid-template-columns:
+    repeat(10, minmax(0, 1fr))
+    150px 150px;
+}
+
+@media (max-width: 1250px) {
+  .campaignGrid {
+    grid-template-columns:
+      repeat(5, minmax(0, 1fr));
+  }
+}

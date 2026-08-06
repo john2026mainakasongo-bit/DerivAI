@@ -707,19 +707,20 @@ function GeminiXContent({
 
     if (settled.result === "WON") {
       setCampaignWins((value) => value + 1);
-      setCooldownUntil(Date.now() + 1500);
+      setCooldownUntil(Date.now() + 1000);
+      setLastMarketSwitchAt(0);
       setEngineMessage(
-        "WIN settled · scanner inaendelea kutafuta entry inayofuata."
+        "WIN settled · scanner inaendelea na 10s market cycle."
       );
       return;
     }
 
     if (settled.result === "LOST") {
       setCampaignLosses((value) => value + 1);
-      setRunning(false);
-      setCooldownUntil(Date.now() + 30000);
+      setCooldownUntil(Date.now() + 10000);
+      setLastMarketSwitchAt(0);
       setEngineMessage(
-        "LOSS settled · campaign imesimama na cooldown ya sekunde 30 imeanza."
+        "LOSS settled · scanner haijasimama. Market re-scan ya sekunde 10 imeanza."
       );
     }
   }, [
@@ -730,19 +731,17 @@ function GeminiXContent({
   useEffect(() => {
     if (
       campaignEnabled &&
-      campaignRuns >= campaignTarget &&
-      running
+      campaignRuns > 0 &&
+      campaignRuns % campaignTarget === 0
     ) {
-      setRunning(false);
       setEngineMessage(
-        `Campaign target ya ${campaignTarget} runs imefika. Engine imesimama kwa review.`
+        `Batch ya ${campaignTarget} runs imekamilika. Scanner inaendelea bila kusimama.`
       );
     }
   }, [
     campaignEnabled,
     campaignRuns,
     campaignTarget,
-    running,
   ]);
 
   const resetCampaign = () => {
@@ -831,7 +830,6 @@ function GeminiXContent({
   useEffect(() => {
     if (
       !running ||
-      activeContracts.length > 0 ||
       tradeBusy ||
       loadingMarket
     ) {
@@ -853,13 +851,14 @@ function GeminiXContent({
         current.riskClass !== "HIGH";
 
       if (
-        !currentStrong &&
         now -
           Number(lastMarketSwitchAt || 0) >=
-          8000
+          10000
       ) {
         void switchToNextMarket(
-          "Scanner imekosa quality entry"
+          currentStrong
+            ? "10s scan complete · checking next market"
+            : "10s scan complete · no quality entry"
         );
       }
     }, 1000);
@@ -892,17 +891,6 @@ function GeminiXContent({
         `Cooldown active: ${Math.ceil(
           (cooldownUntil - Date.now()) / 1000
         )}s`
-      );
-      return;
-    }
-
-    if (
-      campaignEnabled &&
-      campaignRuns >= campaignTarget
-    ) {
-      setRunning(false);
-      setEngineMessage(
-        "Campaign target imefika. Reset campaign kabla ya kuendelea."
       );
       return;
     }
@@ -966,11 +954,7 @@ function GeminiXContent({
       tradeBusy ||
       activeContracts.length > 0 ||
       Date.now() < cooldownUntil ||
-      (
-        campaignEnabled &&
-        campaignRuns >= campaignTarget
-      )
-    ) {
+false    ) {
       return;
     }
 
@@ -1051,7 +1035,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · continuous market scan · settled contract tracking
+          Shared Deriv feed · scans every market every 10 seconds · never stops after settlement
         </div>
       </div>
 
@@ -1121,7 +1105,7 @@ function GeminiXContent({
           </div>
 
           <div className={styles.inputGroup}>
-            <label>Campaign Target</label>
+            <label>Batch Counter</label>
             <select
               value={campaignTarget}
               onChange={(event) =>
@@ -1142,7 +1126,7 @@ function GeminiXContent({
                     key={value}
                     value={value}
                   >
-                    {value} runs max
+                    {value} runs per batch
                   </option>
                 )
               )}
@@ -1229,6 +1213,10 @@ function GeminiXContent({
             "Markets Scanned",
             Object.keys(marketMemory).length,
           ],
+          [
+            "Scan Cycle",
+            "10s",
+          ],
         ].map(([label, value]) => (
           <article key={label}>
             <span>{label}</span>
@@ -1259,7 +1247,7 @@ function GeminiXContent({
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V5.3 CONTINUOUS CAMPAIGN
+              GEMINIX V5.4 NON-STOP 10S SCANNER
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
