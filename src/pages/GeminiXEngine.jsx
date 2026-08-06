@@ -57,12 +57,12 @@ export default function GeminiXEngine() {
 
     ws.current.onopen = () => {
       setFeedStatus('CONNECTING');
-      setBlockReason('Inapokea live ticks...');
+      setBlockReason('Inaunganisha na stream ya ticks...');
 
-      // Clean subscriptions
+      // Forget previous subscriptions to avoid duplicate feeds
       ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
 
-      // Subscribe directly to ticks (Format inayotumiwa na bots zingine)
+      // Subscribe to ticks
       ws.current.send(JSON.stringify({
         ticks: market,
         subscribe: 1
@@ -78,7 +78,7 @@ export default function GeminiXEngine() {
         return;
       }
 
-      // Live tick stream
+      // Handle direct tick stream
       if (data.msg_type === 'tick' && data.tick) {
         setFeedStatus('LIVE');
         const quoteStr = data.tick.quote.toString();
