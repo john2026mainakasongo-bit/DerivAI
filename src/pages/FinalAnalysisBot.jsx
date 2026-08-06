@@ -221,15 +221,6 @@ export default function FinalAnalysisBot() {
 
   const rapidSlotsUsed = usedRapidSlots.length;
 
-  const rapidPaperReady =
-    !rapidSlotUsed &&
-    !paperTrade &&
-    Boolean(analysis.rapidScore?.qualified) &&
-    Number(analysis.rapidScore?.score || 0) >= 66 &&
-    ["RISE", "FALL"].includes(
-      analysis.rapidScore?.direction
-    );
-
   const adaptiveEntryThreshold =
     scanRemainingSeconds > 30
       ? 82
@@ -335,6 +326,15 @@ export default function FinalAnalysisBot() {
       adaptiveEntryThreshold &&
     ["RISE", "FALL"].includes(
       analysis.continuousScore?.direction
+    );
+
+  const rapidPaperReady =
+    !rapidSlotUsed &&
+    !paperTrade &&
+    Boolean(analysis.rapidScore?.qualified) &&
+    Number(analysis.rapidScore?.score || 0) >= 66 &&
+    ["RISE", "FALL"].includes(
+      analysis.rapidScore?.direction
     );
 
   useEffect(() => {
