@@ -217,12 +217,14 @@ export default function FinalAnalysisBot() {
   const [paperTrades, setPaperTrades] = useState([]);
   const [marketDataBank, setMarketDataBank] = useState({});
   const [marketTickSerials, setMarketTickSerials] = useState({});
-  const [autoMarketSwitch, setAutoMarketSwitch] = useState(true);
-  const [marketSwitchSeconds, setMarketSwitchSeconds] = useState(2);
+  const [autoMarketSwitch, setAutoMarketSwitch] = useState(false);
+  const [marketSwitchSeconds, setMarketSwitchSeconds] = useState(30);
   const [signalQueue, setSignalQueue] = useState([]);
   const [queueEnabled, setQueueEnabled] = useState(true);
   const [maxQueueSize, setMaxQueueSize] = useState(8);
   const [lastMarketSwitchAt, setLastMarketSwitchAt] = useState(Date.now());
+  const [connectionLocked, setConnectionLocked] = useState(true);
+  const [lastStableSymbol, setLastStableSymbol] = useState("");
   const [turboPortfolioSize, setTurboPortfolioSize] = useState(5);
   const [turboMode, setTurboMode] = useState(true);
   const [tickSerial, setTickSerial] = useState(0);
@@ -355,6 +357,26 @@ export default function FinalAnalysisBot() {
     loadingMarket,
     marketDataBank,
     signalQueue.length,
+  ]);
+
+  useEffect(() => {
+    if (
+      !connectionLocked ||
+      loadingMarket ||
+      !Number.isFinite(Number(liveQuote))
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setConnectionLocked(false);
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    connectionLocked,
+    loadingMarket,
+    liveQuote,
   ]);
 
   const preserveViewportForSwitch = () => {
@@ -1364,6 +1386,16 @@ export default function FinalAnalysisBot() {
   const previousQuoteRef = useRef(null);
 
   useEffect(() => {
+    if (
+      symbol &&
+      Number.isFinite(Number(liveQuote)) &&
+      !loadingMarket
+    ) {
+      setLastStableSymbol(symbol);
+    }
+  }, [symbol, liveQuote, loadingMarket]);
+
+  useEffect(() => {
     if (!Number.isFinite(Number(liveQuote)) || !symbol) return;
 
     const changed =
@@ -1407,12 +1439,13 @@ export default function FinalAnalysisBot() {
     if (
       !running ||
       !autoMarketSwitch ||
+      connectionLocked ||
       loadingMarket ||
-      totalOpenPaperTrades >= 12 ||
+      totalOpenPaperTrades > 0 ||
       Date.now() - lastMarketSwitchAt <
         Math.max(
-          turboMode ? 1 : 3,
-          Number(marketSwitchSeconds || 2)
+          20,
+          Number(marketSwitchSeconds || 30)
         ) * 1000
     ) {
       return;
@@ -1497,6 +1530,7 @@ export default function FinalAnalysisBot() {
 
     if (!nextMarket || nextMarket === symbol) return;
 
+    setConnectionLocked(true);
     setLastMarketSwitchAt(Date.now());
     setScanEndsAt(Date.now() + 60000);
     setUsedRapidSlots([]);
@@ -1508,10 +1542,17 @@ export default function FinalAnalysisBot() {
     );
 
     preserveViewportForSwitch();
-    void changeSymbol(nextMarket);
+
+    void Promise.resolve(changeSymbol(nextMarket))
+      .finally(() => {
+        window.setTimeout(() => {
+          setConnectionLocked(false);
+        }, 2500);
+      });
   }, [
     running,
     autoMarketSwitch,
+    connectionLocked,
     turboMode,
     loadingMarket,
     symbol,
@@ -2099,7 +2140,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page final-v26-page final-v27-page final-v28-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page final-v26-page final-v27-page final-v28-page final-v28-1-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -2161,11 +2202,18 @@ export default function FinalAnalysisBot() {
               value={symbol}
               disabled={loadingMarket}
               onChange={(next) => {
+                setConnectionLocked(true);
                 setLastMarketSwitchAt(Date.now());
                 setScanEndsAt(Date.now() + 60000);
                 setUsedRapidSlots([]);
                 preserveViewportForSwitch();
-                void changeSymbol(next);
+
+                void Promise.resolve(changeSymbol(next))
+                  .finally(() => {
+                    window.setTimeout(() => {
+                      setConnectionLocked(false);
+                    }, 2500);
+                  });
               }}
             />
           </label>
@@ -2259,6 +2307,25 @@ export default function FinalAnalysisBot() {
           </label>
 
           <label>
+            Connection lock
+            <select
+              value={connectionLocked ? "locked" : "ready"}
+              onChange={(event) =>
+                setConnectionLocked(
+                  event.target.value === "locked"
+                )
+              }
+            >
+              <option value="locked">
+                LOCKED · stable market
+              </option>
+              <option value="ready">
+                READY · allow rotation
+              </option>
+            </select>
+          </label>
+
+          <label>
             Auto market switch
             <select
               value={autoMarketSwitch ? "on" : "off"}
@@ -2283,11 +2350,10 @@ export default function FinalAnalysisBot() {
                 )
               }
             >
-              <option value="1">1 second</option>
-              <option value="2">2 seconds</option>
-              <option value="3">3 seconds</option>
-              <option value="6">6 seconds</option>
-              <option value="10">10 seconds</option>
+              <option value="20">20 seconds</option>
+              <option value="30">30 seconds</option>
+              <option value="45">45 seconds</option>
+              <option value="60">60 seconds</option>
             </select>
           </label>
 
@@ -2677,6 +2743,24 @@ export default function FinalAnalysisBot() {
             value={learningSummary.qualityWeakPatterns.length}
           />
           <Metric
+            label="Connection lock"
+            value={connectionLocked ? "LOCKED" : "READY"}
+          />
+          <Metric
+            label="Stable market"
+            value={lastStableSymbol || symbol || "WAIT"}
+          />
+          <Metric
+            label="Feed state"
+            value={
+              loadingMarket
+                ? "CONNECTING"
+                : Number.isFinite(Number(liveQuote))
+                  ? "STABLE"
+                  : "WAIT"
+            }
+          />
+          <Metric
             label="Turbo mode"
             value={turboMode ? "ON" : "OFF"}
           />
@@ -2891,6 +2975,35 @@ export default function FinalAnalysisBot() {
                 )}%`,
               }}
             />
+          </div>
+        </section>
+
+        <section className="final-v28-1-connection-bar">
+          <div>
+            <span>CONNECTION MODE</span>
+            <strong>
+              {connectionLocked
+                ? "MARKET LOCKED · NO AUTO RECONNECT LOOP"
+                : "ROTATION READY"}
+            </strong>
+          </div>
+
+          <div>
+            <span>ACTIVE FEED</span>
+            <strong>
+              {loadingMarket
+                ? "CONNECTING"
+                : `${symbol || lastStableSymbol} · STABLE`}
+            </strong>
+          </div>
+
+          <div>
+            <span>ROTATION RULE</span>
+            <strong>
+              {autoMarketSwitch
+                ? `ONLY WHEN NO OPEN TRADE · ${marketSwitchSeconds}s`
+                : "AUTO SWITCH OFF"}
+            </strong>
           </div>
         </section>
 
