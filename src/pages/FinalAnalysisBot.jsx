@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
@@ -263,6 +263,12 @@ export default function FinalAnalysisBot() {
   const [usedRapidSlots, setUsedRapidSlots] = useState([]);
   const protectionRunRef = useRef(-1);
   const lastJournalAtRef = useRef(0);
+  const viewportRef = useRef({
+    x: 0,
+    y: 0,
+    lockUntil: 0,
+  });
+  const restoringViewportRef = useRef(false);
 
   const currentMarketTrades = paperTrades.filter(
     (trade) => trade.market === symbol
@@ -285,6 +291,79 @@ export default function FinalAnalysisBot() {
     0,
     Math.max(2, Number(turboPortfolioSize || 5))
   );
+
+  useEffect(() => {
+    const rememberViewport = () => {
+      if (restoringViewportRef.current) return;
+
+      viewportRef.current = {
+        ...viewportRef.current,
+        x: window.scrollX,
+        y: window.scrollY,
+      };
+    };
+
+    window.addEventListener("scroll", rememberViewport, {
+      passive: true,
+    });
+
+    rememberViewport();
+
+    return () =>
+      window.removeEventListener(
+        "scroll",
+        rememberViewport
+      );
+  }, []);
+
+  useLayoutEffect(() => {
+    const saved = viewportRef.current;
+
+    if (
+      Date.now() > Number(saved.lockUntil || 0)
+    ) {
+      return;
+    }
+
+    restoringViewportRef.current = true;
+
+    const restore = () => {
+      window.scrollTo({
+        left: Number(saved.x || 0),
+        top: Number(saved.y || 0),
+        behavior: "auto",
+      });
+    };
+
+    restore();
+
+    const first = window.requestAnimationFrame(() => {
+      restore();
+
+      window.requestAnimationFrame(() => {
+        restore();
+        restoringViewportRef.current = false;
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(first);
+      restoringViewportRef.current = false;
+    };
+  }, [
+    symbol,
+    loadingMarket,
+    marketDataBank,
+    signalQueue.length,
+  ]);
+
+  const preserveViewportForSwitch = () => {
+    viewportRef.current = {
+      x: window.scrollX,
+      y: window.scrollY,
+      lockUntil: Date.now() + 2200,
+    };
+  };
 
   const scanRemainingSeconds = Math.max(
     0,
@@ -498,14 +577,180 @@ export default function FinalAnalysisBot() {
       analysis.rapidScore?.direction
     );
 
+  const strategyLab = useMemo(() => {
+    const setups = Array.isArray(
+      analysis.setupCandidates
+    )
+      ? analysis.setupCandidates
+      : [];
+
+    const directions = ["RISE", "FALL"];
+
+    const ranked = directions
+      .map((direction) => {
+        const matching = setups
+          .filter(
+            (setup) =>
+              setup.contract === direction
+          )
+          .sort(
+            (a, b) =>
+              Number(b.score || 0) -
+              Number(a.score || 0)
+          );
+
+        const passed = matching.filter(
+          (setup) => setup.passed
+        );
+
+        const source =
+          passed.length >= 2
+            ? passed
+            : matching.slice(0, 4);
+
+        const average = source.length
+          ? source.reduce(
+              (sum, setup) =>
+                sum + Number(setup.score || 0),
+              0
+            ) / source.length
+          : 0;
+
+        const topScore = Number(
+          matching[0]?.score || 0
+        );
+
+        const agreement =
+          setups.length > 0
+            ? matching.length / setups.length * 100
+            : 0;
+
+        const continuousAgreement =
+          analysis.continuousScore?.direction ===
+          direction;
+
+        const rapidAgreement =
+          analysis.rapidScore?.direction === direction;
+
+        const voteAgreement =
+          analysis.setupVoting?.direction === direction;
+
+        const confirmationCount = [
+          continuousAgreement,
+          rapidAgreement,
+          voteAgreement,
+          Number(
+            analysis.setupVoting?.agreementCount || 0
+          ) >= 2,
+          Number(
+            analysis.continuousScore
+              ?.weightedEntryScore || 0
+          ) >= 68,
+        ].filter(Boolean).length;
+
+        const composite = Math.round(
+          average * 0.42 +
+            topScore * 0.22 +
+            Math.min(100, agreement) * 0.12 +
+            Number(
+              analysis.continuousScore
+                ?.weightedEntryScore || 0
+            ) * 0.12 +
+            Number(
+              analysis.rapidScore?.score || 0
+            ) * 0.12
+        );
+
+        const tests = [
+          {
+            id: "setup-consensus",
+            label: "Setup consensus",
+            passed:
+              passed.length >= 2 ||
+              matching.length >= 3,
+          },
+          {
+            id: "direction-confirmation",
+            label: "Direction confirmation",
+            passed: confirmationCount >= 3,
+          },
+          {
+            id: "score-strength",
+            label: "Composite strength",
+            passed: composite >= 70,
+          },
+          {
+            id: "freshness",
+            label: "Fresh tick signal",
+            passed:
+              analysis.continuousScore
+                ?.signalFresh !== false,
+          },
+          {
+            id: "pattern-quality",
+            label: "Pattern quality",
+            passed: !weakPatternBlocked,
+          },
+        ];
+
+        const testsPassed = tests.filter(
+          (test) => test.passed
+        ).length;
+
+        return {
+          direction,
+          composite,
+          average: Math.round(average),
+          topScore: Math.round(topScore),
+          passedSetups: passed.length,
+          matchingSetups: matching.length,
+          confirmationCount,
+          tests,
+          testsPassed,
+          qualified:
+            testsPassed >= 4 &&
+            composite >= 70 &&
+            confirmationCount >= 3,
+          strategy:
+            matching[0]?.label ||
+            `${direction} tick strategy`,
+        };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.qualified) -
+            Number(a.qualified) ||
+          b.testsPassed - a.testsPassed ||
+          b.composite - a.composite
+      );
+
+    return {
+      candidates: ranked,
+      best: ranked[0] || null,
+    };
+  }, [
+    analysis.setupCandidates,
+    analysis.continuousScore,
+    analysis.rapidScore,
+    analysis.setupVoting,
+    weakPatternBlocked,
+  ]);
+
+  const strongStrategy =
+    strategyLab.best?.qualified
+      ? strategyLab.best
+      : null;
+
   const queueCandidate = useMemo(() => {
     const direction =
+      strongStrategy?.direction ||
       analysis.rapidScore?.direction ||
       analysis.continuousScore?.direction ||
       analysis.setupVoting?.direction ||
       "NONE";
 
     const score = Math.max(
+      Number(strongStrategy?.composite || 0),
       Number(analysis.rapidScore?.score || 0),
       Number(
         analysis.continuousScore?.weightedEntryScore || 0
@@ -515,7 +760,10 @@ export default function FinalAnalysisBot() {
 
     if (
       !["RISE", "FALL"].includes(direction) ||
-      score < qualityAdjustedThreshold ||
+      (
+        !strongStrategy &&
+        score < qualityAdjustedThreshold
+      ) ||
       weakPatternBlocked ||
       currentMarketDataCount <
         (turboMode ? 12 : 20)
@@ -529,6 +777,11 @@ export default function FinalAnalysisBot() {
       direction,
       score: Math.round(score),
       tier: currentPatternTier,
+      strategy:
+        strongStrategy?.strategy ||
+        "Composite tick strategy",
+      testsPassed:
+        Number(strongStrategy?.testsPassed || 0),
       createdAt: Date.now(),
       expiresAt: Date.now() + 4500,
     };
@@ -536,6 +789,7 @@ export default function FinalAnalysisBot() {
     analysis.rapidScore,
     analysis.continuousScore,
     analysis.setupVoting,
+    strongStrategy,
     qualityAdjustedThreshold,
     weakPatternBlocked,
     currentMarketDataCount,
@@ -656,6 +910,13 @@ export default function FinalAnalysisBot() {
   const tickEntryReady =
     fullVoteEntryReady || lateVoteEntryReady;
 
+  const strongStrategyReady =
+    mode === "paper" &&
+    Boolean(strongStrategy) &&
+    strongStrategy.testsPassed >= 4 &&
+    strongStrategy.composite >= 70 &&
+    currentMarketTrades.length < 3;
+
   const queuedEntryReady =
     mode === "paper" &&
     queueEnabled &&
@@ -663,14 +924,17 @@ export default function FinalAnalysisBot() {
     currentMarketTrades.length < 3;
 
   const minuteEntryReady =
+    strongStrategyReady ||
     queuedEntryReady ||
     stableEntryReady ||
     fullVoteEntryReady ||
     continuousScoreReady ||
     lateVoteEntryReady;
 
-  const minuteEntryContract = queuedEntryReady
-    ? bestQueuedSignal?.direction
+  const minuteEntryContract = strongStrategyReady
+    ? strongStrategy?.direction
+    : queuedEntryReady
+      ? bestQueuedSignal?.direction
     : rapidPaperReady
       ? analysis.rapidScore?.direction
     : stableEntryReady
@@ -683,8 +947,10 @@ export default function FinalAnalysisBot() {
             analysis.tickSetup?.contract ||
             analysis.contract;
 
-  const minuteEntryConfidence = queuedEntryReady
-    ? Number(bestQueuedSignal?.score || 0)
+  const minuteEntryConfidence = strongStrategyReady
+    ? Number(strongStrategy?.composite || 0)
+    : queuedEntryReady
+      ? Number(bestQueuedSignal?.score || 0)
     : rapidPaperReady
       ? Math.max(
         58,
@@ -717,8 +983,10 @@ export default function FinalAnalysisBot() {
             )
           );
 
-  const minuteEntryMode = queuedEntryReady
-    ? "QUEUED_SIGNAL"
+  const minuteEntryMode = strongStrategyReady
+    ? "STRATEGY_LAB"
+    : queuedEntryReady
+      ? "QUEUED_SIGNAL"
     : rapidPaperReady
       ? `RAPID_SLOT_${rapidSlotIndex + 1}`
     : stableEntryReady
@@ -1239,6 +1507,7 @@ export default function FinalAnalysisBot() {
       `TURBO PORTFOLIO · ${symbol} → ${nextMarket} · ${totalOpenPaperTrades} open`
     );
 
+    preserveViewportForSwitch();
     void changeSymbol(nextMarket);
   }, [
     running,
@@ -1431,6 +1700,8 @@ export default function FinalAnalysisBot() {
     }, 1400);
   }, [
     analysis,
+    strongStrategyReady,
+    strongStrategy,
     queuedEntryReady,
     bestQueuedSignal,
     rapidPaperReady,
@@ -1828,7 +2099,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page final-v26-page final-v27-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page final-v26-page final-v27-page final-v28-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1893,6 +2164,7 @@ export default function FinalAnalysisBot() {
                 setLastMarketSwitchAt(Date.now());
                 setScanEndsAt(Date.now() + 60000);
                 setUsedRapidSlots([]);
+                preserveViewportForSwitch();
                 void changeSymbol(next);
               }}
             />
@@ -2622,6 +2894,55 @@ export default function FinalAnalysisBot() {
           </div>
         </section>
 
+        <section className="final-v28-strategy-lab">
+          <div className="final-v28-strategy-head">
+            <div>
+              <span>STRONGEST STRATEGY</span>
+              <strong>
+                {strategyLab.best
+                  ? `${strategyLab.best.direction} · ${strategyLab.best.composite}%`
+                  : "SCANNING"}
+              </strong>
+              <small>
+                {strategyLab.best?.strategy ||
+                  "Comparing market setups"}
+              </small>
+            </div>
+
+            <div>
+              <span>TEST RESULT</span>
+              <strong>
+                {strategyLab.best
+                  ? `${strategyLab.best.testsPassed}/5 PASSED`
+                  : "0/5"}
+              </strong>
+              <small>
+                {strategyLab.best?.qualified
+                  ? "STRONG SIGNAL READY"
+                  : "TESTING SETUPS"}
+              </small>
+            </div>
+          </div>
+
+          <div className="final-v28-test-grid">
+            {(strategyLab.best?.tests || [
+              { id: "a", label: "Setup consensus", passed: false },
+              { id: "b", label: "Direction confirmation", passed: false },
+              { id: "c", label: "Composite strength", passed: false },
+              { id: "d", label: "Fresh tick signal", passed: false },
+              { id: "e", label: "Pattern quality", passed: false },
+            ]).map((test) => (
+              <article
+                key={test.id}
+                className={test.passed ? "passed" : ""}
+              >
+                <span>{test.passed ? "PASS" : "TEST"}</span>
+                <strong>{test.label}</strong>
+              </article>
+            ))}
+          </div>
+        </section>
+
         <section className="final-vote-summary">
           <article>
             <span>RISE votes</span>
@@ -2707,6 +3028,9 @@ export default function FinalAnalysisBot() {
                 <strong>{item.direction}</strong>
                 <small>
                   {item.score}% · {item.tier}
+                </small>
+                <small>
+                  {item.strategy || "Composite strategy"}
                 </small>
               </article>
             ))}
