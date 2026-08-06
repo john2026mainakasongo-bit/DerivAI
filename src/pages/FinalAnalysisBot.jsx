@@ -321,6 +321,16 @@ export default function FinalAnalysisBot() {
     armedTicks >= 3 &&
     armedDirection === analysis.contract;
 
+  const scanElapsedSeconds = Math.max(
+    0,
+    Math.floor((now - scanStartedAt) / 1000)
+  );
+
+  const scanRemainingSeconds = Math.max(
+    0,
+    60 - scanElapsedSeconds
+  );
+
   useEffect(() => {
     if (
       analysis.contract === "NONE" ||
@@ -566,16 +576,6 @@ export default function FinalAnalysisBot() {
   const protectionSeconds = Math.max(
     0,
     Math.ceil((protectionUntil - now) / 1000)
-  );
-
-  const scanElapsedSeconds = Math.max(
-    0,
-    Math.floor((now - scanStartedAt) / 1000)
-  );
-
-  const scanRemainingSeconds = Math.max(
-    0,
-    60 - scanElapsedSeconds
   );
 
   const executionReady =
