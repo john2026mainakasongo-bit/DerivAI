@@ -1313,6 +1313,32 @@ export function analyseTicks(
     )
   );
 
+  const rapidEntryScore = Math.round(
+    clamp(
+      tickFlowScore * 0.30 +
+        momentumScore * 0.22 +
+        transitionScore * 0.18 +
+        bayesianScore * 0.10 +
+        trendScore * 0.10 +
+        directionStability * 0.10,
+      0,
+      100
+    )
+  );
+
+  const rapidDirection =
+    tickSequence.direction !== "NONE"
+      ? tickSequence.direction
+      : voteDirection !== "NONE"
+        ? voteDirection
+        : trendContract;
+
+  const rapidQualified =
+    rapidDirection !== "NONE" &&
+    rapidEntryScore >= 66 &&
+    tickSequence.consensus >= 50 &&
+    reversalRisk <= 42;
+
   const scoreDirection =
     voteDirection !== "NONE"
       ? voteDirection
@@ -1361,6 +1387,14 @@ export function analyseTicks(
       passed: item.passed,
       score: Math.round(item.score),
     })),
+    rapidScore: {
+      direction: rapidDirection,
+      score: rapidEntryScore,
+      qualified: rapidQualified,
+      consensus: tickSequence.consensus,
+      dominance: tickSequence.dominance,
+      reversalRisk: Math.round(reversalRisk),
+    },
     continuousScore: {
       direction: scoreDirection,
       weightedEntryScore,

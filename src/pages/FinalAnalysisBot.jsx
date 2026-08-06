@@ -195,7 +195,7 @@ export default function FinalAnalysisBot() {
   );
   const [scanCycle, setScanCycle] = useState(1);
   const [bestCandidate, setBestCandidate] = useState(null);
-  const [cycleTradeTaken, setCycleTradeTaken] = useState(false);
+  const [usedRapidSlots, setUsedRapidSlots] = useState([]);
   const protectionRunRef = useRef(-1);
   const lastJournalAtRef = useRef(0);
 
@@ -205,6 +205,30 @@ export default function FinalAnalysisBot() {
   );
 
   const scanExpired = now >= scanEndsAt;
+
+  const rapidElapsedSeconds = Math.max(
+    0,
+    60 - scanRemainingSeconds
+  );
+
+  const rapidSlotIndex = Math.min(
+    9,
+    Math.floor(rapidElapsedSeconds / 6)
+  );
+
+  const rapidSlotUsed =
+    usedRapidSlots.includes(rapidSlotIndex);
+
+  const rapidSlotsUsed = usedRapidSlots.length;
+
+  const rapidPaperReady =
+    !rapidSlotUsed &&
+    !paperTrade &&
+    Boolean(analysis.rapidScore?.qualified) &&
+    Number(analysis.rapidScore?.score || 0) >= 66 &&
+    ["RISE", "FALL"].includes(
+      analysis.rapidScore?.direction
+    );
 
   const adaptiveEntryThreshold =
     scanRemainingSeconds > 30
@@ -368,56 +392,71 @@ export default function FinalAnalysisBot() {
     continuousScoreReady ||
     lateVoteEntryReady;
 
-  const minuteEntryContract = stableEntryReady
-    ? analysis.contract
-    : fullVoteEntryReady
-      ? analysis.setupVoting?.direction
-      : continuousScoreReady
-        ? analysis.continuousScore?.direction
-        : analysis.setupVoting?.direction ||
-          analysis.tickSetup?.contract ||
-          analysis.contract;
+  const minuteEntryContract = rapidPaperReady
+    ? analysis.rapidScore?.direction
+    : stableEntryReady
+      ? analysis.contract
+      : fullVoteEntryReady
+        ? analysis.setupVoting?.direction
+        : continuousScoreReady
+          ? analysis.continuousScore?.direction
+          : analysis.setupVoting?.direction ||
+            analysis.tickSetup?.contract ||
+            analysis.contract;
 
-  const minuteEntryConfidence = stableEntryReady
-    ? analysis.confidence
-    : fullVoteEntryReady
-      ? Math.max(
-          58,
-          Math.min(
-            90,
-            Number(
-              analysis.setupVoting?.realConfidence || 58
-            )
-          )
+  const minuteEntryConfidence = rapidPaperReady
+    ? Math.max(
+        58,
+        Math.min(
+          88,
+          Number(analysis.rapidScore?.score || 58)
         )
-      : Math.max(
-          58,
-          Math.min(
-            90,
-            Number(
-              analysis.continuousScore?.weightedEntryScore ||
-                analysis.setupVoting?.realConfidence ||
-                58
+      )
+    : stableEntryReady
+      ? analysis.confidence
+      : fullVoteEntryReady
+        ? Math.max(
+            58,
+            Math.min(
+              90,
+              Number(
+                analysis.setupVoting?.realConfidence || 58
+              )
             )
           )
-        );
+        : Math.max(
+            58,
+            Math.min(
+              90,
+              Number(
+                analysis.continuousScore?.weightedEntryScore ||
+                  analysis.setupVoting?.realConfidence ||
+                  58
+              )
+            )
+          );
 
-  const minuteEntryMode = stableEntryReady
-    ? "CORE_CONFIRMED"
-    : fullVoteEntryReady
-      ? "3_SETUP_VOTE"
-      : continuousScoreReady
-        ? "CONTINUOUS_SCORE"
-        : lateVoteEntryReady
-          ? "2_VOTE_LATE"
-          : "WAIT";
+  const minuteEntryMode = rapidPaperReady
+    ? `RAPID_SLOT_${rapidSlotIndex + 1}`
+    : stableEntryReady
+      ? "CORE_CONFIRMED"
+      : fullVoteEntryReady
+        ? "3_SETUP_VOTE"
+        : continuousScoreReady
+          ? "CONTINUOUS_SCORE"
+          : lateVoteEntryReady
+            ? "2_VOTE_LATE"
+            : "WAIT";
 
   const tickPressure = Number(
     analysis.setupVoting?.tickPressureScore || 0
   );
 
-  const minuteTargetTicks =
-    tickPressure >= 82
+  const minuteTargetTicks = rapidPaperReady
+    ? Number(analysis.rapidScore?.score || 0) >= 78
+      ? 1
+      : 2
+    : tickPressure >= 82
       ? 2
       : tickPressure >= 70
         ? 3
@@ -481,7 +520,7 @@ export default function FinalAnalysisBot() {
     setScanEndsAt(Date.now() + 60000);
     setScanCycle((value) => value + 1);
     setBestCandidate(null);
-    setCycleTradeTaken(false);
+    setUsedRapidSlots([]);
     setArmedDirection("NONE");
     setArmedTicks(0);
 
@@ -769,8 +808,11 @@ export default function FinalAnalysisBot() {
       mode !== "paper" ||
       paperTrade ||
       buyLockRef.current ||
-      cycleTradeTaken ||
-      !minuteEntryReady ||
+      rapidSlotUsed ||
+      !(
+        rapidPaperReady ||
+        minuteEntryReady
+      ) ||
       scanExpired ||
       !analysis.metrics.signalFresh ||
       minuteEntryConfidence < minimumConfidence ||
@@ -782,6 +824,14 @@ export default function FinalAnalysisBot() {
     }
 
     buyLockRef.current = true;
+
+    if (rapidPaperReady) {
+      setUsedRapidSlots((current) =>
+        current.includes(rapidSlotIndex)
+          ? current
+          : [...current, rapidSlotIndex]
+      );
+    }
 
     setPaperTrade({
       id: crypto.randomUUID(),
@@ -804,6 +854,11 @@ export default function FinalAnalysisBot() {
           analysis.continuousScore?.weightedEntryScore || 0
         ),
       adaptiveThreshold: adaptiveEntryThreshold,
+      rapidSlot: rapidPaperReady
+        ? rapidSlotIndex + 1
+        : null,
+      rapidScore:
+        Number(analysis.rapidScore?.score || 0),
       setup:
         minuteEntryMode === "3_SETUP_VOTE" ||
         minuteEntryMode === "2_VOTE_LATE"
@@ -834,7 +889,9 @@ export default function FinalAnalysisBot() {
     }, 1400);
   }, [
     analysis,
-    cycleTradeTaken,
+    rapidPaperReady,
+    rapidSlotUsed,
+    rapidSlotIndex,
     minuteEntryReady,
     minuteEntryContract,
     minuteEntryConfidence,
@@ -954,7 +1011,6 @@ export default function FinalAnalysisBot() {
     );
     setPaperTrade(null);
     setCooldownUntil(Date.now() + 5000);
-    setCycleTradeTaken(true);
     setBestCandidate(null);
     setArmedDirection("NONE");
     setArmedTicks(0);
@@ -1130,7 +1186,6 @@ export default function FinalAnalysisBot() {
       mode !== "live" ||
       buyLockRef.current ||
       tradeBusy ||
-      cycleTradeTaken ||
       !minuteEntryReady ||
       scanExpired ||
       (
@@ -1165,7 +1220,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1420,8 +1475,9 @@ export default function FinalAnalysisBot() {
             </small>
             <small>
               Phase: {learningPhase} · Scan #{scanCycle}:{" "}
-              {scanRemainingSeconds}s · Entry: {minuteEntryMode} · Armed:{" "}
-              {armedTicks}/3 · Loss streak: {recentLossStreak}
+              {scanRemainingSeconds}s · Slot {rapidSlotIndex + 1}/10 · Used{" "}
+              {rapidSlotsUsed}/10 · Entry: {minuteEntryMode} · Loss streak:{" "}
+              {recentLossStreak}
               {protectionPaused
                 ? ` · resumes in ${protectionSeconds}s`
                 : ""}
@@ -1612,8 +1668,24 @@ export default function FinalAnalysisBot() {
             }
           />
           <Metric
-            label="Minute trade"
-            value={cycleTradeTaken ? "DONE" : "AVAILABLE"}
+            label="Rapid slots used"
+            value={`${rapidSlotsUsed}/10`}
+          />
+          <Metric
+            label="Current slot"
+            value={`${rapidSlotIndex + 1}/10`}
+          />
+          <Metric
+            label="Slot status"
+            value={rapidSlotUsed ? "USED" : "READY"}
+          />
+          <Metric
+            label="Rapid score"
+            value={`${analysis.rapidScore?.score || 0}%`}
+          />
+          <Metric
+            label="Rapid direction"
+            value={analysis.rapidScore?.direction || "NONE"}
           />
           <Metric
             label="Minute entry mode"

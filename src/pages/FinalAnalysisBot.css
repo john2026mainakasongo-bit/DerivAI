@@ -1500,3 +1500,14 @@
   }
 }
 
+
+
+/* Final AI V23 rapid ten-slot paper engine */
+.final-v23-page .final-score-engine {
+  border-color: rgba(245, 158, 11, .34);
+}
+
+.final-v23-page .final-metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)) !important;
+}
+
