@@ -8,6 +8,8 @@ import { analyseTicks } from "../analysis/finalAnalysisEngine";
 
 import "./FinalAnalysisBot.css";
 
+const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v7:transactions";
+
 const money = (value) =>
   Number(value || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -102,8 +104,19 @@ export default function FinalAnalysisBot() {
     useState(82);
   const [allowReal, setAllowReal] = useState(false);
   const [journal, setJournal] = useState([]);
-  const [transactions, setTransactions] = useState([]);
+  const [transactions, setTransactions] = useState(() => {
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(FINAL_AI_HISTORY_KEY) || "[]"
+      );
+
+      return Array.isArray(saved) ? saved.slice(0, 120) : [];
+    } catch {
+      return [];
+    }
+  });
   const [paperTrade, setPaperTrade] = useState(null);
+  const [tickSerial, setTickSerial] = useState(0);
   const [message, setMessage] = useState(
     "Final AI is using the shared EdgePilot Deriv connection."
   );
@@ -162,6 +175,32 @@ export default function FinalAnalysisBot() {
     authenticatedFeed &&
     Boolean(selectedAccountId);
 
+  const previousQuoteRef = useRef(null);
+
+  useEffect(() => {
+    if (!Number.isFinite(Number(liveQuote))) return;
+
+    if (
+      previousQuoteRef.current !== null &&
+      Number(previousQuoteRef.current) !== Number(liveQuote)
+    ) {
+      setTickSerial((value) => value + 1);
+    }
+
+    previousQuoteRef.current = Number(liveQuote);
+  }, [liveQuote]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        FINAL_AI_HISTORY_KEY,
+        JSON.stringify(transactions.slice(0, 120))
+      );
+    } catch {
+      // Storage can be unavailable in private browsing.
+    }
+  }, [transactions]);
+
   useEffect(() => {
     if (!analysis.ready) return;
 
@@ -200,7 +239,6 @@ export default function FinalAnalysisBot() {
       analysis.decision !== "BUY" ||
       analysis.confidence < minimumConfidence ||
       Date.now() < cooldownUntil ||
-      Date.now() < cooldownUntil ||
       !liveQuote
     ) {
       return;
@@ -215,7 +253,7 @@ export default function FinalAnalysisBot() {
       entry: liveQuote,
       stake: Number(stake),
       confidence: analysis.confidence,
-      entryCount: numericTicks.length,
+      entrySerial: tickSerial,
       openedAt: new Date().toLocaleTimeString(),
     });
 
@@ -236,12 +274,14 @@ export default function FinalAnalysisBot() {
     running,
     stake,
     symbol,
+    tickSerial,
+    cooldownUntil,
   ]);
 
   useEffect(() => {
     if (
       !paperTrade ||
-      numericTicks.length <= paperTrade.entryCount + 4
+      tickSerial <= Number(paperTrade.entrySerial || 0) + 4
     ) {
       return;
     }
@@ -277,7 +317,7 @@ export default function FinalAnalysisBot() {
     );
     setPaperTrade(null);
     setCooldownUntil(Date.now() + 5000);
-  }, [liveQuote, numericTicks.length, paperTrade]);
+  }, [liveQuote, paperTrade, tickSerial]);
 
   useEffect(() => {
     for (const contract of Array.isArray(openContracts)
@@ -768,7 +808,16 @@ export default function FinalAnalysisBot() {
                 </h2>
               </div>
               <button
-                onClick={() => setTransactions([])}
+                onClick={() => {
+                  setTransactions([]);
+                  try {
+                    window.localStorage.removeItem(
+                      FINAL_AI_HISTORY_KEY
+                    );
+                  } catch {
+                    // Ignore storage errors.
+                  }
+                }}
               >
                 Clear
               </button>
