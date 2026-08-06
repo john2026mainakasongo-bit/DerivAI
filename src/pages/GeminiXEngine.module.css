@@ -891,3 +891,129 @@
 .campaignGrid{grid-template-columns:repeat(24,minmax(0,1fr)) 130px 130px}
 @media(max-width:1600px){.campaignGrid{grid-template-columns:repeat(12,minmax(0,1fr))}}
 @media(max-width:900px){.geminiControlGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.campaignGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+
+/* GeminiX V6.4 compact market cards with click-to-expand details */
+.marketRankingGrid {
+  align-items: start;
+}
+
+.marketRankCard {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  transition:
+    border-color .18s ease,
+    background .18s ease,
+    transform .18s ease;
+}
+
+.marketRankCard:hover {
+  transform: translateY(-1px);
+  border-color: #2b6a88;
+}
+
+.marketRankHeader {
+  display: grid !important;
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto
+    18px;
+  align-items: center;
+  gap: 6px;
+}
+
+.marketRankHeader > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.marketRankDecision {
+  color: #31f2ba !important;
+  font-weight: 900;
+}
+
+.marketExpandIcon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #27556d;
+  border-radius: 5px;
+  color: #d8f7ff !important;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.marketRankPreview {
+  display: grid !important;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.marketRankPreview span {
+  padding: 4px;
+  border: 1px solid rgba(52, 111, 139, .35);
+  border-radius: 4px;
+  background: rgba(2, 18, 28, .55);
+  text-align: center;
+}
+
+.marketRankDetails {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(61, 133, 165, .38);
+}
+
+.marketRankDetails > div {
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid rgba(52, 111, 139, .28);
+  border-radius: 5px;
+  background: #061722;
+}
+
+.marketRankDetails label,
+.marketRankDetails strong {
+  display: block;
+}
+
+.marketRankDetails label {
+  color: #6f97aa;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.marketRankDetails strong {
+  margin-top: 2px;
+  color: #f0f8ff;
+  font-size: 9px;
+}
+
+.marketRankExpanded {
+  grid-column: span 2;
+  border-color: #31f2ba;
+  background: #08202c;
+}
+
+@media (max-width: 900px) {
+  .marketRankExpanded {
+    grid-column: span 1;
+  }
+
+  .marketRankDetails {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}

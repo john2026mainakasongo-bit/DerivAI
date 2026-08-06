@@ -863,6 +863,8 @@ function GeminiXContent({
     useState(5);
   const [decisionHistory, setDecisionHistory] =
     useState([]);
+  const [expandedMarketSymbol, setExpandedMarketSymbol] =
+    useState("");
   const [cooldownUntil, setCooldownUntil] =
     useState(0);
   const [lastSettlementKey, setLastSettlementKey] =
@@ -1656,7 +1658,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · edge ranking · TP/SL risk manager · recovery ladder
+          Shared Deriv feed · compact market cards · click to view full numbers · TP/SL risk manager
         </div>
       </div>
 
@@ -2080,7 +2082,7 @@ function GeminiXContent({
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V6.3 FULL RISK MANAGER
+              GEMINIX V6.4 CLICK-TO-EXPAND MARKETS
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -2275,57 +2277,172 @@ function GeminiXContent({
           <div className={styles.marketRankingGrid}>
             {marketRanking
               .slice(0, 10)
-              .map((row, index) => (
-                <div
-                  className={`${styles.marketRankCard} ${
-                    index === 0
-                      ? styles.marketRankBest
-                      : ""
-                  }`}
-                  key={row.symbol}
-                >
-                  <div>
-                    <small>#{index + 1}</small>
-                    <strong>{row.symbol}</strong>
-                  </div>
-                  <span>
-                    {row.decision || "WAIT"}
-                  </span>
-                  <span>
-                    Score {Number(
-                      row.score || 0
-                    ).toFixed(1)}
-                  </span>
-                  <span>
-                    C {Number(
-                      row.confidence || 0
-                    ).toFixed(1)}%
-                  </span>
-                  <span>
-                    P {Number(
-                      row.probability || 0
-                    ).toFixed(1)}%
-                  </span>
-                  <span>
-                    Edge {Number(
-                      row.candidate
-                        ?.statisticalEdge || 0
-                    ).toFixed(1)}%
-                  </span>
-                  <span>
-                    EV {Number(
-                      row.candidate
-                        ?.expectedValue || 0
-                    ).toFixed(3)}
-                  </span>
-                  <span>
-                    {row.risk || "HIGH"} ·{" "}
-                    {Math.round(
-                      row.ageSeconds || 0
-                    )}s
-                  </span>
-                </div>
-              ))}
+              .map((row, index) => {
+                const expanded =
+                  expandedMarketSymbol ===
+                  row.symbol;
+
+                return (
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    className={`${styles.marketRankCard} ${
+                      index === 0
+                        ? styles.marketRankBest
+                        : ""
+                    } ${
+                      expanded
+                        ? styles.marketRankExpanded
+                        : ""
+                    }`}
+                    key={row.symbol}
+                    onClick={() =>
+                      setExpandedMarketSymbol(
+                        expanded
+                          ? ""
+                          : row.symbol
+                      )
+                    }
+                  >
+                    <div
+                      className={
+                        styles.marketRankHeader
+                      }
+                    >
+                      <span>
+                        <small>#{index + 1}</small>
+                        <strong>{row.symbol}</strong>
+                      </span>
+
+                      <span
+                        className={
+                          styles.marketRankDecision
+                        }
+                      >
+                        {row.decision || "WAIT"}
+                      </span>
+
+                      <span
+                        className={
+                          styles.marketExpandIcon
+                        }
+                      >
+                        {expanded ? "−" : "+"}
+                      </span>
+                    </div>
+
+                    <div
+                      className={
+                        styles.marketRankPreview
+                      }
+                    >
+                      <span>
+                        C{" "}
+                        {Number(
+                          row.confidence || 0
+                        ).toFixed(1)}
+                        %
+                      </span>
+                      <span>
+                        P{" "}
+                        {Number(
+                          row.probability || 0
+                        ).toFixed(1)}
+                        %
+                      </span>
+                      <span>
+                        {row.risk || "HIGH"}
+                      </span>
+                    </div>
+
+                    {expanded ? (
+                      <div
+                        className={
+                          styles.marketRankDetails
+                        }
+                      >
+                        <div>
+                          <label>Score</label>
+                          <strong>
+                            {Number(
+                              row.score || 0
+                            ).toFixed(1)}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <label>Confidence</label>
+                          <strong>
+                            {Number(
+                              row.confidence || 0
+                            ).toFixed(1)}
+                            %
+                          </strong>
+                        </div>
+
+                        <div>
+                          <label>Probability</label>
+                          <strong>
+                            {Number(
+                              row.probability || 0
+                            ).toFixed(1)}
+                            %
+                          </strong>
+                        </div>
+
+                        <div>
+                          <label>Edge</label>
+                          <strong>
+                            {Number(
+                              row.candidate
+                                ?.statisticalEdge ||
+                                0
+                            ).toFixed(1)}
+                            %
+                          </strong>
+                        </div>
+
+                        <div>
+                          <label>EV</label>
+                          <strong>
+                            {Number(
+                              row.candidate
+                                ?.expectedValue ||
+                                0
+                            ).toFixed(3)}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <label>Barrier</label>
+                          <strong>
+                            {row.candidate
+                              ?.barrier ?? "—"}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <label>Risk</label>
+                          <strong>
+                            {row.risk ||
+                              "HIGH"}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <label>Age</label>
+                          <strong>
+                            {Math.round(
+                              row.ageSeconds || 0
+                            )}
+                            s
+                          </strong>
+                        </div>
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })}
 
             {!marketRanking.length ? (
               <div className={styles.emptyTransactions}>
