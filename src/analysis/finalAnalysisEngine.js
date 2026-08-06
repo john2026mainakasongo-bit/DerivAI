@@ -451,6 +451,17 @@ export function analyseTicks(
         ? "RANGE"
         : "TREND";
 
+  const recentLossStreak = Math.max(
+    0,
+    Number(riskContext?.recentLossStreak || 0)
+  );
+  const protectionPaused = Boolean(
+    riskContext?.protectionPaused
+  );
+  const rollingExpectedValue = Number(
+    riskContext?.rollingExpectedValue || 0
+  );
+
   const trendStrength =
     clamp(
       Math.abs(momentum) * 4 +
@@ -508,17 +519,6 @@ export function analyseTicks(
       (volatility === "HIGH" ? 30 : 0),
     0,
     100
-  );
-
-  const recentLossStreak = Math.max(
-    0,
-    Number(riskContext?.recentLossStreak || 0)
-  );
-  const protectionPaused = Boolean(
-    riskContext?.protectionPaused
-  );
-  const rollingExpectedValue = Number(
-    riskContext?.rollingExpectedValue || 0
   );
 
   const requiredConsecutive =
