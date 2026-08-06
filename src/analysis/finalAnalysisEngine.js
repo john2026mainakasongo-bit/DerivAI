@@ -606,6 +606,25 @@ export function analyseTicks(
     (probability / 100) * 0.92 -
     (1 - probability / 100);
 
+  const learnedProfitQualified =
+    learned.sample < 4 ||
+    learned.profit > 0;
+
+  const clusterProfitQualified =
+    clustered.sample < 6 ||
+    clustered.profit > 0;
+
+  const strictMarketGate =
+    regime === "TREND" &&
+    selectedBayesian >= 70 &&
+    transition.probability >= 70 &&
+    reversalRisk <= 25 &&
+    consecutiveDirection >= requiredConsecutive &&
+    Math.abs(momentum) >= 5 &&
+    expectedValue >= 0.18 &&
+    learnedProfitQualified &&
+    clusterProfitQualified;
+
 
   const checks = [
     check(
@@ -623,7 +642,7 @@ export function analyseTicks(
     check(
       "Transition",
       transitionAligned &&
-        transition.probability >= 56,
+        transition.probability >= 70,
       `${Math.round(
         transition.probability
       )}% ${transition.direction}`
@@ -684,8 +703,32 @@ export function analyseTicks(
       `${consecutiveDirection}/${requiredConsecutive} aligned`
     ),
     check(
+      "Bayesian gate",
+      selectedBayesian >= 70,
+      `${Math.round(selectedBayesian)}%`
+    ),
+    check(
+      "Reversal gate",
+      reversalRisk <= 25,
+      `${Math.round(reversalRisk)}%`
+    ),
+    check(
+      "Learned P/L",
+      learnedProfitQualified,
+      learned.sample
+        ? `${learned.profit >= 0 ? "+" : ""}${learned.profit.toFixed(2)}`
+        : "Learning sample"
+    ),
+    check(
+      "Cluster P/L",
+      clusterProfitQualified,
+      clustered.sample
+        ? `${clustered.profit >= 0 ? "+" : ""}${clustered.profit.toFixed(2)}`
+        : "Learning cluster"
+    ),
+    check(
       "Expected value",
-      expectedValue > 0,
+      expectedValue >= 0.18,
       `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(3)}`
     ),
   ];
@@ -697,21 +740,22 @@ export function analyseTicks(
   const buyQualified =
     !protectionPaused &&
     !hardBlock &&
+    strictMarketGate &&
     trendAligned &&
     directionStrong &&
-    probability >= 72 &&
-    confidence >= 84 &&
-    passedChecks >= 5 &&
+    probability >= 78 &&
+    confidence >= 86 &&
+    passedChecks >= 13 &&
     confirmQualified &&
-    memoryQualified &&
-    expectedValue > 0;
+    memoryQualified;
 
   const prepareQualified =
     !hardBlock &&
+    regime === "TREND" &&
     trendContract !== "NONE" &&
-    confidence >= 67 &&
-    probability >= 60 &&
-    passedChecks >= 4;
+    confidence >= 72 &&
+    probability >= 66 &&
+    passedChecks >= 8;
 
   const watchQualified =
     trendContract !== "NONE" &&
@@ -760,7 +804,7 @@ export function analyseTicks(
     protectionPaused
       ? `Trading paused after ${recentLossStreak} consecutive losses`
       : buyQualified
-        ? `${trendContract} entry confirmed by ${passedChecks}/13 filters`
+        ? `${trendContract} entry confirmed by ${passedChecks}/17 filters`
       : regime === "RANGE"
         ? `${trendContract} blocked because market regime is RANGE`
         : exactBlacklisted
@@ -769,9 +813,19 @@ export function analyseTicks(
             ? `${trendContract} pattern cluster is blacklisted`
             : !memoryQualified
               ? `${trendContract} blocked by weak historical pattern memory`
-        : expectedValue <= 0
-          ? `${trendContract} blocked because expected value is not positive`
-          : confirmStage
+        : selectedBayesian < 70
+          ? `${trendContract} blocked because Bayesian score is below 70%`
+          : transition.probability < 70
+            ? `${trendContract} blocked because transition is below 70%`
+            : reversalRisk > 25
+              ? `${trendContract} blocked because reversal risk is above 25%`
+              : expectedValue < 0.18
+                ? `${trendContract} blocked because expected value is below +0.18`
+                : !learnedProfitQualified
+                  ? `${trendContract} blocked by negative learned pattern P/L`
+                  : !clusterProfitQualified
+                    ? `${trendContract} blocked by negative cluster P/L`
+                    : confirmStage
         ? `${trendContract} setup confirmed; waiting execution gate`
         : prepareQualified
           ? `${trendContract} setup is preparing; one more confirmation needed`
@@ -826,6 +880,9 @@ export function analyseTicks(
       requiredConsecutive,
       maximumReversalRisk,
       protectionPaused,
+      learnedProfitQualified,
+      clusterProfitQualified,
+      strictMarketGate,
       memoryQualified,
       expectedValue: Number(expectedValue.toFixed(3)),
       memorySignature: signature,

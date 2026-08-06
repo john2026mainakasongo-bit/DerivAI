@@ -8,9 +8,9 @@ import { analyseTicks } from "../analysis/finalAnalysisEngine";
 
 import "./FinalAnalysisBot.css";
 
-const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v12:transactions";
-const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v12:pattern-memory";
-const FINAL_AI_CLUSTER_KEY = "edgepilot:final-ai:v12:cluster-memory";
+const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v13:transactions";
+const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v13:pattern-memory";
+const FINAL_AI_CLUSTER_KEY = "edgepilot:final-ai:v13:cluster-memory";
 
 const money = (value) =>
   Number(value || 0).toLocaleString("en-US", {
@@ -876,7 +876,18 @@ export default function FinalAnalysisBot() {
           onDisconnect={disconnect}
         />
 
-        <section className="final-account-strip">
+        <nav className="final-section-nav" aria-label="Final AI sections">
+          <a href="#final-execution">Execution</a>
+          <a href="#final-analysis">Analysis</a>
+          <a href="#final-trades">Trades</a>
+          <a href="#final-learning">Learning</a>
+          <a href="#final-patterns">Patterns</a>
+        </nav>
+
+        <section
+          id="final-execution"
+          className="final-account-strip final-section-anchor"
+        >
           <div>
             <span>Feed</span>
             <strong>
@@ -909,7 +920,7 @@ export default function FinalAnalysisBot() {
           </div>
         </section>
 
-        <section className="final-control-grid">
+        <section className="final-control-grid final-section-anchor">
           <label>
             Market
             <MarketSelector
@@ -1017,7 +1028,7 @@ export default function FinalAnalysisBot() {
           )}
         </section>
 
-        <section className="final-hero-grid">
+        <section id="final-analysis" className="final-hero-grid final-section-anchor">
           <article
             className={`final-decision final-decision-${analysis.decision.toLowerCase()}`}
           >
@@ -1118,7 +1129,7 @@ export default function FinalAnalysisBot() {
           </article>
         </section>
 
-        <section className="final-metrics-grid">
+        <section className="final-metrics-grid final-metrics-section">
           <Metric
             label="Momentum"
             value={analysis.metrics.momentum}
@@ -1238,6 +1249,14 @@ export default function FinalAnalysisBot() {
                 : "READY"
             }
           />
+          <Metric
+            label="Strict gate"
+            value={
+              analysis.metrics.strictMarketGate
+                ? "PASSED"
+                : "BLOCKED"
+            }
+          />
         </section>
 
         <section className="final-stats-grid">
@@ -1256,7 +1275,7 @@ export default function FinalAnalysisBot() {
           />
         </section>
 
-        <section className="final-bottom-grid">
+        <section id="final-trades" className="final-bottom-grid final-section-anchor">
           <article className="final-panel">
             <div className="final-panel-title">
               <div>
@@ -1403,7 +1422,7 @@ export default function FinalAnalysisBot() {
         </section>
 
 
-        <section className="final-learning-dashboard">
+        <section id="final-learning" className="final-learning-dashboard final-section-anchor">
           <div className="final-learning-head">
             <div>
               <span>ADAPTIVE PATTERN DATABASE</span>
@@ -1535,7 +1554,7 @@ export default function FinalAnalysisBot() {
             </article>
           </div>
 
-          <div className="final-learning-grid">
+          <div id="final-patterns" className="final-learning-grid final-section-anchor">
             <article className="final-panel">
               <div className="final-panel-title">
                 <div>
