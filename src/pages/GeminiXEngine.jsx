@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import styles from './GeminiXEngine.module.css';
 
 export default function GeminiXEngine() {
-  // Symbolic mapping standard for Deriv API
-  const [market, setMarket] = useState('1HZ100V'); // Defaulted to Volatility 100 (1s)
+  // Default to R_10 which is supported across all Deriv Demo accounts
+  const [market, setMarket] = useState('R_10');
   const [stake, setStake] = useState(0.35);
   const [minConfidence, setMinConfidence] = useState(80);
   const [execMode, setExecMode] = useState('Paper trading');
@@ -57,8 +57,8 @@ export default function GeminiXEngine() {
     ws.current = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${app_id}`);
 
     ws.current.onopen = () => {
-      setFeedStatus('LIVE');
-      setBlockReason('Inapokea live ticks kutoka Deriv...');
+      setFeedStatus('CONNECTING');
+      setBlockReason('Inapokea live ticks...');
       ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
       ws.current.send(JSON.stringify({
         ticks: market,
@@ -70,7 +70,7 @@ export default function GeminiXEngine() {
       const data = JSON.parse(event.data);
 
       if (data.error) {
-        setBlockReason(`Hitilafu ya Deriv: ${data.error.message}`);
+        setBlockReason(`Hitilafu ya Deriv (${market}): ${data.error.message}`);
         setFeedStatus('ERROR');
         return;
       }
@@ -117,7 +117,7 @@ export default function GeminiXEngine() {
   const runAnalysisEngine = (prices, latestDigit) => {
     const len = prices.length;
     if (len < 3) {
-      setBlockReason(`Inakusanya Ticks za Soko (${len}/10)...`);
+      setBlockReason(`Inakusanya Ticks (${len}/10)...`);
       return;
     }
 
@@ -240,20 +240,21 @@ export default function GeminiXEngine() {
         </div>
       </div>
 
-      {/* CONTROL GRID WITH VALID DERIV SYMBOLS */}
+      {/* CONTROL GRID */}
       <div className={styles.geminiControlGrid}>
         <div className={styles.inputGroup}>
           <label>Market</label>
           <select value={market} onChange={(e) => setMarket(e.target.value)}>
-            <option value="1HZ100V">Volatility 100 (1s) Index</option>
-            <option value="1HZ10V">Volatility 10 (1s) Index</option>
-            <option value="1HZ25V">Volatility 25 (1s) Index</option>
-            <option value="1HZ50V">Volatility 50 (1s) Index</option>
-            <option value="1HZ75V">Volatility 75 (1s) Index</option>
             <option value="R_10">Volatility 10 Index</option>
             <option value="R_25">Volatility 25 Index</option>
             <option value="R_50">Volatility 50 Index</option>
             <option value="R_75">Volatility 75 Index</option>
+            <option value="R_100">Volatility 100 Index</option>
+            <option value="1HZ10V">Volatility 10 (1s) Index</option>
+            <option value="1HZ25V">Volatility 25 (1s) Index</option>
+            <option value="1HZ50V">Volatility 50 (1s) Index</option>
+            <option value="1HZ75V">Volatility 75 (1s) Index</option>
+            <option value="1HZ100V">Volatility 100 (1s) Index</option>
           </select>
         </div>
 
