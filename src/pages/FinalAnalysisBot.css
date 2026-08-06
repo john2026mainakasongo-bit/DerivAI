@@ -1360,3 +1360,14 @@
   }
 }
 
+
+
+/* Final AI V19 fast-learning minute entry */
+.final-v19-page .final-setup-lane.passed {
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, .15);
+}
+
+.final-v19-page .final-metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)) !important;
+}
+

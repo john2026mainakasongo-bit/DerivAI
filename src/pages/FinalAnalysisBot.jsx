@@ -331,6 +331,35 @@ export default function FinalAnalysisBot() {
     armedTicks >= 3 &&
     armedDirection === analysis.contract;
 
+  const fallbackCandidateReady =
+    Boolean(bestCandidate) &&
+    scanRemainingSeconds <= 15 &&
+    Number(bestCandidate.score || 0) >= 52 &&
+    ["RISE", "FALL"].includes(bestCandidate.contract);
+
+  const minuteEntryReady =
+    stableEntryReady || fallbackCandidateReady;
+
+  const minuteEntryContract = stableEntryReady
+    ? analysis.contract
+    : bestCandidate?.contract || analysis.contract;
+
+  const minuteEntryConfidence = stableEntryReady
+    ? analysis.confidence
+    : Math.max(
+        55,
+        Math.min(
+          82,
+          Math.round(Number(bestCandidate?.score || 55))
+        )
+      );
+
+  const minuteEntryMode = stableEntryReady
+    ? "CONFIRMED"
+    : fallbackCandidateReady
+      ? "FAST_LEARN"
+      : "WAIT";
+
   useEffect(() => {
     if (
       analysis.contract === "NONE" ||
@@ -678,8 +707,7 @@ export default function FinalAnalysisBot() {
       paperTrade ||
       buyLockRef.current ||
       cycleTradeTaken ||
-      cycleTradeTaken ||
-      !stableEntryReady ||
+      !minuteEntryReady ||
       scanExpired ||
       !analysis.metrics.signalFresh ||
       analysis.confidence < minimumConfidence ||
@@ -695,10 +723,15 @@ export default function FinalAnalysisBot() {
     setPaperTrade({
       id: crypto.randomUUID(),
       market: symbol,
-      contract: analysis.contract,
+      contract: minuteEntryContract,
       entry: liveQuote,
       stake: Number(stake),
-      confidence: analysis.confidence,
+      confidence: minuteEntryConfidence,
+      entryMode: minuteEntryMode,
+      setup:
+        analysis.selectedSetup?.label ||
+        bestCandidate?.setup ||
+        "Minute candidate",
       memorySignature:
         analysis.metrics.memorySignature
           ? `${marketMemoryPrefix(symbol)}${analysis.metrics.memorySignature}`
@@ -712,7 +745,7 @@ export default function FinalAnalysisBot() {
     });
 
     setMessage(
-      `PAPER ENTRY · ${analysis.contract} · ${analysis.confidence}%`
+      `PAPER ENTRY · ${minuteEntryContract} · ${minuteEntryConfidence}% · ${minuteEntryMode}`
     );
 
     window.setTimeout(() => {
@@ -721,6 +754,10 @@ export default function FinalAnalysisBot() {
   }, [
     analysis,
     cycleTradeTaken,
+    minuteEntryReady,
+    minuteEntryContract,
+    minuteEntryConfidence,
+    minuteEntryMode,
     stableEntryReady,
     scanExpired,
     liveQuote,
@@ -1005,10 +1042,16 @@ export default function FinalAnalysisBot() {
       buyLockRef.current ||
       tradeBusy ||
       cycleTradeTaken ||
-      !stableEntryReady ||
+      !minuteEntryReady ||
       scanExpired ||
-      !analysis.metrics.signalFresh ||
-      analysis.confidence < minimumConfidence ||
+      (
+        stableEntryReady &&
+        !analysis.metrics.signalFresh
+      ) ||
+      (
+        stableEntryReady &&
+        analysis.confidence < minimumConfidence
+      ) ||
       !currentPatternLiveReady ||
       protectionPaused
     ) {
@@ -1032,7 +1075,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1287,8 +1330,8 @@ export default function FinalAnalysisBot() {
             </small>
             <small>
               Phase: {learningPhase} · Scan #{scanCycle}:{" "}
-              {scanRemainingSeconds}s · Armed: {armedTicks}/3 · Loss streak:{" "}
-              {recentLossStreak}
+              {scanRemainingSeconds}s · Entry: {minuteEntryMode} · Armed:{" "}
+              {armedTicks}/3 · Loss streak: {recentLossStreak}
               {protectionPaused
                 ? ` · resumes in ${protectionSeconds}s`
                 : ""}
@@ -1481,6 +1524,28 @@ export default function FinalAnalysisBot() {
           <Metric
             label="Minute trade"
             value={cycleTradeTaken ? "DONE" : "AVAILABLE"}
+          />
+          <Metric
+            label="Minute entry mode"
+            value={minuteEntryMode}
+          />
+          <Metric
+            label="Fallback window"
+            value={
+              scanRemainingSeconds <= 15
+                ? "OPEN"
+                : `${Math.max(0, scanRemainingSeconds - 15)}s`
+            }
+          />
+          <Metric
+            label="Fallback candidate"
+            value={
+              bestCandidate
+                ? `${bestCandidate.contract} ${Math.round(
+                    bestCandidate.score
+                  )}%`
+                : "NONE"
+            }
           />
           <Metric
             label="Armed"
