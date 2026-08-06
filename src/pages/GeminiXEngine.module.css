@@ -419,3 +419,73 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* GeminiX V5 controlled quality campaign */
+.geminiControlGrid {
+  grid-template-columns:
+    1.2fr repeat(4, minmax(115px, 1fr))
+    190px;
+}
+
+.campaignGrid {
+  display: grid;
+  grid-template-columns:
+    repeat(8, minmax(0, 1fr))
+    150px 150px;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.campaignGrid article,
+.campaignGrid button {
+  min-width: 0;
+  min-height: 52px;
+  border: 1px solid rgba(57, 153, 197, 0.32);
+  border-radius: 8px;
+  background: #061d2a;
+  color: #eaf3ff;
+}
+
+.campaignGrid article {
+  padding: 8px;
+}
+
+.campaignGrid article span,
+.campaignGrid article strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.campaignGrid article span {
+  color: #7196aa;
+  font-size: 8px;
+}
+
+.campaignGrid article strong {
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.campaignGrid button {
+  padding: 7px;
+  font-size: 8px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+@media (max-width: 1100px) {
+  .campaignGrid {
+    grid-template-columns:
+      repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  .campaignGrid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}

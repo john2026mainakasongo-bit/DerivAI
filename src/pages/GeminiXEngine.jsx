@@ -41,7 +41,7 @@ function buildDigitDistribution(digits) {
 function shannonEntropy(digits) {
   if (!digits.length) return 0;
 
-  const distribution = buildDigitDistribution(digits);
+  const distribution = buildDigitDistribution(decisionDigits);
   const entropy = distribution.reduce((total, row) => {
     if (!row.count) return total;
     const probability = row.count / digits.length;
@@ -83,6 +83,123 @@ function longestRun(digits) {
   }
 
   return longest;
+}
+
+function settledTradeStatus(trade) {
+  const status = String(
+    trade?.status ||
+      trade?.contract_status ||
+      trade?.state ||
+      ""
+  ).toUpperCase();
+
+  if (
+    status.includes("WON") ||
+    status === "WIN"
+  ) {
+    return "WON";
+  }
+
+  if (
+    status.includes("LOST") ||
+    status === "LOSS"
+  ) {
+    return "LOST";
+  }
+
+  return "";
+}
+
+function tradeProfit(trade) {
+  const candidates = [
+    trade?.profit,
+    trade?.profit_loss,
+    trade?.pl,
+    trade?.pnl,
+  ];
+
+  for (const value of candidates) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+
+  return 0;
+}
+
+function recentPerformance(transactions, limit = 20) {
+  const settled = (Array.isArray(transactions)
+    ? transactions
+    : []
+  )
+    .map((trade) => ({
+      ...trade,
+      normalizedStatus:
+        settledTradeStatus(trade),
+    }))
+    .filter((trade) =>
+      ["WON", "LOST"].includes(
+        trade.normalizedStatus
+      )
+    )
+    .slice(0, limit);
+
+  const wins = settled.filter(
+    (trade) =>
+      trade.normalizedStatus === "WON"
+  ).length;
+
+  const losses = settled.length - wins;
+  const profit = settled.reduce(
+    (sum, trade) => sum + tradeProfit(trade),
+    0
+  );
+
+  let lossStreak = 0;
+
+  for (const trade of settled) {
+    if (trade.normalizedStatus !== "LOST") {
+      break;
+    }
+
+    lossStreak += 1;
+  }
+
+  return {
+    settled,
+    wins,
+    losses,
+    profit,
+    lossStreak,
+    winRate: settled.length
+      ? (wins / settled.length) * 100
+      : 50,
+  };
+}
+
+function contractRiskClass(candidate) {
+  const side = String(
+    candidate?.contractType || ""
+  );
+
+  const barrier = Number(
+    candidate?.barrier ?? -1
+  );
+
+  if (
+    (side === "DIGITOVER" && barrier <= 2) ||
+    (side === "DIGITUNDER" && barrier >= 7)
+  ) {
+    return "LOW";
+  }
+
+  if (
+    (side === "DIGITOVER" && barrier === 3) ||
+    (side === "DIGITUNDER" && barrier === 6)
+  ) {
+    return "MEDIUM";
+  }
+
+  return "HIGH";
 }
 
 function safeContractCandidates(digits) {
@@ -145,16 +262,33 @@ function safeContractCandidates(digits) {
   ];
 
   return candidates
-    .map((candidate) => ({
-      ...candidate,
-      risk: clamp(
+    .map((candidate) => {
+      const riskClass =
+        contractRiskClass(candidate);
+
+      const risk = clamp(
         candidate.baseRisk +
-          Math.max(0, 72 - candidate.probability) * 0.75
-      ),
-      score:
-        candidate.probability -
-        candidate.baseRisk * 0.55,
-    }))
+          Math.max(
+            0,
+            72 - candidate.probability
+          ) *
+            0.75 +
+          (riskClass === "HIGH"
+            ? 28
+            : riskClass === "MEDIUM"
+            ? 10
+            : 0)
+      );
+
+      return {
+        ...candidate,
+        riskClass,
+        risk,
+        score:
+          candidate.probability -
+          risk * 0.62,
+      };
+    })
     .sort((a, b) => b.score - a.score);
 }
 
@@ -162,17 +296,21 @@ function analyseGemini({
   prices,
   digitHistory,
   minConfidence,
+  transactions,
 }) {
-  const digits = digitHistory.slice(-60);
-  const recentPrices = prices.slice(-60);
+  const digits = digitHistory.slice(-180);
+  const decisionDigits = digits.slice(-60);
+  const recentPrices = prices.slice(-180);
+  const performance =
+    recentPerformance(transactions, 20);
   const sample = Math.min(
     digits.length,
     recentPrices.length || digits.length
   );
   const distribution = buildDigitDistribution(digits);
-  const entropy = shannonEntropy(digits);
-  const transition = transitionScore(digits);
-  const cycle = longestRun(digits);
+  const entropy = shannonEntropy(decisionDigits);
+  const transition = transitionScore(decisionDigits);
+  const cycle = longestRun(decisionDigits);
 
   const priceWindow = recentPrices.slice(-12);
   const firstPrice = Number(priceWindow[0]);
@@ -240,7 +378,7 @@ function analyseGemini({
       ? "TREND"
       : "RANGE";
 
-  const candidates = safeContractCandidates(digits);
+  const candidates = safeContractCandidates(decisionDigits);
   const best = candidates[0] || {
     label: "WAIT",
     probability: 50,
@@ -255,17 +393,25 @@ function analyseGemini({
 
   const sampleScore = clamp((sample / 60) * 100);
   const probability = clamp(
-    best.probability * 0.72 +
+    best.probability * 0.60 +
       stability * 0.14 +
-      sampleScore * 0.14
+      sampleScore * 0.12 +
+      performance.winRate * 0.14 -
+      performance.lossStreak * 7
   );
 
   const confidence = clamp(
-    probability * 0.52 +
-      stability * 0.18 +
-      sampleScore * 0.18 +
-      Math.min(100, momentumStrength) * 0.12 -
-      best.risk * 0.12
+    probability * 0.45 +
+      stability * 0.16 +
+      sampleScore * 0.14 +
+      Math.min(
+        100,
+        momentumStrength
+      ) *
+        0.10 +
+      performance.winRate * 0.15 -
+      best.risk * 0.18 -
+      performance.lossStreak * 8
   );
 
   const risk =
@@ -310,11 +456,13 @@ function analyseGemini({
 
   const passed = gates.filter((gate) => gate.passed).length;
   const ready =
-    sample >= 24 &&
+    sample >= 36 &&
     passed >= 5 &&
     confidence >= minConfidence &&
-    probability >= 68 &&
-    risk !== "HIGH";
+    probability >= 72 &&
+    risk !== "HIGH" &&
+    best.riskClass !== "HIGH" &&
+    performance.lossStreak === 0;
 
   return {
     distribution,
@@ -333,6 +481,7 @@ function analyseGemini({
     risk,
     gates,
     passed,
+    performance,
     decision: ready ? best.label : "WAIT",
     ready,
     reason: ready
@@ -363,6 +512,8 @@ function GeminiXContent({
     digitHistory = [],
     selectedAccountId,
     selectedAccountType,
+    transactions = [],
+    openContracts = [],
     tradeBusy,
     tradeError,
     connect,
@@ -375,8 +526,24 @@ function GeminiXContent({
   const [executionMode, setExecutionMode] =
     useState("PAPER");
   const [running, setRunning] = useState(false);
+  const [campaignEnabled, setCampaignEnabled] =
+    useState(true);
+  const [campaignTarget, setCampaignTarget] =
+    useState(5);
+  const [campaignRuns, setCampaignRuns] =
+    useState(0);
+  const [campaignWins, setCampaignWins] =
+    useState(0);
+  const [campaignLosses, setCampaignLosses] =
+    useState(0);
+  const [cooldownUntil, setCooldownUntil] =
+    useState(0);
+  const [lastSettlementKey, setLastSettlementKey] =
+    useState("");
   const [engineMessage, setEngineMessage] =
-    useState("GeminiX iko ready kutumia shared Deriv feed.");
+    useState(
+      "GeminiX V5 iko ready. Paper mode ndiyo default."
+    );
   const lastAutoTradeKeyRef = useRef("");
 
   const analysis = useMemo(
@@ -385,9 +552,93 @@ function GeminiXContent({
         prices,
         digitHistory,
         minConfidence,
+        transactions,
       }),
-    [prices, digitHistory, minConfidence]
+    [
+      prices,
+      digitHistory,
+      minConfidence,
+      transactions,
+    ]
   );
+
+  useEffect(() => {
+    const settled =
+      recentPerformance(transactions, 1)
+        .settled[0];
+
+    if (!settled) return;
+
+    const key = String(
+      settled.contract_id ||
+        settled.id ||
+        settled.transaction_id ||
+        `${settled.normalizedStatus}:${tradeProfit(
+          settled
+        )}`
+    );
+
+    if (
+      !key ||
+      key === lastSettlementKey
+    ) {
+      return;
+    }
+
+    setLastSettlementKey(key);
+    setCampaignRuns((value) => value + 1);
+
+    if (
+      settled.normalizedStatus === "WON"
+    ) {
+      setCampaignWins((value) => value + 1);
+      setEngineMessage(
+        "WIN settled · GeminiX inarevalidate kabla ya entry inayofuata."
+      );
+      setCooldownUntil(Date.now() + 1500);
+      return;
+    }
+
+    setCampaignLosses((value) => value + 1);
+    setRunning(false);
+    setCooldownUntil(Date.now() + 30000);
+    setEngineMessage(
+      "LOSS settled · campaign imesimama na cooldown ya sekunde 30 imeanza."
+    );
+  }, [
+    transactions,
+    lastSettlementKey,
+  ]);
+
+  useEffect(() => {
+    if (
+      campaignEnabled &&
+      campaignRuns >= campaignTarget &&
+      running
+    ) {
+      setRunning(false);
+      setEngineMessage(
+        `Campaign target ya ${campaignTarget} runs imefika. Engine imesimama kwa review.`
+      );
+    }
+  }, [
+    campaignEnabled,
+    campaignRuns,
+    campaignTarget,
+    running,
+  ]);
+
+  const resetCampaign = () => {
+    setCampaignRuns(0);
+    setCampaignWins(0);
+    setCampaignLosses(0);
+    setCooldownUntil(0);
+    setLastSettlementKey("");
+    lastAutoTradeKeyRef.current = "";
+    setEngineMessage(
+      "Campaign reset. GeminiX iko ready."
+    );
+  };
 
   const executeCandidate = async (
     candidate = analysis.best,
@@ -395,6 +646,35 @@ function GeminiXContent({
   ) => {
     if (!candidate || candidate.label === "WAIT") {
       setEngineMessage("Hakuna candidate ya kununua.");
+      return;
+    }
+
+    if (Date.now() < cooldownUntil) {
+      setEngineMessage(
+        `Cooldown active: ${Math.ceil(
+          (cooldownUntil - Date.now()) / 1000
+        )}s`
+      );
+      return;
+    }
+
+    if (
+      campaignEnabled &&
+      campaignRuns >= campaignTarget
+    ) {
+      setRunning(false);
+      setEngineMessage(
+        "Campaign target imefika. Reset campaign kabla ya kuendelea."
+      );
+      return;
+    }
+
+    if (
+      openContracts.length > 0
+    ) {
+      setEngineMessage(
+        "Open trade bado iko active. Entry mpya imezuiwa."
+      );
       return;
     }
 
@@ -445,7 +725,13 @@ function GeminiXContent({
       !running ||
       executionMode !== "LIVE" ||
       !analysis.ready ||
-      tradeBusy
+      tradeBusy ||
+      openContracts.length > 0 ||
+      Date.now() < cooldownUntil ||
+      (
+        campaignEnabled &&
+        campaignRuns >= campaignTarget
+      )
     ) {
       return;
     }
@@ -468,6 +754,11 @@ function GeminiXContent({
     analysis.ready,
     analysis.best,
     tradeBusy,
+    openContracts.length,
+    cooldownUntil,
+    campaignEnabled,
+    campaignRuns,
+    campaignTarget,
     symbol,
     digitHistory.length,
   ]);
@@ -520,7 +811,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · no duplicate WebSocket
+          Shared Deriv feed · quality gate · stop-on-loss campaign
         </div>
       </div>
 
@@ -589,6 +880,35 @@ function GeminiXContent({
             </select>
           </div>
 
+          <div className={styles.inputGroup}>
+            <label>Campaign Target</label>
+            <select
+              value={campaignTarget}
+              onChange={(event) =>
+                setCampaignTarget(
+                  Math.max(
+                    1,
+                    Math.min(
+                      5,
+                      Number(event.target.value)
+                    )
+                  )
+                )
+              }
+            >
+              {[1, 2, 3, 4, 5].map(
+                (value) => (
+                  <option
+                    key={value}
+                    value={value}
+                  >
+                    {value} runs max
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
           <button
             type="button"
             className={`${styles.btnAction} ${
@@ -616,11 +936,68 @@ function GeminiXContent({
         </div>
       ) : null}
 
+      <div className={styles.campaignGrid}>
+        {[
+          ["Campaign", campaignEnabled ? "ON" : "OFF"],
+          ["Runs", `${campaignRuns}/${campaignTarget}`],
+          ["Wins", campaignWins],
+          ["Losses", campaignLosses],
+          [
+            "Open Trade",
+            openContracts.length ? "YES" : "NO",
+          ],
+          [
+            "Cooldown",
+            Date.now() < cooldownUntil
+              ? `${Math.ceil(
+                  (cooldownUntil - Date.now()) /
+                    1000
+                )}s`
+              : "CLEAR",
+          ],
+          [
+            "Recent Win Rate",
+            percent(
+              analysis.performance.winRate
+            ),
+          ],
+          [
+            "Recent P/L",
+            Number(
+              analysis.performance.profit || 0
+            ).toFixed(2),
+          ],
+        ].map(([label, value]) => (
+          <article key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </article>
+        ))}
+
+        <button
+          type="button"
+          onClick={() =>
+            setCampaignEnabled((value) => !value)
+          }
+        >
+          {campaignEnabled
+            ? "DISABLE CAMPAIGN"
+            : "ENABLE CAMPAIGN"}
+        </button>
+
+        <button
+          type="button"
+          onClick={resetCampaign}
+        >
+          RESET CAMPAIGN
+        </button>
+      </div>
+
       <div className={styles.geminiMainGrid}>
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX LIVE DECISION
+              GEMINIX V5 QUALITY CAMPAIGN
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -710,6 +1087,12 @@ function GeminiXContent({
             <div className={styles.metricRow}>
               <span>Risk</span>
               <strong>{analysis.risk}</strong>
+            </div>
+            <div className={styles.metricRow}>
+              <span>Contract Class</span>
+              <strong>
+                {analysis.best.riskClass || "HIGH"}
+              </strong>
             </div>
           </div>
         </article>
