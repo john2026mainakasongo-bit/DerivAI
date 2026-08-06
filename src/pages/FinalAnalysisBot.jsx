@@ -8,9 +8,9 @@ import { analyseTicks } from "../analysis/finalAnalysisEngine";
 
 import "./FinalAnalysisBot.css";
 
-const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v11:transactions";
-const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v11:pattern-memory";
-const FINAL_AI_CLUSTER_KEY = "edgepilot:final-ai:v11:cluster-memory";
+const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v12:transactions";
+const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v12:pattern-memory";
+const FINAL_AI_CLUSTER_KEY = "edgepilot:final-ai:v12:cluster-memory";
 
 const money = (value) =>
   Number(value || 0).toLocaleString("en-US", {
@@ -185,10 +185,22 @@ export default function FinalAnalysisBot() {
     "Final AI is using the shared EdgePilot Deriv connection."
   );
   const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [protectionUntil, setProtectionUntil] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const protectionRunRef = useRef(-1);
 
   const lastDecisionRef = useRef("");
   const buyLockRef = useRef(false);
   const trackedContractsRef = useRef(new Set());
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setNow(Date.now()),
+      1000
+    );
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   const numericTicks = useMemo(
     () =>
@@ -213,14 +225,41 @@ export default function FinalAnalysisBot() {
     [clusterMemory, symbol]
   );
 
+  const recentLossStreak = useMemo(() => {
+    let streak = 0;
+
+    for (const row of transactions) {
+      if (row.result === "LOST") {
+        streak += 1;
+        continue;
+      }
+
+      if (row.result === "WON") break;
+    }
+
+    return streak;
+  }, [transactions]);
+
+  const protectionPaused = now < protectionUntil;
+
   const analysis = useMemo(
     () =>
       analyseTicks(
         numericTicks,
         marketMemory,
-        marketClusterMemory
+        marketClusterMemory,
+        {
+          recentLossStreak,
+          protectionPaused,
+        }
       ),
-    [numericTicks, marketMemory, marketClusterMemory]
+    [
+      numericTicks,
+      marketMemory,
+      marketClusterMemory,
+      recentLossStreak,
+      protectionPaused,
+    ]
   );
 
   const stats = useMemo(() => {
@@ -248,6 +287,21 @@ export default function FinalAnalysisBot() {
         : 0,
     };
   }, [transactions]);
+
+  useEffect(() => {
+    if (
+      recentLossStreak < 3 ||
+      stats.runs === protectionRunRef.current
+    ) {
+      return;
+    }
+
+    protectionRunRef.current = stats.runs;
+    setProtectionUntil(Date.now() + 45000);
+    setMessage(
+      `LOSS PROTECTION · ${recentLossStreak} consecutive losses · paused for 45 seconds`
+    );
+  }, [recentLossStreak, stats.runs]);
 
   const learningSummary = useMemo(() => {
     const rows = patternRows(adaptiveMemory);
@@ -371,6 +425,20 @@ export default function FinalAnalysisBot() {
     Number(analysis.metrics.learnedProfit || 0) > 0 &&
     Number(analysis.metrics.expectedValue || 0) > 0;
 
+  const learningPhase = protectionPaused
+    ? "PROTECTION"
+    : Number(analysis.metrics.learnedSample || 0) < 4 ||
+        Number(analysis.metrics.clusterSample || 0) < 6
+      ? "LEARN"
+      : !currentPatternLiveReady
+        ? "VALIDATE"
+        : "EXECUTE";
+
+  const protectionSeconds = Math.max(
+    0,
+    Math.ceil((protectionUntil - now) / 1000)
+  );
+
   const executionReady =
     connected &&
     authenticatedFeed &&
@@ -462,6 +530,7 @@ export default function FinalAnalysisBot() {
       analysis.decision !== "BUY" ||
       analysis.confidence < minimumConfidence ||
       Date.now() < cooldownUntil ||
+      protectionPaused ||
       !liveQuote
     ) {
       return;
@@ -706,6 +775,13 @@ export default function FinalAnalysisBot() {
       return;
     }
 
+    if (protectionPaused) {
+      setMessage(
+        `LIVE BLOCKED · loss protection has ${protectionSeconds}s remaining.`
+      );
+      return;
+    }
+
     if (!currentPatternLiveReady) {
       setMessage(
         "LIVE BLOCKED · current pattern needs at least 8 samples, 60% learned wins, positive learned profit and positive EV."
@@ -767,7 +843,8 @@ export default function FinalAnalysisBot() {
       tradeBusy ||
       analysis.decision !== "BUY" ||
       analysis.confidence < minimumConfidence ||
-      !currentPatternLiveReady
+      !currentPatternLiveReady ||
+      protectionPaused
     ) {
       return;
     }
@@ -1002,13 +1079,15 @@ export default function FinalAnalysisBot() {
           <article className="final-open-card">
             <span>EXECUTION STATE</span>
             <strong>
-              {mode === "live"
-                ? executionReady
-                  ? `${analysis.stage || "SCAN"} · DERIV READY`
-                  : "DERIV BLOCKED"
-                : paperTrade
-                  ? `${paperTrade.contract} PAPER TRADE`
-                  : `${analysis.stage || "SCAN"} · ${mode.toUpperCase()}`}
+              {protectionPaused
+                ? `PROTECTION · ${protectionSeconds}s`
+                : mode === "live"
+                  ? executionReady
+                    ? `${learningPhase} · DERIV READY`
+                    : "DERIV BLOCKED"
+                  : paperTrade
+                    ? `${paperTrade.contract} PAPER TRADE`
+                    : `${learningPhase} · ${mode.toUpperCase()}`}
             </strong>
             <p>
               {paperTrade
@@ -1028,6 +1107,13 @@ export default function FinalAnalysisBot() {
               {currentPatternLiveReady
                 ? "LIVE READY"
                 : "LEARNING"}
+            </small>
+            <small>
+              Phase: {learningPhase} · Loss streak:{" "}
+              {recentLossStreak}
+              {protectionPaused
+                ? ` · resumes in ${protectionSeconds}s`
+                : ""}
             </small>
           </article>
         </section>
@@ -1132,6 +1218,24 @@ export default function FinalAnalysisBot() {
               analysis.metrics.clusterBlacklisted
                 ? "BLOCKED"
                 : "CLEAR"
+            }
+          />
+          <Metric label="AI phase" value={learningPhase} />
+          <Metric label="Loss streak" value={recentLossStreak} />
+          <Metric
+            label="Loss penalty"
+            value={`-${analysis.metrics.recentLossPenalty ?? 0}`}
+          />
+          <Metric
+            label="Required confirm"
+            value={`${analysis.metrics.requiredConsecutive ?? 2}/4`}
+          />
+          <Metric
+            label="Protection"
+            value={
+              protectionPaused
+                ? `${protectionSeconds}s`
+                : "READY"
             }
           />
         </section>
@@ -1413,6 +1517,20 @@ export default function FinalAnalysisBot() {
               </strong>
               <small>
                 8 samples · 60% wins · positive pattern P/L and EV
+              </small>
+            </article>
+
+            <article className="final-pattern-highlight final-phase-card">
+              <span>AI PHASE</span>
+              <strong>{learningPhase}</strong>
+              <small>
+                {learningPhase === "LEARN"
+                  ? "Collecting paper outcomes"
+                  : learningPhase === "VALIDATE"
+                    ? "Checking repeated pattern quality"
+                    : learningPhase === "PROTECTION"
+                      ? `Paused ${protectionSeconds}s after losses`
+                      : "Pattern is mature for guarded execution"}
               </small>
             </article>
           </div>

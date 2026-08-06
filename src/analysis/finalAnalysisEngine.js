@@ -247,7 +247,12 @@ function memorySummary(memory, signature) {
   };
 }
 
-export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}) {
+export function analyseTicks(
+  ticks = [],
+  adaptiveMemory = {},
+  clusterMemory = {},
+  riskContext = {}
+) {
   const clean = (Array.isArray(ticks) ? ticks : [])
     .map(Number)
     .filter(Number.isFinite)
@@ -472,12 +477,26 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}
     100
   );
 
+  const recentLossStreak = Math.max(
+    0,
+    Number(riskContext?.recentLossStreak || 0)
+  );
+  const protectionPaused = Boolean(
+    riskContext?.protectionPaused
+  );
+
+  const requiredConsecutive =
+    2 + Math.min(2, recentLossStreak);
+
+  const maximumReversalRisk =
+    Math.max(18, 38 - recentLossStreak * 6);
+
   const confirmQualified =
     trendContract !== "NONE" &&
-    consecutiveDirection >= 2 &&
+    consecutiveDirection >= requiredConsecutive &&
     transitionAligned &&
     !momentumDecay &&
-    reversalRisk <= 38;
+    reversalRisk <= maximumReversalRisk;
 
   confidence = Math.round(
     clamp(confidence * 0.88 + probability * 0.12, 1, 94)
@@ -543,6 +562,19 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}
       1,
       94
     )
+  );
+
+  const recentLossPenalty =
+    recentLossStreak === 0
+      ? 0
+      : recentLossStreak === 1
+        ? 5
+        : recentLossStreak === 2
+          ? 11
+          : 18;
+
+  confidence = Math.round(
+    clamp(confidence - recentLossPenalty, 1, 94)
   );
 
   const exactBlacklisted =
@@ -640,6 +672,18 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}
           : "Clear"
     ),
     check(
+      "Loss protection",
+      !protectionPaused,
+      protectionPaused
+        ? "Paused after consecutive losses"
+        : `${recentLossStreak} recent losses`
+    ),
+    check(
+      "Adaptive confirm",
+      consecutiveDirection >= requiredConsecutive,
+      `${consecutiveDirection}/${requiredConsecutive} aligned`
+    ),
+    check(
       "Expected value",
       expectedValue > 0,
       `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(3)}`
@@ -651,6 +695,7 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}
   ).length;
 
   const buyQualified =
+    !protectionPaused &&
     !hardBlock &&
     trendAligned &&
     directionStrong &&
@@ -683,15 +728,17 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}
     !buyQualified &&
     confirmQualified;
 
-  const stage = buyQualified
-    ? "BUY"
-    : confirmStage
-      ? "CONFIRM"
-      : prepareQualified
-        ? "PREPARE"
-        : watchQualified
-          ? "WATCH"
-          : "SCAN";
+  const stage = protectionPaused
+    ? "PROTECTION"
+    : buyQualified
+      ? "BUY"
+      : confirmStage
+        ? "CONFIRM"
+        : prepareQualified
+          ? "PREPARE"
+          : watchQualified
+            ? "WATCH"
+            : "SCAN";
 
   const risk =
     volatility === "HIGH" ||
@@ -710,8 +757,10 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}
   );
 
   const reason =
-    buyQualified
-      ? `${trendContract} entry confirmed by ${passedChecks}/11 filters`
+    protectionPaused
+      ? `Trading paused after ${recentLossStreak} consecutive losses`
+      : buyQualified
+        ? `${trendContract} entry confirmed by ${passedChecks}/13 filters`
       : regime === "RANGE"
         ? `${trendContract} blocked because market regime is RANGE`
         : exactBlacklisted
@@ -772,6 +821,11 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}
       exactBlacklisted,
       clusterBlacklisted,
       calibratedConfidence: confidence,
+      recentLossStreak,
+      recentLossPenalty,
+      requiredConsecutive,
+      maximumReversalRisk,
+      protectionPaused,
       memoryQualified,
       expectedValue: Number(expectedValue.toFixed(3)),
       memorySignature: signature,

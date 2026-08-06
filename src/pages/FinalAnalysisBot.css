@@ -692,3 +692,48 @@
   }
 }
 
+
+
+/* Final AI V12 phased learning and loss protection */
+.final-v7-page .final-metrics-grid {
+  grid-template-columns: repeat(26, minmax(70px, 1fr));
+}
+
+.final-pattern-highlight-grid {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.final-phase-card {
+  border-color: rgba(56, 189, 248, .4);
+}
+
+.final-phase-card strong {
+  color: #7dd3fc;
+}
+
+@media (max-width: 1600px) {
+  .final-v7-page .final-metrics-grid {
+    grid-template-columns: repeat(13, 1fr);
+  }
+
+  .final-pattern-highlight-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 1000px) {
+  .final-pattern-highlight-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .final-v7-page .final-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .final-pattern-highlight-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
