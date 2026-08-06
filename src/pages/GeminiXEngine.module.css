@@ -595,3 +595,22 @@
       repeat(5, minmax(0, 1fr));
   }
 }
+
+
+/* GeminiX V5.5 stale-open watchdog */
+.campaignGrid {
+  grid-template-columns:
+    repeat(11, minmax(0, 1fr))
+    150px 150px;
+}
+
+.transactionRow span:nth-child(3) {
+  color: #d9edf5;
+}
+
+@media (max-width: 1320px) {
+  .campaignGrid {
+    grid-template-columns:
+      repeat(6, minmax(0, 1fr));
+  }
+}

@@ -157,6 +157,37 @@ function contractResult(contract) {
     : "OPEN";
 }
 
+function contractTimestamp(contract) {
+  const row = normalizedContract(contract);
+
+  const values = [
+    row?.date_start,
+    row?.purchase_time,
+    row?.entry_tick_time,
+    row?.transaction_time,
+    row?.created_at,
+    row?.createdAt,
+  ];
+
+  for (const value of values) {
+    const number = Number(value);
+
+    if (Number.isFinite(number) && number > 0) {
+      return number > 1000000000000
+        ? number
+        : number * 1000;
+    }
+
+    const parsed = Date.parse(String(value || ""));
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
 function contractRows(openContracts) {
   const rows = Array.isArray(openContracts)
     ? openContracts
@@ -173,11 +204,27 @@ function contractRows(openContracts) {
     .map((contract) => {
       const row = normalizedContract(contract);
 
+      const startedAt =
+        contractTimestamp(row);
+
+      const ageMs = startedAt
+        ? Date.now() - startedAt
+        : 0;
+
+      const staleOpen =
+        !contractIsSettled(row) &&
+        ageMs > 15000;
+
       return {
         ...row,
         contractId: contractIdOf(contract),
-        result: contractResult(row),
+        result: staleOpen
+          ? "STALE"
+          : contractResult(row),
         settled: contractIsSettled(row),
+        staleOpen,
+        startedAt,
+        ageMs,
         profit: Number(
           row?.profit ??
             row?.profit_loss ??
@@ -678,7 +725,18 @@ function GeminiXContent({
   const activeContracts = useMemo(
     () =>
       normalizedContracts.filter(
-        (contract) => !contract.settled
+        (contract) =>
+          !contract.settled &&
+          !contract.staleOpen
+      ),
+    [normalizedContracts]
+  );
+
+  const staleContracts = useMemo(
+    () =>
+      normalizedContracts.filter(
+        (contract) =>
+          contract.staleOpen
       ),
     [normalizedContracts]
   );
@@ -757,6 +815,24 @@ function GeminiXContent({
       "Campaign reset. GeminiX iko ready."
     );
   };
+
+  useEffect(() => {
+    if (
+      !running ||
+      !staleContracts.length
+    ) {
+      return;
+    }
+
+    lastAutoTradeKeyRef.current = "";
+    setLastMarketSwitchAt(0);
+    setEngineMessage(
+      `Stale OPEN watchdog: ${staleContracts.length} record imeachiliwa; scanner inaendelea.`
+    );
+  }, [
+    running,
+    staleContracts.length,
+  ]);
 
   useEffect(() => {
     if (
@@ -855,6 +931,8 @@ function GeminiXContent({
           Number(lastMarketSwitchAt || 0) >=
           10000
       ) {
+        lastAutoTradeKeyRef.current = "";
+
         void switchToNextMarket(
           currentStrong
             ? "10s scan complete · checking next market"
@@ -1035,7 +1113,7 @@ false    ) {
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · scans every market every 10 seconds · never stops after settlement
+          Shared Deriv feed · 10s market scan · stale OPEN watchdog · non-stop execution
         </div>
       </div>
 
@@ -1217,6 +1295,10 @@ false    ) {
             "Scan Cycle",
             "10s",
           ],
+          [
+            "Stale OPEN",
+            staleContracts.length,
+          ],
         ].map(([label, value]) => (
           <article key={label}>
             <span>{label}</span>
@@ -1247,7 +1329,7 @@ false    ) {
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V5.4 NON-STOP 10S SCANNER
+              GEMINIX V5.5 NON-STOP WATCHDOG
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -1464,7 +1546,12 @@ false    ) {
                     trade.contractType ||
                     "—"}
                 </span>
-                <span>{trade.result}</span>
+                <span>
+                  {trade.result}
+                  {trade.staleOpen
+                    ? " · ignored"
+                    : ""}
+                </span>
                 <span>
                   {Number(
                     trade.buy_price ??
