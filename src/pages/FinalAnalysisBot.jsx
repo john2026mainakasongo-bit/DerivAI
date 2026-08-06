@@ -219,6 +219,9 @@ export default function FinalAnalysisBot() {
   const [marketTickSerials, setMarketTickSerials] = useState({});
   const [autoMarketSwitch, setAutoMarketSwitch] = useState(true);
   const [marketSwitchSeconds, setMarketSwitchSeconds] = useState(2);
+  const [signalQueue, setSignalQueue] = useState([]);
+  const [queueEnabled, setQueueEnabled] = useState(true);
+  const [maxQueueSize, setMaxQueueSize] = useState(8);
   const [lastMarketSwitchAt, setLastMarketSwitchAt] = useState(Date.now());
   const [turboPortfolioSize, setTurboPortfolioSize] = useState(5);
   const [turboMode, setTurboMode] = useState(true);
@@ -459,6 +462,13 @@ export default function FinalAnalysisBot() {
   const weakPatternBlocked =
     currentPatternTier === "WEAK";
 
+  const memoryCaps = {
+    ELITE: 100,
+    GOLD: 200,
+    NORMAL: 50,
+    WEAK: 0,
+  };
+
   const continuousScoreReady =
     !weakPatternBlocked &&
     Boolean(analysis.continuousScore?.scoreQualified) &&
@@ -487,6 +497,115 @@ export default function FinalAnalysisBot() {
     ["RISE", "FALL"].includes(
       analysis.rapidScore?.direction
     );
+
+  const queueCandidate = useMemo(() => {
+    const direction =
+      analysis.rapidScore?.direction ||
+      analysis.continuousScore?.direction ||
+      analysis.setupVoting?.direction ||
+      "NONE";
+
+    const score = Math.max(
+      Number(analysis.rapidScore?.score || 0),
+      Number(
+        analysis.continuousScore?.weightedEntryScore || 0
+      ),
+      Number(analysis.setupVoting?.realConfidence || 0)
+    );
+
+    if (
+      !["RISE", "FALL"].includes(direction) ||
+      score < qualityAdjustedThreshold ||
+      weakPatternBlocked ||
+      currentMarketDataCount <
+        (turboMode ? 12 : 20)
+    ) {
+      return null;
+    }
+
+    return {
+      id: `${symbol}:${direction}:${Math.round(score)}`,
+      market: symbol,
+      direction,
+      score: Math.round(score),
+      tier: currentPatternTier,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 4500,
+    };
+  }, [
+    analysis.rapidScore,
+    analysis.continuousScore,
+    analysis.setupVoting,
+    qualityAdjustedThreshold,
+    weakPatternBlocked,
+    currentMarketDataCount,
+    turboMode,
+    currentPatternTier,
+    symbol,
+  ]);
+
+  useEffect(() => {
+    if (!running || !queueEnabled || !queueCandidate) return;
+
+    setSignalQueue((current) => {
+      const now = Date.now();
+
+      const fresh = current.filter(
+        (item) => item.expiresAt > now
+      );
+
+      const deduped = fresh.filter(
+        (item) =>
+          !(
+            item.market === queueCandidate.market &&
+            item.direction === queueCandidate.direction
+          )
+      );
+
+      const tierRank = {
+        ELITE: 4,
+        GOLD: 3,
+        NORMAL: 2,
+        WEAK: 1,
+      };
+
+      return [queueCandidate, ...deduped]
+        .sort((a, b) => {
+          const tierDifference =
+            (tierRank[b.tier] || 0) -
+            (tierRank[a.tier] || 0);
+
+          if (tierDifference !== 0) return tierDifference;
+          if (b.score !== a.score) return b.score - a.score;
+          return b.createdAt - a.createdAt;
+        })
+        .slice(0, Math.max(1, maxQueueSize));
+    });
+  }, [
+    running,
+    queueEnabled,
+    queueCandidate,
+    maxQueueSize,
+  ]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setSignalQueue((current) =>
+        current.filter(
+          (item) => item.expiresAt > Date.now()
+        )
+      );
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const bestQueuedSignal =
+    signalQueue.find(
+      (item) =>
+        item.market === symbol &&
+        item.expiresAt > Date.now()
+    ) || null;
 
   useEffect(() => {
     const armedNow =
@@ -537,14 +656,23 @@ export default function FinalAnalysisBot() {
   const tickEntryReady =
     fullVoteEntryReady || lateVoteEntryReady;
 
+  const queuedEntryReady =
+    mode === "paper" &&
+    queueEnabled &&
+    Boolean(bestQueuedSignal) &&
+    currentMarketTrades.length < 3;
+
   const minuteEntryReady =
+    queuedEntryReady ||
     stableEntryReady ||
     fullVoteEntryReady ||
     continuousScoreReady ||
     lateVoteEntryReady;
 
-  const minuteEntryContract = rapidPaperReady
-    ? analysis.rapidScore?.direction
+  const minuteEntryContract = queuedEntryReady
+    ? bestQueuedSignal?.direction
+    : rapidPaperReady
+      ? analysis.rapidScore?.direction
     : stableEntryReady
       ? analysis.contract
       : fullVoteEntryReady
@@ -555,8 +683,10 @@ export default function FinalAnalysisBot() {
             analysis.tickSetup?.contract ||
             analysis.contract;
 
-  const minuteEntryConfidence = rapidPaperReady
-    ? Math.max(
+  const minuteEntryConfidence = queuedEntryReady
+    ? Number(bestQueuedSignal?.score || 0)
+    : rapidPaperReady
+      ? Math.max(
         58,
         Math.min(
           88,
@@ -587,8 +717,10 @@ export default function FinalAnalysisBot() {
             )
           );
 
-  const minuteEntryMode = rapidPaperReady
-    ? `RAPID_SLOT_${rapidSlotIndex + 1}`
+  const minuteEntryMode = queuedEntryReady
+    ? "QUEUED_SIGNAL"
+    : rapidPaperReady
+      ? `RAPID_SLOT_${rapidSlotIndex + 1}`
     : stableEntryReady
       ? "CORE_CONFIRMED"
       : fullVoteEntryReady
@@ -849,7 +981,7 @@ export default function FinalAnalysisBot() {
             profit <= -1.05
           );
 
-        if (expiredWeak) {
+        if (expiredWeak || tier === "WEAK") {
           changed = true;
           continue;
         }
@@ -861,7 +993,40 @@ export default function FinalAnalysisBot() {
         };
       }
 
-      return changed ? next : current;
+      const grouped = Object.entries(next).reduce(
+        (result, [key, value]) => {
+          const tier = value?.tier || "NORMAL";
+          if (!result[tier]) result[tier] = [];
+          result[tier].push([key, value]);
+          return result;
+        },
+        {}
+      );
+
+      const capped = {};
+
+      Object.entries(grouped).forEach(
+        ([tier, entries]) => {
+          const limit = memoryCaps[tier] ?? 50;
+
+          entries
+            .sort(
+              (a, b) =>
+                Number(b[1]?.profit || 0) -
+                  Number(a[1]?.profit || 0) ||
+                Number(b[1]?.updatedAt || 0) -
+                  Number(a[1]?.updatedAt || 0)
+            )
+            .slice(0, limit)
+            .forEach(([key, value]) => {
+              capped[key] = value;
+            });
+
+          if (entries.length > limit) changed = true;
+        }
+      );
+
+      return changed ? capped : current;
     });
   }, [running, stats.runs]);
 
@@ -1187,6 +1352,14 @@ export default function FinalAnalysisBot() {
 
     buyLockRef.current = true;
 
+    if (queuedEntryReady && bestQueuedSignal) {
+      setSignalQueue((current) =>
+        current.filter(
+          (item) => item.id !== bestQueuedSignal.id
+        )
+      );
+    }
+
     if (rapidPaperReady) {
       setUsedRapidSlots((current) =>
         current.includes(rapidSlotIndex)
@@ -1258,6 +1431,8 @@ export default function FinalAnalysisBot() {
     }, 1400);
   }, [
     analysis,
+    queuedEntryReady,
+    bestQueuedSignal,
     rapidPaperReady,
     rapidSlotUsed,
     rapidSlotIndex,
@@ -1653,7 +1828,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page final-v26-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page final-v26-page final-v27-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1749,6 +1924,37 @@ export default function FinalAnalysisBot() {
                 )
               }
             />
+          </label>
+
+          <label>
+            Signal queue
+            <select
+              value={queueEnabled ? "on" : "off"}
+              onChange={(event) =>
+                setQueueEnabled(
+                  event.target.value === "on"
+                )
+              }
+            >
+              <option value="on">ON</option>
+              <option value="off">OFF</option>
+            </select>
+          </label>
+
+          <label>
+            Queue size
+            <select
+              value={maxQueueSize}
+              onChange={(event) =>
+                setMaxQueueSize(
+                  Number(event.target.value)
+                )
+              }
+            >
+              <option value="4">4 signals</option>
+              <option value="8">8 signals</option>
+              <option value="12">12 signals</option>
+            </select>
           </label>
 
           <label>
@@ -2163,6 +2369,18 @@ export default function FinalAnalysisBot() {
             }
           />
           <Metric
+            label="Signal queue"
+            value={`${signalQueue.length}/${maxQueueSize}`}
+          />
+          <Metric
+            label="Best queued"
+            value={
+              bestQueuedSignal
+                ? `${bestQueuedSignal.direction} ${bestQueuedSignal.score}%`
+                : "NONE"
+            }
+          />
+          <Metric
             label="Pattern tier"
             value={currentPatternTier}
           />
@@ -2462,6 +2680,47 @@ export default function FinalAnalysisBot() {
               stats.profit
             )}`}
           />
+        </section>
+
+        <section className="final-v27-queue-panel">
+          <div className="final-v27-queue-head">
+            <div>
+              <span>SIGNAL QUEUE</span>
+              <strong>
+                {signalQueue.length} fresh signals
+              </strong>
+            </div>
+            <div>
+              <span>BEST READY</span>
+              <strong>
+                {bestQueuedSignal
+                  ? `${bestQueuedSignal.market} · ${bestQueuedSignal.direction} · ${bestQueuedSignal.score}%`
+                  : "NONE"}
+              </strong>
+            </div>
+          </div>
+
+          <div className="final-v27-queue-list">
+            {signalQueue.slice(0, 8).map((item) => (
+              <article key={`${item.id}:${item.createdAt}`}>
+                <span>{item.market}</span>
+                <strong>{item.direction}</strong>
+                <small>
+                  {item.score}% · {item.tier}
+                </small>
+              </article>
+            ))}
+
+            {signalQueue.length === 0 ? (
+              <article className="empty">
+                <span>SCANNING</span>
+                <strong>NO FRESH SIGNAL</strong>
+                <small>
+                  Signals expire after 4.5 seconds
+                </small>
+              </article>
+            ) : null}
+          </div>
         </section>
 
         <section className="final-v26-quality-grid">
