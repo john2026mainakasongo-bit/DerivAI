@@ -1371,3 +1371,36 @@
   grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)) !important;
 }
 
+
+
+/* Final AI V20 tick-sequence engine */
+.final-v20-page .final-tick-windows {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+  gap: 8px !important;
+  margin: 0 0 10px !important;
+}
+.final-v20-page .final-tick-windows article {
+  padding: 10px 12px;
+  border: 1px solid rgba(56, 189, 248, .25);
+  border-radius: 9px;
+  background: rgba(7, 23, 39, .94);
+}
+.final-v20-page .final-tick-windows span,
+.final-v20-page .final-tick-windows strong,
+.final-v20-page .final-tick-windows small {
+  display: block;
+}
+.final-v20-page .final-tick-windows strong {
+  margin: 3px 0;
+  font-size: 15px;
+}
+.final-v20-page .final-tick-windows small {
+  color: #88a6c2;
+}
+@media (max-width: 900px) {
+  .final-v20-page .final-tick-windows {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+

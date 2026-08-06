@@ -331,34 +331,47 @@ export default function FinalAnalysisBot() {
     armedTicks >= 3 &&
     armedDirection === analysis.contract;
 
-  const fallbackCandidateReady =
-    Boolean(bestCandidate) &&
-    scanRemainingSeconds <= 15 &&
-    Number(bestCandidate.score || 0) >= 52 &&
-    ["RISE", "FALL"].includes(bestCandidate.contract);
+  const tickEntryReady =
+    Boolean(analysis.tickSetup?.qualified) &&
+    Number(analysis.tickSetup?.score || 0) >= 58 &&
+    ["RISE", "FALL"].includes(
+      analysis.tickSetup?.contract
+    );
 
   const minuteEntryReady =
-    stableEntryReady || fallbackCandidateReady;
+    stableEntryReady || tickEntryReady;
 
   const minuteEntryContract = stableEntryReady
     ? analysis.contract
-    : bestCandidate?.contract || analysis.contract;
+    : analysis.tickSetup?.contract || analysis.contract;
 
   const minuteEntryConfidence = stableEntryReady
     ? analysis.confidence
     : Math.max(
-        55,
+        58,
         Math.min(
-          82,
-          Math.round(Number(bestCandidate?.score || 55))
+          86,
+          Math.round(
+            Number(analysis.tickSetup?.score || 58)
+          )
         )
       );
 
   const minuteEntryMode = stableEntryReady
     ? "CONFIRMED"
-    : fallbackCandidateReady
-      ? "FAST_LEARN"
+    : tickEntryReady
+      ? "TICK_SEQUENCE"
       : "WAIT";
+
+  const minuteTargetTicks = stableEntryReady
+    ? Math.max(
+        2,
+        Number(analysis.tickSetup?.targetTicks || 3)
+      )
+    : Math.max(
+        2,
+        Number(analysis.tickSetup?.targetTicks || 3)
+      );
 
   useEffect(() => {
     if (
@@ -728,10 +741,14 @@ export default function FinalAnalysisBot() {
       stake: Number(stake),
       confidence: minuteEntryConfidence,
       entryMode: minuteEntryMode,
+      targetTicks: minuteTargetTicks,
+      tickSetup: analysis.tickSetup?.setup || "SCANNING",
       setup:
-        analysis.selectedSetup?.label ||
-        bestCandidate?.setup ||
-        "Minute candidate",
+        minuteEntryMode === "TICK_SEQUENCE"
+          ? `Tick sequence · ${analysis.tickSetup?.setup || "SCANNING"}`
+          : analysis.selectedSetup?.label ||
+            bestCandidate?.setup ||
+            "Minute candidate",
       memorySignature:
         analysis.metrics.memorySignature
           ? `${marketMemoryPrefix(symbol)}${analysis.metrics.memorySignature}`
@@ -745,7 +762,7 @@ export default function FinalAnalysisBot() {
     });
 
     setMessage(
-      `PAPER ENTRY · ${minuteEntryContract} · ${minuteEntryConfidence}% · ${minuteEntryMode}`
+      `PAPER ENTRY · ${minuteEntryContract} · ${minuteEntryConfidence}% · ${minuteEntryMode} · ${minuteTargetTicks} ticks`
     );
 
     window.setTimeout(() => {
@@ -758,6 +775,8 @@ export default function FinalAnalysisBot() {
     minuteEntryContract,
     minuteEntryConfidence,
     minuteEntryMode,
+    minuteTargetTicks,
+    tickEntryReady,
     stableEntryReady,
     scanExpired,
     liveQuote,
@@ -775,7 +794,9 @@ export default function FinalAnalysisBot() {
   useEffect(() => {
     if (
       !paperTrade ||
-      tickSerial <= Number(paperTrade.entrySerial || 0) + 4
+      tickSerial <
+        Number(paperTrade.entrySerial || 0) +
+          Math.max(2, Number(paperTrade.targetTicks || 3))
     ) {
       return;
     }
@@ -1052,6 +1073,10 @@ export default function FinalAnalysisBot() {
         stableEntryReady &&
         analysis.confidence < minimumConfidence
       ) ||
+      (
+        tickEntryReady &&
+        Number(analysis.tickSetup?.score || 0) < 58
+      ) ||
       !currentPatternLiveReady ||
       protectionPaused
     ) {
@@ -1075,7 +1100,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1530,22 +1555,24 @@ export default function FinalAnalysisBot() {
             value={minuteEntryMode}
           />
           <Metric
-            label="Fallback window"
-            value={
-              scanRemainingSeconds <= 15
-                ? "OPEN"
-                : `${Math.max(0, scanRemainingSeconds - 15)}s`
-            }
+            label="Tick setup"
+            value={analysis.tickSetup?.setup || "SCANNING"}
           />
           <Metric
-            label="Fallback candidate"
-            value={
-              bestCandidate
-                ? `${bestCandidate.contract} ${Math.round(
-                    bestCandidate.score
-                  )}%`
-                : "NONE"
-            }
+            label="Tick direction"
+            value={analysis.tickSetup?.contract || "NONE"}
+          />
+          <Metric
+            label="Tick score"
+            value={`${analysis.tickSetup?.score || 0}%`}
+          />
+          <Metric
+            label="Tick consensus"
+            value={`${analysis.tickSetup?.consensus || 0}%`}
+          />
+          <Metric
+            label="Target ticks"
+            value={minuteTargetTicks}
           />
           <Metric
             label="Armed"
@@ -1579,6 +1606,16 @@ export default function FinalAnalysisBot() {
                 : Number(rollingExpectedValue || 0).toFixed(3)
             }
           />
+        </section>
+
+        <section className="final-tick-windows">
+          {(analysis.tickSetup?.windows || []).map((window) => (
+            <article key={window.size}>
+              <span>{window.size} ticks</span>
+              <strong>{window.direction}</strong>
+              <small>{window.dominance}% pressure</small>
+            </article>
+          ))}
         </section>
 
         <section className="final-setup-lanes">

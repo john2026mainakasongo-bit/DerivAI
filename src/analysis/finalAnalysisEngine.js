@@ -136,6 +136,140 @@ function transitionAnalysis(changes) {
   };
 }
 
+
+function tickSequenceAnalysis(changes = []) {
+  const directions = changes
+    .map((value) => (value > 0 ? 1 : value < 0 ? -1 : 0))
+    .filter(Boolean);
+
+  const windowStats = (size) => {
+    const window = directions.slice(-size);
+    const rises = window.filter((value) => value > 0).length;
+    const falls = window.filter((value) => value < 0).length;
+    const direction =
+      rises > falls ? "RISE" : falls > rises ? "FALL" : "NONE";
+    const dominance =
+      window.length
+        ? (Math.max(rises, falls) / window.length) * 100
+        : 0;
+
+    return {
+      size,
+      direction,
+      dominance,
+      rises,
+      falls,
+    };
+  };
+
+  const w3 = windowStats(3);
+  const w5 = windowStats(5);
+  const w8 = windowStats(8);
+  const w13 = windowStats(13);
+
+  const votes = [w3, w5, w8, w13].filter(
+    (item) => item.direction !== "NONE"
+  );
+
+  const riseVotes = votes.filter(
+    (item) => item.direction === "RISE"
+  ).length;
+  const fallVotes = votes.filter(
+    (item) => item.direction === "FALL"
+  ).length;
+
+  const direction =
+    riseVotes > fallVotes
+      ? "RISE"
+      : fallVotes > riseVotes
+        ? "FALL"
+        : w3.direction;
+
+  const aligned = votes.filter(
+    (item) => item.direction === direction
+  );
+
+  const consensus =
+    votes.length
+      ? (aligned.length / votes.length) * 100
+      : 0;
+
+  const averageDominance =
+    aligned.length
+      ? aligned.reduce(
+          (sum, item) => sum + item.dominance,
+          0
+        ) / aligned.length
+      : 0;
+
+  const lastSix = directions.slice(-6);
+  let streak = 0;
+
+  for (let index = lastSix.length - 1; index >= 0; index -= 1) {
+    const value = lastSix[index];
+    const expected = direction === "RISE" ? 1 : -1;
+
+    if (value !== expected) break;
+    streak += 1;
+  }
+
+  const flip =
+    directions.length >= 4 &&
+    directions.at(-1) === directions.at(-2) &&
+    directions.at(-3) !== directions.at(-1);
+
+  const score = clamp(
+    consensus * 0.42 +
+      averageDominance * 0.38 +
+      Math.min(4, streak) * 5 +
+      (flip ? 4 : 0),
+    0,
+    100
+  );
+
+  const setup =
+    streak >= 3 && consensus >= 75
+      ? "TICK_STREAK"
+      : flip && consensus >= 50
+        ? "PULLBACK_RELEASE"
+        : consensus >= 75
+          ? "MULTI_WINDOW"
+          : averageDominance >= 72
+            ? "TICK_PRESSURE"
+            : "SCANNING";
+
+  const targetTicks =
+    setup === "TICK_STREAK"
+      ? 2
+      : setup === "PULLBACK_RELEASE"
+        ? 3
+        : setup === "MULTI_WINDOW"
+          ? 3
+          : 5;
+
+  const qualified =
+    direction !== "NONE" &&
+    score >= 58 &&
+    consensus >= 50 &&
+    averageDominance >= 58;
+
+  return {
+    direction,
+    score: Math.round(score),
+    consensus: Math.round(consensus),
+    dominance: Math.round(averageDominance),
+    streak,
+    setup,
+    targetTicks,
+    qualified,
+    windows: [w3, w5, w8, w13].map((item) => ({
+      size: item.size,
+      direction: item.direction,
+      dominance: Math.round(item.dominance),
+    })),
+  };
+}
+
 function check(label, passed, detail) {
   return {
     label,
@@ -300,6 +434,8 @@ export function analyseTicks(
   const shortChanges = short
     .slice(1)
     .map((value, index) => value - short[index]);
+
+  const tickSequence = tickSequenceAnalysis(changes);
 
   const upMoves = shortChanges.filter((value) => value > 0).length;
   const downMoves = shortChanges.filter((value) => value < 0).length;
@@ -936,6 +1072,22 @@ export function analyseTicks(
 
   const setupCandidates = [
     {
+      id: "TICK_SEQUENCE",
+      label: `Tick sequence · ${tickSequence.setup}`,
+      contract: tickSequence.direction,
+      passed:
+        tickSequence.qualified &&
+        signalFresh &&
+        reversalRisk <= 38,
+      score: clamp(
+        tickSequence.score * 0.62 +
+          tickSequence.consensus * 0.23 +
+          tickSequence.dominance * 0.15,
+        0,
+        100
+      ),
+    },
+    {
       id: "TREND_CONTINUATION",
       label: "Trend continuation",
       contract: trendContract,
@@ -1053,6 +1205,17 @@ export function analyseTicks(
       passed: item.passed,
       score: Math.round(item.score),
     })),
+    tickSetup: {
+      contract: tickSequence.direction,
+      score: tickSequence.score,
+      consensus: tickSequence.consensus,
+      dominance: tickSequence.dominance,
+      streak: tickSequence.streak,
+      setup: tickSequence.setup,
+      targetTicks: tickSequence.targetTicks,
+      qualified: tickSequence.qualified,
+      windows: tickSequence.windows,
+    },
     metrics: {
       momentum: Math.round(momentum),
       trend,
