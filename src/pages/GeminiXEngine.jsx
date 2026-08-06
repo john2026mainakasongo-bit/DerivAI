@@ -18,7 +18,7 @@ export default function GeminiXEngine() {
 
   // Decision & Analysis States
   const [decision, setDecision] = useState('WAIT');
-  const [blockReason, setBlockReason] = useState('Subscribing to live digit stream...');
+  const [blockReason, setBlockReason] = useState('Inaunganisha na Deriv WebSocket...');
   const [confidence, setConfidence] = useState(0);
   const [probability, setProbability] = useState(50);
   const [riskLevel, setRiskLevel] = useState('LOW');
@@ -47,7 +47,7 @@ export default function GeminiXEngine() {
   const ws = useRef(null);
   const ticksHistoryRef = useRef([]);
 
-  // 1. DERIV WEBSOCKET CONNECTION
+  // 1. AUTO-CONNECT DERIV WEBSOCKET UPON PAGE LOAD
   useEffect(() => {
     setFeedStatus('CONNECTING');
     setLiveQuote(null);
@@ -56,11 +56,12 @@ export default function GeminiXEngine() {
     setDigitCounts(Array(10).fill(0));
     ticksHistoryRef.current = [];
 
-    const app_id = 1089;
+    const app_id = 1089; // Standard Deriv App ID
     ws.current = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${app_id}`);
 
     ws.current.onopen = () => {
       setFeedStatus('LIVE');
+      setBlockReason('Inapokea live ticks kutoka Deriv...');
       ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
       ws.current.send(JSON.stringify({
         ticks: market,
@@ -72,7 +73,7 @@ export default function GeminiXEngine() {
       const data = JSON.parse(event.data);
 
       if (data.error) {
-        setBlockReason(`Deriv Error: ${data.error.message}`);
+        setBlockReason(`Hitilafu ya Deriv: ${data.error.message}`);
         setFeedStatus('ERROR');
         return;
       }
@@ -85,17 +86,17 @@ export default function GeminiXEngine() {
         setLiveQuote(newPrice);
         setLastDigit(digit);
 
-        // Update Recent Digits (Keep last 12 digits)
+        // Hifadhi Digiti 12 za hivi karibuni
         setRecentDigits((prev) => [...prev.slice(-11), digit]);
 
-        // Update Frequency Counts
+        // Ongeza Hesabu ya Digiti
         setDigitCounts((prev) => {
           const updated = [...prev];
           updated[digit] += 1;
           return updated;
         });
 
-        // Store price history
+        // Hifadhi Historia ya Bei
         ticksHistoryRef.current = [...ticksHistoryRef.current.slice(-49), newPrice];
         runAnalysisEngine(ticksHistoryRef.current, digit);
       }
@@ -119,11 +120,11 @@ export default function GeminiXEngine() {
     };
   }, [market]);
 
-  // 2. DIGIT & BAYESIAN ANALYSIS ENGINE
+  // 2. LIVE ANALYSIS ENGINE
   const runAnalysisEngine = (prices, latestDigit) => {
     const len = prices.length;
     if (len < 3) {
-      setBlockReason(`Buffering market ticks (${len}/10)...`);
+      setBlockReason(`Inakusanya Ticks za Soko (${len}/10)...`);
       return;
     }
 
@@ -165,7 +166,6 @@ export default function GeminiXEngine() {
     setConfidence(calculatedConfidence);
     setProbability(bayesianScore);
 
-    // Dynamic Digit Analysis & Recommendation
     let contractRec = latestDigit > 4 ? 'OVER 2' : 'UNDER 7';
     setSuggestedContract(contractRec);
 
@@ -176,7 +176,7 @@ export default function GeminiXEngine() {
       nextDecision = trendDir === 'UP' ? 'RISE' : 'FALL';
       reason = `ENTRY CONFIRMED: ${contractRec} signal verified (${passedCount}/6 gates passed)`;
     } else {
-      reason = `ENTRY BLOCKED: ${passedCount}/6 gates passed (Requires ${minConfidence}% confidence)`;
+      reason = `ENTRY BLOCKED: ${passedCount}/6 gates passed (Inahitaji ${minConfidence}% confidence)`;
     }
 
     setDecision(nextDecision);
@@ -199,10 +199,10 @@ export default function GeminiXEngine() {
     }
   };
 
-  // 3. MANUAL / AUTO TRADE EXECUTION
+  // 3. EXECUTE TRADE
   const executeTrade = (contractType, barrier = 2) => {
     if (execMode === 'Paper trading') {
-      alert(`[PAPER TRADE SUCCESS]\nContract: ${contractType}\nMarket: ${market}\nStake: $${stake}\nBarrier: ${barrier}`);
+      alert(`[PAPER TRADE EXECUTED]\nContract: ${contractType}\nMarket: ${market}\nStake: $${stake}`);
     } else if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({
         buy: 1,
@@ -296,14 +296,13 @@ export default function GeminiXEngine() {
         </button>
       </div>
 
-      {/* 3. RECENT DIGITS & MANUAL EXECUTION TOOLBAR */}
+      {/* 3. RECENT DIGITS & QUICK TRADE BUTTONS */}
       <div className={styles.geminiPanel} style={{ marginBottom: '16px' }}>
         <div className={styles.panelHeader}>
           <span className={styles.title}>LIVE RECENT DIGITS STREAM & QUICK TRADING</span>
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', flexWrap: 'wrap', gap: '12px' }}>
-          {/* Recent Digits Stream */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <span style={{ fontSize: '12px', color: '#888' }}>Recent Ticks:</span>
             {recentDigits.map((d, i) => (
@@ -328,7 +327,6 @@ export default function GeminiXEngine() {
             ))}
           </div>
 
-          {/* Quick Manual Trade Buttons */}
           <div style={{ display: 'flex', gap: '8px' }}>
             <button 
               onClick={() => executeTrade('DIGITOVER', 2)}
@@ -357,7 +355,6 @@ export default function GeminiXEngine() {
           </div>
         </div>
 
-        {/* Digit Frequency Bars */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '6px', marginTop: '12px' }}>
           {digitCounts.map((count, d) => {
             const pct = Math.round((count / totalDigitTicks) * 100);
@@ -410,7 +407,7 @@ export default function GeminiXEngine() {
               Risk Level: <strong className={riskLevel === 'HIGH' ? styles.textRed : styles.textGreen}>{riskLevel}</strong>
             </p>
             <p style={{ fontSize: '13px', margin: '6px 0' }}>
-              Live Quote: <strong>{liveQuote !== null ? liveQuote : 'Loading...'}</strong>
+              Live Quote: <strong>{liveQuote !== null ? liveQuote : 'Inapakia...'}</strong>
             </p>
             <p style={{ fontSize: '13px', margin: '6px 0' }}>
               Last Digit: <strong style={{ color: '#00d2ff', fontSize: '16px' }}>{lastDigit !== null ? lastDigit : '-'}</strong>
