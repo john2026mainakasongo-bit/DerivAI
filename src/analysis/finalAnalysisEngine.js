@@ -159,6 +159,7 @@ function memorySignature({
   reversalRisk,
 }) {
   return [
+    trend === "UP" ? "RISE" : trend === "DOWN" ? "FALL" : "NONE",
     trend,
     volatility,
     regime,
@@ -379,10 +380,18 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
   confidence = Math.round(confidence);
 
 
+  const regime =
+    volatility === "HIGH"
+      ? "CHAOTIC"
+      : trend === "FLAT"
+        ? "RANGE"
+        : "TREND";
+
   const hardBlock =
     trendContract === "NONE" ||
     volatility === "HIGH" ||
-    !entropyAcceptable;
+    !entropyAcceptable ||
+    regime === "RANGE";
 
   const recentDirections = changes
     .slice(-4)
@@ -451,8 +460,11 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
   );
 
   const memoryQualified =
-    learned.sample < 4 ||
-    learned.winRate >= 58;
+    learned.sample < 8 ||
+    (
+      learned.winRate >= 60 &&
+      learned.profit > 0
+    );
 
   const expectedValue =
     (probability / 100) * 0.92 -
@@ -522,8 +534,8 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
     !hardBlock &&
     trendAligned &&
     directionStrong &&
-    probability >= 70 &&
-    confidence >= 82 &&
+    probability >= 72 &&
+    confidence >= 84 &&
     passedChecks >= 5 &&
     confirmQualified &&
     memoryQualified &&
@@ -567,7 +579,7 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
       ? "HIGH"
       : buyQualified &&
           confidence >= 84 &&
-          probability >= 70
+          probability >= 72
         ? "LOW"
         : confidence >= 65
           ? "MEDIUM"
@@ -580,8 +592,10 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
   const reason =
     buyQualified
       ? `${trendContract} entry confirmed by ${passedChecks}/9 filters`
-      : !memoryQualified
-        ? `${trendContract} blocked by weak historical pattern memory`
+      : regime === "RANGE"
+        ? `${trendContract} blocked because market regime is RANGE`
+        : !memoryQualified
+          ? `${trendContract} blocked by weak historical pattern memory`
         : expectedValue <= 0
           ? `${trendContract} blocked because expected value is not positive`
           : confirmStage
@@ -595,13 +609,6 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
             : volatility === "HIGH"
               ? "Volatility is too high"
               : "Scanning for a stronger setup";
-
-  const regime =
-    volatility === "HIGH"
-      ? "CHAOTIC"
-      : trend === "FLAT"
-        ? "RANGE"
-        : "TREND";
 
   return {
     ready: true,

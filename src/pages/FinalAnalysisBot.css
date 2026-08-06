@@ -597,3 +597,79 @@
   }
 }
 
+
+
+/* Final AI V10 continuous learning */
+.final-pattern-highlight-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.final-pattern-highlight {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 9px;
+  background: rgba(3, 10, 20, .34);
+}
+
+.final-pattern-highlight span {
+  display: block;
+  color: #91a4ba;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.final-pattern-highlight strong {
+  display: block;
+  margin: 4px 0 2px;
+  overflow: hidden;
+  color: #eaf3ff;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-pattern-highlight small {
+  display: block;
+  overflow: hidden;
+  color: #8fa3ba;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-pattern-best {
+  border-color: rgba(34, 197, 94, .38);
+}
+
+.final-pattern-worst {
+  border-color: rgba(244, 63, 94, .34);
+}
+
+.final-learning-summary {
+  grid-template-columns: repeat(9, 1fr);
+}
+
+@media (max-width: 1450px) {
+  .final-learning-summary {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+@media (max-width: 1000px) {
+  .final-pattern-highlight-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .final-pattern-highlight-grid,
+  .final-learning-summary {
+    grid-template-columns: 1fr;
+  }
+}
+

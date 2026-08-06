@@ -8,8 +8,8 @@ import { analyseTicks } from "../analysis/finalAnalysisEngine";
 
 import "./FinalAnalysisBot.css";
 
-const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v9:transactions";
-const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v9:pattern-memory";
+const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v10:transactions";
+const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v10:pattern-memory";
 
 const money = (value) =>
   Number(value || 0).toLocaleString("en-US", {
@@ -247,17 +247,22 @@ export default function FinalAnalysisBot() {
     );
 
     const mature = rows.filter(
-      (row) => row.sample >= 4
+      (row) => row.sample >= 8
     );
     const profitable = mature.filter(
-      (row) => row.winRate >= 58 && row.profit > 0
+      (row) => row.winRate >= 60 && row.profit > 0
     );
     const blocked = mature.filter(
-      (row) => row.winRate < 58 || row.profit <= 0
+      (row) => row.winRate < 60 || row.profit <= 0
     );
 
     const topPatterns = [...rows]
-      .filter((row) => row.sample >= 2)
+      .filter(
+        (row) =>
+          row.sample >= 2 &&
+          row.winRate >= 60 &&
+          row.profit > 0
+      )
       .sort(
         (a, b) =>
           b.winRate - a.winRate ||
@@ -267,12 +272,16 @@ export default function FinalAnalysisBot() {
       .slice(0, 10);
 
     const weakPatterns = [...rows]
-      .filter((row) => row.sample >= 2)
+      .filter(
+        (row) =>
+          row.sample >= 2 &&
+          (row.winRate < 50 || row.profit < 0)
+      )
       .sort(
         (a, b) =>
           a.winRate - b.winRate ||
-          b.sample - a.sample ||
-          a.profit - b.profit
+          a.profit - b.profit ||
+          b.sample - a.sample
       )
       .slice(0, 10);
 
@@ -291,11 +300,48 @@ export default function FinalAnalysisBot() {
       blockedPatterns: blocked.length,
       topPatterns,
       weakPatterns,
+      bestPattern: topPatterns[0] || null,
+      worstPattern: weakPatterns[0] || null,
     };
   }, [adaptiveMemory]);
 
+  const recentPerformance = useMemo(() => {
+    const rows = transactions.slice(0, 100);
+    const settled = rows.filter((row) =>
+      ["WON", "LOST"].includes(String(row.result || ""))
+    );
+    const wins = settled.filter(
+      (row) => row.result === "WON"
+    ).length;
+    const losses = settled.length - wins;
+    const profit = settled.reduce(
+      (sum, row) => sum + Number(row.profit || 0),
+      0
+    );
+
+    const confidenceValues = settled
+      .map((row) => Number(row.confidence))
+      .filter(Number.isFinite);
+
+    const averageConfidence = confidenceValues.length
+      ? confidenceValues.reduce((sum, value) => sum + value, 0) /
+        confidenceValues.length
+      : 0;
+
+    return {
+      sample: settled.length,
+      wins,
+      losses,
+      winRate: settled.length
+        ? (wins / settled.length) * 100
+        : 0,
+      profit,
+      averageConfidence,
+    };
+  }, [transactions]);
+
   const currentPatternMature =
-    Number(analysis.metrics.learnedSample || 0) >= 4;
+    Number(analysis.metrics.learnedSample || 0) >= 8;
 
   const currentPatternLiveReady =
     currentPatternMature &&
@@ -598,7 +644,7 @@ export default function FinalAnalysisBot() {
 
     if (!currentPatternLiveReady) {
       setMessage(
-        "LIVE BLOCKED · current pattern needs at least 4 samples, 60% learned wins, positive learned profit and positive EV."
+        "LIVE BLOCKED · current pattern needs at least 8 samples, 60% learned wins, positive learned profit and positive EV."
       );
       return;
     }
@@ -1198,7 +1244,86 @@ export default function FinalAnalysisBot() {
                   learningSummary.totalProfit
                 )}`}
               />
+              <Metric
+                label="Last 100 win rate"
+                value={`${Math.round(
+                  recentPerformance.winRate
+                )}%`}
+              />
+              <Metric
+                label="Last 100 P/L"
+                value={`${recentPerformance.profit >= 0 ? "+" : ""}$${money(
+                  recentPerformance.profit
+                )}`}
+              />
+              <Metric
+                label="Avg confidence"
+                value={`${Math.round(
+                  recentPerformance.averageConfidence
+                )}%`}
+              />
             </div>
+          </div>
+
+          <div className="final-pattern-highlight-grid">
+            <article className="final-pattern-highlight final-pattern-best">
+              <span>BEST PATTERN</span>
+              <strong>
+                {learningSummary.bestPattern
+                  ? `${learningSummary.bestPattern.market} · ${Math.round(
+                      learningSummary.bestPattern.winRate
+                    )}%`
+                  : "LEARNING"}
+              </strong>
+              <small>
+                {learningSummary.bestPattern
+                  ? `${learningSummary.bestPattern.sample} samples · ${
+                      learningSummary.bestPattern.profit >= 0 ? "+" : ""
+                    }$${money(learningSummary.bestPattern.profit)}`
+                  : "Needs profitable repeated samples"}
+              </small>
+            </article>
+
+            <article className="final-pattern-highlight final-pattern-worst">
+              <span>WORST PATTERN</span>
+              <strong>
+                {learningSummary.worstPattern
+                  ? `${learningSummary.worstPattern.market} · ${Math.round(
+                      learningSummary.worstPattern.winRate
+                    )}%`
+                  : "NONE BLOCKED"}
+              </strong>
+              <small>
+                {learningSummary.worstPattern
+                  ? `${learningSummary.worstPattern.sample} samples · ${
+                      learningSummary.worstPattern.profit >= 0 ? "+" : ""
+                    }$${money(learningSummary.worstPattern.profit)}`
+                  : "No repeated losing pattern yet"}
+              </small>
+            </article>
+
+            <article className="final-pattern-highlight">
+              <span>LAST 100 TRADES</span>
+              <strong>
+                {recentPerformance.wins}W / {recentPerformance.losses}L
+              </strong>
+              <small>
+                {recentPerformance.sample} settled ·{" "}
+                {Math.round(recentPerformance.winRate)}% wins
+              </small>
+            </article>
+
+            <article className="final-pattern-highlight">
+              <span>LIVE GATE</span>
+              <strong>
+                {currentPatternLiveReady
+                  ? "READY"
+                  : "LEARNING"}
+              </strong>
+              <small>
+                8 samples · 60% wins · positive pattern P/L and EV
+              </small>
+            </article>
           </div>
 
           <div className="final-learning-grid">
