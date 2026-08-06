@@ -18,6 +18,7 @@ import Login from "./pages/Login";
 import FreshEdgeBot from "./pages/FreshEdgeBot";
 import RapidEdgeAI from "./pages/RapidEdgeAI";
 import GeminiXEngine from "./pages/GeminiXEngine";
+import FinalAnalysisBot from "./pages/FinalAnalysisBot";
 
 import "./index.css";
 
@@ -76,6 +77,11 @@ export default function App() {
         <Route
           path="/gemini-x-engine"
           element={<GeminiXEngine />}
+        />
+
+        <Route
+          path="/final-analysis-bot"
+          element={<FinalAnalysisBot />}
         />
 
         <Route

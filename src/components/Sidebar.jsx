@@ -19,6 +19,11 @@ const links = [
     icon: "RE",
   },
   {
+    to: "/final-analysis-bot",
+    label: "Final Analysis",
+    icon: "FA",
+  },
+  {
     to: "/gemini-x-engine",
     label: "GeminiX Engine",
     icon: "GX",
