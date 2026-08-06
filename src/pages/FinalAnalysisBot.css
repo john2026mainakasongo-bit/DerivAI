@@ -1404,3 +1404,41 @@
   }
 }
 
+
+
+/* Final AI V21 tick voting engine */
+.final-v21-page .final-vote-summary {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+  gap: 8px !important;
+  margin: 0 0 10px !important;
+}
+
+.final-v21-page .final-vote-summary article {
+  padding: 10px 12px;
+  border: 1px solid rgba(168, 85, 247, .28);
+  border-radius: 9px;
+  background: rgba(12, 22, 40, .94);
+}
+
+.final-v21-page .final-vote-summary span,
+.final-v21-page .final-vote-summary strong {
+  display: block;
+}
+
+.final-v21-page .final-vote-summary span {
+  color: #91a7bd;
+  font-size: 10px;
+}
+
+.final-v21-page .final-vote-summary strong {
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .final-v21-page .final-vote-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+

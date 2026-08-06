@@ -331,47 +331,59 @@ export default function FinalAnalysisBot() {
     armedTicks >= 3 &&
     armedDirection === analysis.contract;
 
-  const tickEntryReady =
-    Boolean(analysis.tickSetup?.qualified) &&
-    Number(analysis.tickSetup?.score || 0) >= 58 &&
+  const fullVoteEntryReady =
+    Boolean(analysis.setupVoting?.qualified) &&
+    Number(analysis.setupVoting?.agreementCount || 0) >= 3;
+
+  const lateVoteEntryReady =
+    scanRemainingSeconds <= 15 &&
+    Number(analysis.setupVoting?.agreementCount || 0) >= 2 &&
+    Number(analysis.setupVoting?.tickPressureScore || 0) >= 68 &&
+    Number(analysis.setupVoting?.agreementPercent || 0) >= 60 &&
     ["RISE", "FALL"].includes(
-      analysis.tickSetup?.contract
+      analysis.setupVoting?.direction
     );
+
+  const tickEntryReady =
+    fullVoteEntryReady || lateVoteEntryReady;
 
   const minuteEntryReady =
     stableEntryReady || tickEntryReady;
 
   const minuteEntryContract = stableEntryReady
     ? analysis.contract
-    : analysis.tickSetup?.contract || analysis.contract;
+    : analysis.setupVoting?.direction ||
+      analysis.tickSetup?.contract ||
+      analysis.contract;
 
   const minuteEntryConfidence = stableEntryReady
     ? analysis.confidence
     : Math.max(
         58,
         Math.min(
-          86,
-          Math.round(
-            Number(analysis.tickSetup?.score || 58)
-          )
+          90,
+          Number(analysis.setupVoting?.realConfidence || 58)
         )
       );
 
   const minuteEntryMode = stableEntryReady
-    ? "CONFIRMED"
-    : tickEntryReady
-      ? "TICK_SEQUENCE"
-      : "WAIT";
+    ? "CORE_CONFIRMED"
+    : fullVoteEntryReady
+      ? "3_SETUP_VOTE"
+      : lateVoteEntryReady
+        ? "2_VOTE_LATE"
+        : "WAIT";
 
-  const minuteTargetTicks = stableEntryReady
-    ? Math.max(
-        2,
-        Number(analysis.tickSetup?.targetTicks || 3)
-      )
-    : Math.max(
-        2,
-        Number(analysis.tickSetup?.targetTicks || 3)
-      );
+  const tickPressure = Number(
+    analysis.setupVoting?.tickPressureScore || 0
+  );
+
+  const minuteTargetTicks =
+    tickPressure >= 82
+      ? 2
+      : tickPressure >= 70
+        ? 3
+        : 5;
 
   useEffect(() => {
     if (
@@ -723,7 +735,7 @@ export default function FinalAnalysisBot() {
       !minuteEntryReady ||
       scanExpired ||
       !analysis.metrics.signalFresh ||
-      analysis.confidence < minimumConfidence ||
+      minuteEntryConfidence < minimumConfidence ||
       Date.now() < cooldownUntil ||
       protectionPaused ||
       !liveQuote
@@ -743,10 +755,19 @@ export default function FinalAnalysisBot() {
       entryMode: minuteEntryMode,
       targetTicks: minuteTargetTicks,
       tickSetup: analysis.tickSetup?.setup || "SCANNING",
+      agreementCount:
+        Number(analysis.setupVoting?.agreementCount || 0),
+      agreementPercent:
+        Number(analysis.setupVoting?.agreementPercent || 0),
+      tickPressure:
+        Number(analysis.setupVoting?.tickPressureScore || 0),
       setup:
-        minuteEntryMode === "TICK_SEQUENCE"
-          ? `Tick sequence · ${analysis.tickSetup?.setup || "SCANNING"}`
-          : analysis.selectedSetup?.label ||
+        minuteEntryMode === "3_SETUP_VOTE" ||
+        minuteEntryMode === "2_VOTE_LATE"
+          ? `${minuteEntryMode} · ${analysis.setupVoting?.agreementCount || 0} setups`
+          : minuteEntryMode === "CORE_CONFIRMED"
+            ? analysis.selectedSetup?.label || "Core confirmed"
+            : analysis.selectedSetup?.label ||
             bestCandidate?.setup ||
             "Minute candidate",
       memorySignature:
@@ -776,6 +797,8 @@ export default function FinalAnalysisBot() {
     minuteEntryConfidence,
     minuteEntryMode,
     minuteTargetTicks,
+    fullVoteEntryReady,
+    lateVoteEntryReady,
     tickEntryReady,
     stableEntryReady,
     scanExpired,
@@ -1073,10 +1096,7 @@ export default function FinalAnalysisBot() {
         stableEntryReady &&
         analysis.confidence < minimumConfidence
       ) ||
-      (
-        tickEntryReady &&
-        Number(analysis.tickSetup?.score || 0) < 58
-      ) ||
+
       !currentPatternLiveReady ||
       protectionPaused
     ) {
@@ -1100,7 +1120,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1575,6 +1595,34 @@ export default function FinalAnalysisBot() {
             value={minuteTargetTicks}
           />
           <Metric
+            label="Vote direction"
+            value={analysis.setupVoting?.direction || "NONE"}
+          />
+          <Metric
+            label="Setup agreement"
+            value={`${analysis.setupVoting?.agreementCount || 0}/${analysis.setupVoting?.totalPassedVotes || 0}`}
+          />
+          <Metric
+            label="Agreement"
+            value={`${analysis.setupVoting?.agreementPercent || 0}%`}
+          />
+          <Metric
+            label="Tick pressure"
+            value={`${analysis.setupVoting?.tickPressureScore || 0}%`}
+          />
+          <Metric
+            label="Real confidence"
+            value={`${analysis.setupVoting?.realConfidence || 0}%`}
+          />
+          <Metric
+            label="Late entry gate"
+            value={
+              scanRemainingSeconds <= 15
+                ? "OPEN"
+                : `${scanRemainingSeconds - 15}s`
+            }
+          />
+          <Metric
             label="Armed"
             value={
               analysis.metrics.armedQualified
@@ -1616,6 +1664,29 @@ export default function FinalAnalysisBot() {
               <small>{window.dominance}% pressure</small>
             </article>
           ))}
+        </section>
+
+        <section className="final-vote-summary">
+          <article>
+            <span>RISE votes</span>
+            <strong>{analysis.setupVoting?.riseVotes || 0}</strong>
+          </article>
+          <article>
+            <span>FALL votes</span>
+            <strong>{analysis.setupVoting?.fallVotes || 0}</strong>
+          </article>
+          <article>
+            <span>Selected direction</span>
+            <strong>{analysis.setupVoting?.direction || "NONE"}</strong>
+          </article>
+          <article>
+            <span>Entry requirement</span>
+            <strong>
+              {scanRemainingSeconds <= 15
+                ? "2 votes + 68 pressure"
+                : "3 matching votes"}
+            </strong>
+          </article>
         </section>
 
         <section className="final-setup-lanes">

@@ -166,8 +166,9 @@ function tickSequenceAnalysis(changes = []) {
   const w5 = windowStats(5);
   const w8 = windowStats(8);
   const w13 = windowStats(13);
+  const w21 = windowStats(21);
 
-  const votes = [w3, w5, w8, w13].filter(
+  const votes = [w3, w5, w8, w13, w21].filter(
     (item) => item.direction !== "NONE"
   );
 
@@ -262,7 +263,7 @@ function tickSequenceAnalysis(changes = []) {
     setup,
     targetTicks,
     qualified,
-    windows: [w3, w5, w8, w13].map((item) => ({
+    windows: [w3, w5, w8, w13, w21].map((item) => ({
       size: item.size,
       direction: item.direction,
       dominance: Math.round(item.dominance),
@@ -1169,7 +1170,77 @@ export function analyseTicks(
     )
     .sort((a, b) => b.score - a.score);
 
+  const passedSetups = setupCandidates.filter(
+    (item) => item.passed
+  );
+
+  const riseVotes = passedSetups.filter(
+    (item) => item.contract === "RISE"
+  );
+
+  const fallVotes = passedSetups.filter(
+    (item) => item.contract === "FALL"
+  );
+
+  const voteDirection =
+    riseVotes.length > fallVotes.length
+      ? "RISE"
+      : fallVotes.length > riseVotes.length
+        ? "FALL"
+        : tickSequence.direction;
+
+  const directionVotes =
+    voteDirection === "RISE"
+      ? riseVotes
+      : voteDirection === "FALL"
+        ? fallVotes
+        : [];
+
+  const agreementCount = directionVotes.length;
+  const totalPassedVotes = passedSetups.length;
+
+  const agreementPercent =
+    totalPassedVotes > 0
+      ? (agreementCount / totalPassedVotes) * 100
+      : 0;
+
+  const averageSetupScore =
+    directionVotes.length
+      ? directionVotes.reduce(
+          (sum, item) => sum + Number(item.score || 0),
+          0
+        ) / directionVotes.length
+      : 0;
+
+  const tickPressureScore = clamp(
+    tickSequence.score * 0.45 +
+      tickSequence.consensus * 0.30 +
+      tickSequence.dominance * 0.25,
+    0,
+    100
+  );
+
+  const realConfidence = Math.round(
+    clamp(
+      tickPressureScore * 0.28 +
+        averageSetupScore * 0.24 +
+        selectedBayesian * 0.14 +
+        transition.probability * 0.12 +
+        directionStability * 0.12 +
+        probability * 0.10,
+      1,
+      94
+    )
+  );
+
+  const voteQualified =
+    agreementCount >= 3 &&
+    agreementPercent >= 60 &&
+    tickPressureScore >= 62 &&
+    voteDirection !== "NONE";
+
   const selectedSetup =
+    directionVotes[0] ||
     setupCandidates.find((item) => item.passed) ||
     setupCandidates[0] ||
     null;
@@ -1179,9 +1250,11 @@ export function analyseTicks(
     stage,
     decision,
     contract:
-      selectedSetup?.passed
-        ? selectedSetup.contract
-        : trendContract,
+      voteQualified
+        ? voteDirection
+        : selectedSetup?.passed
+          ? selectedSetup.contract
+          : trendContract,
     confidence,
     probability: Math.round(probability),
     risk,
@@ -1205,6 +1278,18 @@ export function analyseTicks(
       passed: item.passed,
       score: Math.round(item.score),
     })),
+    setupVoting: {
+      direction: voteDirection,
+      agreementCount,
+      totalPassedVotes,
+      agreementPercent: Math.round(agreementPercent),
+      averageSetupScore: Math.round(averageSetupScore),
+      tickPressureScore: Math.round(tickPressureScore),
+      realConfidence,
+      qualified: voteQualified,
+      riseVotes: riseVotes.length,
+      fallVotes: fallVotes.length,
+    },
     tickSetup: {
       contract: tickSequence.direction,
       score: tickSequence.score,
