@@ -41,7 +41,7 @@ function buildDigitDistribution(digits) {
 function shannonEntropy(digits) {
   if (!digits.length) return 0;
 
-  const distribution = buildDigitDistribution(decisionDigits);
+  const distribution = buildDigitDistribution(digits);
   const entropy = distribution.reduce((total, row) => {
     if (!row.count) return total;
     const probability = row.count / digits.length;
