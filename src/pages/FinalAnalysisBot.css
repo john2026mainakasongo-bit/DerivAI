@@ -1442,3 +1442,61 @@
   }
 }
 
+
+
+/* Final AI V22 continuous tick scoring */
+.final-v22-page .final-score-engine {
+  padding: 12px;
+  margin: 0 0 10px;
+  border: 1px solid rgba(34, 211, 238, .28);
+  border-radius: 10px;
+  background: rgba(7, 23, 39, .95);
+}
+
+.final-v22-page .final-score-engine-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.final-v22-page .final-score-engine-head span,
+.final-v22-page .final-score-engine-head strong {
+  display: block;
+}
+
+.final-v22-page .final-score-engine-head span {
+  color: #8da6bf;
+  font-size: 10px;
+}
+
+.final-v22-page .final-score-engine-head strong {
+  margin-top: 3px;
+  font-size: 15px;
+}
+
+.final-v22-page .final-score-track {
+  width: 100%;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .14);
+}
+
+.final-v22-page .final-score-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgba(14, 165, 233, .85),
+    rgba(34, 197, 94, .9)
+  );
+  transition: width .18s ease;
+}
+
+@media (max-width: 620px) {
+  .final-v22-page .final-score-engine-head {
+    flex-direction: column;
+  }
+}
+

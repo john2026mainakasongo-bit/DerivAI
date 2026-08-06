@@ -206,6 +206,21 @@ export default function FinalAnalysisBot() {
 
   const scanExpired = now >= scanEndsAt;
 
+  const adaptiveEntryThreshold =
+    scanRemainingSeconds > 30
+      ? 82
+      : scanRemainingSeconds > 15
+        ? 76
+        : 70;
+
+  const continuousScoreReady =
+    Boolean(analysis.continuousScore?.scoreQualified) &&
+    Number(analysis.continuousScore?.weightedEntryScore || 0) >=
+      adaptiveEntryThreshold &&
+    ["RISE", "FALL"].includes(
+      analysis.continuousScore?.direction
+    );
+
   const lastDecisionRef = useRef("");
   const buyLockRef = useRef(false);
   const trackedContractsRef = useRef(new Set());
@@ -348,31 +363,54 @@ export default function FinalAnalysisBot() {
     fullVoteEntryReady || lateVoteEntryReady;
 
   const minuteEntryReady =
-    stableEntryReady || tickEntryReady;
+    stableEntryReady ||
+    fullVoteEntryReady ||
+    continuousScoreReady ||
+    lateVoteEntryReady;
 
   const minuteEntryContract = stableEntryReady
     ? analysis.contract
-    : analysis.setupVoting?.direction ||
-      analysis.tickSetup?.contract ||
-      analysis.contract;
+    : fullVoteEntryReady
+      ? analysis.setupVoting?.direction
+      : continuousScoreReady
+        ? analysis.continuousScore?.direction
+        : analysis.setupVoting?.direction ||
+          analysis.tickSetup?.contract ||
+          analysis.contract;
 
   const minuteEntryConfidence = stableEntryReady
     ? analysis.confidence
-    : Math.max(
-        58,
-        Math.min(
-          90,
-          Number(analysis.setupVoting?.realConfidence || 58)
+    : fullVoteEntryReady
+      ? Math.max(
+          58,
+          Math.min(
+            90,
+            Number(
+              analysis.setupVoting?.realConfidence || 58
+            )
+          )
         )
-      );
+      : Math.max(
+          58,
+          Math.min(
+            90,
+            Number(
+              analysis.continuousScore?.weightedEntryScore ||
+                analysis.setupVoting?.realConfidence ||
+                58
+            )
+          )
+        );
 
   const minuteEntryMode = stableEntryReady
     ? "CORE_CONFIRMED"
     : fullVoteEntryReady
       ? "3_SETUP_VOTE"
-      : lateVoteEntryReady
-        ? "2_VOTE_LATE"
-        : "WAIT";
+      : continuousScoreReady
+        ? "CONTINUOUS_SCORE"
+        : lateVoteEntryReady
+          ? "2_VOTE_LATE"
+          : "WAIT";
 
   const tickPressure = Number(
     analysis.setupVoting?.tickPressureScore || 0
@@ -761,6 +799,11 @@ export default function FinalAnalysisBot() {
         Number(analysis.setupVoting?.agreementPercent || 0),
       tickPressure:
         Number(analysis.setupVoting?.tickPressureScore || 0),
+      weightedEntryScore:
+        Number(
+          analysis.continuousScore?.weightedEntryScore || 0
+        ),
+      adaptiveThreshold: adaptiveEntryThreshold,
       setup:
         minuteEntryMode === "3_SETUP_VOTE" ||
         minuteEntryMode === "2_VOTE_LATE"
@@ -798,8 +841,10 @@ export default function FinalAnalysisBot() {
     minuteEntryMode,
     minuteTargetTicks,
     fullVoteEntryReady,
+    continuousScoreReady,
     lateVoteEntryReady,
     tickEntryReady,
+    adaptiveEntryThreshold,
     stableEntryReady,
     scanExpired,
     liveQuote,
@@ -1120,7 +1165,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1615,6 +1660,42 @@ export default function FinalAnalysisBot() {
             value={`${analysis.setupVoting?.realConfidence || 0}%`}
           />
           <Metric
+            label="Continuous score"
+            value={`${analysis.continuousScore?.weightedEntryScore || 0}%`}
+          />
+          <Metric
+            label="Entry threshold"
+            value={`${adaptiveEntryThreshold}%`}
+          />
+          <Metric
+            label="Tick flow weight"
+            value={`${analysis.continuousScore?.tickFlowScore || 0}%`}
+          />
+          <Metric
+            label="Momentum weight"
+            value={`${analysis.continuousScore?.momentumScore || 0}%`}
+          />
+          <Metric
+            label="Trend weight"
+            value={`${analysis.continuousScore?.trendScore || 0}%`}
+          />
+          <Metric
+            label="Transition weight"
+            value={`${analysis.continuousScore?.transitionScore || 0}%`}
+          />
+          <Metric
+            label="Bayesian weight"
+            value={`${analysis.continuousScore?.bayesianScore || 0}%`}
+          />
+          <Metric
+            label="Historical weight"
+            value={`${analysis.continuousScore?.historicalScore || 0}%`}
+          />
+          <Metric
+            label="Pattern weight"
+            value={`${analysis.continuousScore?.patternScore || 0}%`}
+          />
+          <Metric
             label="Late entry gate"
             value={
               scanRemainingSeconds <= 15
@@ -1664,6 +1745,40 @@ export default function FinalAnalysisBot() {
               <small>{window.dominance}% pressure</small>
             </article>
           ))}
+        </section>
+
+        <section className="final-score-engine">
+          <div className="final-score-engine-head">
+            <div>
+              <span>CONTINUOUS TICK SCORE</span>
+              <strong>
+                {analysis.continuousScore?.direction || "NONE"} ·{" "}
+                {analysis.continuousScore?.weightedEntryScore || 0}%
+              </strong>
+            </div>
+            <div>
+              <span>CURRENT THRESHOLD</span>
+              <strong>{adaptiveEntryThreshold}%</strong>
+            </div>
+          </div>
+
+          <div className="final-score-track">
+            <div
+              className="final-score-fill"
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.max(
+                    0,
+                    Number(
+                      analysis.continuousScore?.weightedEntryScore ||
+                        0
+                    )
+                  )
+                )}%`,
+              }}
+            />
+          </div>
         </section>
 
         <section className="final-vote-summary">

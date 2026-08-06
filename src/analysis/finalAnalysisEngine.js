@@ -1245,6 +1245,89 @@ export function analyseTicks(
     setupCandidates[0] ||
     null;
 
+  const tickFlowScore = clamp(
+    tickSequence.score * 0.55 +
+      tickSequence.consensus * 0.25 +
+      tickSequence.dominance * 0.20,
+    0,
+    100
+  );
+
+  const momentumScore = clamp(
+    Math.abs(momentum) * 7.5,
+    0,
+    100
+  );
+
+  const trendScore =
+    regime === "TREND"
+      ? clamp(
+          trendStrength * 0.72 +
+            directionStability * 0.28,
+          0,
+          100
+        )
+      : regime === "RANGE"
+        ? 35
+        : 20;
+
+  const transitionScore = clamp(
+    transition.probability,
+    0,
+    100
+  );
+
+  const bayesianScore = clamp(
+    selectedBayesian,
+    0,
+    100
+  );
+
+  const historicalScore = clamp(
+    learned.sample >= 2
+      ? learned.winRate
+      : 50,
+    0,
+    100
+  );
+
+  const patternScore = clamp(
+    clustered.sample >= 2
+      ? clustered.winRate
+      : 50,
+    0,
+    100
+  );
+
+  const weightedEntryScore = Math.round(
+    clamp(
+      tickFlowScore * 0.22 +
+        momentumScore * 0.18 +
+        trendScore * 0.15 +
+        transitionScore * 0.17 +
+        bayesianScore * 0.12 +
+        historicalScore * 0.10 +
+        patternScore * 0.06,
+      0,
+      100
+    )
+  );
+
+  const scoreDirection =
+    voteDirection !== "NONE"
+      ? voteDirection
+      : tickSequence.direction !== "NONE"
+        ? tickSequence.direction
+        : trendContract;
+
+  const scoreQualified =
+    scoreDirection !== "NONE" &&
+    tickSequence.direction !== "NONE" &&
+    weightedEntryScore >= 70 &&
+    reversalRisk <= 38 &&
+    signalFresh;
+
+
   return {
     ready: true,
     stage,
@@ -1278,6 +1361,19 @@ export function analyseTicks(
       passed: item.passed,
       score: Math.round(item.score),
     })),
+    continuousScore: {
+      direction: scoreDirection,
+      weightedEntryScore,
+      scoreQualified,
+      tickFlowScore: Math.round(tickFlowScore),
+      momentumScore: Math.round(momentumScore),
+      trendScore: Math.round(trendScore),
+      transitionScore: Math.round(transitionScore),
+      bayesianScore: Math.round(bayesianScore),
+      historicalScore: Math.round(historicalScore),
+      patternScore: Math.round(patternScore),
+      signalFresh,
+    },
     setupVoting: {
       direction: voteDirection,
       agreementCount,
