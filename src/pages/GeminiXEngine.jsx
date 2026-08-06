@@ -695,6 +695,14 @@ function GeminiXContent({
     useState(0);
   const [campaignLosses, setCampaignLosses] =
     useState(0);
+  const [recoveryEnabled, setRecoveryEnabled] =
+    useState(true);
+  const [recoveryPending, setRecoveryPending] =
+    useState(false);
+  const [recoveryMultiplier, setRecoveryMultiplier] =
+    useState(4);
+  const [maxRecoveryStake, setMaxRecoveryStake] =
+    useState(5);
   const [cooldownUntil, setCooldownUntil] =
     useState(0);
   const [lastSettlementKey, setLastSettlementKey] =
@@ -813,6 +821,63 @@ function GeminiXContent({
     [normalizedContracts]
   );
 
+
+  const effectiveStake = useMemo(() => {
+    const baseStake = Math.max(
+      0.35,
+      Number(stake || 0.35)
+    );
+
+    if (!recoveryEnabled || !recoveryPending) {
+      return baseStake;
+    }
+
+    return Math.min(
+      Math.max(baseStake, Number(maxRecoveryStake || 5)),
+      baseStake *
+        Math.max(
+          1,
+          Number(recoveryMultiplier || 4)
+        )
+    );
+  }, [
+    stake,
+    recoveryEnabled,
+    recoveryPending,
+    recoveryMultiplier,
+    maxRecoveryStake,
+  ]);
+
+  const transactionSummary = useMemo(() => {
+    const settled = normalizedContracts.filter(
+      (trade) => trade.settled
+    );
+
+    const wins = settled.filter(
+      (trade) => trade.result === "WON"
+    ).length;
+
+    const losses = settled.filter(
+      (trade) => trade.result === "LOST"
+    ).length;
+
+    const profit = settled.reduce(
+      (sum, trade) =>
+        sum + Number(trade.profit || 0),
+      0
+    );
+
+    return {
+      wins,
+      losses,
+      profit,
+      count: settled.length,
+      winRate: settled.length
+        ? (wins / settled.length) * 100
+        : 0,
+    };
+  }, [normalizedContracts]);
+
   useEffect(() => {
     const settled = settledContracts[0];
 
@@ -829,20 +894,26 @@ function GeminiXContent({
 
     if (settled.result === "WON") {
       setCampaignWins((value) => value + 1);
+      setRecoveryPending(false);
       setCooldownUntil(Date.now() + 1000);
       setLastMarketSwitchAt(0);
       setEngineMessage(
-        "WIN settled · scanner inaendelea na 10s market cycle."
+        "WIN settled · recovery imereset na scanner inaendelea."
       );
       return;
     }
 
     if (settled.result === "LOST") {
       setCampaignLosses((value) => value + 1);
+      setRecoveryPending(
+        Boolean(recoveryEnabled)
+      );
       setCooldownUntil(Date.now() + 10000);
       setLastMarketSwitchAt(0);
       setEngineMessage(
-        "LOSS settled · scanner haijasimama. Market re-scan ya sekunde 10 imeanza."
+        recoveryEnabled
+          ? `LOSS settled · next qualified trade itatumia controlled recovery x${recoveryMultiplier}.`
+          : "LOSS settled · scanner inaendelea bila recovery."
       );
     }
   }, [
@@ -870,6 +941,7 @@ function GeminiXContent({
     setCampaignRuns(0);
     setCampaignWins(0);
     setCampaignLosses(0);
+    setRecoveryPending(false);
     setCooldownUntil(0);
     setLastSettlementKey("");
     setMarketMemory({});
@@ -1051,7 +1123,7 @@ function GeminiXContent({
     if (executionMode === "PAPER") {
       setEngineMessage(
         `PAPER ${candidate.label} · ${market?.label || symbol} · $${Number(
-          stake
+          effectiveStake
         ).toFixed(2)}`
       );
       return;
@@ -1071,7 +1143,7 @@ function GeminiXContent({
 
       await placeTrade({
         contractType: candidate.contractType,
-        amount: Number(stake),
+        amount: Number(effectiveStake),
         duration: 1,
         durationUnit: "t",
         barrier: candidate.barrier,
@@ -1079,7 +1151,13 @@ function GeminiXContent({
       });
 
       setEngineMessage(
-        `${candidate.label} imenunuliwa kwa ${symbol}.`
+        `${candidate.label} imenunuliwa kwa ${symbol} · stake $${Number(
+          effectiveStake
+        ).toFixed(2)}${
+          recoveryPending
+            ? ` · recovery x${recoveryMultiplier}`
+            : ""
+        }.`
       );
     } catch (error) {
       setEngineMessage(
@@ -1097,8 +1175,8 @@ function GeminiXContent({
       !analysis.ready ||
       tradeBusy ||
       activeContracts.length > 0 ||
-      Date.now() < cooldownUntil ||
-false    ) {
+      Date.now() < cooldownUntil
+    ) {
       return;
     }
 
@@ -1179,7 +1257,7 @@ false    ) {
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · exact 10s scan · local OPEN timeout · force re-arm
+          Shared Deriv feed · exact 10s scan · clear profit monitor · controlled single-step recovery
         </div>
       </div>
 
@@ -1246,6 +1324,65 @@ false    ) {
               <option value="PAPER">Paper Trading</option>
               <option value="LIVE">Demo/Live Transactions</option>
             </select>
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label>Recovery</label>
+            <select
+              value={
+                recoveryEnabled ? "ON" : "OFF"
+              }
+              onChange={(event) => {
+                const enabled =
+                  event.target.value === "ON";
+                setRecoveryEnabled(enabled);
+
+                if (!enabled) {
+                  setRecoveryPending(false);
+                }
+              }}
+            >
+              <option value="ON">
+                ON · Single Step
+              </option>
+              <option value="OFF">OFF</option>
+            </select>
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label>Recovery Multiplier</label>
+            <select
+              value={recoveryMultiplier}
+              onChange={(event) =>
+                setRecoveryMultiplier(
+                  Number(event.target.value)
+                )
+              }
+            >
+              <option value={2}>x2</option>
+              <option value={3}>x3</option>
+              <option value={4}>x4</option>
+            </select>
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label>Recovery Stake Cap ($)</label>
+            <input
+              type="number"
+              min="0.35"
+              step="0.05"
+              value={maxRecoveryStake}
+              onChange={(event) =>
+                setMaxRecoveryStake(
+                  Math.max(
+                    0.35,
+                    Number(
+                      event.target.value || 5
+                    )
+                  )
+                )
+              }
+            />
           </div>
 
           <div className={styles.inputGroup}>
@@ -1350,8 +1487,22 @@ false    ) {
           [
             "Recent P/L",
             Number(
-              analysis.performance.profit || 0
+              transactionSummary.profit || 0
             ).toFixed(2),
+          ],
+          [
+            "Recovery",
+            recoveryPending
+              ? `ARMED x${recoveryMultiplier}`
+              : recoveryEnabled
+              ? `READY x${recoveryMultiplier}`
+              : "OFF",
+          ],
+          [
+            "Next Stake",
+            `$${Number(
+              effectiveStake
+            ).toFixed(2)}`,
           ],
           [
             "Markets Scanned",
@@ -1413,7 +1564,7 @@ false    ) {
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V5.6 FORCE RE-ARM
+              GEMINIX V5.7 PROFIT + X4 RECOVERY
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -1605,12 +1756,53 @@ false    ) {
         </div>
 
         <div className={styles.transactionTable}>
+          <div className={styles.transactionSummary}>
+            <div>
+              <span>Settled</span>
+              <strong>
+                {transactionSummary.count}
+              </strong>
+            </div>
+            <div>
+              <span>Wins</span>
+              <strong>
+                {transactionSummary.wins}
+              </strong>
+            </div>
+            <div>
+              <span>Losses</span>
+              <strong>
+                {transactionSummary.losses}
+              </strong>
+            </div>
+            <div>
+              <span>Win Rate</span>
+              <strong>
+                {percent(
+                  transactionSummary.winRate
+                )}
+              </strong>
+            </div>
+            <div>
+              <span>Net Profit</span>
+              <strong>
+                {transactionSummary.profit >= 0
+                  ? "+"
+                  : ""}
+                {Number(
+                  transactionSummary.profit
+                ).toFixed(2)}
+              </strong>
+            </div>
+          </div>
+
           <div className={styles.transactionHead}>
             <span>Market</span>
             <span>Contract</span>
             <span>Status</span>
-            <span>Stake</span>
-            <span>P/L</span>
+            <span>Buy</span>
+            <span>Payout</span>
+            <span>Profit</span>
           </div>
 
           {normalizedContracts
@@ -1644,6 +1836,33 @@ false    ) {
                   ).toFixed(2)}
                 </span>
                 <span>
+                  {Number(
+                    trade.sell_price ??
+                      trade.payout ??
+                      (
+                        Number(
+                          trade.buy_price ??
+                            trade.purchase_price ??
+                            stake
+                        ) +
+                        Number(
+                          trade.profit || 0
+                        )
+                      )
+                  ).toFixed(2)}
+                </span>
+                <span
+                  className={
+                    Number(trade.profit || 0) > 0
+                      ? styles.profitPositive
+                      : Number(trade.profit || 0) < 0
+                      ? styles.profitNegative
+                      : ""
+                  }
+                >
+                  {Number(trade.profit || 0) > 0
+                    ? "+"
+                    : ""}
                   {Number(
                     trade.profit || 0
                   ).toFixed(2)}
