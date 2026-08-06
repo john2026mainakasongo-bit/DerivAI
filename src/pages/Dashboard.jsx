@@ -35,6 +35,7 @@ import {
 import "../styles/AnalysisEngine.css";
 import "../styles/ProfessionalDecision.css";
 import BotDashboardCatalog from "../components/BotDashboardCatalog";
+import { GeminiXDashboardPanel } from "./GeminiXEngine";
 
 function buildPath(
   prices,
@@ -99,6 +100,8 @@ export default function Dashboard() {
     setCompletingOAuth,
   ] = useState(false);
 
+  const deriv = useDerivTicks();
+
   const {
     markets,
     market,
@@ -114,7 +117,7 @@ export default function Dashboard() {
     connect,
     disconnect,
     changeSymbol,
-  } = useDerivTicks();
+  } = deriv;
 
   useEffect(() => {
     let cancelled = false;
@@ -500,6 +503,8 @@ export default function Dashboard() {
             professionalDecision
           }
         />
+
+        <GeminiXDashboardPanel data={deriv} />
 
         <section
           className={
