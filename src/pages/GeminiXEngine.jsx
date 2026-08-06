@@ -6,6 +6,8 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 
+import Sidebar from "../components/Sidebar";
+import Topbar from "../components/Topbar";
 import useDerivTicks from "../hooks/useDerivTicks";
 import styles from "./GeminiXEngine.module.css";
 
@@ -876,7 +878,7 @@ function GeminiXContent({
               }
             >
               <option value="PAPER">Paper Trading</option>
-              <option value="LIVE">Live Trading</option>
+              <option value="LIVE">Demo/Live Transactions</option>
             </select>
           </div>
 
@@ -920,6 +922,24 @@ function GeminiXContent({
               if (!connected) {
                 void connect().catch(() => {});
               }
+
+              if (!running) {
+                if (
+                  String(
+                    selectedAccountType || ""
+                  ).toLowerCase() === "demo"
+                ) {
+                  setExecutionMode("LIVE");
+                  setEngineMessage(
+                    "GeminiX imeanza Demo Transactions. Inasubiri quality entry."
+                  );
+                } else {
+                  setEngineMessage(
+                    "Real account haijawashwa automatically. Chagua Live Trading manually baada ya testing."
+                  );
+                }
+              }
+
               setRunning((value) => !value);
             }}
           >
@@ -1178,6 +1198,80 @@ function GeminiXContent({
         ))}
       </div>
 
+      <article className={styles.geminiPanel}>
+        <div className={styles.panelHeader}>
+          <span className={styles.title}>
+            GEMINIX TRANSACTIONS
+          </span>
+          <span className={styles.statusNote}>
+            {transactions.length} records
+          </span>
+        </div>
+
+        <div className={styles.transactionTable}>
+          <div className={styles.transactionHead}>
+            <span>Market</span>
+            <span>Contract</span>
+            <span>Status</span>
+            <span>Stake</span>
+            <span>P/L</span>
+          </div>
+
+          {(Array.isArray(transactions)
+            ? transactions.slice(0, 12)
+            : []
+          ).map((trade, index) => (
+            <div
+              className={styles.transactionRow}
+              key={
+                trade?.contract_id ||
+                trade?.id ||
+                index
+              }
+            >
+              <span>
+                {trade?.symbol ||
+                  trade?.market ||
+                  symbol}
+              </span>
+              <span>
+                {trade?.contract_type ||
+                  trade?.contractType ||
+                  trade?.display_name ||
+                  "—"}
+              </span>
+              <span>
+                {trade?.status ||
+                  trade?.contract_status ||
+                  "OPEN"}
+              </span>
+              <span>
+                {Number(
+                  trade?.buy_price ||
+                    trade?.stake ||
+                    trade?.amount ||
+                    0
+                ).toFixed(2)}
+              </span>
+              <span>
+                {Number(
+                  trade?.profit ??
+                    trade?.profit_loss ??
+                    trade?.pl ??
+                    0
+                ).toFixed(2)}
+              </span>
+            </div>
+          ))}
+
+          {!transactions.length ? (
+            <div className={styles.emptyTransactions}>
+              Bonyeza START GEMINIX. Demo transaction ya kwanza itaingia quality gate ikipita.
+            </div>
+          ) : null}
+        </div>
+      </article>
+
       <div className={styles.engineMessage}>
         <span>{engineMessage}</span>
 
@@ -1210,10 +1304,30 @@ export default function GeminiXEngine() {
   const data = useDerivTicks();
 
   return (
-    <GeminiXContent
-      data={data}
-      compact={false}
-      showControls
-    />
+    <div className="appShell">
+      <Sidebar />
+
+      <main className="mainContent">
+        <Topbar
+          title="GeminiX Engine"
+          subtitle="Shared Deriv analysis, controlled campaign and live demo execution"
+          connected={data.connected}
+          connecting={
+            data.loadingMarket ||
+            data.status === "CONNECTING"
+          }
+          onConnect={data.connect}
+          onDisconnect={data.disconnect}
+        />
+
+        <div className={styles.pageFrame}>
+          <GeminiXContent
+            data={data}
+            compact={false}
+            showControls
+          />
+        </div>
+      </main>
+    </div>
   );
 }

@@ -489,3 +489,75 @@
       repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* GeminiX V5.2 integrated application page */
+.pageFrame {
+  width: 100%;
+  padding: 10px 14px 30px;
+}
+
+.pageFrame .geminiBotShell:not(.compact) {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+}
+
+.transactionTable {
+  overflow: hidden;
+  border: 1px solid #193f53;
+  border-radius: 8px;
+}
+
+.transactionHead,
+.transactionRow {
+  display: grid;
+  grid-template-columns:
+    1fr 1.35fr .8fr .7fr .7fr;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 9px;
+}
+
+.transactionHead {
+  background: #071b28;
+  color: #7196aa;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.transactionRow {
+  border-top: 1px solid rgba(36, 83, 106, .4);
+  color: #d9edf5;
+  font-size: 9px;
+}
+
+.transactionRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emptyTransactions {
+  padding: 16px;
+  color: #7196aa;
+  font-size: 9px;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .pageFrame {
+    padding: 6px 6px 20px;
+  }
+
+  .transactionHead,
+  .transactionRow {
+    grid-template-columns:
+      1fr 1.25fr .8fr .65fr .65fr;
+    gap: 4px;
+    padding-inline: 5px;
+    font-size: 7px;
+  }
+}
