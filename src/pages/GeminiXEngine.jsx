@@ -188,7 +188,7 @@ function contractTimestamp(contract) {
   return 0;
 }
 
-function contractRows(openContracts) {
+function contractRows(openContracts, firstSeenMap, now) {
   const rows = Array.isArray(openContracts)
     ? openContracts
     : [];
@@ -207,13 +207,22 @@ function contractRows(openContracts) {
       const startedAt =
         contractTimestamp(row);
 
-      const ageMs = startedAt
-        ? Date.now() - startedAt
+      const localFirstSeen = Number(
+        firstSeenMap?.get(
+          contractIdOf(contract)
+        ) || 0
+      );
+
+      const referenceTime =
+        startedAt || localFirstSeen;
+
+      const ageMs = referenceTime
+        ? now - referenceTime
         : 0;
 
       const staleOpen =
         !contractIsSettled(row) &&
-        ageMs > 15000;
+        ageMs >= 12000;
 
       return {
         ...row,
@@ -694,6 +703,11 @@ function GeminiXContent({
     useState({});
   const [lastMarketSwitchAt, setLastMarketSwitchAt] =
     useState(0);
+  const [watchdogClock, setWatchdogClock] =
+    useState(() => Date.now());
+  const contractFirstSeenRef = useRef(
+    new Map()
+  );
   const [engineMessage, setEngineMessage] =
     useState(
       "GeminiX V5 iko ready. Paper mode ndiyo default."
@@ -717,9 +731,59 @@ function GeminiXContent({
   );
 
 
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setWatchdogClock(Date.now()),
+      1000
+    );
+
+    return () =>
+      window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const now = Date.now();
+    const activeIds = new Set();
+
+    for (const contract of Array.isArray(
+      openContracts
+    )
+      ? openContracts
+      : []) {
+      const id = contractIdOf(contract);
+      if (!id) continue;
+
+      activeIds.add(id);
+
+      if (
+        !contractFirstSeenRef.current.has(id)
+      ) {
+        contractFirstSeenRef.current.set(
+          id,
+          now
+        );
+      }
+    }
+
+    for (const id of Array.from(
+      contractFirstSeenRef.current.keys()
+    )) {
+      if (!activeIds.has(id)) {
+        contractFirstSeenRef.current.delete(
+          id
+        );
+      }
+    }
+  }, [openContracts]);
+
   const normalizedContracts = useMemo(
-    () => contractRows(openContracts),
-    [openContracts]
+    () =>
+      contractRows(
+        openContracts,
+        contractFirstSeenRef.current,
+        watchdogClock
+      ),
+    [openContracts, watchdogClock]
   );
 
   const activeContracts = useMemo(
@@ -810,6 +874,7 @@ function GeminiXContent({
     setLastSettlementKey("");
     setMarketMemory({});
     setLastMarketSwitchAt(0);
+    contractFirstSeenRef.current.clear();
     lastAutoTradeKeyRef.current = "";
     setEngineMessage(
       "Campaign reset. GeminiX iko ready."
@@ -825,9 +890,10 @@ function GeminiXContent({
     }
 
     lastAutoTradeKeyRef.current = "";
+    setCooldownUntil(0);
     setLastMarketSwitchAt(0);
     setEngineMessage(
-      `Stale OPEN watchdog: ${staleContracts.length} record imeachiliwa; scanner inaendelea.`
+      `Force re-arm: ${staleContracts.length} OPEN record imezidi 12s na imeondolewa kwa blocker.`
     );
   }, [
     running,
@@ -1113,7 +1179,7 @@ false    ) {
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · 10s market scan · stale OPEN watchdog · non-stop execution
+          Shared Deriv feed · exact 10s scan · local OPEN timeout · force re-arm
         </div>
       </div>
 
@@ -1299,6 +1365,24 @@ false    ) {
             "Stale OPEN",
             staleContracts.length,
           ],
+          [
+            "Next Scan",
+            `${Math.max(
+              0,
+              Math.ceil(
+                (
+                  10000 -
+                  (
+                    watchdogClock -
+                    Number(
+                      lastMarketSwitchAt || 0
+                    )
+                  )
+                ) /
+                  1000
+              )
+            )}s`,
+          ],
         ].map(([label, value]) => (
           <article key={label}>
             <span>{label}</span>
@@ -1329,7 +1413,7 @@ false    ) {
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V5.5 NON-STOP WATCHDOG
+              GEMINIX V5.6 FORCE RE-ARM
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -1549,7 +1633,7 @@ false    ) {
                 <span>
                   {trade.result}
                   {trade.staleOpen
-                    ? " · ignored"
+                    ? " · force-rearmed"
                     : ""}
                 </span>
                 <span>

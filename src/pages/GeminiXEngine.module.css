@@ -614,3 +614,18 @@
       repeat(6, minmax(0, 1fr));
   }
 }
+
+
+/* GeminiX V5.6 exact 10s scan + local force re-arm */
+.campaignGrid {
+  grid-template-columns:
+    repeat(12, minmax(0, 1fr))
+    150px 150px;
+}
+
+@media (max-width: 1380px) {
+  .campaignGrid {
+    grid-template-columns:
+      repeat(6, minmax(0, 1fr));
+  }
+}
