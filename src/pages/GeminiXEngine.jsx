@@ -831,20 +831,24 @@ function GeminiXContent({
 
   const [stake, setStake] = useState(0.35);
   const [currentStake, setCurrentStake] = useState(0.35);
-  const [targetProfit, setTargetProfit] = useState(5);
-  const [stopLoss, setStopLoss] = useState(10);
-  const [maxLossStreak, setMaxLossStreak] = useState(3);
+  const [targetProfit, setTargetProfit] = useState(1);
+  const [stopLoss, setStopLoss] = useState(2);
+  const [maxLossStreak, setMaxLossStreak] = useState(2);
   const [consecutiveLosses, setConsecutiveLosses] = useState(0);
   const [sessionProfit, setSessionProfit] = useState(0);
   const [botStatusMessage, setBotStatusMessage] = useState("SYSTEM READY");
-  const [minConfidence, setMinConfidence] = useState(68);
+  const [safetyPauseUntil, setSafetyPauseUntil] = useState(0);
+  const [lastSettlementAt, setLastSettlementAt] = useState(0);
+  const [stableSignalCount, setStableSignalCount] = useState(0);
+  const [lastStableSignalKey, setLastStableSignalKey] = useState("");
+  const [minConfidence, setMinConfidence] = useState(72);
   const [executionMode, setExecutionMode] =
     useState("PAPER");
   const [running, setRunning] = useState(false);
   const [campaignEnabled, setCampaignEnabled] =
     useState(true);
   const [campaignTarget, setCampaignTarget] =
-    useState(5);
+    useState(1.4);
   const [campaignRuns, setCampaignRuns] =
     useState(0);
   const [campaignWins, setCampaignWins] =
@@ -856,7 +860,7 @@ function GeminiXContent({
   const [recoveryPending, setRecoveryPending] =
     useState(false);
   const [recoveryMultiplier, setRecoveryMultiplier] =
-    useState(4);
+    useState(2);
   const [recoveryConfidence, setRecoveryConfidence] =
     useState(85);
   const [maxRecoveryStake, setMaxRecoveryStake] =
@@ -1156,6 +1160,44 @@ function GeminiXContent({
     recoveryGatePassed,
   ]);
 
+  useEffect(() => {
+    const signalKey = [
+      symbol,
+      analysis.best?.label || "WAIT",
+      Math.round(analysis.confidence || 0),
+      Math.round(analysis.probability || 0),
+    ].join(":");
+
+    if (
+      !analysis.ready ||
+      analysis.risk !== "LOW" ||
+      analysis.best?.riskClass !== "LOW"
+    ) {
+      setStableSignalCount(0);
+      setLastStableSignalKey("");
+      return;
+    }
+
+    if (signalKey === lastStableSignalKey) {
+      setStableSignalCount((value) =>
+        Math.min(5, value + 1)
+      );
+      return;
+    }
+
+    setLastStableSignalKey(signalKey);
+    setStableSignalCount(1);
+  }, [
+    symbol,
+    analysis.ready,
+    analysis.best?.label,
+    analysis.best?.riskClass,
+    analysis.confidence,
+    analysis.probability,
+    analysis.risk,
+    lastStableSignalKey,
+  ]);
+
   const handleTradeResult = ({ status, profit }) => {
     const normalizedStatus = String(status || "").toUpperCase();
     const tradeProfit = Number(profit || 0);
@@ -1196,20 +1238,29 @@ function GeminiXContent({
         const nextLosses = previousLosses + 1;
 
         if (nextLosses >= maxLossStreak) {
-          setRunning(false);
+          const pauseUntil = Date.now() + 60000;
+          setSafetyPauseUntil(pauseUntil);
           setCurrentStake(stake);
           setRecoveryPending(false);
-          setBotStatusMessage(`MAX LOSS STREAK ${nextLosses}/${maxLossStreak} · bot paused`);
-          setEngineMessage(`Max loss streak ${nextLosses} imefika. Bot imesimama kwa safety.`);
-          return nextLosses;
+          setConsecutiveLosses(0);
+          setBotStatusMessage(
+            `SAFETY PAUSE 60s after ${nextLosses} consecutive losses`
+          );
+          setEngineMessage(
+            `Loss streak ${nextLosses} imefika. Scanner inaendelea lakini buying imepause kwa sekunde 60.`
+          );
+          return 0;
         }
 
         const nextStake = Math.min(
-          Number(maxRecoveryStake || 5),
+          Number(maxRecoveryStake || 1.4),
           Number(
             (
               Math.max(stake, currentStake) *
-              Number(recoveryMultiplier || 2.1)
+              Math.min(
+                2,
+                Number(recoveryMultiplier || 2)
+              )
             ).toFixed(2)
           )
         );
@@ -1239,6 +1290,9 @@ function GeminiXContent({
     }
 
     setLastSettlementKey(key);
+    setLastSettlementAt(Date.now());
+    setStableSignalCount(0);
+    setLastStableSignalKey("");
     setCampaignRuns((value) => value + 1);
 
     handleTradeResult({
@@ -1295,6 +1349,10 @@ function GeminiXContent({
     setSessionProfit(0);
     setCurrentStake(stake);
     setBotStatusMessage("SYSTEM READY");
+    setSafetyPauseUntil(0);
+    setLastSettlementAt(0);
+    setStableSignalCount(0);
+    setLastStableSignalKey("");
     setRecoveryPending(false);
     setCooldownUntil(0);
     setLastSettlementKey("");
@@ -1550,6 +1608,9 @@ function GeminiXContent({
       tradeBusy ||
       activeContracts.length > 0 ||
       Date.now() < cooldownUntil ||
+      Date.now() < safetyPauseUntil ||
+      Date.now() - lastSettlementAt < 10000 ||
+      stableSignalCount < 3 ||
       !portfolioReady ||
       !portfolioBest
     ) return;
@@ -1575,7 +1636,11 @@ function GeminiXContent({
       Number(
         portfolioBest.candidate
           ?.statisticalEdge || -100
-      ) <= 0
+      ) <= 0 ||
+      portfolioBest.risk !== "LOW" ||
+      portfolioBest.candidate?.riskClass !== "LOW" ||
+      Number(portfolioBest.confidence || 0) < 78 ||
+      Number(portfolioBest.probability || 0) < 78
     ) {
       return;
     }
@@ -1601,6 +1666,9 @@ function GeminiXContent({
     tradeBusy,
     activeContracts.length,
     cooldownUntil,
+    safetyPauseUntil,
+    lastSettlementAt,
+    stableSignalCount,
     portfolioReady,
     portfolioBest,
     loadingMarket,
@@ -1658,7 +1726,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · compact market cards · click to view full numbers · TP/SL risk manager
+          Shared Deriv feed · 3-signal confirmation · 10s entry gap · 60s loss pause · capped recovery
         </div>
       </div>
 
@@ -1995,7 +2063,24 @@ function GeminiXContent({
           ],
           [
             "Risk Status",
-            running ? "RUNNING" : "STOPPED",
+            running
+              ? Date.now() < safetyPauseUntil
+                ? "SAFETY PAUSE"
+                : "RUNNING"
+              : "STOPPED",
+          ],
+          [
+            "Signal Confirm",
+            `${stableSignalCount}/3`,
+          ],
+          [
+            "Entry Gap",
+            `${Math.max(
+              0,
+              Math.ceil(
+                (10000 - (Date.now() - lastSettlementAt)) / 1000
+              )
+            )}s`,
           ],
           [
             "Risk Message",
@@ -2082,7 +2167,7 @@ function GeminiXContent({
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V6.4 CLICK-TO-EXPAND MARKETS
+              GEMINIX V6.5 SMOOTH SAFETY CORE
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>

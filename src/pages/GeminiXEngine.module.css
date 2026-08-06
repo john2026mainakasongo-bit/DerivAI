@@ -1017,3 +1017,15 @@
       repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* GeminiX V6.5 Smooth Safety Core */
+.campaignCard strong {
+  line-height: 1.2;
+}
+
+.marketRankBest {
+  box-shadow:
+    0 0 0 1px rgba(49, 242, 186, .18),
+    0 5px 16px rgba(0, 0, 0, .18);
+}
