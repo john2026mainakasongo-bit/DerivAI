@@ -37,6 +37,51 @@ function scopedMemoryForMarket(memory, symbol) {
   );
 }
 
+function classifyPatternQuality({
+  sample = 0,
+  wins = 0,
+  losses = 0,
+  winRate = 0,
+  profit = 0,
+} = {}) {
+  if (
+    sample >= 10 &&
+    winRate >= 80 &&
+    profit > 0 &&
+    wins >= losses * 2
+  ) {
+    return "ELITE";
+  }
+
+  if (
+    sample >= 5 &&
+    winRate >= 70 &&
+    profit > 0
+  ) {
+    return "GOLD";
+  }
+
+  if (
+    sample >= 4 &&
+    (
+      winRate < 35 ||
+      losses >= 4 ||
+      profit < -0.7
+    )
+  ) {
+    return "WEAK";
+  }
+
+  return "NORMAL";
+}
+
+function qualityWeight(tier) {
+  if (tier === "ELITE") return 1.18;
+  if (tier === "GOLD") return 1.10;
+  if (tier === "WEAK") return 0.72;
+  return 1;
+}
+
 function patternRows(memory) {
   return Object.entries(memory || {}).map(([key, value]) => {
     const wins = Number(value?.wins || 0);
@@ -56,8 +101,18 @@ function patternRows(memory) {
       winRate: sample ? (wins / sample) * 100 : 0,
       profit: Number(value?.profit || 0),
       updatedAt: Number(value?.updatedAt || 0),
+      tier: classifyPatternQuality({
+        sample,
+        wins,
+        losses,
+        winRate: sample ? (wins / sample) * 100 : 0,
+        profit: Number(value?.profit || 0),
+      }),
     };
-  });
+  }).map((row) => ({
+    ...row,
+    qualityWeight: qualityWeight(row.tier),
+  }));
 }
 
 function quoteOf(item) {
@@ -356,19 +411,79 @@ export default function FinalAnalysisBot() {
     ]
   );
 
+  const currentPatternSample = Number(
+    analysis.metrics?.learnedSample || 0
+  );
+
+  const currentPatternWins = Math.round(
+    currentPatternSample *
+      Number(analysis.metrics?.learnedWinRate || 0) /
+      100
+  );
+
+  const currentPatternLosses = Math.max(
+    0,
+    currentPatternSample - currentPatternWins
+  );
+
+  const currentPatternTier = classifyPatternQuality({
+    sample: currentPatternSample,
+    wins: currentPatternWins,
+    losses: currentPatternLosses,
+    winRate: Number(
+      analysis.metrics?.learnedWinRate || 0
+    ),
+    profit: Number(
+      analysis.metrics?.learnedProfit || 0
+    ),
+  });
+
+  const currentPatternWeight =
+    qualityWeight(currentPatternTier);
+
+  const qualityAdjustedThreshold = Math.max(
+    58,
+    Math.min(
+      92,
+      adaptiveEntryThreshold +
+        (currentPatternTier === "ELITE"
+          ? -8
+          : currentPatternTier === "GOLD"
+            ? -5
+            : currentPatternTier === "WEAK"
+              ? 12
+              : 0)
+    )
+  );
+
+  const weakPatternBlocked =
+    currentPatternTier === "WEAK";
+
   const continuousScoreReady =
+    !weakPatternBlocked &&
     Boolean(analysis.continuousScore?.scoreQualified) &&
     Number(analysis.continuousScore?.weightedEntryScore || 0) >=
-      adaptiveEntryThreshold &&
+      qualityAdjustedThreshold &&
     ["RISE", "FALL"].includes(
       analysis.continuousScore?.direction
     );
 
+  const rapidQualityThreshold =
+    currentPatternTier === "ELITE"
+      ? 60
+      : currentPatternTier === "GOLD"
+        ? 63
+        : currentPatternTier === "WEAK"
+          ? 78
+          : 66;
+
   const rapidPaperReady =
+    !weakPatternBlocked &&
     !rapidSlotUsed &&
-    currentMarketTrades.length < 2 &&
+    currentMarketTrades.length < 3 &&
     Boolean(analysis.rapidScore?.qualified) &&
-    Number(analysis.rapidScore?.score || 0) >= 66 &&
+    Number(analysis.rapidScore?.score || 0) >=
+      rapidQualityThreshold &&
     ["RISE", "FALL"].includes(
       analysis.rapidScore?.direction
     );
@@ -684,10 +799,71 @@ export default function FinalAnalysisBot() {
       blockedPatterns: blocked.length,
       topPatterns,
       weakPatterns,
+      elitePatterns: rows.filter(
+        (row) => row.tier === "ELITE"
+      ),
+      goldPatterns: rows.filter(
+        (row) => row.tier === "GOLD"
+      ),
+      normalPatterns: rows.filter(
+        (row) => row.tier === "NORMAL"
+      ),
+      qualityWeakPatterns: rows.filter(
+        (row) => row.tier === "WEAK"
+      ),
       bestPattern: topPatterns[0] || null,
       worstPattern: weakPatterns[0] || null,
     };
   }, [adaptiveMemory]);
+
+  useEffect(() => {
+    if (!running) return;
+
+    setAdaptiveMemory((current) => {
+      let changed = false;
+      const next = {};
+
+      for (const [key, value] of Object.entries(current || {})) {
+        const wins = Number(value?.wins || 0);
+        const losses = Number(value?.losses || 0);
+        const sample = wins + losses;
+        const profit = Number(value?.profit || 0);
+        const winRate = sample
+          ? (wins / sample) * 100
+          : 0;
+
+        const tier = classifyPatternQuality({
+          sample,
+          wins,
+          losses,
+          winRate,
+          profit,
+        });
+
+        const expiredWeak =
+          tier === "WEAK" &&
+          sample >= 6 &&
+          (
+            losses >= 5 ||
+            winRate < 25 ||
+            profit <= -1.05
+          );
+
+        if (expiredWeak) {
+          changed = true;
+          continue;
+        }
+
+        next[key] = {
+          ...value,
+          tier,
+          qualityWeight: qualityWeight(tier),
+        };
+      }
+
+      return changed ? next : current;
+    });
+  }, [running, stats.runs]);
 
   const recentPerformance = useMemo(() => {
     const rows = transactions.slice(0, 100);
@@ -1041,7 +1217,9 @@ export default function FinalAnalysisBot() {
         Number(
           analysis.continuousScore?.weightedEntryScore || 0
         ),
-      adaptiveThreshold: adaptiveEntryThreshold,
+      adaptiveThreshold: qualityAdjustedThreshold,
+      patternTier: currentPatternTier,
+      patternWeight: currentPatternWeight,
       rapidSlot: rapidPaperReady
         ? rapidSlotIndex + 1
         : null,
@@ -1182,6 +1360,33 @@ export default function FinalAnalysisBot() {
                 Number(previous.profit || 0) +
                 Number(result.profit || 0),
               updatedAt: Date.now(),
+              tier: classifyPatternQuality({
+                sample:
+                  Number(previous.wins || 0) +
+                  Number(previous.losses || 0) +
+                  1,
+                wins:
+                  Number(previous.wins || 0) +
+                  (won ? 1 : 0),
+                losses:
+                  Number(previous.losses || 0) +
+                  (won ? 0 : 1),
+                winRate:
+                  (
+                    Number(previous.wins || 0) +
+                    (won ? 1 : 0)
+                  ) /
+                  Math.max(
+                    1,
+                    Number(previous.wins || 0) +
+                      Number(previous.losses || 0) +
+                      1
+                  ) *
+                  100,
+                profit:
+                  Number(previous.profit || 0) +
+                  Number(result.profit || 0),
+              }),
             },
           };
         });
@@ -1448,7 +1653,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page final-v26-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1958,6 +2163,30 @@ export default function FinalAnalysisBot() {
             }
           />
           <Metric
+            label="Pattern tier"
+            value={currentPatternTier}
+          />
+          <Metric
+            label="Quality weight"
+            value={`${currentPatternWeight.toFixed(2)}x`}
+          />
+          <Metric
+            label="Quality threshold"
+            value={`${qualityAdjustedThreshold}%`}
+          />
+          <Metric
+            label="Elite memory"
+            value={learningSummary.elitePatterns.length}
+          />
+          <Metric
+            label="Gold memory"
+            value={learningSummary.goldPatterns.length}
+          />
+          <Metric
+            label="Weak memory"
+            value={learningSummary.qualityWeakPatterns.length}
+          />
+          <Metric
             label="Turbo mode"
             value={turboMode ? "ON" : "OFF"}
           />
@@ -2233,6 +2462,48 @@ export default function FinalAnalysisBot() {
               stats.profit
             )}`}
           />
+        </section>
+
+        <section className="final-v26-quality-grid">
+          <article className="final-v26-quality-card elite">
+            <span>ELITE MEMORY</span>
+            <strong>
+              {learningSummary.elitePatterns.length}
+            </strong>
+            <small>
+              10+ samples · 80%+ wins · positive P/L
+            </small>
+          </article>
+
+          <article className="final-v26-quality-card gold">
+            <span>GOLD MEMORY</span>
+            <strong>
+              {learningSummary.goldPatterns.length}
+            </strong>
+            <small>
+              5+ samples · 70%+ wins · positive P/L
+            </small>
+          </article>
+
+          <article className="final-v26-quality-card normal">
+            <span>NORMAL MEMORY</span>
+            <strong>
+              {learningSummary.normalPatterns.length}
+            </strong>
+            <small>
+              Still collecting quality evidence
+            </small>
+          </article>
+
+          <article className="final-v26-quality-card weak">
+            <span>WEAK / PRUNED</span>
+            <strong>
+              {learningSummary.qualityWeakPatterns.length}
+            </strong>
+            <small>
+              Weak setups are blocked and deleted after repeated losses
+            </small>
+          </article>
         </section>
 
         <section id="final-trades" className="final-bottom-grid final-section-anchor">

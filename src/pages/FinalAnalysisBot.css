@@ -1545,3 +1545,74 @@
   grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)) !important;
 }
 
+
+
+/* Final AI V26 quality pattern memory */
+.final-v26-page .final-v26-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.final-v26-page .final-v26-quality-card {
+  padding: 11px 12px;
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 10px;
+  background: rgba(8, 24, 41, .95);
+}
+
+.final-v26-page .final-v26-quality-card span,
+.final-v26-page .final-v26-quality-card strong,
+.final-v26-page .final-v26-quality-card small {
+  display: block;
+}
+
+.final-v26-page .final-v26-quality-card span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.final-v26-page .final-v26-quality-card strong {
+  margin: 4px 0;
+  font-size: 22px;
+}
+
+.final-v26-page .final-v26-quality-card small {
+  color: #91a7bd;
+  line-height: 1.35;
+}
+
+.final-v26-page .final-v26-quality-card.elite {
+  border-color: rgba(168, 85, 247, .55);
+}
+
+.final-v26-page .final-v26-quality-card.gold {
+  border-color: rgba(245, 158, 11, .58);
+}
+
+.final-v26-page .final-v26-quality-card.normal {
+  border-color: rgba(14, 165, 233, .38);
+}
+
+.final-v26-page .final-v26-quality-card.weak {
+  border-color: rgba(244, 63, 94, .48);
+}
+
+.final-v26-page .final-metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)) !important;
+}
+
+@media (max-width: 900px) {
+  .final-v26-page .final-v26-quality-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .final-v26-page .final-v26-quality-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
