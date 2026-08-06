@@ -8,14 +8,55 @@ import { analyseTicks } from "../analysis/finalAnalysisEngine";
 
 import "./FinalAnalysisBot.css";
 
-const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v8:transactions";
-const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v8:pattern-memory";
+const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v9:transactions";
+const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v9:pattern-memory";
 
 const money = (value) =>
   Number(value || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+
+function marketMemoryPrefix(symbol) {
+  return `${String(symbol || "UNKNOWN")}::`;
+}
+
+function scopedMemoryForMarket(memory, symbol) {
+  const prefix = marketMemoryPrefix(symbol);
+
+  return Object.fromEntries(
+    Object.entries(memory || {})
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, value]) => [
+        key.slice(prefix.length),
+        value,
+      ])
+  );
+}
+
+function patternRows(memory) {
+  return Object.entries(memory || {}).map(([key, value]) => {
+    const wins = Number(value?.wins || 0);
+    const losses = Number(value?.losses || 0);
+    const sample = wins + losses;
+
+    return {
+      key,
+      market: key.split("::")[0] || "UNKNOWN",
+      signature:
+        key.includes("::")
+          ? key.split("::").slice(1).join("::")
+          : key,
+      wins,
+      losses,
+      sample,
+      winRate: sample ? (wins / sample) * 100 : 0,
+      profit: Number(value?.profit || 0),
+      updatedAt: Number(value?.updatedAt || 0),
+    };
+  });
+}
 
 function quoteOf(item) {
   if (typeof item === "number") return item;
@@ -150,9 +191,14 @@ export default function FinalAnalysisBot() {
     ? Number(currentPrice)
     : numericTicks.at(-1) || 0;
 
+  const marketMemory = useMemo(
+    () => scopedMemoryForMarket(adaptiveMemory, symbol),
+    [adaptiveMemory, symbol]
+  );
+
   const analysis = useMemo(
-    () => analyseTicks(numericTicks, adaptiveMemory),
-    [numericTicks, adaptiveMemory]
+    () => analyseTicks(numericTicks, marketMemory),
+    [numericTicks, marketMemory]
   );
 
   const stats = useMemo(() => {
@@ -180,6 +226,82 @@ export default function FinalAnalysisBot() {
         : 0,
     };
   }, [transactions]);
+
+  const learningSummary = useMemo(() => {
+    const rows = patternRows(adaptiveMemory);
+    const totalSamples = rows.reduce(
+      (sum, row) => sum + row.sample,
+      0
+    );
+    const totalWins = rows.reduce(
+      (sum, row) => sum + row.wins,
+      0
+    );
+    const totalLosses = rows.reduce(
+      (sum, row) => sum + row.losses,
+      0
+    );
+    const totalProfit = rows.reduce(
+      (sum, row) => sum + row.profit,
+      0
+    );
+
+    const mature = rows.filter(
+      (row) => row.sample >= 4
+    );
+    const profitable = mature.filter(
+      (row) => row.winRate >= 58 && row.profit > 0
+    );
+    const blocked = mature.filter(
+      (row) => row.winRate < 58 || row.profit <= 0
+    );
+
+    const topPatterns = [...rows]
+      .filter((row) => row.sample >= 2)
+      .sort(
+        (a, b) =>
+          b.winRate - a.winRate ||
+          b.sample - a.sample ||
+          b.profit - a.profit
+      )
+      .slice(0, 10);
+
+    const weakPatterns = [...rows]
+      .filter((row) => row.sample >= 2)
+      .sort(
+        (a, b) =>
+          a.winRate - b.winRate ||
+          b.sample - a.sample ||
+          a.profit - b.profit
+      )
+      .slice(0, 10);
+
+    return {
+      rows,
+      totalPatterns: rows.length,
+      totalSamples,
+      totalWins,
+      totalLosses,
+      totalProfit,
+      globalWinRate: totalSamples
+        ? (totalWins / totalSamples) * 100
+        : 0,
+      maturePatterns: mature.length,
+      profitablePatterns: profitable.length,
+      blockedPatterns: blocked.length,
+      topPatterns,
+      weakPatterns,
+    };
+  }, [adaptiveMemory]);
+
+  const currentPatternMature =
+    Number(analysis.metrics.learnedSample || 0) >= 4;
+
+  const currentPatternLiveReady =
+    currentPatternMature &&
+    Number(analysis.metrics.learnedWinRate || 0) >= 60 &&
+    Number(analysis.metrics.learnedProfit || 0) > 0 &&
+    Number(analysis.metrics.expectedValue || 0) > 0;
 
   const executionReady =
     connected &&
@@ -276,7 +398,9 @@ export default function FinalAnalysisBot() {
       stake: Number(stake),
       confidence: analysis.confidence,
       memorySignature:
-        analysis.metrics.memorySignature || "",
+        analysis.metrics.memorySignature
+          ? `${marketMemoryPrefix(symbol)}${analysis.metrics.memorySignature}`
+          : "",
       entrySerial: tickSerial,
       openedAt: new Date().toLocaleTimeString(),
     });
@@ -472,6 +596,13 @@ export default function FinalAnalysisBot() {
       return;
     }
 
+    if (!currentPatternLiveReady) {
+      setMessage(
+        "LIVE BLOCKED · current pattern needs at least 4 samples, 60% learned wins, positive learned profit and positive EV."
+      );
+      return;
+    }
+
     buyLockRef.current = true;
 
     try {
@@ -525,7 +656,8 @@ export default function FinalAnalysisBot() {
       buyLockRef.current ||
       tradeBusy ||
       analysis.decision !== "BUY" ||
-      analysis.confidence < minimumConfidence
+      analysis.confidence < minimumConfidence ||
+      !currentPatternLiveReady
     ) {
       return;
     }
@@ -779,6 +911,14 @@ export default function FinalAnalysisBot() {
               Selected account:{" "}
               {selectedAccountType || "none"}
             </small>
+            <small>
+              Pattern memory:{" "}
+              {analysis.metrics.learnedSample || 0} samples ·{" "}
+              {analysis.metrics.learnedWinRate || 50}% wins ·{" "}
+              {currentPatternLiveReady
+                ? "LIVE READY"
+                : "LEARNING"}
+            </small>
           </article>
         </section>
 
@@ -845,6 +985,20 @@ export default function FinalAnalysisBot() {
               Number(analysis.metrics.expectedValue || 0) >= 0
                 ? `+${analysis.metrics.expectedValue ?? 0}`
                 : analysis.metrics.expectedValue ?? 0
+            }
+          />
+          <Metric
+            label="Learned P/L"
+            value={`${Number(analysis.metrics.learnedProfit || 0) >= 0 ? "+" : ""}$${money(
+              analysis.metrics.learnedProfit || 0
+            )}`}
+          />
+          <Metric
+            label="Live pattern gate"
+            value={
+              currentPatternLiveReady
+                ? "READY"
+                : "LEARNING"
             }
           />
         </section>
@@ -1005,6 +1159,178 @@ export default function FinalAnalysisBot() {
               )}
             </div>
           </article>
+        </section>
+
+
+        <section className="final-learning-dashboard">
+          <div className="final-learning-head">
+            <div>
+              <span>ADAPTIVE PATTERN DATABASE</span>
+              <h2>Learning dashboard</h2>
+            </div>
+
+            <div className="final-learning-summary">
+              <Metric
+                label="Patterns"
+                value={learningSummary.totalPatterns}
+              />
+              <Metric
+                label="Samples"
+                value={learningSummary.totalSamples}
+              />
+              <Metric
+                label="Global wins"
+                value={`${Math.round(
+                  learningSummary.globalWinRate
+                )}%`}
+              />
+              <Metric
+                label="Profitable"
+                value={learningSummary.profitablePatterns}
+              />
+              <Metric
+                label="Blocked"
+                value={learningSummary.blockedPatterns}
+              />
+              <Metric
+                label="Learned P/L"
+                value={`${learningSummary.totalProfit >= 0 ? "+" : ""}$${money(
+                  learningSummary.totalProfit
+                )}`}
+              />
+            </div>
+          </div>
+
+          <div className="final-learning-grid">
+            <article className="final-panel">
+              <div className="final-panel-title">
+                <div>
+                  <span>TOP PATTERNS</span>
+                  <h2>Best learned setups</h2>
+                </div>
+              </div>
+
+              <div className="final-pattern-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Market</th>
+                      <th>Pattern</th>
+                      <th>Sample</th>
+                      <th>Wins</th>
+                      <th>Win rate</th>
+                      <th>P/L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {learningSummary.topPatterns.map(
+                      (row) => (
+                        <tr key={row.key}>
+                          <td>{row.market}</td>
+                          <td title={row.signature}>
+                            {row.signature}
+                          </td>
+                          <td>{row.sample}</td>
+                          <td>
+                            {row.wins}/{row.losses}
+                          </td>
+                          <td className="final-win">
+                            {Math.round(row.winRate)}%
+                          </td>
+                          <td
+                            className={
+                              row.profit >= 0
+                                ? "final-win"
+                                : "final-loss"
+                            }
+                          >
+                            {row.profit >= 0 ? "+" : ""}$
+                            {money(row.profit)}
+                          </td>
+                        </tr>
+                      )
+                    )}
+
+                    {!learningSummary.topPatterns.length && (
+                      <tr>
+                        <td
+                          colSpan="6"
+                          className="final-empty"
+                        >
+                          Learning needs at least two
+                          samples for a pattern.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article className="final-panel">
+              <div className="final-panel-title">
+                <div>
+                  <span>WEAK PATTERNS</span>
+                  <h2>Setups to avoid</h2>
+                </div>
+              </div>
+
+              <div className="final-pattern-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Market</th>
+                      <th>Pattern</th>
+                      <th>Sample</th>
+                      <th>Losses</th>
+                      <th>Win rate</th>
+                      <th>P/L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {learningSummary.weakPatterns.map(
+                      (row) => (
+                        <tr key={row.key}>
+                          <td>{row.market}</td>
+                          <td title={row.signature}>
+                            {row.signature}
+                          </td>
+                          <td>{row.sample}</td>
+                          <td>
+                            {row.losses}/{row.wins}
+                          </td>
+                          <td className="final-loss">
+                            {Math.round(row.winRate)}%
+                          </td>
+                          <td
+                            className={
+                              row.profit >= 0
+                                ? "final-win"
+                                : "final-loss"
+                            }
+                          >
+                            {row.profit >= 0 ? "+" : ""}$
+                            {money(row.profit)}
+                          </td>
+                        </tr>
+                      )
+                    )}
+
+                    {!learningSummary.weakPatterns.length && (
+                      <tr>
+                        <td
+                          colSpan="6"
+                          className="final-empty"
+                        >
+                          No weak learned patterns yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
         </section>
 
         <footer className="final-disclaimer">
