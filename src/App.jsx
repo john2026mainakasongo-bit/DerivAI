@@ -1,4 +1,4 @@
-﻿import {
+import {
   BrowserRouter,
   Navigate,
   Route,
