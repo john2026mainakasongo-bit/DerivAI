@@ -276,23 +276,7 @@ export function analyseTicks(
           `${clean.length}/24 ticks collected`
         ),
       ],
-      selectedSetup: selectedSetup
-      ? {
-          id: selectedSetup.id,
-          label: selectedSetup.label,
-          contract: selectedSetup.contract,
-          passed: selectedSetup.passed,
-          score: Math.round(selectedSetup.score),
-        }
-      : null,
-    setupCandidates: setupCandidates.map((item) => ({
-      id: item.id,
-      label: item.label,
-      contract: item.contract,
-      passed: item.passed,
-      score: Math.round(item.score),
-    })),
-    metrics: {
+      metrics: {
         momentum: 0,
         trend: "WARMING",
         volatility: "UNKNOWN",
@@ -954,7 +938,7 @@ export function analyseTicks(
     {
       id: "TREND_CONTINUATION",
       label: "Trend continuation",
-      contract: selectedSetup?.passed ? selectedSetup.contract : trendContract,
+      contract: trendContract,
       passed:
         regime === "TREND" &&
         Math.abs(momentum) >= 5 &&
@@ -1042,7 +1026,10 @@ export function analyseTicks(
     ready: true,
     stage,
     decision,
-    contract: trendContract,
+    contract:
+      selectedSetup?.passed
+        ? selectedSetup.contract
+        : trendContract,
     confidence,
     probability: Math.round(probability),
     risk,
@@ -1050,6 +1037,22 @@ export function analyseTicks(
     reasons,
     checks,
     passedChecks,
+    selectedSetup: selectedSetup
+      ? {
+          id: selectedSetup.id,
+          label: selectedSetup.label,
+          contract: selectedSetup.contract,
+          passed: selectedSetup.passed,
+          score: Math.round(selectedSetup.score),
+        }
+      : null,
+    setupCandidates: setupCandidates.map((item) => ({
+      id: item.id,
+      label: item.label,
+      contract: item.contract,
+      passed: item.passed,
+      score: Math.round(item.score),
+    })),
     metrics: {
       momentum: Math.round(momentum),
       trend,
