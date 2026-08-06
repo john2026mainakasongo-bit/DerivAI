@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import styles from './GeminiXEngine.module.css';
 
 export default function GeminiXEngine() {
-  const [market, setMarket] = useState('R_100');
+  const [market, setMarket] = useState('1HZ100V');
   const [stake, setStake] = useState(0.35);
   const [minConfidence, setMinConfidence] = useState(80);
   const [execMode, setExecMode] = useState('Paper trading');
@@ -44,6 +44,18 @@ export default function GeminiXEngine() {
   const ws = useRef(null);
   const ticksHistoryRef = useRef([]);
 
+  // Map symbols if needed to standard Deriv WS identifiers
+  const getCleanSymbol = (sym) => {
+    const map = {
+      'R_10': '1HZ10V',
+      'R_25': '1HZ25V',
+      'R_50': '1HZ50V',
+      'R_75': '1HZ75V',
+      'R_100': '1HZ100V'
+    };
+    return map[sym] || sym;
+  };
+
   useEffect(() => {
     setFeedStatus('CONNECTING');
     setLiveQuote(null);
@@ -52,19 +64,20 @@ export default function GeminiXEngine() {
     setDigitCounts(Array(10).fill(0));
     ticksHistoryRef.current = [];
 
+    const activeSymbol = getCleanSymbol(market);
     const app_id = 1089;
     ws.current = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${app_id}`);
 
     ws.current.onopen = () => {
       setFeedStatus('CONNECTING');
-      setBlockReason('Inaunganisha na stream ya ticks...');
+      setBlockReason(`Inaunganisha na stream (${activeSymbol})...`);
 
-      // Forget previous subscriptions to avoid duplicate feeds
+      // Clear existing subscriptions
       ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
 
-      // Subscribe to ticks
+      // Send tick stream request
       ws.current.send(JSON.stringify({
-        ticks: market,
+        ticks: activeSymbol,
         subscribe: 1
       }));
     };
@@ -73,12 +86,11 @@ export default function GeminiXEngine() {
       const data = JSON.parse(event.data);
 
       if (data.error) {
-        setBlockReason(`Hitilafu ya Deriv (${market}): ${data.error.message}`);
+        setBlockReason(`Hitilafu ya Deriv (${activeSymbol}): ${data.error.message}`);
         setFeedStatus('ERROR');
         return;
       }
 
-      // Handle direct tick stream
       if (data.msg_type === 'tick' && data.tick) {
         setFeedStatus('LIVE');
         const quoteStr = data.tick.quote.toString();
@@ -197,8 +209,9 @@ export default function GeminiXEngine() {
   };
 
   const executeTrade = (contractType, barrier = 2) => {
+    const activeSymbol = getCleanSymbol(market);
     if (execMode === 'Paper trading') {
-      alert(`[PAPER TRADE]\nContract: ${contractType}\nMarket: ${market}\nStake: $${stake}`);
+      alert(`[PAPER TRADE]\nContract: ${contractType}\nMarket: ${activeSymbol}\nStake: $${stake}`);
     } else if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({
         buy: 1,
@@ -210,7 +223,7 @@ export default function GeminiXEngine() {
           currency: 'USD',
           duration: 1,
           duration_unit: 't',
-          symbol: market,
+          symbol: activeSymbol,
           barrier: barrier.toString()
         }
       }));
@@ -249,16 +262,16 @@ export default function GeminiXEngine() {
         <div className={styles.inputGroup}>
           <label>Market</label>
           <select value={market} onChange={(e) => setMarket(e.target.value)}>
-            <option value="R_10">Volatility 10 Index</option>
-            <option value="R_25">Volatility 25 Index</option>
-            <option value="R_50">Volatility 50 Index</option>
-            <option value="R_75">Volatility 75 Index</option>
-            <option value="R_100">Volatility 100 Index</option>
-            <option value="1HZ10V">Volatility 10 (1s) Index</option>
-            <option value="1HZ25V">Volatility 25 (1s) Index</option>
-            <option value="1HZ50V">Volatility 50 (1s) Index</option>
-            <option value="1HZ75V">Volatility 75 (1s) Index</option>
             <option value="1HZ100V">Volatility 100 (1s) Index</option>
+            <option value="1HZ75V">Volatility 75 (1s) Index</option>
+            <option value="1HZ50V">Volatility 50 (1s) Index</option>
+            <option value="1HZ25V">Volatility 25 (1s) Index</option>
+            <option value="1HZ10V">Volatility 10 (1s) Index</option>
+            <option value="R_100">Volatility 100 Index</option>
+            <option value="R_75">Volatility 75 Index</option>
+            <option value="R_50">Volatility 50 Index</option>
+            <option value="R_25">Volatility 25 Index</option>
+            <option value="R_10">Volatility 10 Index</option>
           </select>
         </div>
 
