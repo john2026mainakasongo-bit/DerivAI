@@ -19,9 +19,9 @@ const links = [
     icon: "RE",
   },
   {
-    to: "/final-analysis-bot",
-    label: "Final Analysis",
-    icon: "FA",
+    to: "/gemini-x-engine",
+    label: "GeminiX Engine",
+    icon: "GX",
   },
   {
     to: "/over-under-analysis",
@@ -40,14 +40,14 @@ const links = [
     icon: "◎",
   },
   {
-    to: "/settings",
-    label: "Settings",
-    icon: "⚙",
-  },
-  {
     to: "/fresh-edge-ai",
     label: "FreshEdge AI",
     icon: "F",
+  },
+  {
+    to: "/settings",
+    label: "Settings",
+    icon: "⚙",
   },
 ];
 

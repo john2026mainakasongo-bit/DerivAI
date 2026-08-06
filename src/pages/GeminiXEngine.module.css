@@ -1,0 +1,205 @@
+/* src/pages/GeminiXEngine.module.css */
+
+.geminiBotShell {
+  min-height: 100vh;
+  background: #06101d;
+  color: #eaf3ff;
+  padding: 18px;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  box-sizing: border-box;
+}
+
+.geminiBotShell * {
+  box-sizing: border-box;
+}
+
+.geminiTopbar,
+.geminiControlGrid,
+.geminiDecision,
+.geminiOpenCard,
+.geminiMetric,
+.geminiPanel,
+.geminiDisclaimer {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 29, 47, 0.92);
+  border-radius: 16px;
+}
+
+/* TOPBAR */
+.geminiTopbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  margin-bottom: 16px;
+}
+
+.statusItems {
+  display: flex;
+  gap: 24px;
+}
+
+.statusField label {
+  font-size: 11px;
+  color: #94a3b8;
+  display: block;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.statusVal {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.textGreen { color: #10b981; }
+.textRed { color: #ef4444; }
+
+.statusNote {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* CONTROL GRID */
+.geminiControlGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) 180px;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  align-items: flex-end;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inputGroup label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.inputGroup select,
+.inputGroup input {
+  background: #0a1726;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.btnAction {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.startBtn { background: #10b981; color: #fff; }
+.stopBtn { background: #ef4444; color: #fff; }
+
+/* MAIN PANELS GRID */
+.dashboardGrid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.geminiDecision {
+  padding: 20px;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+}
+
+.tags {
+  display: flex;
+  gap: 6px;
+}
+
+.tag {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.tagWatch { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+.tagWait { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+.mainDecisionText {
+  font-size: 48px;
+  font-weight: 800;
+  margin: 10px 0 4px 0;
+  color: #ffffff;
+}
+
+.reasonText {
+  color: #94a3b8;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+/* GATES GRID */
+.gatesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.gateCard {
+  background: #0a1726;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 8px 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.gatePass { border-left: 3px solid #10b981; }
+.gateFail { border-left: 3px solid #ef4444; }
+
+/* METRICS BAR */
+.analyticsRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 10px;
+}
+
+.geminiMetric {
+  padding: 12px;
+  text-align: center;
+}
+
+.geminiMetric label {
+  font-size: 10px;
+  color: #64748b;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.geminiMetric span {
+  font-size: 14px;
+  font-weight: 700;
+}
