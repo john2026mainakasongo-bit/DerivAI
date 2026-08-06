@@ -2,21 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import styles from './GeminiXEngine.module.css';
 
 export default function GeminiXEngine() {
-  // Config States
-  const [market, setMarket] = useState('R_100');
+  // Symbolic mapping standard for Deriv API
+  const [market, setMarket] = useState('1HZ100V'); // Defaulted to Volatility 100 (1s)
   const [stake, setStake] = useState(0.35);
   const [minConfidence, setMinConfidence] = useState(80);
   const [execMode, setExecMode] = useState('Paper trading');
   const [isBotRunning, setIsBotRunning] = useState(false);
 
-  // Live Tick & Digit Data States
   const [feedStatus, setFeedStatus] = useState('CONNECTING');
   const [liveQuote, setLiveQuote] = useState(null);
   const [lastDigit, setLastDigit] = useState(null);
   const [recentDigits, setRecentDigits] = useState([]);
   const [digitCounts, setDigitCounts] = useState(Array(10).fill(0));
 
-  // Decision & Analysis States
   const [decision, setDecision] = useState('WAIT');
   const [blockReason, setBlockReason] = useState('Inaunganisha na Deriv WebSocket...');
   const [confidence, setConfidence] = useState(0);
@@ -47,7 +45,6 @@ export default function GeminiXEngine() {
   const ws = useRef(null);
   const ticksHistoryRef = useRef([]);
 
-  // 1. AUTO-CONNECT DERIV WEBSOCKET UPON PAGE LOAD
   useEffect(() => {
     setFeedStatus('CONNECTING');
     setLiveQuote(null);
@@ -56,7 +53,7 @@ export default function GeminiXEngine() {
     setDigitCounts(Array(10).fill(0));
     ticksHistoryRef.current = [];
 
-    const app_id = 1089; // Standard Deriv App ID
+    const app_id = 1089;
     ws.current = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${app_id}`);
 
     ws.current.onopen = () => {
@@ -79,6 +76,7 @@ export default function GeminiXEngine() {
       }
 
       if (data.msg_type === 'tick' && data.tick) {
+        setFeedStatus('LIVE');
         const quoteStr = data.tick.quote.toString();
         const newPrice = parseFloat(quoteStr);
         const digit = parseInt(quoteStr.slice(-1), 10);
@@ -86,17 +84,13 @@ export default function GeminiXEngine() {
         setLiveQuote(newPrice);
         setLastDigit(digit);
 
-        // Hifadhi Digiti 12 za hivi karibuni
         setRecentDigits((prev) => [...prev.slice(-11), digit]);
-
-        // Ongeza Hesabu ya Digiti
         setDigitCounts((prev) => {
           const updated = [...prev];
           updated[digit] += 1;
           return updated;
         });
 
-        // Hifadhi Historia ya Bei
         ticksHistoryRef.current = [...ticksHistoryRef.current.slice(-49), newPrice];
         runAnalysisEngine(ticksHistoryRef.current, digit);
       }
@@ -120,7 +114,6 @@ export default function GeminiXEngine() {
     };
   }, [market]);
 
-  // 2. LIVE ANALYSIS ENGINE
   const runAnalysisEngine = (prices, latestDigit) => {
     const len = prices.length;
     if (len < 3) {
@@ -199,10 +192,9 @@ export default function GeminiXEngine() {
     }
   };
 
-  // 3. EXECUTE TRADE
   const executeTrade = (contractType, barrier = 2) => {
     if (execMode === 'Paper trading') {
-      alert(`[PAPER TRADE EXECUTED]\nContract: ${contractType}\nMarket: ${market}\nStake: $${stake}`);
+      alert(`[PAPER TRADE]\nContract: ${contractType}\nMarket: ${market}\nStake: $${stake}`);
     } else if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({
         buy: 1,
@@ -225,7 +217,7 @@ export default function GeminiXEngine() {
 
   return (
     <div className={styles.geminiBotShell}>
-      {/* 1. TOPBAR */}
+      {/* TOPBAR */}
       <div className={styles.geminiTopbar}>
         <div className={styles.statusItems}>
           <div className={styles.statusField}>
@@ -248,12 +240,16 @@ export default function GeminiXEngine() {
         </div>
       </div>
 
-      {/* 2. CONTROL GRID */}
+      {/* CONTROL GRID WITH VALID DERIV SYMBOLS */}
       <div className={styles.geminiControlGrid}>
         <div className={styles.inputGroup}>
           <label>Market</label>
           <select value={market} onChange={(e) => setMarket(e.target.value)}>
-            <option value="R_100">Volatility 100 Index</option>
+            <option value="1HZ100V">Volatility 100 (1s) Index</option>
+            <option value="1HZ10V">Volatility 10 (1s) Index</option>
+            <option value="1HZ25V">Volatility 25 (1s) Index</option>
+            <option value="1HZ50V">Volatility 50 (1s) Index</option>
+            <option value="1HZ75V">Volatility 75 (1s) Index</option>
             <option value="R_10">Volatility 10 Index</option>
             <option value="R_25">Volatility 25 Index</option>
             <option value="R_50">Volatility 50 Index</option>
@@ -296,7 +292,7 @@ export default function GeminiXEngine() {
         </button>
       </div>
 
-      {/* 3. RECENT DIGITS & QUICK TRADE BUTTONS */}
+      {/* RECENT DIGITS STREAM & QUICK TRADING */}
       <div className={styles.geminiPanel} style={{ marginBottom: '16px' }}>
         <div className={styles.panelHeader}>
           <span className={styles.title}>LIVE RECENT DIGITS STREAM & QUICK TRADING</span>
@@ -348,82 +344,124 @@ export default function GeminiXEngine() {
             </button>
             <button 
               onClick={() => executeTrade('DIGITODD')}
-              style={{ background: '#ed6c02', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              style={{ background: '#e65100', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
             >
               BUY ODD
             </button>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '6px', marginTop: '12px' }}>
-          {digitCounts.map((count, d) => {
-            const pct = Math.round((count / totalDigitTicks) * 100);
+        {/* DIGITS DISTRIBUTION GRID D0-D9 */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '8px', marginTop: '12px' }}>
+          {digitCounts.map((cnt, d) => {
+            const pct = Math.round((cnt / totalDigitTicks) * 100);
             return (
-              <div key={d} style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', padding: '6px', borderRadius: '4px' }}>
-                <span style={{ fontSize: '11px', color: '#aaa' }}>D{d}</span>
-                <div style={{ height: '4px', background: '#333', borderRadius: '2px', margin: '4px 0', overflow: 'hidden' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: '#00d2ff' }}></div>
-                </div>
-                <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#fff' }}>{pct}%</span>
+              <div key={d} style={{ background: '#0a101d', border: '1px solid #1e293b', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>D{d}</div>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#fff' }}>{pct}%</div>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* 4. DECISION DASHBOARD */}
-      <div className={styles.dashboardGrid}>
-        <div className={styles.geminiDecision}>
+      {/* DECISION & LIVE METRICS PANEL */}
+      <div className={styles.geminiMainGrid}>
+        {/* DECISION BOX */}
+        <div className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>GEMINIX ENGINE DECISION</span>
-            <div className={styles.tags}>
-              <span className={`${styles.tag} ${styles.tagWatch}`}>REC: {suggestedContract}</span>
-              <span className={`${styles.tag} ${styles.tagWait}`}>{decision}</span>
+            <div>
+              <span className={styles.recBadge}>REC: {suggestedContract}</span>
+              <span className={`${styles.decisionBadge} ${decision === 'WAIT' ? styles.wait : styles.execute}`}>
+                {decision}
+              </span>
             </div>
           </div>
 
-          <h1 className={styles.mainDecisionText}>{decision}</h1>
+          <div className={styles.largeDecisionText}>{decision}</div>
           <p className={styles.reasonText}>{blockReason}</p>
 
           <div className={styles.gatesGrid}>
             {gates.map((g, idx) => (
               <div key={idx} className={`${styles.gateCard} ${g.passed ? styles.gatePass : styles.gateFail}`}>
-                <span>{g.passed ? '✓' : '✕'}</span>
-                <strong>{g.name}:</strong>
-                <span>{g.status}</span>
+                <span className={styles.gateIcon}>{g.passed ? '✓' : '✕'}</span>
+                <div>
+                  <strong>{g.name}: </strong>
+                  <span>{g.status}</span>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
+        {/* METRICS SIDEBAR */}
         <div className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>LIVE METRICS</span>
           </div>
-          <div style={{ padding: '10px 0' }}>
-            <p style={{ fontSize: '13px', margin: '6px 0' }}>Confidence: <strong>{confidence}%</strong></p>
-            <p style={{ fontSize: '13px', margin: '6px 0' }}>Probability: <strong>{probability}%</strong></p>
-            <p style={{ fontSize: '13px', margin: '6px 0' }}>
-              Risk Level: <strong className={riskLevel === 'HIGH' ? styles.textRed : styles.textGreen}>{riskLevel}</strong>
-            </p>
-            <p style={{ fontSize: '13px', margin: '6px 0' }}>
-              Live Quote: <strong>{liveQuote !== null ? liveQuote : 'Inapakia...'}</strong>
-            </p>
-            <p style={{ fontSize: '13px', margin: '6px 0' }}>
-              Last Digit: <strong style={{ color: '#00d2ff', fontSize: '16px' }}>{lastDigit !== null ? lastDigit : '-'}</strong>
-            </p>
+
+          <div className={styles.metricsList}>
+            <div className={styles.metricRow}>
+              <span>Confidence:</span>
+              <strong>{confidence}%</strong>
+            </div>
+            <div className={styles.metricRow}>
+              <span>Probability:</span>
+              <strong>{probability}%</strong>
+            </div>
+            <div className={styles.metricRow}>
+              <span>Risk Level:</span>
+              <strong className={riskLevel === 'LOW' ? styles.textGreen : styles.textRed}>{riskLevel}</strong>
+            </div>
+            <div className={styles.metricRow}>
+              <span>Live Quote:</span>
+              <strong>{liveQuote !== null ? liveQuote.toFixed(4) : 'Inapakia...'}</strong>
+            </div>
+            <div className={styles.metricRow}>
+              <span>Last Digit:</span>
+              <strong className={styles.highlightDigit}>{lastDigit !== null ? lastDigit : '-'}</strong>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 5. ANALYTICS ROW */}
-      <div className={styles.analyticsRow}>
-        {Object.entries(metrics).map(([key, value]) => (
-          <div key={key} className={styles.geminiMetric}>
-            <label>{key}</label>
-            <span>{value}</span>
+      {/* ENGINE PARAMETERS FOOTER */}
+      <div className={styles.geminiPanel} style={{ marginTop: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '12px', textAlign: 'center' }}>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>momentum</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{metrics.momentum}</div>
           </div>
-        ))}
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>trend</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{metrics.trend}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>volatility</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{metrics.volatility}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>entropy</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{metrics.entropy}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>bayesian</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{metrics.bayesian}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>transition</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{metrics.transition}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>observedCycle</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{metrics.observedCycle}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>regime</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>{metrics.regime}</div>
+          </div>
+        </div>
       </div>
     </div>
   );
