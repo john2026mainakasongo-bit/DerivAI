@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import styles from './GeminiXEngine.module.css';
 
 export default function GeminiXEngine() {
-  // Config States
-  const [market, setMarket] = useState('1HZ100V');
+  // Config States - Standard Deriv Symbols
+  const [market, setMarket] = useState('R_100');
   const [stake, setStake] = useState(0.35);
   const [minConfidence, setMinConfidence] = useState(80);
   const [execMode, setExecMode] = useState('Paper trading');
@@ -15,7 +15,7 @@ export default function GeminiXEngine() {
   
   // Analytics States
   const [decision, setDecision] = useState('WAIT');
-  const [blockReason, setBlockReason] = useState('Collecting tick data...');
+  const [blockReason, setBlockReason] = useState('Connecting to Deriv WebSocket...');
   const [confidence, setConfidence] = useState(0);
   const [probability, setProbability] = useState(50);
   const [riskLevel, setRiskLevel] = useState('LOW');
@@ -43,10 +43,11 @@ export default function GeminiXEngine() {
   const ws = useRef(null);
   const ticksHistoryRef = useRef([]);
 
-  // 1. DERIV WEBSOCKET CONNECTION & CLEANUP
+  // 1. DERIV WEBSOCKET CONNECTION
   useEffect(() => {
     setFeedStatus('CONNECTING');
     setLiveQuote(null);
+    setBlockReason('Subscribing to live ticks...');
     ticksHistoryRef.current = [];
 
     const app_id = 1089;
@@ -54,7 +55,6 @@ export default function GeminiXEngine() {
 
     ws.current.onopen = () => {
       setFeedStatus('LIVE');
-      // Clear previous tick subscriptions before subscribing
       ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
       ws.current.send(JSON.stringify({
         ticks: market,
@@ -83,7 +83,6 @@ export default function GeminiXEngine() {
     ws.current.onclose = () => setFeedStatus('OFFLINE');
     ws.current.onerror = () => setFeedStatus('ERROR');
 
-    // Ping every 30s to keep connection alive
     const pingInterval = setInterval(() => {
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         ws.current.send(JSON.stringify({ ping: 1 }));
@@ -92,35 +91,30 @@ export default function GeminiXEngine() {
 
     return () => {
       clearInterval(pingInterval);
-      if (ws.current) {
-        if (ws.current.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
-        }
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
         ws.current.close();
       }
     };
   }, [market]);
 
-  // 2. ANALYSIS & BAYESIAN ENGINE
+  // 2. LIVE CALCULATIONS & BAYESIAN ENGINE
   const runAnalysisEngine = (prices) => {
     const len = prices.length;
     if (len < 3) {
-      setBlockReason(`Buffering ticks (${len}/10)...`);
+      setBlockReason(`Collecting market ticks (${len}/10)...`);
       return;
     }
 
     const currentPrice = prices[len - 1];
     const prevPrice = prices[len - 2];
 
-    // Momentum Calculation
     const momentumVal = Math.round((currentPrice - prices[Math.max(0, len - 5)]) * 100);
     
-    // Trend Identification
     const sma5 = prices.slice(-5).reduce((a, b) => a + b, 0) / Math.min(len, 5);
     const sma10 = prices.slice(-10).reduce((a, b) => a + b, 0) / Math.min(len, 10);
     const trendDir = sma5 >= sma10 ? 'UP' : 'DOWN';
 
-    // Bayesian Estimation
     let upMoves = 0;
     for (let i = 1; i < len; i++) {
       if (prices[i] > prices[i - 1]) upMoves++;
@@ -128,7 +122,6 @@ export default function GeminiXEngine() {
     const likelihood = upMoves / (len - 1 || 1);
     const bayesianScore = Math.min(99, Math.max(1, Math.round(likelihood * 100)));
 
-    // Gates Evaluation
     const isDirOk = (trendDir === 'UP' && momentumVal >= 0) || (trendDir === 'DOWN' && momentumVal <= 0);
     const isMomOk = Math.abs(momentumVal) >= 1;
     const isTransOk = bayesianScore >= 55 || bayesianScore <= 45;
@@ -152,7 +145,6 @@ export default function GeminiXEngine() {
     setConfidence(calculatedConfidence);
     setProbability(bayesianScore);
 
-    // Decision Logic
     let nextDecision = 'WAIT';
     let reason = '';
 
@@ -178,7 +170,6 @@ export default function GeminiXEngine() {
       regime: Math.abs(momentumVal) > 4 ? 'BREAKOUT' : 'TREND'
     });
 
-    // Auto Execution
     if (isBotRunning && nextDecision !== 'WAIT' && calculatedConfidence >= minConfidence) {
       executeTrade(nextDecision);
     }
@@ -225,7 +216,7 @@ export default function GeminiXEngine() {
           </div>
         </div>
         <div className={styles.statusNote}>
-          GeminiX Engine is connected live to Deriv WebSocket API.
+          GeminiX Engine connected to Deriv WebSocket API.
         </div>
       </div>
 
@@ -234,10 +225,10 @@ export default function GeminiXEngine() {
         <div className={styles.inputGroup}>
           <label>Market</label>
           <select value={market} onChange={(e) => setMarket(e.target.value)}>
-            <option value="1HZ100V">Volatility 100 (1s) Index</option>
             <option value="R_100">Volatility 100 Index</option>
-            <option value="1HZ10V">Volatility 10 (1s) Index</option>
             <option value="R_10">Volatility 10 Index</option>
+            <option value="R_25">Volatility 25 Index</option>
+            <option value="R_50">Volatility 50 Index</option>
             <option value="R_75">Volatility 75 Index</option>
           </select>
         </div>
