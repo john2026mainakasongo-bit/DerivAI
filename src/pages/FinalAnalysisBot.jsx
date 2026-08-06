@@ -8,7 +8,8 @@ import { analyseTicks } from "../analysis/finalAnalysisEngine";
 
 import "./FinalAnalysisBot.css";
 
-const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v7:transactions";
+const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v8:transactions";
+const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v8:pattern-memory";
 
 const money = (value) =>
   Number(value || 0).toLocaleString("en-US", {
@@ -117,6 +118,16 @@ export default function FinalAnalysisBot() {
   });
   const [paperTrade, setPaperTrade] = useState(null);
   const [tickSerial, setTickSerial] = useState(0);
+  const [adaptiveMemory, setAdaptiveMemory] = useState(() => {
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(FINAL_AI_MEMORY_KEY) || "{}"
+      );
+      return saved && typeof saved === "object" ? saved : {};
+    } catch {
+      return {};
+    }
+  });
   const [message, setMessage] = useState(
     "Final AI is using the shared EdgePilot Deriv connection."
   );
@@ -140,8 +151,8 @@ export default function FinalAnalysisBot() {
     : numericTicks.at(-1) || 0;
 
   const analysis = useMemo(
-    () => analyseTicks(numericTicks),
-    [numericTicks]
+    () => analyseTicks(numericTicks, adaptiveMemory),
+    [numericTicks, adaptiveMemory]
   );
 
   const stats = useMemo(() => {
@@ -202,6 +213,17 @@ export default function FinalAnalysisBot() {
   }, [transactions]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        FINAL_AI_MEMORY_KEY,
+        JSON.stringify(adaptiveMemory)
+      );
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [adaptiveMemory]);
+
+  useEffect(() => {
     if (!analysis.ready) return;
 
     const key = [
@@ -253,6 +275,8 @@ export default function FinalAnalysisBot() {
       entry: liveQuote,
       stake: Number(stake),
       confidence: analysis.confidence,
+      memorySignature:
+        analysis.metrics.memorySignature || "",
       entrySerial: tickSerial,
       openedAt: new Date().toLocaleTimeString(),
     });
@@ -309,6 +333,33 @@ export default function FinalAnalysisBot() {
         ...current,
       ].slice(0, 120)
     );
+
+    if (paperTrade.memorySignature) {
+      setAdaptiveMemory((current) => {
+        const previous =
+          current[paperTrade.memorySignature] || {
+            wins: 0,
+            losses: 0,
+            profit: 0,
+          };
+
+        return {
+          ...current,
+          [paperTrade.memorySignature]: {
+            wins:
+              Number(previous.wins || 0) +
+              (won ? 1 : 0),
+            losses:
+              Number(previous.losses || 0) +
+              (won ? 0 : 1),
+            profit:
+              Number(previous.profit || 0) +
+              Number(profit || 0),
+            updatedAt: Date.now(),
+          },
+        };
+      });
+    }
 
     setMessage(
       `PAPER ${won ? "WON" : "LOST"} · ${
@@ -780,6 +831,22 @@ export default function FinalAnalysisBot() {
             label="Signal age"
             value={analysis.metrics.signalAge ?? 0}
           />
+          <Metric
+            label="Learned sample"
+            value={analysis.metrics.learnedSample ?? 0}
+          />
+          <Metric
+            label="Learned win rate"
+            value={`${analysis.metrics.learnedWinRate ?? 50}%`}
+          />
+          <Metric
+            label="Expected value"
+            value={
+              Number(analysis.metrics.expectedValue || 0) >= 0
+                ? `+${analysis.metrics.expectedValue ?? 0}`
+                : analysis.metrics.expectedValue ?? 0
+            }
+          />
         </section>
 
         <section className="final-stats-grid">
@@ -807,20 +874,36 @@ export default function FinalAnalysisBot() {
                   Paper and Deriv contract results
                 </h2>
               </div>
-              <button
-                onClick={() => {
-                  setTransactions([]);
-                  try {
-                    window.localStorage.removeItem(
-                      FINAL_AI_HISTORY_KEY
-                    );
-                  } catch {
-                    // Ignore storage errors.
-                  }
-                }}
-              >
-                Clear
-              </button>
+              <div className="final-clear-actions">
+                <button
+                  onClick={() => {
+                    setTransactions([]);
+                    try {
+                      window.localStorage.removeItem(
+                        FINAL_AI_HISTORY_KEY
+                      );
+                    } catch {
+                      // Ignore storage errors.
+                    }
+                  }}
+                >
+                  Clear trades
+                </button>
+                <button
+                  onClick={() => {
+                    setAdaptiveMemory({});
+                    try {
+                      window.localStorage.removeItem(
+                        FINAL_AI_MEMORY_KEY
+                      );
+                    } catch {
+                      // Ignore storage errors.
+                    }
+                  }}
+                >
+                  Reset memory
+                </button>
+              </div>
             </div>
 
             <div className="final-table-wrap">

@@ -457,3 +457,36 @@
   }
 }
 
+
+
+/* Final AI V8 adaptive memory */
+.final-v7-page .final-metrics-grid {
+  grid-template-columns: repeat(15, minmax(82px, 1fr));
+}
+
+.final-clear-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.final-clear-actions button:last-child {
+  border-color: rgba(245, 158, 11, .45);
+  color: #fbbf24;
+}
+
+@media (max-width: 1350px) {
+  .final-v7-page .final-metrics-grid {
+    grid-template-columns: repeat(8, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .final-v7-page .final-metrics-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .final-clear-actions {
+    flex-wrap: wrap;
+  }
+}
+

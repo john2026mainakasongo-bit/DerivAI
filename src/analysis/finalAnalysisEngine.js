@@ -144,7 +144,50 @@ function check(label, passed, detail) {
   };
 }
 
-export function analyseTicks(ticks = []) {
+
+function bucket(value, size = 10) {
+  return Math.round(Number(value || 0) / size) * size;
+}
+
+function memorySignature({
+  trend,
+  volatility,
+  regime,
+  momentum,
+  transitionProbability,
+  probability,
+  reversalRisk,
+}) {
+  return [
+    trend,
+    volatility,
+    regime,
+    `M${bucket(Math.abs(momentum), 5)}`,
+    `T${bucket(transitionProbability, 5)}`,
+    `P${bucket(probability, 5)}`,
+    `R${bucket(reversalRisk, 10)}`,
+  ].join("|");
+}
+
+function memorySummary(memory, signature) {
+  const row = memory && typeof memory === "object"
+    ? memory[signature]
+    : null;
+
+  const wins = Number(row?.wins || 0);
+  const losses = Number(row?.losses || 0);
+  const sample = wins + losses;
+
+  return {
+    sample,
+    wins,
+    losses,
+    winRate: sample ? (wins / sample) * 100 : 50,
+    profit: Number(row?.profit || 0),
+  };
+}
+
+export function analyseTicks(ticks = [], adaptiveMemory = {}) {
   const clean = (Array.isArray(ticks) ? ticks : [])
     .map(Number)
     .filter(Number.isFinite)
@@ -335,33 +378,6 @@ export function analyseTicks(ticks = []) {
 
   confidence = Math.round(confidence);
 
-  const recentDirections = changes
-    .slice(-4)
-    .map((value) => (value > 0 ? "RISE" : value < 0 ? "FALL" : "FLAT"));
-
-  const consecutiveDirection = recentDirections
-    .filter((value) => value === trendContract).length;
-
-  const momentumDecay =
-    Math.abs(shortChanges.at(-1) || 0) <
-    Math.abs(shortChanges.at(-3) || 0);
-
-  const reversalRisk = clamp(
-    (transition.direction !== trendContract ? 34 : 0) +
-      (momentumDecay ? 26 : 0) +
-      (consecutiveDirection < 2 ? 24 : 0) +
-      (volatility === "HIGH" ? 30 : 0),
-    0,
-    100
-  );
-
-  const confirmQualified =
-    trendContract !== "NONE" &&
-    consecutiveDirection >= 2 &&
-    transitionAligned &&
-    !momentumDecay &&
-    reversalRisk <= 38;
-
   const checks = [
     check(
       "Direction",
@@ -403,6 +419,18 @@ export function analyseTicks(ticks = []) {
       confirmQualified,
       `${consecutiveDirection}/4 aligned · reversal ${Math.round(reversalRisk)}%`
     ),
+    check(
+      "Pattern memory",
+      memoryQualified,
+      learned.sample
+        ? `${learned.sample} samples · ${Math.round(learned.winRate)}% wins`
+        : "No prior sample"
+    ),
+    check(
+      "Expected value",
+      expectedValue > 0,
+      `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(3)}`
+    ),
   ];
 
   const passedChecks = checks.filter(
@@ -414,18 +442,90 @@ export function analyseTicks(ticks = []) {
     volatility === "HIGH" ||
     !entropyAcceptable;
 
+  const recentDirections = changes
+    .slice(-4)
+    .map((value) => (value > 0 ? "RISE" : value < 0 ? "FALL" : "FLAT"));
+
+  const consecutiveDirection = recentDirections
+    .filter((value) => value === trendContract).length;
+
+  const momentumDecay =
+    Math.abs(shortChanges.at(-1) || 0) <
+    Math.abs(shortChanges.at(-3) || 0);
+
+  const reversalRisk = clamp(
+    (transition.direction !== trendContract ? 34 : 0) +
+      (momentumDecay ? 26 : 0) +
+      (consecutiveDirection < 2 ? 24 : 0) +
+      (volatility === "HIGH" ? 30 : 0),
+    0,
+    100
+  );
+
+  const confirmQualified =
+    trendContract !== "NONE" &&
+    consecutiveDirection >= 2 &&
+    transitionAligned &&
+    !momentumDecay &&
+    reversalRisk <= 38;
+
   confidence = Math.round(
     clamp(confidence * 0.88 + probability * 0.12, 1, 94)
   );
+
+  const signature = memorySignature({
+    trend,
+    volatility,
+    regime:
+      volatility === "HIGH"
+        ? "CHAOTIC"
+        : trend === "FLAT"
+          ? "RANGE"
+          : "TREND",
+    momentum,
+    transitionProbability: transition.probability,
+    probability,
+    reversalRisk,
+  });
+
+  const learned = memorySummary(
+    adaptiveMemory,
+    signature
+  );
+
+  const learnedEdge =
+    learned.sample >= 4
+      ? learned.winRate - 50
+      : 0;
+
+  confidence = Math.round(
+    clamp(
+      confidence +
+        learnedEdge * 0.22 +
+        Math.max(-8, Math.min(8, learned.profit * 3)),
+      1,
+      94
+    )
+  );
+
+  const memoryQualified =
+    learned.sample < 4 ||
+    learned.winRate >= 58;
+
+  const expectedValue =
+    (probability / 100) * 0.92 -
+    (1 - probability / 100);
 
   const buyQualified =
     !hardBlock &&
     trendAligned &&
     directionStrong &&
-    probability >= 68 &&
-    confidence >= 80 &&
+    probability >= 70 &&
+    confidence >= 82 &&
     passedChecks >= 5 &&
-    confirmQualified;
+    confirmQualified &&
+    memoryQualified &&
+    expectedValue > 0;
 
   const prepareQualified =
     !hardBlock &&
@@ -477,8 +577,12 @@ export function analyseTicks(ticks = []) {
 
   const reason =
     buyQualified
-      ? `${trendContract} entry confirmed by ${passedChecks}/7 filters`
-      : confirmStage
+      ? `${trendContract} entry confirmed by ${passedChecks}/9 filters`
+      : !memoryQualified
+        ? `${trendContract} blocked by weak historical pattern memory`
+        : expectedValue <= 0
+          ? `${trendContract} blocked because expected value is not positive`
+          : confirmStage
         ? `${trendContract} setup confirmed; waiting execution gate`
         : prepareQualified
           ? `${trendContract} setup is preparing; one more confirmation needed`
@@ -524,6 +628,10 @@ export function analyseTicks(ticks = []) {
       consecutiveDirection,
       momentumDecay: momentumDecay ? "YES" : "NO",
       signalAge: recentDirections.length,
+      learnedSample: learned.sample,
+      learnedWinRate: Math.round(learned.winRate),
+      expectedValue: Number(expectedValue.toFixed(3)),
+      memorySignature: signature,
     },
   };
 }
