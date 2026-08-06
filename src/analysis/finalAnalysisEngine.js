@@ -276,7 +276,23 @@ export function analyseTicks(
           `${clean.length}/24 ticks collected`
         ),
       ],
-      metrics: {
+      selectedSetup: selectedSetup
+      ? {
+          id: selectedSetup.id,
+          label: selectedSetup.label,
+          contract: selectedSetup.contract,
+          passed: selectedSetup.passed,
+          score: Math.round(selectedSetup.score),
+        }
+      : null,
+    setupCandidates: setupCandidates.map((item) => ({
+      id: item.id,
+      label: item.label,
+      contract: item.contract,
+      passed: item.passed,
+      score: Math.round(item.score),
+    })),
+    metrics: {
         momentum: 0,
         trend: "WARMING",
         volatility: "UNKNOWN",
@@ -932,6 +948,95 @@ export function analyseTicks(
             : volatility === "HIGH"
               ? "Volatility is too high"
               : "Scanning for a stronger setup";
+
+
+  const setupCandidates = [
+    {
+      id: "TREND_CONTINUATION",
+      label: "Trend continuation",
+      contract: selectedSetup?.passed ? selectedSetup.contract : trendContract,
+      passed:
+        regime === "TREND" &&
+        Math.abs(momentum) >= 5 &&
+        directionStability >= 62 &&
+        transition.probability >= transitionThreshold &&
+        reversalRisk <= 30 &&
+        signalFresh,
+      score: clamp(
+        confidence * 0.30 +
+          probability * 0.25 +
+          directionStability * 0.25 +
+          transition.probability * 0.20,
+        0,
+        100
+      ),
+    },
+    {
+      id: "MOMENTUM_BREAKOUT",
+      label: "Momentum breakout",
+      contract: momentum > 0 ? "RISE" : momentum < 0 ? "FALL" : "NONE",
+      passed:
+        regime === "TREND" &&
+        Math.abs(momentum) >= 8 &&
+        selectedBayesian >= bayesianThreshold - 4 &&
+        reversalRisk <= 28 &&
+        signalFresh,
+      score: clamp(
+        Math.abs(momentum) * 4 +
+          selectedBayesian * 0.25 +
+          directionStability * 0.30,
+        0,
+        100
+      ),
+    },
+    {
+      id: "TRANSITION_EDGE",
+      label: "Transition edge",
+      contract: transition.direction,
+      passed:
+        transition.direction !== "NONE" &&
+        transition.probability >= transitionThreshold + 3 &&
+        selectedBayesian >= bayesianThreshold &&
+        reversalRisk <= 26 &&
+        signalFresh,
+      score: clamp(
+        transition.probability * 0.40 +
+          selectedBayesian * 0.30 +
+          probability * 0.30,
+        0,
+        100
+      ),
+    },
+    {
+      id: "LOW_REVERSAL_PULL",
+      label: "Low-reversal pull",
+      contract: trendContract,
+      passed:
+        regime === "TREND" &&
+        reversalRisk <= 18 &&
+        directionStability >= 58 &&
+        probability >= 70 &&
+        expectedValue >= evThreshold &&
+        signalFresh,
+      score: clamp(
+        (100 - reversalRisk) * 0.35 +
+          probability * 0.30 +
+          confidence * 0.20 +
+          directionStability * 0.15,
+        0,
+        100
+      ),
+    },
+  ]
+    .filter((item) =>
+      item.contract === "RISE" || item.contract === "FALL"
+    )
+    .sort((a, b) => b.score - a.score);
+
+  const selectedSetup =
+    setupCandidates.find((item) => item.passed) ||
+    setupCandidates[0] ||
+    null;
 
   return {
     ready: true,

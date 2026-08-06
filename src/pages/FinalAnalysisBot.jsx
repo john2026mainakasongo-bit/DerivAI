@@ -195,6 +195,7 @@ export default function FinalAnalysisBot() {
   );
   const [scanCycle, setScanCycle] = useState(1);
   const [bestCandidate, setBestCandidate] = useState(null);
+  const [cycleTradeTaken, setCycleTradeTaken] = useState(false);
   const protectionRunRef = useRef(-1);
   const lastJournalAtRef = useRef(0);
 
@@ -347,6 +348,7 @@ export default function FinalAnalysisBot() {
         analysis.metrics.directionStability || 0
       ),
       stage: analysis.stage,
+      setup: analysis.selectedSetup?.label || "Core setup",
       capturedAt: Date.now(),
     };
 
@@ -387,6 +389,7 @@ export default function FinalAnalysisBot() {
     setScanEndsAt(Date.now() + 60000);
     setScanCycle((value) => value + 1);
     setBestCandidate(null);
+    setCycleTradeTaken(false);
     setArmedDirection("NONE");
     setArmedTicks(0);
 
@@ -674,6 +677,8 @@ export default function FinalAnalysisBot() {
       mode !== "paper" ||
       paperTrade ||
       buyLockRef.current ||
+      cycleTradeTaken ||
+      cycleTradeTaken ||
       !stableEntryReady ||
       scanExpired ||
       !analysis.metrics.signalFresh ||
@@ -715,6 +720,7 @@ export default function FinalAnalysisBot() {
     }, 1400);
   }, [
     analysis,
+    cycleTradeTaken,
     stableEntryReady,
     scanExpired,
     liveQuote,
@@ -822,8 +828,7 @@ export default function FinalAnalysisBot() {
     );
     setPaperTrade(null);
     setCooldownUntil(Date.now() + 5000);
-    setScanEndsAt(Date.now() + 60000);
-    setScanCycle((value) => value + 1);
+    setCycleTradeTaken(true);
     setBestCandidate(null);
     setArmedDirection("NONE");
     setArmedTicks(0);
@@ -999,6 +1004,7 @@ export default function FinalAnalysisBot() {
       mode !== "live" ||
       buyLockRef.current ||
       tradeBusy ||
+      cycleTradeTaken ||
       !stableEntryReady ||
       scanExpired ||
       !analysis.metrics.signalFresh ||
@@ -1026,7 +1032,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1457,6 +1463,26 @@ export default function FinalAnalysisBot() {
             }
           />
           <Metric
+            label="Selected setup"
+            value={
+              analysis.selectedSetup
+                ? analysis.selectedSetup.label
+                : "SCANNING"
+            }
+          />
+          <Metric
+            label="Setup score"
+            value={
+              analysis.selectedSetup
+                ? `${analysis.selectedSetup.score}%`
+                : "0%"
+            }
+          />
+          <Metric
+            label="Minute trade"
+            value={cycleTradeTaken ? "DONE" : "AVAILABLE"}
+          />
+          <Metric
             label="Armed"
             value={
               analysis.metrics.armedQualified
@@ -1488,6 +1514,27 @@ export default function FinalAnalysisBot() {
                 : Number(rollingExpectedValue || 0).toFixed(3)
             }
           />
+        </section>
+
+        <section className="final-setup-lanes">
+          {(analysis.setupCandidates || []).map((setup) => (
+            <article
+              key={setup.id}
+              className={
+                setup.passed
+                  ? "final-setup-lane passed"
+                  : "final-setup-lane"
+              }
+            >
+              <span>{setup.label}</span>
+              <strong>
+                {setup.contract} · {setup.score}%
+              </strong>
+              <small>
+                {setup.passed ? "QUALIFIED" : "SCANNING"}
+              </small>
+            </article>
+          ))}
         </section>
 
         <section className="final-stats-grid">
