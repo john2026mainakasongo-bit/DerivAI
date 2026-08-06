@@ -213,14 +213,6 @@ export default function FinalAnalysisBot() {
         ? 76
         : 70;
 
-  const continuousScoreReady =
-    Boolean(analysis.continuousScore?.scoreQualified) &&
-    Number(analysis.continuousScore?.weightedEntryScore || 0) >=
-      adaptiveEntryThreshold &&
-    ["RISE", "FALL"].includes(
-      analysis.continuousScore?.direction
-    );
-
   const lastDecisionRef = useRef("");
   const buyLockRef = useRef(false);
   const trackedContractsRef = useRef(new Set());
@@ -312,6 +304,14 @@ export default function FinalAnalysisBot() {
       rollingExpectedValue,
     ]
   );
+
+  const continuousScoreReady =
+    Boolean(analysis.continuousScore?.scoreQualified) &&
+    Number(analysis.continuousScore?.weightedEntryScore || 0) >=
+      adaptiveEntryThreshold &&
+    ["RISE", "FALL"].includes(
+      analysis.continuousScore?.direction
+    );
 
   useEffect(() => {
     const armedNow =
