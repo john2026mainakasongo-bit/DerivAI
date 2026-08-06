@@ -359,26 +359,6 @@ export default function FinalAnalysisBot() {
     signalQueue.length,
   ]);
 
-  useEffect(() => {
-    if (
-      !connectionLocked ||
-      loadingMarket ||
-      !Number.isFinite(Number(liveQuote))
-    ) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setConnectionLocked(false);
-    }, 1200);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    connectionLocked,
-    loadingMarket,
-    liveQuote,
-  ]);
-
   const preserveViewportForSwitch = () => {
     viewportRef.current = {
       x: window.scrollX,
@@ -447,6 +427,26 @@ export default function FinalAnalysisBot() {
   const liveQuote = Number.isFinite(Number(currentPrice))
     ? Number(currentPrice)
     : numericTicks.at(-1) || 0;
+
+  useEffect(() => {
+    if (
+      !connectionLocked ||
+      loadingMarket ||
+      !Number.isFinite(Number(liveQuote))
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setConnectionLocked(false);
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    connectionLocked,
+    loadingMarket,
+    liveQuote,
+  ]);
 
   const marketMemory = useMemo(
     () => scopedMemoryForMarket(adaptiveMemory, symbol),
