@@ -58,15 +58,13 @@ export default function GeminiXEngine() {
     ws.current.onopen = () => {
       setFeedStatus('CONNECTING');
       setBlockReason('Inapokea live ticks...');
-      // Clean previous subscriptions before subscribing to current symbol
+
+      // Clean subscriptions
       ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
+
+      // Subscribe directly to ticks (Format inayotumiwa na bots zingine)
       ws.current.send(JSON.stringify({
-        ticks_history: market,
-        adjust_start_time: 1,
-        count: 50,
-        end: 'latest',
-        start: 1,
-        style: 'ticks',
+        ticks: market,
         subscribe: 1
       }));
     };
@@ -75,26 +73,12 @@ export default function GeminiXEngine() {
       const data = JSON.parse(event.data);
 
       if (data.error) {
-        setBlockReason(`Hitilafu ya Deriv: ${data.error.message}`);
+        setBlockReason(`Hitilafu ya Deriv (${market}): ${data.error.message}`);
         setFeedStatus('ERROR');
         return;
       }
 
-      // Handle history payload
-      if (data.msg_type === 'history' && data.history) {
-        setFeedStatus('LIVE');
-        const prices = data.history.prices || [];
-        ticksHistoryRef.current = prices;
-        if (prices.length > 0) {
-          const lastPrice = prices[prices.length - 1];
-          const quoteStr = lastPrice.toString();
-          const digit = parseInt(quoteStr.slice(-1), 10);
-          setLiveQuote(lastPrice);
-          setLastDigit(digit);
-        }
-      }
-
-      // Handle live tick stream
+      // Live tick stream
       if (data.msg_type === 'tick' && data.tick) {
         setFeedStatus('LIVE');
         const quoteStr = data.tick.quote.toString();
