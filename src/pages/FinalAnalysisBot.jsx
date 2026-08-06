@@ -163,8 +163,10 @@ export default function FinalAnalysisBot() {
   const [marketDataBank, setMarketDataBank] = useState({});
   const [marketTickSerials, setMarketTickSerials] = useState({});
   const [autoMarketSwitch, setAutoMarketSwitch] = useState(true);
-  const [marketSwitchSeconds, setMarketSwitchSeconds] = useState(6);
+  const [marketSwitchSeconds, setMarketSwitchSeconds] = useState(2);
   const [lastMarketSwitchAt, setLastMarketSwitchAt] = useState(Date.now());
+  const [turboPortfolioSize, setTurboPortfolioSize] = useState(5);
+  const [turboMode, setTurboMode] = useState(true);
   const [tickSerial, setTickSerial] = useState(0);
   const [adaptiveMemory, setAdaptiveMemory] = useState(() => {
     try {
@@ -213,6 +215,19 @@ export default function FinalAnalysisBot() {
   const currentMarketDataCount =
     marketDataBank[symbol]?.prices?.length || 0;
 
+  const availableMarketSymbols = (Array.isArray(markets) ? markets : [])
+    .map((item) =>
+      typeof item === "string"
+        ? item
+        : item?.symbol || item?.value || ""
+    )
+    .filter(Boolean);
+
+  const turboMarketPool = availableMarketSymbols.slice(
+    0,
+    Math.max(2, Number(turboPortfolioSize || 5))
+  );
+
   const scanRemainingSeconds = Math.max(
     0,
     Math.ceil((scanEndsAt - now) / 1000)
@@ -236,11 +251,17 @@ export default function FinalAnalysisBot() {
   const rapidSlotsUsed = usedRapidSlots.length;
 
   const adaptiveEntryThreshold =
-    scanRemainingSeconds > 30
-      ? 82
-      : scanRemainingSeconds > 15
-        ? 76
-        : 70;
+    mode === "paper" && turboMode
+      ? scanRemainingSeconds > 40
+        ? 74
+        : scanRemainingSeconds > 20
+          ? 70
+          : 66
+      : scanRemainingSeconds > 30
+        ? 82
+        : scanRemainingSeconds > 15
+          ? 76
+          : 70;
 
   const lastDecisionRef = useRef("");
   const buyLockRef = useRef(false);
@@ -778,62 +799,94 @@ export default function FinalAnalysisBot() {
       !running ||
       !autoMarketSwitch ||
       loadingMarket ||
-      totalOpenPaperTrades >= 8 ||
+      totalOpenPaperTrades >= 12 ||
       Date.now() - lastMarketSwitchAt <
-        Math.max(3, Number(marketSwitchSeconds || 6)) * 1000
+        Math.max(
+          turboMode ? 1 : 3,
+          Number(marketSwitchSeconds || 2)
+        ) * 1000
     ) {
       return;
     }
 
-    const available = (Array.isArray(markets) ? markets : [])
-      .map((item) =>
-        typeof item === "string"
-          ? item
-          : item?.symbol || item?.value || ""
-      )
-      .filter(Boolean);
+    const pool =
+      turboMarketPool.length >= 2
+        ? turboMarketPool
+        : availableMarketSymbols;
 
-    if (available.length < 2) return;
+    if (pool.length < 2) return;
 
-    const currentIndex = Math.max(
-      0,
-      available.indexOf(symbol)
-    );
+    const currentIndex = Math.max(0, pool.indexOf(symbol));
 
-    const ranked = available
-      .map((market, offset) => ({
-        market,
-        offset,
-        dataCount:
-          marketDataBank[market]?.prices?.length || 0,
-        updatedAt:
-          marketDataBank[market]?.updatedAt || 0,
-      }))
-      .filter((item) => item.market !== symbol)
+    const ranked = pool
+      .filter((market) => market !== symbol)
+      .map((market) => {
+        const cached = marketDataBank[market] || {};
+        const prices = Array.isArray(cached.prices)
+          ? cached.prices
+          : [];
+
+        const recent = prices.slice(-18);
+        const changes = recent
+          .slice(1)
+          .map((value, index) => value - recent[index]);
+
+        const movement = changes.reduce(
+          (sum, value) => sum + Math.abs(value),
+          0
+        );
+
+        const directional = Math.abs(
+          changes.reduce((sum, value) => sum + value, 0)
+        );
+
+        const activityScore =
+          prices.length >= 20
+            ? Math.min(
+                100,
+                prices.length * 0.7 +
+                  movement * 18 +
+                  directional * 22
+              )
+            : prices.length * 2;
+
+        const openCount = paperTrades.filter(
+          (trade) => trade.market === market
+        ).length;
+
+        const nextDistance =
+          (pool.indexOf(market) - currentIndex + pool.length) %
+          pool.length;
+
+        return {
+          market,
+          activityScore,
+          dataCount: prices.length,
+          openCount,
+          nextDistance,
+          updatedAt: Number(cached.updatedAt || 0),
+        };
+      })
+      .filter((item) => item.openCount < 3)
       .sort((a, b) => {
         const aReady = a.dataCount >= 20 ? 1 : 0;
         const bReady = b.dataCount >= 20 ? 1 : 0;
 
         if (aReady !== bReady) return bReady - aReady;
-        if (a.dataCount !== b.dataCount) {
-          return b.dataCount - a.dataCount;
+        if (a.activityScore !== b.activityScore) {
+          return b.activityScore - a.activityScore;
         }
-
-        const aDistance =
-          (available.indexOf(a.market) - currentIndex +
-            available.length) %
-          available.length;
-        const bDistance =
-          (available.indexOf(b.market) - currentIndex +
-            available.length) %
-          available.length;
-
-        return aDistance - bDistance;
+        if (a.updatedAt !== b.updatedAt) {
+          return a.updatedAt - b.updatedAt;
+        }
+        return a.nextDistance - b.nextDistance;
       });
 
-    const nextMarket = ranked[0]?.market;
+    const nextMarket =
+      ranked[0]?.market ||
+      pool[(currentIndex + 1) % pool.length];
 
-    if (!nextMarket) return;
+    if (!nextMarket || nextMarket === symbol) return;
 
     setLastMarketSwitchAt(Date.now());
     setScanEndsAt(Date.now() + 60000);
@@ -842,20 +895,23 @@ export default function FinalAnalysisBot() {
     setArmedDirection("NONE");
     setArmedTicks(0);
     setMessage(
-      `PORTFOLIO SCAN · switching ${symbol} → ${nextMarket}`
+      `TURBO PORTFOLIO · ${symbol} → ${nextMarket} · ${totalOpenPaperTrades} open`
     );
 
     void changeSymbol(nextMarket);
   }, [
     running,
     autoMarketSwitch,
+    turboMode,
     loadingMarket,
-    markets,
     symbol,
     marketDataBank,
     marketSwitchSeconds,
     lastMarketSwitchAt,
     totalOpenPaperTrades,
+    paperTrades,
+    turboMarketPool,
+    availableMarketSymbols,
     changeSymbol,
   ]);
 
@@ -935,8 +991,8 @@ export default function FinalAnalysisBot() {
       !running ||
       mode !== "paper" ||
       buyLockRef.current ||
-      currentMarketTrades.length >= 2 ||
-      totalOpenPaperTrades >= 8 ||
+      currentMarketTrades.length >= 3 ||
+      totalOpenPaperTrades >= 12 ||
       rapidSlotUsed ||
       !(
         rapidPaperReady ||
@@ -948,7 +1004,7 @@ export default function FinalAnalysisBot() {
       Date.now() < cooldownUntil ||
       protectionPaused ||
       !liveQuote ||
-      currentMarketDataCount < 20
+      currentMarketDataCount < (turboMode ? 12 : 20)
     ) {
       return;
     }
@@ -1180,7 +1236,7 @@ export default function FinalAnalysisBot() {
       }$${money(net)}`
     );
 
-    setCooldownUntil(Date.now() + 600);
+    setCooldownUntil(Date.now() + (turboMode ? 250 : 600));
   }, [
     liveQuote,
     symbol,
@@ -1392,7 +1448,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page final-v25-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1491,6 +1547,35 @@ export default function FinalAnalysisBot() {
           </label>
 
           <label>
+            Turbo portfolio
+            <select
+              value={turboMode ? "on" : "off"}
+              onChange={(event) =>
+                setTurboMode(event.target.value === "on")
+              }
+            >
+              <option value="on">ON</option>
+              <option value="off">OFF</option>
+            </select>
+          </label>
+
+          <label>
+            Markets in pool
+            <select
+              value={turboPortfolioSize}
+              onChange={(event) =>
+                setTurboPortfolioSize(
+                  Number(event.target.value)
+                )
+              }
+            >
+              <option value="3">3 markets</option>
+              <option value="5">5 markets</option>
+              <option value="7">7 markets</option>
+            </select>
+          </label>
+
+          <label>
             Auto market switch
             <select
               value={autoMarketSwitch ? "on" : "off"}
@@ -1515,10 +1600,11 @@ export default function FinalAnalysisBot() {
                 )
               }
             >
+              <option value="1">1 second</option>
+              <option value="2">2 seconds</option>
               <option value="3">3 seconds</option>
               <option value="6">6 seconds</option>
               <option value="10">10 seconds</option>
-              <option value="15">15 seconds</option>
             </select>
           </label>
 
@@ -1662,7 +1748,7 @@ export default function FinalAnalysisBot() {
             </strong>
             <p>
               {totalOpenPaperTrades > 0
-                ? `Portfolio scanning continues · ${currentMarketDataCount} cached ticks on ${symbol}`
+                ? `Turbo portfolio scanning continues · ${currentMarketDataCount} cached ticks on ${symbol}`
                 : message}
             </p>
             <small>
@@ -1870,6 +1956,18 @@ export default function FinalAnalysisBot() {
                 ? `${analysis.selectedSetup.score}%`
                 : "0%"
             }
+          />
+          <Metric
+            label="Turbo mode"
+            value={turboMode ? "ON" : "OFF"}
+          />
+          <Metric
+            label="Turbo pool"
+            value={`${turboMarketPool.length} markets`}
+          />
+          <Metric
+            label="Decision speed"
+            value={`${marketSwitchSeconds}s rotation`}
           />
           <Metric
             label="Open portfolio"

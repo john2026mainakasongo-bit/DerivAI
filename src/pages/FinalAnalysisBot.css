@@ -1511,3 +1511,37 @@
   grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)) !important;
 }
 
+
+
+/* Final AI V24 portfolio rotation */
+.final-v24-page .final-control-grid {
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)) !important;
+}
+
+.final-v24-page .final-open-card {
+  border-color: rgba(34, 211, 238, .32);
+}
+
+.final-v24-page .final-metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+}
+
+
+
+/* Final AI V25 turbo portfolio scanner */
+.final-v25-page .final-control-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
+}
+
+.final-v25-page .final-open-card {
+  border-color: rgba(245, 158, 11, .38);
+}
+
+.final-v25-page .final-score-engine {
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, .08);
+}
+
+.final-v25-page .final-metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)) !important;
+}
+
