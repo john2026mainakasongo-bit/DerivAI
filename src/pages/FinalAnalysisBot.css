@@ -110,3 +110,115 @@
   .final-journal-row { grid-template-columns: 68px 46px 46px 40px; }
   .final-journal-row p { grid-column: 1 / -1; }
 }
+
+
+/* V5 integration with the existing EdgePilot app shell */
+.final-integrated-page {
+  min-width: 0;
+  padding: 12px 16px 18px;
+  background: #06101d;
+  color: #eaf3ff;
+}
+
+.final-integrated-page .final-control-grid {
+  grid-template-columns:
+    minmax(220px, 1.45fr)
+    repeat(4, minmax(120px, .75fr))
+    minmax(145px, .8fr);
+}
+
+.final-account-strip {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(110px, .7fr))
+    minmax(260px, 2fr);
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.final-account-strip > div {
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 11px;
+  background: rgba(15, 29, 47, .92);
+}
+
+.final-account-strip span {
+  display: block;
+  margin-bottom: 3px;
+  color: #8fa3ba;
+  font-size: 10px;
+}
+
+.final-account-strip strong {
+  display: block;
+  overflow: hidden;
+  color: #eaf3ff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-test-buy {
+  border: 1px solid rgba(56, 189, 248, .55) !important;
+  background: rgba(14, 116, 144, .38) !important;
+}
+
+.final-test-buy:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.final-real-lock select {
+  border-color: rgba(244, 63, 94, .45);
+}
+
+.final-integrated-page .final-journal-row {
+  grid-template-columns: 72px 50px 52px 44px 48px 1fr;
+}
+
+@media (max-width: 1180px) {
+  .final-account-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .final-wide-message {
+    grid-column: span 2;
+  }
+
+  .final-integrated-page .final-control-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .final-integrated-page {
+    padding: 8px;
+  }
+
+  .final-account-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .final-wide-message {
+    grid-column: 1 / -1;
+  }
+
+  .final-integrated-page .final-control-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .final-integrated-page .final-control-grid button {
+    grid-column: 1 / -1;
+  }
+
+  .final-integrated-page .final-journal-row {
+    grid-template-columns: 64px 44px 45px 42px 45px;
+  }
+
+  .final-integrated-page .final-journal-row p {
+    grid-column: 1 / -1;
+  }
+}
+
