@@ -222,3 +222,86 @@
   }
 }
 
+
+
+/* Final AI V6 decision pipeline */
+.final-stage-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.final-stage-badges em {
+  padding: 5px 9px;
+  border: 1px solid rgba(56, 189, 248, .45);
+  border-radius: 999px;
+  background: rgba(14, 116, 144, .2);
+  color: #7dd3fc;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.final-filter-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 7px;
+  margin: 12px 0;
+}
+
+.final-filter-list > div {
+  display: grid;
+  grid-template-columns: 18px auto 1fr;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid rgba(148, 163, 184, .15);
+  border-radius: 9px;
+  background: rgba(3, 10, 20, .36);
+  font-size: 10px;
+}
+
+.final-filter-list strong {
+  font-size: 10px;
+}
+
+.final-filter-list small {
+  overflow: hidden;
+  color: #91a4ba;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-filter-pass > span {
+  color: #4ade80;
+  font-weight: 900;
+}
+
+.final-filter-fail > span {
+  color: #fb7185;
+  font-weight: 900;
+}
+
+.final-filter-pass {
+  border-color: rgba(34, 197, 94, .22) !important;
+}
+
+.final-filter-fail {
+  border-color: rgba(244, 63, 94, .18) !important;
+}
+
+@media (max-width: 850px) {
+  .final-filter-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .final-filter-list {
+    grid-template-columns: 1fr;
+  }
+}
+

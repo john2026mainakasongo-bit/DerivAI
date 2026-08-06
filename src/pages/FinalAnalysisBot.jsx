@@ -609,7 +609,10 @@ export default function FinalAnalysisBot() {
           >
             <div className="final-decision-head">
               <span>FINAL AI DECISION</span>
-              <strong>{analysis.decision}</strong>
+              <div className="final-stage-badges">
+                <em>{analysis.stage || "SCAN"}</em>
+                <strong>{analysis.decision}</strong>
+              </div>
             </div>
 
             <div className="final-contract">
@@ -617,6 +620,23 @@ export default function FinalAnalysisBot() {
             </div>
 
             <p>{analysis.reason}</p>
+
+            <div className="final-filter-list">
+              {(analysis.checks || []).map((item) => (
+                <div
+                  key={item.label}
+                  className={
+                    item.passed
+                      ? "final-filter-pass"
+                      : "final-filter-fail"
+                  }
+                >
+                  <span>{item.passed ? "✓" : "✗"}</span>
+                  <strong>{item.label}</strong>
+                  <small>{item.detail}</small>
+                </div>
+              ))}
+            </div>
 
             <div className="final-score-row">
               <div>
@@ -647,11 +667,11 @@ export default function FinalAnalysisBot() {
             <strong>
               {mode === "live"
                 ? executionReady
-                  ? "DERIV READY"
+                  ? `${analysis.stage || "SCAN"} · DERIV READY`
                   : "DERIV BLOCKED"
                 : paperTrade
                   ? `${paperTrade.contract} PAPER TRADE`
-                  : mode.toUpperCase()}
+                  : `${analysis.stage || "SCAN"} · ${mode.toUpperCase()}`}
             </strong>
             <p>
               {paperTrade
