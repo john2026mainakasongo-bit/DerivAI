@@ -830,6 +830,13 @@ function GeminiXContent({
   } = data;
 
   const [stake, setStake] = useState(0.35);
+  const [currentStake, setCurrentStake] = useState(0.35);
+  const [targetProfit, setTargetProfit] = useState(5);
+  const [stopLoss, setStopLoss] = useState(10);
+  const [maxLossStreak, setMaxLossStreak] = useState(3);
+  const [consecutiveLosses, setConsecutiveLosses] = useState(0);
+  const [sessionProfit, setSessionProfit] = useState(0);
+  const [botStatusMessage, setBotStatusMessage] = useState("SYSTEM READY");
   const [minConfidence, setMinConfidence] = useState(68);
   const [executionMode, setExecutionMode] =
     useState("PAPER");
@@ -874,6 +881,12 @@ function GeminiXContent({
       "GeminiX V5 iko ready. Paper mode ndiyo default."
     );
   const lastAutoTradeKeyRef = useRef("");
+
+  useEffect(() => {
+    if (consecutiveLosses === 0 && !recoveryPending) {
+      setCurrentStake(Math.max(0.35, Number(stake || 0.35)));
+    }
+  }, [stake, consecutiveLosses, recoveryPending]);
 
   const analysis = useMemo(
     () =>
@@ -1084,29 +1097,17 @@ function GeminiXContent({
     analysis.probability >= 82;
 
   const smartEffectiveStake = useMemo(() => {
-    const baseStake = Math.max(
-      0.35,
-      Number(stake || 0.35)
-    );
+    const baseStake = Math.max(0.35, Number(stake || 0.35));
 
     if (!recoveryGatePassed) {
-      return baseStake;
+      return Math.max(baseStake, Number(currentStake || baseStake));
     }
 
     return Math.min(
       Number(maxRecoveryStake || 5),
-      baseStake *
-        Math.max(
-          1,
-          Number(recoveryMultiplier || 4)
-        )
+      Math.max(baseStake, Number(currentStake || baseStake))
     );
-  }, [
-    stake,
-    recoveryGatePassed,
-    maxRecoveryStake,
-    recoveryMultiplier,
-  ]);
+  }, [stake, currentStake, recoveryGatePassed, maxRecoveryStake]);
 
   useEffect(() => {
     if (!symbol || !analysis.best?.label) {
@@ -1153,6 +1154,77 @@ function GeminiXContent({
     recoveryGatePassed,
   ]);
 
+  const handleTradeResult = ({ status, profit }) => {
+    const normalizedStatus = String(status || "").toUpperCase();
+    const tradeProfit = Number(profit || 0);
+    const isWin = normalizedStatus === "WON" || tradeProfit > 0;
+
+    setSessionProfit((previousProfit) => {
+      const nextProfit = previousProfit + tradeProfit;
+
+      if (nextProfit >= targetProfit) {
+        setRunning(false);
+        setCurrentStake(stake);
+        setConsecutiveLosses(0);
+        setRecoveryPending(false);
+        setBotStatusMessage(`TARGET PROFIT REACHED: +$${nextProfit.toFixed(2)}`);
+        setEngineMessage(`Take Profit imefika: +$${nextProfit.toFixed(2)}. Bot imesimama.`);
+        return nextProfit;
+      }
+
+      if (nextProfit <= -Math.abs(stopLoss)) {
+        setRunning(false);
+        setCurrentStake(stake);
+        setConsecutiveLosses(0);
+        setRecoveryPending(false);
+        setBotStatusMessage(`STOP LOSS HIT: -$${Math.abs(nextProfit).toFixed(2)}`);
+        setEngineMessage(`Stop Loss imefika: -$${Math.abs(nextProfit).toFixed(2)}. Bot imesimama.`);
+        return nextProfit;
+      }
+
+      if (isWin) {
+        setCurrentStake(stake);
+        setConsecutiveLosses(0);
+        setRecoveryPending(false);
+        setBotStatusMessage(`TRADE WON: +$${tradeProfit.toFixed(2)} · stake reset`);
+        return nextProfit;
+      }
+
+      setConsecutiveLosses((previousLosses) => {
+        const nextLosses = previousLosses + 1;
+
+        if (nextLosses >= maxLossStreak) {
+          setRunning(false);
+          setCurrentStake(stake);
+          setRecoveryPending(false);
+          setBotStatusMessage(`MAX LOSS STREAK ${nextLosses}/${maxLossStreak} · bot paused`);
+          setEngineMessage(`Max loss streak ${nextLosses} imefika. Bot imesimama kwa safety.`);
+          return nextLosses;
+        }
+
+        const nextStake = Math.min(
+          Number(maxRecoveryStake || 5),
+          Number(
+            (
+              Math.max(stake, currentStake) *
+              Number(recoveryMultiplier || 2.1)
+            ).toFixed(2)
+          )
+        );
+
+        setCurrentStake(nextStake);
+        setRecoveryPending(Boolean(recoveryEnabled));
+        setBotStatusMessage(
+          `TRADE LOST: -$${Math.abs(tradeProfit).toFixed(2)} · recovery ${nextLosses}/${maxLossStreak} · next $${nextStake.toFixed(2)}`
+        );
+
+        return nextLosses;
+      });
+
+      return nextProfit;
+    });
+  };
+
   useEffect(() => {
     const settled = settledContracts[0];
 
@@ -1167,9 +1239,13 @@ function GeminiXContent({
     setLastSettlementKey(key);
     setCampaignRuns((value) => value + 1);
 
+    handleTradeResult({
+      status: settled.result,
+      profit: settled.profit,
+    });
+
     if (settled.result === "WON") {
       setCampaignWins((value) => value + 1);
-      setRecoveryPending(false);
       setCooldownUntil(Date.now() + 1000);
       setLastMarketSwitchAt(0);
       setEngineMessage(
@@ -1180,9 +1256,6 @@ function GeminiXContent({
 
     if (settled.result === "LOST") {
       setCampaignLosses((value) => value + 1);
-      setRecoveryPending(
-        Boolean(recoveryEnabled)
-      );
       setCooldownUntil(Date.now() + 10000);
       setLastMarketSwitchAt(0);
       setEngineMessage(
@@ -1216,6 +1289,10 @@ function GeminiXContent({
     setCampaignRuns(0);
     setCampaignWins(0);
     setCampaignLosses(0);
+    setConsecutiveLosses(0);
+    setSessionProfit(0);
+    setCurrentStake(stake);
+    setBotStatusMessage("SYSTEM READY");
     setRecoveryPending(false);
     setCooldownUntil(0);
     setLastSettlementKey("");
@@ -1579,7 +1656,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · contract edge + EV ranking · anti-repeat diversity · multi-market scan
+          Shared Deriv feed · edge ranking · TP/SL risk manager · recovery ladder
         </div>
       </div>
 
@@ -1618,6 +1695,57 @@ function GeminiXContent({
                 )
               }
             />
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label>Current Stake</label>
+            <input value={Number(currentStake).toFixed(2)} disabled />
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label>Take Profit ($)</label>
+            <input
+              type="number"
+              min="0.10"
+              step="0.10"
+              value={targetProfit}
+              onChange={(event) =>
+                setTargetProfit(
+                  Math.max(0.10, Number(event.target.value || 5))
+                )
+              }
+            />
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label>Stop Loss ($)</label>
+            <input
+              type="number"
+              min="0.35"
+              step="0.10"
+              value={stopLoss}
+              onChange={(event) =>
+                setStopLoss(
+                  Math.max(0.35, Number(event.target.value || 10))
+                )
+              }
+            />
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label>Max Loss Streak</label>
+            <select
+              value={maxLossStreak}
+              onChange={(event) =>
+                setMaxLossStreak(Number(event.target.value))
+              }
+            >
+              <option value={1}>1</option>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+              <option value={4}>4</option>
+              <option value={5}>5</option>
+            </select>
           </div>
 
           <div className={styles.inputGroup}>
@@ -1855,6 +1983,22 @@ function GeminiXContent({
               ? "WAIT"
               : "IDLE",
           ],
+          [
+            "Session P/L",
+            `${sessionProfit >= 0 ? "+" : ""}$${Number(sessionProfit).toFixed(2)}`,
+          ],
+          [
+            "Loss Streak",
+            `${consecutiveLosses}/${maxLossStreak}`,
+          ],
+          [
+            "Risk Status",
+            running ? "RUNNING" : "STOPPED",
+          ],
+          [
+            "Risk Message",
+            botStatusMessage,
+          ],
           ["Portfolio", portfolioReady ? "READY" : `${marketRanking.length}/${minimumPortfolioMarkets}`],
           ["Best Market", portfolioBest?.symbol || "SCANNING"],
           ["Best Entry", portfolioBest?.decision || "WAIT"],
@@ -1936,7 +2080,7 @@ function GeminiXContent({
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V6.2 DIVERSITY + EDGE ENGINE
+              GEMINIX V6.3 FULL RISK MANAGER
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>

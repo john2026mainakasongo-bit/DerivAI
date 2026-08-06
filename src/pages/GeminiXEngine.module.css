@@ -885,3 +885,9 @@
       repeat(10, minmax(0, 1fr));
   }
 }
+
+/* GeminiX V6.3 full risk manager */
+.geminiControlGrid{grid-template-columns:repeat(6,minmax(115px,1fr))}
+.campaignGrid{grid-template-columns:repeat(24,minmax(0,1fr)) 130px 130px}
+@media(max-width:1600px){.campaignGrid{grid-template-columns:repeat(12,minmax(0,1fr))}}
+@media(max-width:900px){.geminiControlGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.campaignGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
