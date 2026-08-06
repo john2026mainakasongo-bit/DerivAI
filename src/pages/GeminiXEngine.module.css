@@ -858,3 +858,7 @@
       .8fr 1fr .7fr .55fr .55fr .6fr .6fr;
   }
 }
+
+.quickButtons{max-width:760px}.quickButtons button{min-width:86px}
+.campaignGrid{grid-template-columns:repeat(18,minmax(0,1fr)) 135px 135px}
+@media(max-width:1550px){.campaignGrid{grid-template-columns:repeat(9,minmax(0,1fr))}}

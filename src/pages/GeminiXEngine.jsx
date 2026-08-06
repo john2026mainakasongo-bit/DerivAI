@@ -347,16 +347,12 @@ function contractRiskClass(candidate) {
   if (
     (side === "DIGITOVER" && barrier <= 2) ||
     (side === "DIGITUNDER" && barrier >= 7)
-  ) {
-    return "LOW";
-  }
+  ) return "LOW";
 
   if (
-    (side === "DIGITOVER" && barrier === 3) ||
-    (side === "DIGITUNDER" && barrier === 6)
-  ) {
-    return "MEDIUM";
-  }
+    (side === "DIGITOVER" && barrier <= 4) ||
+    (side === "DIGITUNDER" && barrier >= 5)
+  ) return "MEDIUM";
 
   return "HIGH";
 }
@@ -376,48 +372,16 @@ function safeContractCandidates(digits) {
       .reduce((total, row) => total + row.percent, 0);
 
   const candidates = [
-    {
-      label: "OVER 1",
-      contractType: "DIGITOVER",
-      barrier: 1,
-      probability: probabilityOver(1),
-      baseRisk: 8,
-    },
-    {
-      label: "OVER 2",
-      contractType: "DIGITOVER",
-      barrier: 2,
-      probability: probabilityOver(2),
-      baseRisk: 18,
-    },
-    {
-      label: "UNDER 8",
-      contractType: "DIGITUNDER",
-      barrier: 8,
-      probability: probabilityUnder(8),
-      baseRisk: 8,
-    },
-    {
-      label: "UNDER 7",
-      contractType: "DIGITUNDER",
-      barrier: 7,
-      probability: probabilityUnder(7),
-      baseRisk: 18,
-    },
-    {
-      label: "OVER 3",
-      contractType: "DIGITOVER",
-      barrier: 3,
-      probability: probabilityOver(3),
-      baseRisk: 36,
-    },
-    {
-      label: "UNDER 6",
-      contractType: "DIGITUNDER",
-      barrier: 6,
-      probability: probabilityUnder(6),
-      baseRisk: 36,
-    },
+    { label: "OVER 1", contractType: "DIGITOVER", barrier: 1, probability: probabilityOver(1), baseRisk: 8 },
+    { label: "OVER 2", contractType: "DIGITOVER", barrier: 2, probability: probabilityOver(2), baseRisk: 16 },
+    { label: "OVER 3", contractType: "DIGITOVER", barrier: 3, probability: probabilityOver(3), baseRisk: 28 },
+    { label: "OVER 4", contractType: "DIGITOVER", barrier: 4, probability: probabilityOver(4), baseRisk: 44 },
+    { label: "OVER 5", contractType: "DIGITOVER", barrier: 5, probability: probabilityOver(5), baseRisk: 62 },
+    { label: "UNDER 8", contractType: "DIGITUNDER", barrier: 8, probability: probabilityUnder(8), baseRisk: 8 },
+    { label: "UNDER 7", contractType: "DIGITUNDER", barrier: 7, probability: probabilityUnder(7), baseRisk: 16 },
+    { label: "UNDER 6", contractType: "DIGITUNDER", barrier: 6, probability: probabilityUnder(6), baseRisk: 28 },
+    { label: "UNDER 5", contractType: "DIGITUNDER", barrier: 5, probability: probabilityUnder(5), baseRisk: 44 },
+    { label: "UNDER 4", contractType: "DIGITUNDER", barrier: 4, probability: probabilityUnder(4), baseRisk: 62 },
   ];
 
   return candidates
@@ -909,6 +873,17 @@ function GeminiXContent({
     [marketMemory, watchdogClock]
   );
 
+  const minimumPortfolioMarkets = Math.min(
+    5,
+    Math.max(1, markets.length)
+  );
+
+  const portfolioReady =
+    marketRanking.length >= minimumPortfolioMarkets;
+
+  const portfolioBest =
+    marketRanking[0] || null;
+
   const recoveryGatePassed =
     recoveryEnabled &&
     recoveryPending &&
@@ -1098,6 +1073,14 @@ function GeminiXContent({
         updatedAt: Date.now(),
         sample: analysis.sample,
         decision: analysis.best.label,
+        candidate: {
+          label: analysis.best.label,
+          contractType: analysis.best.contractType,
+          barrier: analysis.best.barrier,
+          probability: analysis.best.probability,
+          risk: analysis.best.risk,
+          riskClass: analysis.best.riskClass || "HIGH",
+        },
         confidence: analysis.confidence,
         probability: analysis.probability,
         risk: analysis.risk,
@@ -1176,15 +1159,15 @@ function GeminiXContent({
         current.riskClass !== "HIGH";
 
       if (
-        now -
-          Number(lastMarketSwitchAt || 0) >=
-          10000
+        now - Number(lastMarketSwitchAt || 0) >= 10000
       ) {
         lastAutoTradeKeyRef.current = "";
 
         void switchToNextMarket(
-          currentStrong
-            ? "10s scan complete · checking next market"
+          !portfolioReady
+            ? `Portfolio warm-up ${marketRanking.length}/${minimumPortfolioMarkets}`
+            : currentStrong
+            ? "10s scan complete · ranking all markets"
             : "10s scan complete · no quality entry"
         );
       }
@@ -1202,6 +1185,9 @@ function GeminiXContent({
     minConfidence,
     lastMarketSwitchAt,
     markets,
+    portfolioReady,
+    marketRanking.length,
+    minimumPortfolioMarkets,
   ]);
 
   const executeCandidate = async (
@@ -1283,40 +1269,55 @@ function GeminiXContent({
     if (
       !running ||
       executionMode !== "LIVE" ||
-      !analysis.ready ||
       tradeBusy ||
       activeContracts.length > 0 ||
-      Date.now() < cooldownUntil
-    ) {
+      Date.now() < cooldownUntil ||
+      !portfolioReady ||
+      !portfolioBest
+    ) return;
+
+    if (portfolioBest.symbol !== symbol) {
+      if (!loadingMarket) {
+        setEngineMessage(
+          `Portfolio best: ${portfolioBest.symbol} ${portfolioBest.decision} · switching from ${symbol}.`
+        );
+        void changeSymbol(portfolioBest.symbol);
+      }
       return;
     }
 
+    if (
+      !analysis.ready ||
+      analysis.best.label !== portfolioBest.decision
+    ) return;
+
+    const candidate =
+      portfolioBest.candidate || analysis.best;
+
     const key = [
-      symbol,
-      analysis.best.label,
-      digitHistory.length,
+      portfolioBest.symbol,
+      candidate.label,
+      Math.round(portfolioBest.confidence || 0),
+      Math.round(portfolioBest.probability || 0),
       lastSettlementKey,
     ].join(":");
 
-    if (key === lastAutoTradeKeyRef.current) {
-      return;
-    }
+    if (key === lastAutoTradeKeyRef.current) return;
 
     lastAutoTradeKeyRef.current = key;
-    void executeCandidate(analysis.best, "AUTO");
+    void executeCandidate(candidate, "PORTFOLIO AUTO");
   }, [
     running,
     executionMode,
-    analysis.ready,
-    analysis.best,
     tradeBusy,
     activeContracts.length,
     cooldownUntil,
-    campaignEnabled,
-    campaignRuns,
-    campaignTarget,
+    portfolioReady,
+    portfolioBest,
+    loadingMarket,
     symbol,
-    digitHistory.length,
+    analysis.ready,
+    analysis.best,
     lastSettlementKey,
   ]);
 
@@ -1368,7 +1369,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · 10s portfolio scan · market memory ranking · gated recovery
+          Shared Deriv feed · multi-market scan · OVER 1-5 + UNDER 4-8 · portfolio ranking
         </div>
       </div>
 
@@ -1644,6 +1645,9 @@ function GeminiXContent({
               ? "WAIT"
               : "IDLE",
           ],
+          ["Portfolio", portfolioReady ? "READY" : `${marketRanking.length}/${minimumPortfolioMarkets}`],
+          ["Best Market", portfolioBest?.symbol || "SCANNING"],
+          ["Best Entry", portfolioBest?.decision || "WAIT"],
           [
             "Markets Scanned",
             Object.keys(marketMemory).length,
@@ -1704,7 +1708,7 @@ function GeminiXContent({
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V6 MARKET MEMORY ENGINE
+              GEMINIX V6.1 MULTI-MARKET ENTRY ENGINE
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -1838,7 +1842,7 @@ function GeminiXContent({
           {!compact ? (
             <div className={styles.quickButtons}>
               {analysis.candidates
-                .slice(0, 4)
+                .slice(0, 8)
                 .map((candidate) => (
                   <button
                     type="button"
