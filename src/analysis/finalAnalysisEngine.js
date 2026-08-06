@@ -170,6 +170,65 @@ function memorySignature({
   ].join("|");
 }
 
+
+function clusterSignature({
+  trend,
+  volatility,
+  regime,
+  momentum,
+  transitionProbability,
+  reversalRisk,
+}) {
+  const momentumBand =
+    Math.abs(momentum) >= 12
+      ? "STRONG"
+      : Math.abs(momentum) >= 5
+        ? "MEDIUM"
+        : "WEAK";
+
+  const transitionBand =
+    transitionProbability >= 72
+      ? "HIGH"
+      : transitionProbability >= 60
+        ? "MEDIUM"
+        : "LOW";
+
+  const reversalBand =
+    reversalRisk <= 25
+      ? "LOW"
+      : reversalRisk <= 50
+        ? "MEDIUM"
+        : "HIGH";
+
+  return [
+    trend === "UP" ? "RISE" : trend === "DOWN" ? "FALL" : "NONE",
+    regime,
+    volatility,
+    momentumBand,
+    transitionBand,
+    reversalBand,
+  ].join("|");
+}
+
+function mergeMemoryRows(memory, signatures) {
+  const rows = signatures
+    .map((signature) => memorySummary(memory, signature))
+    .filter((row) => row.sample > 0);
+
+  const sample = rows.reduce((sum, row) => sum + row.sample, 0);
+  const wins = rows.reduce((sum, row) => sum + row.wins, 0);
+  const losses = rows.reduce((sum, row) => sum + row.losses, 0);
+  const profit = rows.reduce((sum, row) => sum + row.profit, 0);
+
+  return {
+    sample,
+    wins,
+    losses,
+    winRate: sample ? (wins / sample) * 100 : 50,
+    profit,
+  };
+}
+
 function memorySummary(memory, signature) {
   const row = memory && typeof memory === "object"
     ? memory[signature]
@@ -188,7 +247,7 @@ function memorySummary(memory, signature) {
   };
 }
 
-export function analyseTicks(ticks = [], adaptiveMemory = {}) {
+export function analyseTicks(ticks = [], adaptiveMemory = {}, clusterMemory = {}) {
   const clean = (Array.isArray(ticks) ? ticks : [])
     .map(Number)
     .filter(Number.isFinite)
@@ -444,26 +503,71 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
     signature
   );
 
-  const learnedEdge =
-    learned.sample >= 4
-      ? learned.winRate - 50
-      : 0;
+  const clusterKey = clusterSignature({
+    trend,
+    volatility,
+    regime,
+    momentum,
+    transitionProbability: transition.probability,
+    reversalRisk,
+  });
+
+  const clustered = memorySummary(
+    clusterMemory,
+    clusterKey
+  );
+
+  const exactWeight = Math.min(
+    0.60,
+    learned.sample / 20
+  );
+  const clusterWeight = Math.min(
+    0.30,
+    clustered.sample / 40
+  );
+  const rawWeight = Math.max(
+    0.10,
+    1 - exactWeight - clusterWeight
+  );
+
+  const calibratedConfidence =
+    confidence * rawWeight +
+    learned.winRate * exactWeight +
+    clustered.winRate * clusterWeight;
 
   confidence = Math.round(
     clamp(
-      confidence +
-        learnedEdge * 0.22 +
-        Math.max(-8, Math.min(8, learned.profit * 3)),
+      calibratedConfidence +
+        Math.max(-7, Math.min(7, learned.profit * 2.5)) +
+        Math.max(-5, Math.min(5, clustered.profit * 1.5)),
       1,
       94
     )
   );
 
-  const memoryQualified =
-    learned.sample < 8 ||
+  const exactBlacklisted =
+    learned.sample >= 8 &&
     (
-      learned.winRate >= 60 &&
-      learned.profit > 0
+      learned.winRate < 45 ||
+      learned.profit < -0.70
+    );
+
+  const clusterBlacklisted =
+    clustered.sample >= 14 &&
+    (
+      clustered.winRate < 46 ||
+      clustered.profit < -1.20
+    );
+
+  const memoryQualified =
+    !exactBlacklisted &&
+    !clusterBlacklisted &&
+    (
+      learned.sample < 8 ||
+      (
+        learned.winRate >= 60 &&
+        learned.profit > 0
+      )
     );
 
   const expectedValue =
@@ -518,6 +622,22 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
       learned.sample
         ? `${learned.sample} samples · ${Math.round(learned.winRate)}% wins`
         : "No prior sample"
+    ),
+    check(
+      "Pattern cluster",
+      !clusterBlacklisted,
+      clustered.sample
+        ? `${clustered.sample} samples · ${Math.round(clustered.winRate)}% wins`
+        : "No cluster sample"
+    ),
+    check(
+      "Blacklist",
+      !exactBlacklisted && !clusterBlacklisted,
+      exactBlacklisted
+        ? "Exact pattern blocked"
+        : clusterBlacklisted
+          ? "Cluster blocked"
+          : "Clear"
     ),
     check(
       "Expected value",
@@ -591,11 +711,15 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
 
   const reason =
     buyQualified
-      ? `${trendContract} entry confirmed by ${passedChecks}/9 filters`
+      ? `${trendContract} entry confirmed by ${passedChecks}/11 filters`
       : regime === "RANGE"
         ? `${trendContract} blocked because market regime is RANGE`
-        : !memoryQualified
-          ? `${trendContract} blocked by weak historical pattern memory`
+        : exactBlacklisted
+          ? `${trendContract} exact pattern is blacklisted`
+          : clusterBlacklisted
+            ? `${trendContract} pattern cluster is blacklisted`
+            : !memoryQualified
+              ? `${trendContract} blocked by weak historical pattern memory`
         : expectedValue <= 0
           ? `${trendContract} blocked because expected value is not positive`
           : confirmStage
@@ -642,9 +766,16 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
       learnedLosses: learned.losses,
       learnedProfit: Number(learned.profit.toFixed(3)),
       learnedWinRate: Math.round(learned.winRate),
+      clusterSample: clustered.sample,
+      clusterWinRate: Math.round(clustered.winRate),
+      clusterProfit: Number(clustered.profit.toFixed(3)),
+      exactBlacklisted,
+      clusterBlacklisted,
+      calibratedConfidence: confidence,
       memoryQualified,
       expectedValue: Number(expectedValue.toFixed(3)),
       memorySignature: signature,
+      clusterSignature: clusterKey,
     },
   };
 }

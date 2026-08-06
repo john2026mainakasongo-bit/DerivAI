@@ -673,3 +673,22 @@
   }
 }
 
+
+
+/* Final AI V11 adaptive V3 */
+.final-v7-page .final-metrics-grid {
+  grid-template-columns: repeat(21, minmax(74px, 1fr));
+}
+
+@media (max-width: 1550px) {
+  .final-v7-page .final-metrics-grid {
+    grid-template-columns: repeat(11, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .final-v7-page .final-metrics-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+

@@ -8,8 +8,9 @@ import { analyseTicks } from "../analysis/finalAnalysisEngine";
 
 import "./FinalAnalysisBot.css";
 
-const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v10:transactions";
-const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v10:pattern-memory";
+const FINAL_AI_HISTORY_KEY = "edgepilot:final-ai:v11:transactions";
+const FINAL_AI_MEMORY_KEY = "edgepilot:final-ai:v11:pattern-memory";
+const FINAL_AI_CLUSTER_KEY = "edgepilot:final-ai:v11:cluster-memory";
 
 const money = (value) =>
   Number(value || 0).toLocaleString("en-US", {
@@ -169,6 +170,17 @@ export default function FinalAnalysisBot() {
       return {};
     }
   });
+
+  const [clusterMemory, setClusterMemory] = useState(() => {
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem(FINAL_AI_CLUSTER_KEY) || "{}"
+      );
+      return saved && typeof saved === "object" ? saved : {};
+    } catch {
+      return {};
+    }
+  });
   const [message, setMessage] = useState(
     "Final AI is using the shared EdgePilot Deriv connection."
   );
@@ -196,9 +208,19 @@ export default function FinalAnalysisBot() {
     [adaptiveMemory, symbol]
   );
 
+  const marketClusterMemory = useMemo(
+    () => scopedMemoryForMarket(clusterMemory, symbol),
+    [clusterMemory, symbol]
+  );
+
   const analysis = useMemo(
-    () => analyseTicks(numericTicks, marketMemory),
-    [numericTicks, marketMemory]
+    () =>
+      analyseTicks(
+        numericTicks,
+        marketMemory,
+        marketClusterMemory
+      ),
+    [numericTicks, marketMemory, marketClusterMemory]
   );
 
   const stats = useMemo(() => {
@@ -392,6 +414,17 @@ export default function FinalAnalysisBot() {
   }, [adaptiveMemory]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        FINAL_AI_CLUSTER_KEY,
+        JSON.stringify(clusterMemory)
+      );
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [clusterMemory]);
+
+  useEffect(() => {
     if (!analysis.ready) return;
 
     const key = [
@@ -446,6 +479,10 @@ export default function FinalAnalysisBot() {
       memorySignature:
         analysis.metrics.memorySignature
           ? `${marketMemoryPrefix(symbol)}${analysis.metrics.memorySignature}`
+          : "",
+      clusterSignature:
+        analysis.metrics.clusterSignature
+          ? `${marketMemoryPrefix(symbol)}${analysis.metrics.clusterSignature}`
           : "",
       entrySerial: tickSerial,
       openedAt: new Date().toLocaleTimeString(),
@@ -516,6 +553,33 @@ export default function FinalAnalysisBot() {
         return {
           ...current,
           [paperTrade.memorySignature]: {
+            wins:
+              Number(previous.wins || 0) +
+              (won ? 1 : 0),
+            losses:
+              Number(previous.losses || 0) +
+              (won ? 0 : 1),
+            profit:
+              Number(previous.profit || 0) +
+              Number(profit || 0),
+            updatedAt: Date.now(),
+          },
+        };
+      });
+    }
+
+    if (paperTrade.clusterSignature) {
+      setClusterMemory((current) => {
+        const previous =
+          current[paperTrade.clusterSignature] || {
+            wins: 0,
+            losses: 0,
+            profit: 0,
+          };
+
+        return {
+          ...current,
+          [paperTrade.clusterSignature]: {
             wins:
               Number(previous.wins || 0) +
               (won ? 1 : 0),
@@ -1047,6 +1111,29 @@ export default function FinalAnalysisBot() {
                 : "LEARNING"
             }
           />
+          <Metric
+            label="Cluster sample"
+            value={analysis.metrics.clusterSample ?? 0}
+          />
+          <Metric
+            label="Cluster win rate"
+            value={`${analysis.metrics.clusterWinRate ?? 50}%`}
+          />
+          <Metric
+            label="Cluster P/L"
+            value={`${Number(analysis.metrics.clusterProfit || 0) >= 0 ? "+" : ""}$${money(
+              analysis.metrics.clusterProfit || 0
+            )}`}
+          />
+          <Metric
+            label="Blacklist"
+            value={
+              analysis.metrics.exactBlacklisted ||
+              analysis.metrics.clusterBlacklisted
+                ? "BLOCKED"
+                : "CLEAR"
+            }
+          />
         </section>
 
         <section className="final-stats-grid">
@@ -1092,9 +1179,13 @@ export default function FinalAnalysisBot() {
                 <button
                   onClick={() => {
                     setAdaptiveMemory({});
+                    setClusterMemory({});
                     try {
                       window.localStorage.removeItem(
                         FINAL_AI_MEMORY_KEY
+                      );
+                      window.localStorage.removeItem(
+                        FINAL_AI_CLUSTER_KEY
                       );
                     } catch {
                       // Ignore storage errors.
