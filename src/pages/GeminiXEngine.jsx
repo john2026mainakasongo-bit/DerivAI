@@ -357,7 +357,110 @@ function contractRiskClass(candidate) {
   return "HIGH";
 }
 
-function safeContractCandidates(digits) {
+function normalizedTradeLabel(trade) {
+  const type = String(
+    trade?.contract_type ||
+      trade?.contractType ||
+      ""
+  ).toUpperCase();
+
+  const barrier = Math.abs(
+    Number(
+      trade?.barrier ??
+        trade?.barrier_value ??
+        trade?.prediction ??
+        -1
+    )
+  );
+
+  if (
+    type === "DIGITOVER" &&
+    Number.isFinite(barrier) &&
+    barrier >= 0
+  ) {
+    return `OVER ${barrier}`;
+  }
+
+  if (
+    type === "DIGITUNDER" &&
+    Number.isFinite(barrier) &&
+    barrier >= 0
+  ) {
+    return `UNDER ${barrier}`;
+  }
+
+  return "";
+}
+
+function recentContractMemory(
+  transactions,
+  limit = 16
+) {
+  const rows = (Array.isArray(transactions)
+    ? transactions
+    : []
+  )
+    .map((trade) => ({
+      label: normalizedTradeLabel(trade),
+      result: settledTradeStatus(trade),
+    }))
+    .filter(
+      (row) =>
+        row.label &&
+        ["WON", "LOST"].includes(row.result)
+    )
+    .slice(0, limit);
+
+  const usage = new Map();
+  const losses = new Map();
+
+  for (const row of rows) {
+    usage.set(
+      row.label,
+      Number(usage.get(row.label) || 0) + 1
+    );
+
+    if (row.result === "LOST") {
+      losses.set(
+        row.label,
+        Number(losses.get(row.label) || 0) + 1
+      );
+    }
+  }
+
+  const latestSide = rows[0]?.label?.startsWith(
+    "OVER"
+  )
+    ? "OVER"
+    : rows[0]?.label?.startsWith("UNDER")
+    ? "UNDER"
+    : "";
+
+  let sideStreak = 0;
+
+  for (const row of rows) {
+    if (
+      !latestSide ||
+      !row.label.startsWith(latestSide)
+    ) {
+      break;
+    }
+
+    sideStreak += 1;
+  }
+
+  return {
+    usage,
+    losses,
+    latestSide,
+    sideStreak,
+  };
+}
+
+function safeContractCandidates(
+  digits,
+  transactions
+) {
   const recent = digits.slice(-60);
   const distribution = buildDigitDistribution(recent);
 
@@ -384,32 +487,111 @@ function safeContractCandidates(digits) {
     { label: "UNDER 4", contractType: "DIGITUNDER", barrier: 4, probability: probabilityUnder(4), baseRisk: 62 },
   ];
 
+  const memory = recentContractMemory(
+    transactions,
+    16
+  );
+
   return candidates
     .map((candidate) => {
       const riskClass =
         contractRiskClass(candidate);
 
+      const theoreticalProbability =
+        candidate.contractType ===
+        "DIGITOVER"
+          ? ((9 - candidate.barrier) /
+              10) *
+            100
+          : (candidate.barrier / 10) *
+            100;
+
+      const statisticalEdge =
+        candidate.probability -
+        theoreticalProbability;
+
+      const estimatedPayoutMultiple =
+        theoreticalProbability > 0
+          ? 95 / theoreticalProbability
+          : 0;
+
+      const expectedValue =
+        (candidate.probability / 100) *
+          estimatedPayoutMultiple -
+        1;
+
+      const usageCount = Number(
+        memory.usage.get(candidate.label) || 0
+      );
+
+      const lossCount = Number(
+        memory.losses.get(candidate.label) || 0
+      );
+
+      const candidateSide =
+        candidate.contractType ===
+        "DIGITOVER"
+          ? "OVER"
+          : "UNDER";
+
+      const repetitionPenalty =
+        usageCount * 4.5 +
+        lossCount * 7 +
+        (
+          memory.latestSide ===
+            candidateSide &&
+          memory.sideStreak >= 3
+            ? Math.min(
+                24,
+                (memory.sideStreak - 2) * 6
+              )
+            : 0
+        );
+
+      const barrierPenalty =
+        riskClass === "HIGH"
+          ? 20
+          : riskClass === "MEDIUM"
+          ? 7
+          : 0;
+
+      const probabilityFloorPenalty =
+        candidate.probability < 48
+          ? (48 - candidate.probability) * 2
+          : 0;
+
       const risk = clamp(
         candidate.baseRisk +
+          barrierPenalty +
+          probabilityFloorPenalty +
           Math.max(
             0,
-            72 - candidate.probability
+            -statisticalEdge
           ) *
-            0.75 +
-          (riskClass === "HIGH"
-            ? 28
-            : riskClass === "MEDIUM"
-            ? 10
-            : 0)
+            1.8
       );
+
+      const score =
+        expectedValue * 115 +
+        statisticalEdge * 2.4 +
+        Math.min(
+          18,
+          candidate.probability * 0.18
+        ) -
+        risk * 0.38 -
+        repetitionPenalty;
 
       return {
         ...candidate,
+        theoreticalProbability,
+        statisticalEdge,
+        expectedValue,
+        usageCount,
+        lossCount,
+        repetitionPenalty,
         riskClass,
         risk,
-        score:
-          candidate.probability -
-          risk * 0.62,
+        score,
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -501,7 +683,10 @@ function analyseGemini({
       ? "TREND"
       : "RANGE";
 
-  const candidates = safeContractCandidates(decisionDigits);
+  const candidates = safeContractCandidates(
+    decisionDigits,
+    transactions
+  );
   const best = candidates[0] || {
     label: "WAIT",
     probability: 50,
@@ -858,8 +1043,12 @@ function GeminiXContent({
             ...row,
             ageSeconds,
             score: clamp(
-              confidence * 0.48 +
-                probability * 0.42 -
+              confidence * 0.34 +
+                probability * 0.24 +
+                Number(
+                  row?.candidate?.score || 0
+                ) *
+                  0.42 -
                 riskPenalty -
                 classPenalty -
                 freshnessPenalty
@@ -1078,8 +1267,18 @@ function GeminiXContent({
           contractType: analysis.best.contractType,
           barrier: analysis.best.barrier,
           probability: analysis.best.probability,
+          theoreticalProbability:
+            analysis.best.theoreticalProbability,
+          statisticalEdge:
+            analysis.best.statisticalEdge,
+          expectedValue:
+            analysis.best.expectedValue,
+          repetitionPenalty:
+            analysis.best.repetitionPenalty,
+          score: analysis.best.score,
           risk: analysis.best.risk,
-          riskClass: analysis.best.riskClass || "HIGH",
+          riskClass:
+            analysis.best.riskClass || "HIGH",
         },
         confidence: analysis.confidence,
         probability: analysis.probability,
@@ -1288,8 +1487,19 @@ function GeminiXContent({
 
     if (
       !analysis.ready ||
-      analysis.best.label !== portfolioBest.decision
-    ) return;
+      analysis.best.label !==
+        portfolioBest.decision ||
+      Number(
+        portfolioBest.candidate
+          ?.expectedValue || -1
+      ) <= 0 ||
+      Number(
+        portfolioBest.candidate
+          ?.statisticalEdge || -100
+      ) <= 0
+    ) {
+      return;
+    }
 
     const candidate =
       portfolioBest.candidate || analysis.best;
@@ -1369,7 +1579,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · multi-market scan · OVER 1-5 + UNDER 4-8 · portfolio ranking
+          Shared Deriv feed · contract edge + EV ranking · anti-repeat diversity · multi-market scan
         </div>
       </div>
 
@@ -1649,6 +1859,24 @@ function GeminiXContent({
           ["Best Market", portfolioBest?.symbol || "SCANNING"],
           ["Best Entry", portfolioBest?.decision || "WAIT"],
           [
+            "Entry Edge",
+            portfolioBest?.candidate
+              ? `${Number(
+                  portfolioBest.candidate
+                    .statisticalEdge || 0
+                ).toFixed(1)}%`
+              : "—",
+          ],
+          [
+            "Entry EV",
+            portfolioBest?.candidate
+              ? Number(
+                  portfolioBest.candidate
+                    .expectedValue || 0
+                ).toFixed(3)
+              : "—",
+          ],
+          [
             "Markets Scanned",
             Object.keys(marketMemory).length,
           ],
@@ -1708,7 +1936,7 @@ function GeminiXContent({
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V6.1 MULTI-MARKET ENTRY ENGINE
+              GEMINIX V6.2 DIVERSITY + EDGE ENGINE
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -1842,7 +2070,7 @@ function GeminiXContent({
           {!compact ? (
             <div className={styles.quickButtons}>
               {analysis.candidates
-                .slice(0, 8)
+                .slice(0, 10)
                 .map((candidate) => (
                   <button
                     type="button"
@@ -1933,6 +2161,18 @@ function GeminiXContent({
                     P {Number(
                       row.probability || 0
                     ).toFixed(1)}%
+                  </span>
+                  <span>
+                    Edge {Number(
+                      row.candidate
+                        ?.statisticalEdge || 0
+                    ).toFixed(1)}%
+                  </span>
+                  <span>
+                    EV {Number(
+                      row.candidate
+                        ?.expectedValue || 0
+                    ).toFixed(3)}
                   </span>
                   <span>
                     {row.risk || "HIGH"} ·{" "}

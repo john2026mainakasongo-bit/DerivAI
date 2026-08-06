@@ -862,3 +862,26 @@
 .quickButtons{max-width:760px}.quickButtons button{min-width:86px}
 .campaignGrid{grid-template-columns:repeat(18,minmax(0,1fr)) 135px 135px}
 @media(max-width:1550px){.campaignGrid{grid-template-columns:repeat(9,minmax(0,1fr))}}
+
+
+/* GeminiX V6.2 diversity and edge ranking */
+.quickButtons {
+  max-width: 980px;
+}
+
+.quickButtons button {
+  min-width: 82px;
+}
+
+.campaignGrid {
+  grid-template-columns:
+    repeat(20, minmax(0, 1fr))
+    130px 130px;
+}
+
+@media (max-width: 1600px) {
+  .campaignGrid {
+    grid-template-columns:
+      repeat(10, minmax(0, 1fr));
+  }
+}
