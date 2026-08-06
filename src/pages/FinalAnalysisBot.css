@@ -927,3 +927,361 @@
   }
 }
 
+
+
+/* Final AI V14 UI cleanup â€” authoritative layout overrides */
+
+.final-v14-page {
+  position: relative !important;
+  display: block !important;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 100vh !important;
+  height: auto !important;
+  padding: 10px 12px 18px !important;
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  contain: none !important;
+}
+
+.final-v14-page *,
+.final-v14-page *::before,
+.final-v14-page *::after {
+  box-sizing: border-box !important;
+}
+
+.final-v14-page section,
+.final-v14-page article,
+.final-v14-page header,
+.final-v14-page footer,
+.final-v14-page nav,
+.final-v14-page .final-metric,
+.final-v14-page .final-panel {
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+  float: none !important;
+}
+
+.final-v14-page .final-section-nav {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 100 !important;
+  display: flex !important;
+  width: 100% !important;
+  margin: 6px 0 10px !important;
+}
+
+.final-v14-page .final-account-strip,
+.final-v14-page .final-control-grid,
+.final-v14-page .final-hero-grid,
+.final-v14-page .final-metrics-grid,
+.final-v14-page .final-stats-grid,
+.final-v14-page .final-bottom-grid,
+.final-v14-page .final-learning-head,
+.final-v14-page .final-learning-summary,
+.final-v14-page .final-pattern-highlight-grid,
+.final-v14-page .final-learning-grid {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: auto !important;
+  align-items: stretch !important;
+}
+
+.final-v14-page .final-account-strip {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin: 0 0 10px !important;
+}
+
+.final-v14-page .final-wide-message {
+  grid-column: span 2 !important;
+}
+
+.final-v14-page .final-control-grid {
+  display: grid !important;
+  grid-template-columns:
+    minmax(220px, 1.45fr)
+    repeat(4, minmax(130px, .8fr))
+    minmax(170px, .9fr) !important;
+  gap: 8px !important;
+  margin: 0 0 10px !important;
+  padding: 10px !important;
+}
+
+.final-v14-page .final-control-grid > * {
+  min-width: 0 !important;
+}
+
+.final-v14-page .final-hero-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, .82fr) !important;
+  gap: 10px !important;
+  margin: 0 0 10px !important;
+}
+
+.final-v14-page .final-decision,
+.final-v14-page .final-open-card {
+  display: block !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 14px !important;
+  overflow: visible !important;
+  z-index: auto !important;
+}
+
+.final-v14-page .final-filter-list {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+  margin: 10px 0 !important;
+}
+
+.final-v14-page .final-filter-list > div {
+  min-width: 0 !important;
+  height: auto !important;
+}
+
+.final-v14-page .final-score-row {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 7px !important;
+  margin-top: 10px !important;
+}
+
+.final-v14-page .final-score-row > div {
+  min-width: 0 !important;
+  height: auto !important;
+}
+
+/* Analysis metrics: readable broker-style grid, never a single overflowing row. */
+.final-v14-page .final-metrics-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(150px, 1fr)) !important;
+  grid-auto-flow: row !important;
+  grid-auto-rows: minmax(66px, auto) !important;
+  gap: 8px !important;
+  margin: 0 0 10px !important;
+  overflow: visible !important;
+}
+
+.final-v14-page .final-metrics-grid .final-metric {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 66px !important;
+  height: auto !important;
+  padding: 10px 11px !important;
+  overflow: hidden !important;
+  z-index: auto !important;
+}
+
+.final-v14-page .final-metric span,
+.final-v14-page .final-metric strong {
+  position: static !important;
+  display: block !important;
+  max-width: 100% !important;
+}
+
+.final-v14-page .final-metric strong {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.final-v14-page .final-stats-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin: 0 0 10px !important;
+}
+
+.final-v14-page .final-bottom-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) !important;
+  gap: 10px !important;
+  margin: 0 0 10px !important;
+}
+
+.final-v14-page .final-panel {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 430px !important;
+  height: 430px !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  z-index: auto !important;
+}
+
+.final-v14-page .final-panel-title {
+  position: relative !important;
+  z-index: 2 !important;
+  flex: 0 0 auto !important;
+  min-height: 58px !important;
+}
+
+.final-v14-page .final-table-wrap,
+.final-v14-page .final-journal {
+  position: relative !important;
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: auto !important;
+  overscroll-behavior: contain !important;
+  z-index: 1 !important;
+}
+
+.final-v14-page .final-table-wrap table,
+.final-v14-page .final-pattern-table-wrap table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+}
+
+.final-v14-page .final-learning-dashboard {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: auto !important;
+  margin: 0 0 10px !important;
+  padding: 12px !important;
+  overflow: visible !important;
+  z-index: auto !important;
+}
+
+.final-v14-page .final-learning-head {
+  display: grid !important;
+  grid-template-columns: minmax(190px, .6fr) minmax(0, 2.4fr) !important;
+  gap: 10px !important;
+  margin-bottom: 10px !important;
+}
+
+.final-v14-page .final-learning-summary {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) !important;
+  gap: 7px !important;
+}
+
+.final-v14-page .final-pattern-highlight-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(150px, 1fr)) !important;
+  gap: 8px !important;
+  margin-bottom: 10px !important;
+}
+
+.final-v14-page .final-learning-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.final-v14-page .final-learning-grid .final-panel {
+  min-height: 360px !important;
+  height: 360px !important;
+}
+
+.final-v14-page .final-pattern-table-wrap {
+  position: relative !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: auto !important;
+}
+
+.final-v14-page .final-disclaimer {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  margin: 0 !important;
+  z-index: auto !important;
+}
+
+/* Remove decorative pseudo-elements that can appear as horizontal overlay lines. */
+.final-v14-page .final-panel::before,
+.final-v14-page .final-panel::after,
+.final-v14-page .final-learning-dashboard::before,
+.final-v14-page .final-learning-dashboard::after,
+.final-v14-page .final-bottom-grid::before,
+.final-v14-page .final-bottom-grid::after {
+  content: none !important;
+  display: none !important;
+}
+
+@media (max-width: 1450px) {
+  .final-v14-page .final-account-strip,
+  .final-v14-page .final-control-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .final-v14-page .final-wide-message {
+    grid-column: span 2 !important;
+  }
+
+  .final-v14-page .final-filter-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .final-v14-page .final-metrics-grid {
+    grid-template-columns: repeat(4, minmax(135px, 1fr)) !important;
+  }
+
+  .final-v14-page .final-learning-summary,
+  .final-v14-page .final-pattern-highlight-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1000px) {
+  .final-v14-page {
+    padding: 8px !important;
+  }
+
+  .final-v14-page .final-hero-grid,
+  .final-v14-page .final-bottom-grid,
+  .final-v14-page .final-learning-head,
+  .final-v14-page .final-learning-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .final-v14-page .final-account-strip,
+  .final-v14-page .final-control-grid,
+  .final-v14-page .final-filter-list,
+  .final-v14-page .final-metrics-grid,
+  .final-v14-page .final-stats-grid,
+  .final-v14-page .final-learning-summary,
+  .final-v14-page .final-pattern-highlight-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .final-v14-page .final-panel,
+  .final-v14-page .final-learning-grid .final-panel {
+    height: 360px !important;
+    min-height: 360px !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .final-v14-page .final-account-strip,
+  .final-v14-page .final-control-grid,
+  .final-v14-page .final-filter-list,
+  .final-v14-page .final-score-row,
+  .final-v14-page .final-metrics-grid,
+  .final-v14-page .final-stats-grid,
+  .final-v14-page .final-learning-summary,
+  .final-v14-page .final-pattern-highlight-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .final-v14-page .final-wide-message {
+    grid-column: auto !important;
+  }
+}
+

@@ -866,7 +866,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
