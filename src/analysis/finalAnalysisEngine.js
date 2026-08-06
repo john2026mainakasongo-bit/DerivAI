@@ -378,64 +378,6 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
 
   confidence = Math.round(confidence);
 
-  const checks = [
-    check(
-      "Direction",
-      trendContract !== "NONE",
-      trendContract === "NONE"
-        ? "Trend is still flat"
-        : `${trend} trend detected`
-    ),
-    check(
-      "Momentum",
-      momentumStrong && trendAligned,
-      `Momentum ${Math.round(momentum)}`
-    ),
-    check(
-      "Transition",
-      transitionAligned &&
-        transition.probability >= 56,
-      `${Math.round(
-        transition.probability
-      )}% ${transition.direction}`
-    ),
-    check(
-      "Volatility",
-      volatilityAcceptable,
-      volatility
-    ),
-    check(
-      "Entropy",
-      entropyAcceptable,
-      `${Math.round(entropy)}%`
-    ),
-    check(
-      "Probability",
-      probability >= 64,
-      `${Math.round(probability)}%`
-    ),
-    check(
-      "Confirmation",
-      confirmQualified,
-      `${consecutiveDirection}/4 aligned · reversal ${Math.round(reversalRisk)}%`
-    ),
-    check(
-      "Pattern memory",
-      memoryQualified,
-      learned.sample
-        ? `${learned.sample} samples · ${Math.round(learned.winRate)}% wins`
-        : "No prior sample"
-    ),
-    check(
-      "Expected value",
-      expectedValue > 0,
-      `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(3)}`
-    ),
-  ];
-
-  const passedChecks = checks.filter(
-    (item) => item.passed
-  ).length;
 
   const hardBlock =
     trendContract === "NONE" ||
@@ -515,6 +457,66 @@ export function analyseTicks(ticks = [], adaptiveMemory = {}) {
   const expectedValue =
     (probability / 100) * 0.92 -
     (1 - probability / 100);
+
+
+  const checks = [
+    check(
+      "Direction",
+      trendContract !== "NONE",
+      trendContract === "NONE"
+        ? "Trend is still flat"
+        : `${trend} trend detected`
+    ),
+    check(
+      "Momentum",
+      momentumStrong && trendAligned,
+      `Momentum ${Math.round(momentum)}`
+    ),
+    check(
+      "Transition",
+      transitionAligned &&
+        transition.probability >= 56,
+      `${Math.round(
+        transition.probability
+      )}% ${transition.direction}`
+    ),
+    check(
+      "Volatility",
+      volatilityAcceptable,
+      volatility
+    ),
+    check(
+      "Entropy",
+      entropyAcceptable,
+      `${Math.round(entropy)}%`
+    ),
+    check(
+      "Probability",
+      probability >= 64,
+      `${Math.round(probability)}%`
+    ),
+    check(
+      "Confirmation",
+      confirmQualified,
+      `${consecutiveDirection}/4 aligned · reversal ${Math.round(reversalRisk)}%`
+    ),
+    check(
+      "Pattern memory",
+      memoryQualified,
+      learned.sample
+        ? `${learned.sample} samples · ${Math.round(learned.winRate)}% wins`
+        : "No prior sample"
+    ),
+    check(
+      "Expected value",
+      expectedValue > 0,
+      `${expectedValue >= 0 ? "+" : ""}${expectedValue.toFixed(3)}`
+    ),
+  ];
+
+  const passedChecks = checks.filter(
+    (item) => item.passed
+  ).length;
 
   const buyQualified =
     !hardBlock &&
