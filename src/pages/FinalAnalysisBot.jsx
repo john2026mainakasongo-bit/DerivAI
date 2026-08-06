@@ -159,7 +159,12 @@ export default function FinalAnalysisBot() {
       return [];
     }
   });
-  const [paperTrade, setPaperTrade] = useState(null);
+  const [paperTrades, setPaperTrades] = useState([]);
+  const [marketDataBank, setMarketDataBank] = useState({});
+  const [marketTickSerials, setMarketTickSerials] = useState({});
+  const [autoMarketSwitch, setAutoMarketSwitch] = useState(true);
+  const [marketSwitchSeconds, setMarketSwitchSeconds] = useState(6);
+  const [lastMarketSwitchAt, setLastMarketSwitchAt] = useState(Date.now());
   const [tickSerial, setTickSerial] = useState(0);
   const [adaptiveMemory, setAdaptiveMemory] = useState(() => {
     try {
@@ -198,6 +203,15 @@ export default function FinalAnalysisBot() {
   const [usedRapidSlots, setUsedRapidSlots] = useState([]);
   const protectionRunRef = useRef(-1);
   const lastJournalAtRef = useRef(0);
+
+  const currentMarketTrades = paperTrades.filter(
+    (trade) => trade.market === symbol
+  );
+
+  const totalOpenPaperTrades = paperTrades.length;
+
+  const currentMarketDataCount =
+    marketDataBank[symbol]?.prices?.length || 0;
 
   const scanRemainingSeconds = Math.max(
     0,
@@ -296,7 +310,8 @@ export default function FinalAnalysisBot() {
     return streak;
   }, [transactions]);
 
-  const protectionPaused = now < protectionUntil;
+  const protectionPaused =
+    mode === "live" && now < protectionUntil;
 
   const analysis = useMemo(
     () =>
@@ -330,7 +345,7 @@ export default function FinalAnalysisBot() {
 
   const rapidPaperReady =
     !rapidSlotUsed &&
-    !paperTrade &&
+    currentMarketTrades.length < 2 &&
     Boolean(analysis.rapidScore?.qualified) &&
     Number(analysis.rapidScore?.score || 0) >= 66 &&
     ["RISE", "FALL"].includes(
@@ -719,17 +734,130 @@ export default function FinalAnalysisBot() {
   const previousQuoteRef = useRef(null);
 
   useEffect(() => {
-    if (!Number.isFinite(Number(liveQuote))) return;
+    if (!Number.isFinite(Number(liveQuote)) || !symbol) return;
 
-    if (
+    const changed =
       previousQuoteRef.current !== null &&
-      Number(previousQuoteRef.current) !== Number(liveQuote)
-    ) {
+      Number(previousQuoteRef.current) !== Number(liveQuote);
+
+    if (changed) {
       setTickSerial((value) => value + 1);
+
+      setMarketTickSerials((current) => ({
+        ...current,
+        [symbol]: Number(current[symbol] || 0) + 1,
+      }));
     }
 
+    setMarketDataBank((current) => {
+      const existing = current[symbol] || {
+        prices: [],
+        updatedAt: 0,
+      };
+
+      const nextPrices = [
+        ...existing.prices,
+        Number(liveQuote),
+      ].slice(-160);
+
+      return {
+        ...current,
+        [symbol]: {
+          prices: nextPrices,
+          updatedAt: Date.now(),
+          quote: Number(liveQuote),
+        },
+      };
+    });
+
     previousQuoteRef.current = Number(liveQuote);
-  }, [liveQuote]);
+  }, [liveQuote, symbol]);
+
+  useEffect(() => {
+    if (
+      !running ||
+      !autoMarketSwitch ||
+      loadingMarket ||
+      totalOpenPaperTrades >= 8 ||
+      Date.now() - lastMarketSwitchAt <
+        Math.max(3, Number(marketSwitchSeconds || 6)) * 1000
+    ) {
+      return;
+    }
+
+    const available = (Array.isArray(markets) ? markets : [])
+      .map((item) =>
+        typeof item === "string"
+          ? item
+          : item?.symbol || item?.value || ""
+      )
+      .filter(Boolean);
+
+    if (available.length < 2) return;
+
+    const currentIndex = Math.max(
+      0,
+      available.indexOf(symbol)
+    );
+
+    const ranked = available
+      .map((market, offset) => ({
+        market,
+        offset,
+        dataCount:
+          marketDataBank[market]?.prices?.length || 0,
+        updatedAt:
+          marketDataBank[market]?.updatedAt || 0,
+      }))
+      .filter((item) => item.market !== symbol)
+      .sort((a, b) => {
+        const aReady = a.dataCount >= 20 ? 1 : 0;
+        const bReady = b.dataCount >= 20 ? 1 : 0;
+
+        if (aReady !== bReady) return bReady - aReady;
+        if (a.dataCount !== b.dataCount) {
+          return b.dataCount - a.dataCount;
+        }
+
+        const aDistance =
+          (available.indexOf(a.market) - currentIndex +
+            available.length) %
+          available.length;
+        const bDistance =
+          (available.indexOf(b.market) - currentIndex +
+            available.length) %
+          available.length;
+
+        return aDistance - bDistance;
+      });
+
+    const nextMarket = ranked[0]?.market;
+
+    if (!nextMarket) return;
+
+    setLastMarketSwitchAt(Date.now());
+    setScanEndsAt(Date.now() + 60000);
+    setUsedRapidSlots([]);
+    setBestCandidate(null);
+    setArmedDirection("NONE");
+    setArmedTicks(0);
+    setMessage(
+      `PORTFOLIO SCAN · switching ${symbol} → ${nextMarket}`
+    );
+
+    void changeSymbol(nextMarket);
+  }, [
+    running,
+    autoMarketSwitch,
+    loadingMarket,
+    markets,
+    symbol,
+    marketDataBank,
+    marketSwitchSeconds,
+    lastMarketSwitchAt,
+    totalOpenPaperTrades,
+    changeSymbol,
+  ]);
 
   useEffect(() => {
     try {
@@ -806,8 +934,9 @@ export default function FinalAnalysisBot() {
     if (
       !running ||
       mode !== "paper" ||
-      paperTrade ||
       buyLockRef.current ||
+      currentMarketTrades.length >= 2 ||
+      totalOpenPaperTrades >= 8 ||
       rapidSlotUsed ||
       !(
         rapidPaperReady ||
@@ -818,7 +947,8 @@ export default function FinalAnalysisBot() {
       minuteEntryConfidence < minimumConfidence ||
       Date.now() < cooldownUntil ||
       protectionPaused ||
-      !liveQuote
+      !liveQuote ||
+      currentMarketDataCount < 20
     ) {
       return;
     }
@@ -833,7 +963,9 @@ export default function FinalAnalysisBot() {
       );
     }
 
-    setPaperTrade({
+    setPaperTrades((current) => [
+      ...current,
+      {
       id: crypto.randomUUID(),
       market: symbol,
       contract: minuteEntryContract,
@@ -878,7 +1010,10 @@ export default function FinalAnalysisBot() {
           : "",
       entrySerial: tickSerial,
       openedAt: new Date().toLocaleTimeString(),
-    });
+      marketEntrySerial:
+        Number(marketTickSerials[symbol] || 0),
+    },
+    ]);
 
     setMessage(
       `PAPER ENTRY · ${minuteEntryContract} · ${minuteEntryConfidence}% · ${minuteEntryMode} · ${minuteTargetTicks} ticks`
@@ -908,7 +1043,7 @@ export default function FinalAnalysisBot() {
     minimumConfidence,
     mode,
     numericTicks.length,
-    paperTrade,
+    paperTrades,
     running,
     stake,
     symbol,
@@ -918,103 +1053,140 @@ export default function FinalAnalysisBot() {
 
   useEffect(() => {
     if (
-      !paperTrade ||
-      tickSerial <
-        Number(paperTrade.entrySerial || 0) +
-          Math.max(2, Number(paperTrade.targetTicks || 3))
+      !symbol ||
+      !Number.isFinite(Number(liveQuote)) ||
+      paperTrades.length === 0
     ) {
       return;
     }
 
-    const exit = liveQuote;
-    const won =
-      paperTrade.contract === "RISE"
-        ? exit > paperTrade.entry
-        : exit < paperTrade.entry;
+    const marketSerial =
+      Number(marketTickSerials[symbol] || 0);
 
-    const profit = won
-      ? Number(paperTrade.stake) * 0.92
-      : -Number(paperTrade.stake);
+    const settled = paperTrades.filter(
+      (trade) =>
+        trade.market === symbol &&
+        marketSerial >=
+          Number(trade.marketEntrySerial || 0) +
+            Math.max(
+              1,
+              Number(trade.targetTicks || 2)
+            )
+    );
+
+    if (settled.length === 0) return;
+
+    const completed = settled.map((trade) => {
+      const exit = Number(liveQuote);
+      const won =
+        trade.contract === "RISE"
+          ? exit > Number(trade.entry)
+          : exit < Number(trade.entry);
+
+      const profit = won
+        ? Number(trade.stake) * 0.92
+        : -Number(trade.stake);
+
+      return {
+        ...trade,
+        exit,
+        result: won ? "WON" : "LOST",
+        profit,
+        source: "PAPER",
+        closedAt: new Date().toLocaleTimeString(),
+      };
+    });
 
     setTransactions((current) =>
-      [
-        {
-          ...paperTrade,
-          exit,
-          result: won ? "WON" : "LOST",
-          profit,
-          source: "PAPER",
-          closedAt: new Date().toLocaleTimeString(),
-        },
-        ...current,
-      ].slice(0, 120)
+      [...completed.reverse(), ...current].slice(0, 120)
     );
 
-    if (paperTrade.memorySignature) {
-      setAdaptiveMemory((current) => {
-        const previous =
-          current[paperTrade.memorySignature] || {
-            wins: 0,
-            losses: 0,
-            profit: 0,
-          };
+    for (const result of completed) {
+      const won = result.result === "WON";
 
-        return {
-          ...current,
-          [paperTrade.memorySignature]: {
-            wins:
-              Number(previous.wins || 0) +
-              (won ? 1 : 0),
-            losses:
-              Number(previous.losses || 0) +
-              (won ? 0 : 1),
-            profit:
-              Number(previous.profit || 0) +
-              Number(profit || 0),
-            updatedAt: Date.now(),
-          },
-        };
-      });
+      if (result.memorySignature) {
+        setAdaptiveMemory((current) => {
+          const previous =
+            current[result.memorySignature] || {
+              wins: 0,
+              losses: 0,
+              profit: 0,
+            };
+
+          return {
+            ...current,
+            [result.memorySignature]: {
+              wins:
+                Number(previous.wins || 0) +
+                (won ? 1 : 0),
+              losses:
+                Number(previous.losses || 0) +
+                (won ? 0 : 1),
+              profit:
+                Number(previous.profit || 0) +
+                Number(result.profit || 0),
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      }
+
+      if (result.clusterSignature) {
+        setClusterMemory((current) => {
+          const previous =
+            current[result.clusterSignature] || {
+              wins: 0,
+              losses: 0,
+              profit: 0,
+            };
+
+          return {
+            ...current,
+            [result.clusterSignature]: {
+              wins:
+                Number(previous.wins || 0) +
+                (won ? 1 : 0),
+              losses:
+                Number(previous.losses || 0) +
+                (won ? 0 : 1),
+              profit:
+                Number(previous.profit || 0) +
+                Number(result.profit || 0),
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      }
     }
 
-    if (paperTrade.clusterSignature) {
-      setClusterMemory((current) => {
-        const previous =
-          current[paperTrade.clusterSignature] || {
-            wins: 0,
-            losses: 0,
-            profit: 0,
-          };
+    const settledIds = new Set(
+      settled.map((trade) => trade.id)
+    );
 
-        return {
-          ...current,
-          [paperTrade.clusterSignature]: {
-            wins:
-              Number(previous.wins || 0) +
-              (won ? 1 : 0),
-            losses:
-              Number(previous.losses || 0) +
-              (won ? 0 : 1),
-            profit:
-              Number(previous.profit || 0) +
-              Number(profit || 0),
-            updatedAt: Date.now(),
-          },
-        };
-      });
-    }
+    setPaperTrades((current) =>
+      current.filter(
+        (trade) => !settledIds.has(trade.id)
+      )
+    );
+
+    const net = completed.reduce(
+      (sum, result) => sum + Number(result.profit || 0),
+      0
+    );
 
     setMessage(
-      `PAPER ${won ? "WON" : "LOST"} · ${
-        profit >= 0 ? "+" : ""
-      }$${money(profit)}`
+      `${symbol} · ${completed.length} PAPER SETTLED · ${
+        net >= 0 ? "+" : ""
+      }$${money(net)}`
     );
-    setPaperTrade(null);
-    setCooldownUntil(Date.now() + 5000);
-    setBestCandidate(null);
-    setArmedDirection("NONE");
-    setArmedTicks(0);
-  }, [liveQuote, paperTrade, tickSerial]);
+
+    setCooldownUntil(Date.now() + 600);
+  }, [
+    liveQuote,
+    symbol,
+    paperTrades,
+    marketTickSerials,
+  ]);
 
   useEffect(() => {
     for (const contract of Array.isArray(openContracts)
@@ -1220,7 +1392,7 @@ export default function FinalAnalysisBot() {
     <div className="appShell">
       <Sidebar />
 
-      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page">
+      <main className="mainContent final-integrated-page final-v7-page final-v14-page final-v15-page final-v16-page final-v17-page final-v18-page final-v19-page final-v20-page final-v21-page final-v22-page final-v23-page final-v24-page">
         <Topbar
           title="EdgePilot Final AI"
           subtitle="Shared Deriv login · live analysis · decision journal · paper and guarded live execution"
@@ -1282,7 +1454,9 @@ export default function FinalAnalysisBot() {
               value={symbol}
               disabled={loadingMarket}
               onChange={(next) => {
-                setPaperTrade(null);
+                setLastMarketSwitchAt(Date.now());
+                setScanEndsAt(Date.now() + 60000);
+                setUsedRapidSlots([]);
                 void changeSymbol(next);
               }}
             />
@@ -1314,6 +1488,38 @@ export default function FinalAnalysisBot() {
                 )
               }
             />
+          </label>
+
+          <label>
+            Auto market switch
+            <select
+              value={autoMarketSwitch ? "on" : "off"}
+              onChange={(event) =>
+                setAutoMarketSwitch(
+                  event.target.value === "on"
+                )
+              }
+            >
+              <option value="on">ON</option>
+              <option value="off">OFF</option>
+            </select>
+          </label>
+
+          <label>
+            Switch every
+            <select
+              value={marketSwitchSeconds}
+              onChange={(event) =>
+                setMarketSwitchSeconds(
+                  Number(event.target.value)
+                )
+              }
+            >
+              <option value="3">3 seconds</option>
+              <option value="6">6 seconds</option>
+              <option value="10">10 seconds</option>
+              <option value="15">15 seconds</option>
+            </select>
           </label>
 
           <label>
@@ -1450,15 +1656,13 @@ export default function FinalAnalysisBot() {
                   ? executionReady
                     ? `${learningPhase} · DERIV READY`
                     : "DERIV BLOCKED"
-                  : paperTrade
-                    ? `${paperTrade.contract} PAPER TRADE`
+                  : totalOpenPaperTrades > 0
+                    ? `${totalOpenPaperTrades} OPEN · ${currentMarketTrades.length} ON ${symbol}`
                     : `${learningPhase} · ${mode.toUpperCase()}`}
             </strong>
             <p>
-              {paperTrade
-                ? `Entry ${paperTrade.entry} · Stake $${money(
-                    paperTrade.stake
-                  )}`
+              {totalOpenPaperTrades > 0
+                ? `Portfolio scanning continues · ${currentMarketDataCount} cached ticks on ${symbol}`
                 : message}
             </p>
             <small>
@@ -1666,6 +1870,26 @@ export default function FinalAnalysisBot() {
                 ? `${analysis.selectedSetup.score}%`
                 : "0%"
             }
+          />
+          <Metric
+            label="Open portfolio"
+            value={totalOpenPaperTrades}
+          />
+          <Metric
+            label="Current market open"
+            value={currentMarketTrades.length}
+          />
+          <Metric
+            label="Market data"
+            value={`${currentMarketDataCount} ticks`}
+          />
+          <Metric
+            label="Markets cached"
+            value={Object.keys(marketDataBank).length}
+          />
+          <Metric
+            label="Market rotation"
+            value={autoMarketSwitch ? "AUTO" : "MANUAL"}
           />
           <Metric
             label="Rapid slots used"
