@@ -190,11 +190,20 @@ export default function FinalAnalysisBot() {
   const [now, setNow] = useState(Date.now());
   const [armedDirection, setArmedDirection] = useState("NONE");
   const [armedTicks, setArmedTicks] = useState(0);
-  const [scanStartedAt, setScanStartedAt] = useState(Date.now());
+  const [scanEndsAt, setScanEndsAt] = useState(
+    () => Date.now() + 60000
+  );
   const [scanCycle, setScanCycle] = useState(1);
   const [bestCandidate, setBestCandidate] = useState(null);
   const protectionRunRef = useRef(-1);
   const lastJournalAtRef = useRef(0);
+
+  const scanRemainingSeconds = Math.max(
+    0,
+    Math.ceil((scanEndsAt - now) / 1000)
+  );
+
+  const scanExpired = now >= scanEndsAt;
 
   const lastDecisionRef = useRef("");
   const buyLockRef = useRef(false);
@@ -321,16 +330,6 @@ export default function FinalAnalysisBot() {
     armedTicks >= 3 &&
     armedDirection === analysis.contract;
 
-  const scanElapsedSeconds = Math.max(
-    0,
-    Math.floor((now - scanStartedAt) / 1000)
-  );
-
-  const scanRemainingSeconds = Math.max(
-    0,
-    60 - scanElapsedSeconds
-  );
-
   useEffect(() => {
     if (
       analysis.contract === "NONE" ||
@@ -383,9 +382,9 @@ export default function FinalAnalysisBot() {
   ]);
 
   useEffect(() => {
-    if (scanElapsedSeconds < 60) return;
+    if (!scanExpired) return;
 
-    setScanStartedAt(Date.now());
+    setScanEndsAt(Date.now() + 60000);
     setScanCycle((value) => value + 1);
     setBestCandidate(null);
     setArmedDirection("NONE");
@@ -394,7 +393,7 @@ export default function FinalAnalysisBot() {
     setMessage(
       "SCAN RESET · no fresh qualified entry was found within 60 seconds. Starting a new market-analysis cycle."
     );
-  }, [scanElapsedSeconds]);
+  }, [scanExpired]);
 
   const stats = useMemo(() => {
     const settled = transactions.filter((item) =>
@@ -676,7 +675,7 @@ export default function FinalAnalysisBot() {
       paperTrade ||
       buyLockRef.current ||
       !stableEntryReady ||
-      scanElapsedSeconds >= 60 ||
+      scanExpired ||
       !analysis.metrics.signalFresh ||
       analysis.confidence < minimumConfidence ||
       Date.now() < cooldownUntil ||
@@ -717,7 +716,7 @@ export default function FinalAnalysisBot() {
   }, [
     analysis,
     stableEntryReady,
-    scanElapsedSeconds,
+    scanExpired,
     liveQuote,
     minimumConfidence,
     mode,
@@ -823,7 +822,7 @@ export default function FinalAnalysisBot() {
     );
     setPaperTrade(null);
     setCooldownUntil(Date.now() + 5000);
-    setScanStartedAt(Date.now());
+    setScanEndsAt(Date.now() + 60000);
     setScanCycle((value) => value + 1);
     setBestCandidate(null);
     setArmedDirection("NONE");
@@ -923,7 +922,7 @@ export default function FinalAnalysisBot() {
 
     if (
       !stableEntryReady ||
-      scanElapsedSeconds >= 60 ||
+      scanExpired ||
       !analysis.metrics.signalFresh ||
       analysis.contract === "NONE" ||
       analysis.confidence < minimumConfidence
@@ -1001,7 +1000,7 @@ export default function FinalAnalysisBot() {
       buyLockRef.current ||
       tradeBusy ||
       !stableEntryReady ||
-      scanElapsedSeconds >= 60 ||
+      scanExpired ||
       !analysis.metrics.signalFresh ||
       analysis.confidence < minimumConfidence ||
       !currentPatternLiveReady ||
