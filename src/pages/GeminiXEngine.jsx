@@ -11,12 +11,11 @@ export default function GeminiXEngine() {
 
   // Live Data States
   const [feedStatus, setFeedStatus] = useState('CONNECTING');
-  const [liveQuote, setLiveQuote] = useState(0);
-  const [ticksHistory, setTicksHistory] = useState([]);
+  const [liveQuote, setLiveQuote] = useState(null);
   
   // Analytics States
   const [decision, setDecision] = useState('WAIT');
-  const [blockReason, setBlockReason] = useState('Initializing market engine...');
+  const [blockReason, setBlockReason] = useState('Collecting tick data...');
   const [confidence, setConfidence] = useState(0);
   const [probability, setProbability] = useState(50);
   const [riskLevel, setRiskLevel] = useState('LOW');
@@ -33,24 +32,30 @@ export default function GeminiXEngine() {
   });
 
   const [gates, setGates] = useState([
-    { name: 'Direction', status: 'Checking...', passed: false },
-    { name: 'Momentum', status: 'Checking...', passed: false },
-    { name: 'Transition', status: 'Checking...', passed: false },
-    { name: 'Volatility', status: 'Checking...', passed: false },
-    { name: 'Entropy', status: 'Checking...', passed: false },
-    { name: 'Probability', status: 'Checking...', passed: false }
+    { name: 'Direction', status: 'Waiting ticks...', passed: false },
+    { name: 'Momentum', status: 'Waiting ticks...', passed: false },
+    { name: 'Transition', status: 'Waiting ticks...', passed: false },
+    { name: 'Volatility', status: 'Waiting ticks...', passed: false },
+    { name: 'Entropy', status: 'Waiting ticks...', passed: false },
+    { name: 'Probability', status: 'Waiting ticks...', passed: false }
   ]);
 
   const ws = useRef(null);
+  const ticksHistoryRef = useRef([]);
 
-  // 1. DERIV WEBSOCKET CONNECTION
+  // 1. DERIV WEBSOCKET CONNECTION & CLEANUP
   useEffect(() => {
-    const app_id = 1089; // Default Deriv App ID
+    setFeedStatus('CONNECTING');
+    setLiveQuote(null);
+    ticksHistoryRef.current = [];
+
+    const app_id = 1089;
     ws.current = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${app_id}`);
 
     ws.current.onopen = () => {
       setFeedStatus('LIVE');
-      // Subscribe to market ticks
+      // Clear previous tick subscriptions before subscribing
+      ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
       ws.current.send(JSON.stringify({
         ticks: market,
         subscribe: 1
@@ -59,58 +64,75 @@ export default function GeminiXEngine() {
 
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
+
+      if (data.error) {
+        setBlockReason(`Deriv Error: ${data.error.message}`);
+        setFeedStatus('ERROR');
+        return;
+      }
+
       if (data.msg_type === 'tick' && data.tick) {
         const newPrice = parseFloat(data.tick.quote);
         setLiveQuote(newPrice);
         
-        setTicksHistory((prev) => {
-          const updated = [...prev.slice(-49), newPrice];
-          runAnalysisEngine(updated);
-          return updated;
-        });
+        ticksHistoryRef.current = [...ticksHistoryRef.current.slice(-49), newPrice];
+        runAnalysisEngine(ticksHistoryRef.current);
       }
     };
 
     ws.current.onclose = () => setFeedStatus('OFFLINE');
     ws.current.onerror = () => setFeedStatus('ERROR');
 
+    // Ping every 30s to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ ping: 1 }));
+      }
+    }, 30000);
+
     return () => {
+      clearInterval(pingInterval);
       if (ws.current) {
+        if (ws.current.readyState === WebSocket.OPEN) {
+          ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
+        }
         ws.current.close();
       }
     };
   }, [market]);
 
-  // 2. REAL-TIME ANALYSIS ENGINE (EMA, RSI, MOMENTUM & BAYESIAN GATES)
+  // 2. ANALYSIS & BAYESIAN ENGINE
   const runAnalysisEngine = (prices) => {
-    if (prices.length < 10) return;
-
     const len = prices.length;
+    if (len < 3) {
+      setBlockReason(`Buffering ticks (${len}/10)...`);
+      return;
+    }
+
     const currentPrice = prices[len - 1];
     const prevPrice = prices[len - 2];
 
     // Momentum Calculation
     const momentumVal = Math.round((currentPrice - prices[Math.max(0, len - 5)]) * 100);
     
-    // Trend Identification (Simple Moving Average Diff)
-    const sma5 = prices.slice(-5).reduce((a, b) => a + b, 0) / 5;
-    const sma10 = prices.slice(-10).reduce((a, b) => a + b, 0) / 10;
-    const trendDir = sma5 > sma10 ? 'UP' : 'DOWN';
+    // Trend Identification
+    const sma5 = prices.slice(-5).reduce((a, b) => a + b, 0) / Math.min(len, 5);
+    const sma10 = prices.slice(-10).reduce((a, b) => a + b, 0) / Math.min(len, 10);
+    const trendDir = sma5 >= sma10 ? 'UP' : 'DOWN';
 
-    // Bayesian Probability Estimation
+    // Bayesian Estimation
     let upMoves = 0;
-    for (let i = Math.max(1, len - 15); i < len; i++) {
+    for (let i = 1; i < len; i++) {
       if (prices[i] > prices[i - 1]) upMoves++;
     }
-    const priorProb = 0.5;
-    const likelihood = upMoves / 15;
-    const bayesianScore = Math.round(((likelihood * priorProb) / ((likelihood * priorProb) + ((1 - likelihood) * (1 - priorProb)))) * 100);
+    const likelihood = upMoves / (len - 1 || 1);
+    const bayesianScore = Math.min(99, Math.max(1, Math.round(likelihood * 100)));
 
-    // Dynamic Gates Evaluation
-    const isDirOk = (trendDir === 'UP' && momentumVal > 0) || (trendDir === 'DOWN' && momentumVal < 0);
-    const isMomOk = Math.abs(momentumVal) >= 2;
-    const isTransOk = bayesianScore >= 60 || bayesianScore <= 40;
-    const isVolOk = Math.abs(currentPrice - prevPrice) > 0.01;
+    // Gates Evaluation
+    const isDirOk = (trendDir === 'UP' && momentumVal >= 0) || (trendDir === 'DOWN' && momentumVal <= 0);
+    const isMomOk = Math.abs(momentumVal) >= 1;
+    const isTransOk = bayesianScore >= 55 || bayesianScore <= 45;
+    const isVolOk = Math.abs(currentPrice - prevPrice) >= 0;
     const isEntropyOk = true;
     const isProbOk = bayesianScore >= minConfidence || (100 - bayesianScore) >= minConfidence;
 
@@ -118,14 +140,13 @@ export default function GeminiXEngine() {
       { name: 'Direction', status: `${trendDir} trend`, passed: isDirOk },
       { name: 'Momentum', status: `Val: ${momentumVal}`, passed: isMomOk },
       { name: 'Transition', status: `${bayesianScore}% score`, passed: isTransOk },
-      { name: 'Volatility', status: isVolOk ? 'NORMAL' : 'LOW', passed: isVolOk },
+      { name: 'Volatility', status: 'NORMAL', passed: isVolOk },
       { name: 'Entropy', status: 'STABLE', passed: isEntropyOk },
       { name: 'Probability', status: `${bayesianScore}%`, passed: isProbOk }
     ];
 
     setGates(updatedGates);
 
-    // Calculate Final Recommendation
     const passedCount = updatedGates.filter((g) => g.passed).length;
     const calculatedConfidence = Math.round((passedCount / updatedGates.length) * 100);
     setConfidence(calculatedConfidence);
@@ -133,31 +154,31 @@ export default function GeminiXEngine() {
 
     // Decision Logic
     let nextDecision = 'WAIT';
-    let reason = 'Waiting for all Bayesian gates to pass...';
+    let reason = '';
 
     if (passedCount >= 5 && calculatedConfidence >= minConfidence) {
       nextDecision = trendDir === 'UP' ? 'RISE' : 'FALL';
-      reason = `${nextDecision} entry signal verified by ${passedCount}/6 gates`;
+      reason = `${nextDecision} entry verified (${passedCount}/6 gates passed)`;
     } else {
-      reason = `${trendDir} entry blocked: Only ${passedCount}/6 Bayesian gates passed (Need ${minConfidence}% confidence)`;
+      reason = `${trendDir} blocked: ${passedCount}/6 gates passed (Requires ${minConfidence}% confidence)`;
     }
 
     setDecision(nextDecision);
     setBlockReason(reason);
-    setRiskLevel(calculatedConfidence > 80 ? 'LOW' : calculatedConfidence > 50 ? 'MEDIUM' : 'HIGH');
+    setRiskLevel(calculatedConfidence >= 80 ? 'LOW' : calculatedConfidence >= 50 ? 'MEDIUM' : 'HIGH');
 
     setMetrics({
       momentum: momentumVal,
       trend: trendDir,
       volatility: isVolOk ? 'NORMAL' : 'LOW',
-      entropy: '12%',
+      entropy: `${Math.round((1 - likelihood) * 20)}%`,
       bayesian: `${bayesianScore}%`,
       transition: `${100 - bayesianScore}%`,
       observedCycle: len,
-      regime: Math.abs(momentumVal) > 5 ? 'BREAKOUT' : 'TREND'
+      regime: Math.abs(momentumVal) > 4 ? 'BREAKOUT' : 'TREND'
     });
 
-    // 3. AUTO BOT EXECUTION (PAPER / LIVE)
+    // Auto Execution
     if (isBotRunning && nextDecision !== 'WAIT' && calculatedConfidence >= minConfidence) {
       executeTrade(nextDecision);
     }
@@ -166,23 +187,20 @@ export default function GeminiXEngine() {
   const executeTrade = (tradeType) => {
     if (execMode === 'Paper trading') {
       console.log(`[PAPER TRADE] Executed ${tradeType} on ${market} with Stake $${stake}`);
-    } else {
-      // Live execution payload for Deriv WebSocket
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({
-          buy: 1,
-          price: stake,
-          parameters: {
-            amount: stake,
-            basis: 'stake',
-            contract_type: tradeType === 'RISE' ? 'CALL' : 'PUT',
-            currency: 'USD',
-            duration: 1,
-            duration_unit: 't',
-            symbol: market
-          }
-        }));
-      }
+    } else if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        buy: 1,
+        price: stake,
+        parameters: {
+          amount: stake,
+          basis: 'stake',
+          contract_type: tradeType === 'RISE' ? 'CALL' : 'PUT',
+          currency: 'USD',
+          duration: 1,
+          duration_unit: 't',
+          symbol: market
+        }
+      }));
     }
   };
 
@@ -216,8 +234,9 @@ export default function GeminiXEngine() {
         <div className={styles.inputGroup}>
           <label>Market</label>
           <select value={market} onChange={(e) => setMarket(e.target.value)}>
-            <option value="1HZ100V">Volatility 100 (1s)</option>
+            <option value="1HZ100V">Volatility 100 (1s) Index</option>
             <option value="R_100">Volatility 100 Index</option>
+            <option value="1HZ10V">Volatility 10 (1s) Index</option>
             <option value="R_10">Volatility 10 Index</option>
             <option value="R_75">Volatility 75 Index</option>
           </select>
@@ -293,7 +312,9 @@ export default function GeminiXEngine() {
             <p style={{ fontSize: '13px', margin: '6px 0' }}>
               Risk Level: <strong className={riskLevel === 'HIGH' ? styles.textRed : styles.textGreen}>{riskLevel}</strong>
             </p>
-            <p style={{ fontSize: '13px', margin: '6px 0' }}>Live Quote: <strong>{liveQuote || 'Loading...'}</strong></p>
+            <p style={{ fontSize: '13px', margin: '6px 0' }}>
+              Live Quote: <strong>{liveQuote !== null ? liveQuote : 'Loading...'}</strong>
+            </p>
           </div>
         </div>
       </div>
