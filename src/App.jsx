@@ -1,4 +1,4 @@
-import {
+﻿import {
   BrowserRouter,
   Navigate,
   Route,
@@ -17,7 +17,7 @@ import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import FreshEdgeBot from "./pages/FreshEdgeBot";
 import RapidEdgeAI from "./pages/RapidEdgeAI";
-import FinalAnalysisBot from "./pages/FinalAnalysisBot";
+import GeminiXEngine from "./pages/GeminiXEngine";
 
 import "./index.css";
 
@@ -74,8 +74,8 @@ export default function App() {
         />
 
         <Route
-          path="/final-analysis-bot"
-          element={<FinalAnalysisBot />}
+          path="/gemini-x-engine"
+          element={<GeminiXEngine />}
         />
 
         <Route
