@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import styles from './GeminiXEngine.module.css';
 
 export default function GeminiXEngine() {
-  // Default to R_10 which is supported across all Deriv Demo accounts
-  const [market, setMarket] = useState('R_10');
+  const [market, setMarket] = useState('R_100');
   const [stake, setStake] = useState(0.35);
   const [minConfidence, setMinConfidence] = useState(80);
   const [execMode, setExecMode] = useState('Paper trading');
@@ -59,9 +58,15 @@ export default function GeminiXEngine() {
     ws.current.onopen = () => {
       setFeedStatus('CONNECTING');
       setBlockReason('Inapokea live ticks...');
+      // Clean previous subscriptions before subscribing to current symbol
       ws.current.send(JSON.stringify({ forget_all: 'ticks' }));
       ws.current.send(JSON.stringify({
-        ticks: market,
+        ticks_history: market,
+        adjust_start_time: 1,
+        count: 50,
+        end: 'latest',
+        start: 1,
+        style: 'ticks',
         subscribe: 1
       }));
     };
@@ -70,11 +75,26 @@ export default function GeminiXEngine() {
       const data = JSON.parse(event.data);
 
       if (data.error) {
-        setBlockReason(`Hitilafu ya Deriv (${market}): ${data.error.message}`);
+        setBlockReason(`Hitilafu ya Deriv: ${data.error.message}`);
         setFeedStatus('ERROR');
         return;
       }
 
+      // Handle history payload
+      if (data.msg_type === 'history' && data.history) {
+        setFeedStatus('LIVE');
+        const prices = data.history.prices || [];
+        ticksHistoryRef.current = prices;
+        if (prices.length > 0) {
+          const lastPrice = prices[prices.length - 1];
+          const quoteStr = lastPrice.toString();
+          const digit = parseInt(quoteStr.slice(-1), 10);
+          setLiveQuote(lastPrice);
+          setLastDigit(digit);
+        }
+      }
+
+      // Handle live tick stream
       if (data.msg_type === 'tick' && data.tick) {
         setFeedStatus('LIVE');
         const quoteStr = data.tick.quote.toString();
