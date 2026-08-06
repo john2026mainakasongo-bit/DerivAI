@@ -701,8 +701,12 @@ function GeminiXContent({
     useState(false);
   const [recoveryMultiplier, setRecoveryMultiplier] =
     useState(4);
+  const [recoveryConfidence, setRecoveryConfidence] =
+    useState(85);
   const [maxRecoveryStake, setMaxRecoveryStake] =
     useState(5);
+  const [decisionHistory, setDecisionHistory] =
+    useState([]);
   const [cooldownUntil, setCooldownUntil] =
     useState(0);
   const [lastSettlementKey, setLastSettlementKey] =
@@ -822,32 +826,6 @@ function GeminiXContent({
   );
 
 
-  const effectiveStake = useMemo(() => {
-    const baseStake = Math.max(
-      0.35,
-      Number(stake || 0.35)
-    );
-
-    if (!recoveryEnabled || !recoveryPending) {
-      return baseStake;
-    }
-
-    return Math.min(
-      Math.max(baseStake, Number(maxRecoveryStake || 5)),
-      baseStake *
-        Math.max(
-          1,
-          Number(recoveryMultiplier || 4)
-        )
-    );
-  }, [
-    stake,
-    recoveryEnabled,
-    recoveryPending,
-    recoveryMultiplier,
-    maxRecoveryStake,
-  ]);
-
   const transactionSummary = useMemo(() => {
     const settled = normalizedContracts.filter(
       (trade) => trade.settled
@@ -877,6 +855,139 @@ function GeminiXContent({
         : 0,
     };
   }, [normalizedContracts]);
+
+
+  const marketRanking = useMemo(
+    () =>
+      Object.values(marketMemory)
+        .map((row) => {
+          const confidence = Number(
+            row?.confidence || 0
+          );
+          const probability = Number(
+            row?.probability || 0
+          );
+          const riskPenalty =
+            row?.risk === "HIGH"
+              ? 35
+              : row?.risk === "MEDIUM"
+              ? 15
+              : 0;
+          const classPenalty =
+            row?.riskClass === "HIGH"
+              ? 30
+              : row?.riskClass === "MEDIUM"
+              ? 10
+              : 0;
+          const ageSeconds = Math.max(
+            0,
+            (
+              watchdogClock -
+              Number(row?.updatedAt || 0)
+            ) /
+              1000
+          );
+          const freshnessPenalty =
+            Math.min(30, ageSeconds * 0.35);
+
+          return {
+            ...row,
+            ageSeconds,
+            score: clamp(
+              confidence * 0.48 +
+                probability * 0.42 -
+                riskPenalty -
+                classPenalty -
+                freshnessPenalty
+            ),
+          };
+        })
+        .sort(
+          (first, second) =>
+            second.score - first.score
+        ),
+    [marketMemory, watchdogClock]
+  );
+
+  const recoveryGatePassed =
+    recoveryEnabled &&
+    recoveryPending &&
+    analysis.ready &&
+    analysis.risk === "LOW" &&
+    analysis.best.riskClass === "LOW" &&
+    analysis.confidence >=
+      recoveryConfidence &&
+    analysis.probability >= 82;
+
+  const smartEffectiveStake = useMemo(() => {
+    const baseStake = Math.max(
+      0.35,
+      Number(stake || 0.35)
+    );
+
+    if (!recoveryGatePassed) {
+      return baseStake;
+    }
+
+    return Math.min(
+      Number(maxRecoveryStake || 5),
+      baseStake *
+        Math.max(
+          1,
+          Number(recoveryMultiplier || 4)
+        )
+    );
+  }, [
+    stake,
+    recoveryGatePassed,
+    maxRecoveryStake,
+    recoveryMultiplier,
+  ]);
+
+  useEffect(() => {
+    if (!symbol || !analysis.best?.label) {
+      return;
+    }
+
+    const record = {
+      id: [
+        symbol,
+        analysis.best.label,
+        Math.round(analysis.confidence),
+        Math.round(analysis.probability),
+      ].join(":"),
+      time: Date.now(),
+      symbol,
+      decision: analysis.decision,
+      candidate: analysis.best.label,
+      confidence: analysis.confidence,
+      probability: analysis.probability,
+      risk: analysis.risk,
+      recovery:
+        recoveryPending &&
+        recoveryGatePassed,
+    };
+
+    setDecisionHistory((current) => {
+      if (current[0]?.id === record.id) {
+        return current;
+      }
+
+      return [
+        record,
+        ...current,
+      ].slice(0, 30);
+    });
+  }, [
+    symbol,
+    analysis.decision,
+    analysis.best.label,
+    analysis.confidence,
+    analysis.probability,
+    analysis.risk,
+    recoveryPending,
+    recoveryGatePassed,
+  ]);
 
   useEffect(() => {
     const settled = settledContracts[0];
@@ -912,7 +1023,7 @@ function GeminiXContent({
       setLastMarketSwitchAt(0);
       setEngineMessage(
         recoveryEnabled
-          ? `LOSS settled · next qualified trade itatumia controlled recovery x${recoveryMultiplier}.`
+          ? `LOSS settled · recovery x${recoveryMultiplier} imearm, lakini itatumika tu Confidence ≥ ${recoveryConfidence}% na LOW risk.`
           : "LOSS settled · scanner inaendelea bila recovery."
       );
     }
@@ -1123,7 +1234,7 @@ function GeminiXContent({
     if (executionMode === "PAPER") {
       setEngineMessage(
         `PAPER ${candidate.label} · ${market?.label || symbol} · $${Number(
-          effectiveStake
+          smartEffectiveStake
         ).toFixed(2)}`
       );
       return;
@@ -1143,7 +1254,7 @@ function GeminiXContent({
 
       await placeTrade({
         contractType: candidate.contractType,
-        amount: Number(effectiveStake),
+        amount: Number(smartEffectiveStake),
         duration: 1,
         durationUnit: "t",
         barrier: candidate.barrier,
@@ -1152,7 +1263,7 @@ function GeminiXContent({
 
       setEngineMessage(
         `${candidate.label} imenunuliwa kwa ${symbol} · stake $${Number(
-          effectiveStake
+          smartEffectiveStake
         ).toFixed(2)}${
           recoveryPending
             ? ` · recovery x${recoveryMultiplier}`
@@ -1257,7 +1368,7 @@ function GeminiXContent({
         </div>
 
         <div className={styles.statusNote}>
-          Shared Deriv feed · exact 10s scan · clear profit monitor · controlled single-step recovery
+          Shared Deriv feed · 10s portfolio scan · market memory ranking · gated recovery
         </div>
       </div>
 
@@ -1363,6 +1474,25 @@ function GeminiXContent({
               <option value={3}>x3</option>
               <option value={4}>x4</option>
             </select>
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label>Recovery Min Confidence</label>
+            <input
+              type="number"
+              min="75"
+              max="95"
+              value={recoveryConfidence}
+              onChange={(event) =>
+                setRecoveryConfidence(
+                  clamp(
+                    event.target.value,
+                    75,
+                    95
+                  )
+                )
+              }
+            />
           </div>
 
           <div className={styles.inputGroup}>
@@ -1493,16 +1623,26 @@ function GeminiXContent({
           [
             "Recovery",
             recoveryPending
-              ? `ARMED x${recoveryMultiplier}`
+              ? recoveryGatePassed
+                ? `READY x${recoveryMultiplier}`
+                : `ARMED · WAIT ${recoveryConfidence}%`
               : recoveryEnabled
-              ? `READY x${recoveryMultiplier}`
+              ? `STANDBY x${recoveryMultiplier}`
               : "OFF",
           ],
           [
             "Next Stake",
             `$${Number(
-              effectiveStake
+              smartEffectiveStake
             ).toFixed(2)}`,
+          ],
+          [
+            "Recovery Gate",
+            recoveryGatePassed
+              ? "PASS"
+              : recoveryPending
+              ? "WAIT"
+              : "IDLE",
           ],
           [
             "Markets Scanned",
@@ -1564,7 +1704,7 @@ function GeminiXContent({
         <article className={styles.geminiPanel}>
           <div className={styles.panelHeader}>
             <span className={styles.title}>
-              GEMINIX V5.7 PROFIT + X4 RECOVERY
+              GEMINIX V6 MARKET MEMORY ENGINE
             </span>
             <div className={styles.tags}>
               <span className={styles.recBadge}>
@@ -1745,6 +1885,118 @@ function GeminiXContent({
         ))}
       </div>
 
+      <div className={styles.intelligenceGrid}>
+        <article className={styles.geminiPanel}>
+          <div className={styles.panelHeader}>
+            <span className={styles.title}>
+              LIVE MARKET MEMORY RANKING
+            </span>
+            <span className={styles.statusNote}>
+              {marketRanking.length} markets
+            </span>
+          </div>
+
+          <div className={styles.marketRankingGrid}>
+            {marketRanking
+              .slice(0, 10)
+              .map((row, index) => (
+                <div
+                  className={`${styles.marketRankCard} ${
+                    index === 0
+                      ? styles.marketRankBest
+                      : ""
+                  }`}
+                  key={row.symbol}
+                >
+                  <div>
+                    <small>#{index + 1}</small>
+                    <strong>{row.symbol}</strong>
+                  </div>
+                  <span>
+                    {row.decision || "WAIT"}
+                  </span>
+                  <span>
+                    Score {Number(
+                      row.score || 0
+                    ).toFixed(1)}
+                  </span>
+                  <span>
+                    C {Number(
+                      row.confidence || 0
+                    ).toFixed(1)}%
+                  </span>
+                  <span>
+                    P {Number(
+                      row.probability || 0
+                    ).toFixed(1)}%
+                  </span>
+                  <span>
+                    {row.risk || "HIGH"} ·{" "}
+                    {Math.round(
+                      row.ageSeconds || 0
+                    )}s
+                  </span>
+                </div>
+              ))}
+
+            {!marketRanking.length ? (
+              <div className={styles.emptyTransactions}>
+                Scanner inaanza kujenga memory ya kila market.
+              </div>
+            ) : null}
+          </div>
+        </article>
+
+        <article className={styles.geminiPanel}>
+          <div className={styles.panelHeader}>
+            <span className={styles.title}>
+              LAST AI DECISIONS
+            </span>
+            <span className={styles.statusNote}>
+              latest 30
+            </span>
+          </div>
+
+          <div className={styles.decisionHistory}>
+            {decisionHistory
+              .slice(0, 12)
+              .map((row) => (
+                <div key={`${row.time}-${row.id}`}>
+                  <span>
+                    {new Date(
+                      row.time
+                    ).toLocaleTimeString()}
+                  </span>
+                  <strong>{row.symbol}</strong>
+                  <strong>{row.candidate}</strong>
+                  <span>
+                    C {Number(
+                      row.confidence
+                    ).toFixed(1)}%
+                  </span>
+                  <span>
+                    P {Number(
+                      row.probability
+                    ).toFixed(1)}%
+                  </span>
+                  <span>{row.risk}</span>
+                  <span>
+                    {row.recovery
+                      ? "RECOVERY"
+                      : row.decision}
+                  </span>
+                </div>
+              ))}
+
+            {!decisionHistory.length ? (
+              <div className={styles.emptyTransactions}>
+                Decision history itajaa baada ya live ticks.
+              </div>
+            ) : null}
+          </div>
+        </article>
+      </div>
+
       <article className={styles.geminiPanel}>
         <div className={styles.panelHeader}>
           <span className={styles.title}>
@@ -1803,6 +2055,7 @@ function GeminiXContent({
             <span>Buy</span>
             <span>Payout</span>
             <span>Profit</span>
+            <span>Entry</span>
           </div>
 
           {normalizedContracts
@@ -1866,6 +2119,25 @@ function GeminiXContent({
                   {Number(
                     trade.profit || 0
                   ).toFixed(2)}
+                </span>
+                <span>
+                  {Number(
+                    trade.buy_price ??
+                      trade.purchase_price ??
+                      stake
+                  ) > Number(stake) + 0.001
+                    ? `REC x${(
+                        Number(
+                          trade.buy_price ??
+                            trade.purchase_price ??
+                            0
+                        ) /
+                        Math.max(
+                          0.35,
+                          Number(stake || 0.35)
+                        )
+                      ).toFixed(1)}`
+                    : "BASE"}
                 </span>
               </div>
             ))}
