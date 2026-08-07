@@ -2,11 +2,38 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import useDerivTicks from "../hooks/useDerivTicks";
-import MultiMarketScanner from "../components/MultiMarketScanner";
 import "./DerivAIAnalyzer.css";
 
 const clamp = (n, min = 0, max = 100) =>
   Math.max(min, Math.min(max, Number(n) || 0));
+
+function derivMarketName(symbol, fallback = "") {
+  const exact = {
+    "1HZ10V": "Volatility 10 (1s) Index",
+    "1HZ15V": "Volatility 15 (1s) Index",
+    "1HZ25V": "Volatility 25 (1s) Index",
+    "1HZ30V": "Volatility 30 (1s) Index",
+    "1HZ50V": "Volatility 50 (1s) Index",
+    "1HZ75V": "Volatility 75 (1s) Index",
+    "1HZ90V": "Volatility 90 (1s) Index",
+    "1HZ100V": "Volatility 100 (1s) Index",
+    "R_10": "Volatility 10 Index",
+    "R_25": "Volatility 25 Index",
+    "R_50": "Volatility 50 Index",
+    "R_75": "Volatility 75 Index",
+    "R_100": "Volatility 100 Index",
+  };
+
+  if (exact[symbol]) return exact[symbol];
+
+  const one = String(symbol || "").match(/^1HZ(\d+)V$/i);
+  if (one) return `Volatility ${one[1]} (1s) Index`;
+
+  const normal = String(symbol || "").match(/^R_(\d+)$/i);
+  if (normal) return `Volatility ${normal[1]} Index`;
+
+  return fallback || symbol || "Deriv Market";
+}
 
 function mean(values = []) {
   if (!values.length) return 0;
@@ -19,111 +46,109 @@ function std(values = []) {
   return Math.sqrt(mean(values.map((x) => (x - m) ** 2)));
 }
 
-function buildRiseFall(prices = []) {
+function analyzeRiseFall(prices = []) {
   const p = prices.map(Number).filter(Number.isFinite);
 
-  if (p.length < 5) {
+  if (p.length < 6) {
     return {
       signal: "WAIT",
       confidence: 0,
-      momentum: "COLLECTING",
       trend: "COLLECTING",
-      slope: 0,
+      momentum: "COLLECTING",
       consistency: 0,
       volatility: 0,
     };
   }
 
-  const shortLen = Math.max(5, Math.floor(p.length * 0.30));
-  const mediumLen = Math.max(shortLen, Math.floor(p.length * 0.65));
+  const short = p.slice(-Math.min(10, p.length));
+  const medium = p.slice(-Math.min(30, p.length));
 
-  const short = p.slice(-shortLen);
-  const medium = p.slice(-mediumLen);
-  const long = p;
-
-  const slope = (arr) =>
-    arr.length >= 2 ? arr[arr.length - 1] - arr[0] : 0;
-
-  const s = slope(short);
-  const m = slope(medium);
-  const l = slope(long);
+  const shortMove = short.at(-1) - short[0];
+  const mediumMove = medium.at(-1) - medium[0];
 
   const diffs = short.slice(1).map((x, i) => x - short[i]);
-  const up = diffs.filter((d) => d > 0).length;
-  const down = diffs.filter((d) => d < 0).length;
-  const consistency = diffs.length
-    ? (Math.max(up, down) / diffs.length) * 100
+  const nonZero = diffs.filter((d) => d !== 0);
+
+  const up = nonZero.filter((d) => d > 0).length;
+  const down = nonZero.filter((d) => d < 0).length;
+
+  const consistency = nonZero.length
+    ? (Math.max(up, down) / nonZero.length) * 100
     : 0;
 
-  const directionScore =
-    (s > 0 ? 1 : s < 0 ? -1 : 0) * 0.5 +
-    (m > 0 ? 1 : m < 0 ? -1 : 0) * 0.3 +
-    (l > 0 ? 1 : l < 0 ? -1 : 0) * 0.2;
+  const sameDirection =
+    Math.sign(shortMove) !== 0 &&
+    Math.sign(shortMove) === Math.sign(mediumMove);
 
   const signal =
-    Math.abs(directionScore) < 0.45
+    !sameDirection
       ? "WAIT"
-      : directionScore > 0
+      : shortMove > 0
         ? "RISE"
         : "FALL";
 
-  const agreement = Math.abs(directionScore) * 100;
   const confidence = clamp(
-    agreement * 0.58 + consistency * 0.42
+    (sameDirection ? 55 : 20) +
+      consistency * 0.35
   );
 
   return {
-    signal,
+    signal: confidence >= 68 ? signal : "WAIT",
     confidence,
-    momentum: s > 0 ? "UP" : s < 0 ? "DOWN" : "FLAT",
-    trend: m > 0 ? "BULLISH" : m < 0 ? "BEARISH" : "SIDEWAYS",
-    slope: s,
+    trend:
+      mediumMove > 0
+        ? "BULLISH"
+        : mediumMove < 0
+          ? "BEARISH"
+          : "SIDEWAYS",
+    momentum:
+      shortMove > 0
+        ? "UP"
+        : shortMove < 0
+          ? "DOWN"
+          : "FLAT",
     consistency,
     volatility: std(diffs),
   };
 }
 
-function buildTouchNoTouch(prices = [], barrierDistance = 1.5) {
+function analyzeTouch(prices = [], barrierDistance = 1.5) {
   const p = prices.map(Number).filter(Number.isFinite);
 
   if (p.length < 8) {
     return {
       signal: "WAIT",
       confidence: 0,
-      upperBarrier: null,
-      lowerBarrier: null,
-      expectedMove: 0,
-      range: 0,
       touchScore: 0,
       noTouchScore: 0,
+      upperBarrier: null,
+      lowerBarrier: null,
     };
   }
 
-  const current = p[p.length - 1];
-  const recent = p.slice(-Math.min(80, p.length));
+  const current = p.at(-1);
+  const recent = p.slice(-Math.min(40, p.length));
   const diffs = recent.slice(1).map((x, i) => x - recent[i]);
-  const sigma = std(diffs);
 
-  const expectedMove = sigma * Math.sqrt(Math.max(1, recent.length));
+  const sigma = std(diffs);
   const distance = Math.max(
-    sigma * Number(barrierDistance || 1.5),
+    sigma * barrierDistance,
     Math.abs(current) * 0.00001
   );
 
   const upperBarrier = current + distance;
   const lowerBarrier = current - distance;
 
-  const recentRange = Math.max(...recent) - Math.min(...recent);
-  const moveRatio = distance > 0 ? expectedMove / distance : 0;
-  const rangeRatio = distance > 0 ? recentRange / distance : 0;
+  const range = Math.max(...recent) - Math.min(...recent);
+  const ratio = distance > 0 ? range / distance : 0;
 
-  const touchScore = clamp(
-    moveRatio * 58 + Math.min(1.5, rangeRatio) * 18
-  );
+  const touchScore = clamp(ratio * 45);
   const noTouchScore = clamp(100 - touchScore);
 
+  const confidence = Math.max(touchScore, noTouchScore);
+
   const signal =
-    Math.max(touchScore, noTouchScore) < 62
+    confidence < 65
       ? "WAIT"
       : touchScore > noTouchScore
         ? "TOUCH"
@@ -131,66 +156,53 @@ function buildTouchNoTouch(prices = [], barrierDistance = 1.5) {
 
   return {
     signal,
-    confidence: Math.max(touchScore, noTouchScore),
-    upperBarrier,
-    lowerBarrier,
-    expectedMove,
-    range: recentRange,
+    confidence,
     touchScore,
     noTouchScore,
+    upperBarrier,
+    lowerBarrier,
   };
 }
 
-function chartPath(records, width = 1000, height = 280) {
-  if (!records?.length || records.length < 2) return "";
+function chartPath(records, width = 1000, height = 300) {
+  if (!records || records.length < 2) return "";
 
-  const values = records.map((r) => Number(r.price)).filter(Number.isFinite);
-  if (values.length < 2) return "";
-
+  const values = records.map((r) => r.price);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
 
-  const firstTs = records[0].ts;
-  const lastTs = records[records.length - 1].ts;
-  const timeRange = Math.max(1, lastTs - firstTs);
-
   return records
     .map((r, i) => {
-      const x = ((r.ts - firstTs) / timeRange) * width;
+      const x = (i / Math.max(1, records.length - 1)) * width;
       const y =
         height -
-        ((Number(r.price) - min) / range) * (height - 24) -
-        12;
+        ((r.price - min) / range) * (height - 26) -
+        13;
 
       return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
     })
     .join(" ");
 }
 
-function markerPosition(marker, records, width = 1000, height = 280) {
-  if (!marker || !records?.length) return null;
+function markerPosition(marker, records, width = 1000, height = 300) {
+  if (!marker || !records.length) return null;
 
-  const values = records.map((r) => Number(r.price)).filter(Number.isFinite);
-  if (!values.length) return null;
+  const idx = records.findIndex((r) => r.ts === marker.ts);
+  if (idx < 0) return null;
 
+  const values = records.map((r) => r.price);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
 
-  const firstTs = records[0].ts;
-  const lastTs = records[records.length - 1].ts;
-  const timeRange = Math.max(1, lastTs - firstTs);
-
-  if (marker.ts < firstTs || marker.ts > lastTs) return null;
-
-  const x = ((marker.ts - firstTs) / timeRange) * width;
-  const y =
-    height -
-    ((Number(marker.price) - min) / range) * (height - 24) -
-    12;
-
-  return { x, y };
+  return {
+    x: (idx / Math.max(1, records.length - 1)) * width,
+    y:
+      height -
+      ((marker.price - min) / range) * (height - 26) -
+      13,
+  };
 }
 
 export default function DerivAIAnalyzer() {
@@ -210,162 +222,133 @@ export default function DerivAIAnalyzer() {
     changeSymbol,
   } = deriv;
 
-  const [durationUnit, setDurationUnit] = useState("ticks");
-  const [durationValue, setDurationValue] = useState(10);
+  const [unit, setUnit] = useState("ticks");
+  const [duration, setDuration] = useState(10);
   const [barrierDistance, setBarrierDistance] = useState(1.5);
 
   const [records, setRecords] = useState([]);
-  const [signalMarkers, setSignalMarkers] = useState([]);
+  const [markers, setMarkers] = useState([]);
 
-  const lastRecordedPrice = useRef(null);
-  const lastMarkerKey = useRef("");
+  const lastQuote = useRef(null);
+  const lastSignal = useRef(null);
 
   useEffect(() => {
     if (!connected || !Number.isFinite(Number(currentPrice))) return;
 
-    const numeric = Number(currentPrice);
-
-    // Some feeds can repeat the exact same quote. Keep it if enough time passed,
-    // but avoid immediate duplicate React updates.
+    const price = Number(currentPrice);
     const now = Date.now();
-    const previous = lastRecordedPrice.current;
 
     if (
-      previous &&
-      previous.price === numeric &&
-      now - previous.ts < 100
+      lastQuote.current &&
+      lastQuote.current.price === price &&
+      now - lastQuote.current.ts < 100
     ) {
       return;
     }
 
-    lastRecordedPrice.current = { price: numeric, ts: now };
+    lastQuote.current = { price, ts: now };
 
     setRecords((old) => [
-      ...old.slice(-599),
-      {
-        price: numeric,
-        ts: now,
-        symbol,
-      },
+      ...old.slice(-179),
+      { price, ts: now },
     ]);
-  }, [currentPrice, connected, symbol]);
+  }, [currentPrice, connected]);
 
   useEffect(() => {
-    // Do not mix records from a previous market with a newly selected market.
     setRecords([]);
-    setSignalMarkers([]);
-    lastMarkerKey.current = "";
-    lastRecordedPrice.current = null;
+    setMarkers([]);
+    lastQuote.current = null;
+    lastSignal.current = null;
   }, [symbol]);
 
-  const durationRecords = useMemo(() => {
-    if (!records.length) return [];
-
-    if (durationUnit === "ticks") {
-      return records.slice(-Math.max(5, Number(durationValue)));
+  const windowRecords = useMemo(() => {
+    if (unit === "ticks") {
+      return records.slice(-Math.max(5, duration));
     }
 
-    const cutoff = Date.now() - Number(durationValue) * 1000;
+    const cutoff = Date.now() - duration * 1000;
     return records.filter((r) => r.ts >= cutoff);
-  }, [records, durationUnit, durationValue]);
+  }, [records, unit, duration, currentPrice]);
 
-  const durationPrices = useMemo(
-    () => durationRecords.map((r) => r.price),
-    [durationRecords]
+  const windowPrices = useMemo(
+    () => windowRecords.map((r) => r.price),
+    [windowRecords]
   );
 
   const riseFall = useMemo(
-    () => buildRiseFall(durationPrices),
-    [durationPrices]
+    () => analyzeRiseFall(windowPrices),
+    [windowPrices]
   );
 
-  const touchNoTouch = useMemo(
-    () => buildTouchNoTouch(durationPrices, barrierDistance),
-    [durationPrices, barrierDistance]
+  const touch = useMemo(
+    () => analyzeTouch(windowPrices, barrierDistance),
+    [windowPrices, barrierDistance]
   );
-
-  const enoughRise = durationPrices.length >= 8;
-  const enoughTouch = durationPrices.length >= 8;
 
   const riseValid =
     connected &&
-    enoughRise &&
     riseFall.signal !== "WAIT" &&
     riseFall.confidence >= 72;
 
   const touchValid =
     connected &&
-    enoughTouch &&
-    touchNoTouch.signal !== "WAIT" &&
-    touchNoTouch.confidence >= 70;
+    touch.signal !== "WAIT" &&
+    touch.confidence >= 70;
 
-  const bestMode =
-    riseFall.confidence >= touchNoTouch.confidence
-      ? "RISE/FALL"
-      : "TOUCH/NO TOUCH";
-
-  const bestSignal =
-    bestMode === "RISE/FALL"
-      ? riseFall.signal
-      : touchNoTouch.signal;
-
-  const bestConfidence =
-    bestMode === "RISE/FALL"
-      ? riseFall.confidence
-      : touchNoTouch.confidence;
-
-  const bestValid =
-    bestMode === "RISE/FALL"
-      ? riseValid
-      : touchValid;
+  const best =
+    riseFall.confidence >= touch.confidence
+      ? {
+          mode: "RISE/FALL",
+          signal: riseFall.signal,
+          confidence: riseFall.confidence,
+          valid: riseValid,
+        }
+      : {
+          mode: "TOUCH/NO TOUCH",
+          signal: touch.signal,
+          confidence: touch.confidence,
+          valid: touchValid,
+        };
 
   useEffect(() => {
-    if (!bestValid || !records.length) return;
+    if (!best.valid || !records.length) return;
 
-    const last = records[records.length - 1];
-    const key = `${symbol}:${bestMode}:${bestSignal}:${Math.round(bestConfidence)}:${last.ts}`;
+    const last = records.at(-1);
+    const previous = lastSignal.current;
 
-    // Only add a new marker when signal/mode changed, or after a small cooldown.
-    const previous = signalMarkers[signalMarkers.length - 1];
-    const sameSignal =
+    if (
       previous &&
-      previous.signal === bestSignal &&
-      previous.mode === bestMode;
+      previous.signal === best.signal &&
+      last.ts - previous.ts < 4000
+    ) {
+      return;
+    }
 
-    if (sameSignal && last.ts - previous.ts < 2500) return;
-    if (lastMarkerKey.current === key) return;
+    const marker = {
+      ts: last.ts,
+      price: last.price,
+      signal: best.signal,
+    };
 
-    lastMarkerKey.current = key;
+    lastSignal.current = marker;
+    setMarkers((old) => [...old.slice(-9), marker]);
+  }, [best.valid, best.signal, records]);
 
-    setSignalMarkers((old) => [
-      ...old.slice(-39),
-      {
-        ts: last.ts,
-        price: last.price,
-        signal: bestSignal,
-        mode: bestMode,
-        confidence: bestConfidence,
-      },
-    ]);
-  }, [
-    bestValid,
-    bestMode,
-    bestSignal,
-    bestConfidence,
-    records,
-    symbol,
-    signalMarkers,
-  ]);
-
-  const chartRecords = useMemo(
-    () => records.slice(-120),
-    [records]
-  );
-
+  const chartRecords = records.slice(-100);
   const path = useMemo(
     () => chartPath(chartRecords),
     [chartRecords]
   );
+
+  const durationOptions =
+    unit === "ticks"
+      ? [5, 10, 20, 50, 100]
+      : [5, 10, 15, 30, 60];
+
+  const durationLabel =
+    unit === "ticks"
+      ? `${duration} ticks`
+      : `${duration}s`;
 
   const displayPrice =
     Number.isFinite(Number(currentPrice))
@@ -377,24 +360,14 @@ export default function DerivAIAnalyzer() {
       ? Number(value).toFixed(market?.decimals ?? 2)
       : "—";
 
-  const durationLabel =
-    durationUnit === "ticks"
-      ? `${durationValue} ticks`
-      : `${durationValue}s`;
-
-  const durationOptions =
-    durationUnit === "ticks"
-      ? [5, 10, 20, 50, 100]
-      : [5, 10, 15, 30, 60];
-
   return (
-    <div className="rfTouchShell">
+    <div className="cleanShell">
       <Sidebar />
 
-      <main className="rfTouchMain">
+      <main className="cleanMain">
         <Topbar
           title="Rise/Fall + Touch Analyzer"
-          subtitle="Live chart, tick/second windows and visible signal entries"
+          subtitle="Live market analysis · manual execution only"
           connected={connected}
           connecting={status === "CONNECTING" || loadingMarket}
           onConnect={connect}
@@ -402,114 +375,103 @@ export default function DerivAIAnalyzer() {
         />
 
         {statusDetail ? (
-          <div className="rfTouchError">{statusDetail}</div>
+          <div className="cleanError">{statusDetail}</div>
         ) : null}
 
-        <section className="rfTouchToolbar">
-          <div>
+        <section className="cleanToolbar">
+          <label>
             <span>MARKET</span>
             <select
               value={symbol || ""}
               disabled={loadingMarket}
               onChange={(e) => changeSymbol(e.target.value)}
             >
-              {markets.map((m) => (
-                <option key={m.symbol} value={m.symbol}>
-                  {m.label || m.symbol}
-                </option>
-              ))}
+              {markets.map((m) => {
+                const id = m.symbol || m.id;
+                return (
+                  <option key={id} value={id}>
+                    {derivMarketName(id, m.label)}
+                  </option>
+                );
+              })}
             </select>
-          </div>
+          </label>
 
-          <div className="rfDurationControls">
-            <span>DURATION</span>
-
+          <label>
+            <span>TYPE</span>
             <select
-              value={durationUnit}
+              value={unit}
               onChange={(e) => {
-                const unit = e.target.value;
-                setDurationUnit(unit);
-                setDurationValue(unit === "ticks" ? 10 : 10);
+                setUnit(e.target.value);
+                setDuration(10);
               }}
             >
               <option value="ticks">Ticks</option>
               <option value="seconds">Seconds</option>
             </select>
+          </label>
 
+          <label>
+            <span>DURATION</span>
             <select
-              value={durationValue}
-              onChange={(e) => setDurationValue(Number(e.target.value))}
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
             >
               {durationOptions.map((v) => (
                 <option key={v} value={v}>
-                  {durationUnit === "ticks" ? `${v} ticks` : `${v} sec`}
+                  {unit === "ticks" ? `${v} ticks` : `${v} sec`}
                 </option>
               ))}
             </select>
-          </div>
+          </label>
 
-          <div className={`rfTouchLive ${connected ? "on" : ""}`}>
+          <div className={`cleanLive ${connected ? "on" : ""}`}>
             <i />
             {connected ? "DERIV LIVE" : status}
           </div>
         </section>
 
-        <section className="rfTouchHero">
-          <article className={`rfTouchBest ${bestValid ? "valid" : ""}`}>
-            <span>BEST CURRENT SETUP</span>
-            <h2>{bestValid ? bestSignal : "WAIT"}</h2>
-            <strong>{bestConfidence.toFixed(1)}%</strong>
-            <p>{bestMode} · {durationLabel}</p>
+        <section className="cleanCards">
+          <article className={best.valid ? "valid" : ""}>
+            <span>BEST SETUP</span>
+            <h2>{best.valid ? best.signal : "WAIT"}</h2>
+            <strong>{best.confidence.toFixed(1)}%</strong>
+            <small>{best.mode}</small>
           </article>
 
           <article>
             <span>CURRENT PRICE</span>
             <h2>{displayPrice}</h2>
-            <p>{market?.label || symbol || "—"}</p>
+            <small>{derivMarketName(symbol, market?.label)}</small>
           </article>
 
           <article>
-            <span>RISE/FALL</span>
-            <h2>{riseFall.signal}</h2>
-            <strong>{riseFall.confidence.toFixed(1)}%</strong>
-          </article>
-
-          <article>
-            <span>TOUCH/NO TOUCH</span>
-            <h2>{touchNoTouch.signal}</h2>
-            <strong>{touchNoTouch.confidence.toFixed(1)}%</strong>
+            <span>WINDOW</span>
+            <h2>{durationLabel}</h2>
+            <strong>{windowRecords.length} samples</strong>
           </article>
         </section>
 
-        <MultiMarketScanner
-          markets={markets}
-          activeSymbol={symbol}
-          changeSymbol={changeSymbol}
-          connected={connected}
-          barrierDistance={barrierDistance}
-        />
-
-        <section className="rfLiveChartPanel">
-          <div className="rfTouchPanelHead">
+        <section className="cleanChartPanel">
+          <div className="cleanHead">
             <div>
               <span>LIVE SIGNAL CHART</span>
-              <h3>{market?.label || symbol || "Market"} · {durationLabel}</h3>
+              <h3>{derivMarketName(symbol, market?.label)}</h3>
             </div>
 
-            <div className="rfChartLegend">
-              <span className="rise">RISE</span>
-              <span className="fall">FALL</span>
-              <span className="touch">TOUCH</span>
-              <span className="noTouch">NO TOUCH</span>
+            <div className="cleanLegend">
+              <b className="rise">RISE</b>
+              <b className="fall">FALL</b>
+              <b className="touch">TOUCH</b>
+              <b className="no-touch">NO TOUCH</b>
             </div>
           </div>
 
-          <div className="rfChartWrap">
+          <div className="cleanChart">
             {path ? (
               <svg
-                viewBox="0 0 1000 280"
+                viewBox="0 0 1000 300"
                 preserveAspectRatio="none"
-                className="rfChartSvg"
               >
                 <path
                   d={path}
@@ -519,8 +481,12 @@ export default function DerivAIAnalyzer() {
                   vectorEffect="non-scaling-stroke"
                 />
 
-                {signalMarkers.map((marker, index) => {
-                  const pos = markerPosition(marker, chartRecords);
+                {markers.map((marker, index) => {
+                  const pos = markerPosition(
+                    marker,
+                    chartRecords
+                  );
+
                   if (!pos) return null;
 
                   const cls = marker.signal
@@ -530,149 +496,106 @@ export default function DerivAIAnalyzer() {
                   return (
                     <g
                       key={`${marker.ts}-${index}`}
-                      className={`rfSignalMarker ${cls}`}
+                      className={`cleanMarker ${cls}`}
                     >
-                      <circle cx={pos.x} cy={pos.y} r="9" />
-                      <circle cx={pos.x} cy={pos.y} r="3" className="inner" />
-                      <text
-                        x={Math.min(930, pos.x + 12)}
-                        y={Math.max(18, pos.y - 12)}
-                      >
-                        {marker.signal} {marker.confidence.toFixed(0)}%
-                      </text>
+                      <circle
+                        cx={pos.x}
+                        cy={pos.y}
+                        r="7"
+                      />
+                      <circle
+                        cx={pos.x}
+                        cy={pos.y}
+                        r="2.4"
+                        className="inner"
+                      />
                     </g>
                   );
                 })}
               </svg>
             ) : (
-              <div className="rfChartEmpty">
-                Waiting for live ticks to build chart...
+              <div className="cleanEmpty">
+                Waiting for live market data...
               </div>
             )}
           </div>
-
-          <div className="rfChartFooter">
-            <span>Window samples: <b>{durationRecords.length}</b></span>
-            <span>Chart samples: <b>{chartRecords.length}</b></span>
-            <span>Signal markers: <b>{signalMarkers.length}</b></span>
-            <span>Mode: <b>{durationUnit.toUpperCase()}</b></span>
-          </div>
         </section>
 
-        <section className="rfTouchGrid">
-          <article className={`rfTouchPanel rfPanel ${riseValid ? "valid" : ""}`}>
-            <div className="rfTouchPanelHead">
+        <section className="cleanAnalysisGrid">
+          <article className={riseValid ? "cleanPanel valid" : "cleanPanel"}>
+            <div className="cleanHead">
               <div>
-                <span>RISE / FALL ANALYSIS</span>
-                <h3>Directional setup</h3>
+                <span>RISE / FALL</span>
+                <h3>Directional analysis</h3>
               </div>
-              <b>{riseValid ? "ENTRY VALID" : "SCANNING"}</b>
+              <b>{riseValid ? "ENTRY VALID" : "WAIT"}</b>
             </div>
 
-            <div className={`rfTouchSignalOrb ${riseValid ? "blink" : ""}`}>
+            <div className={`cleanSignal ${riseValid ? "blink" : ""}`}>
               <strong>{riseFall.signal}</strong>
               <span>{riseFall.confidence.toFixed(1)}%</span>
             </div>
 
-            <div className="rfTouchStats">
-              <div><span>Duration</span><b>{durationLabel}</b></div>
+            <div className="cleanStats">
               <div><span>Trend</span><b>{riseFall.trend}</b></div>
               <div><span>Momentum</span><b>{riseFall.momentum}</b></div>
               <div><span>Consistency</span><b>{riseFall.consistency.toFixed(1)}%</b></div>
-              <div><span>Short slope</span><b>{riseFall.slope.toFixed(5)}</b></div>
               <div><span>Volatility</span><b>{riseFall.volatility.toFixed(5)}</b></div>
-            </div>
-
-            <div className="rfTouchReason">
-              <span>READ</span>
-              <p>
-                {riseFall.signal === "WAIT"
-                  ? "Directional windows are not aligned strongly enough yet."
-                  : `${riseFall.signal} is leading inside the selected ${durationLabel} window. A valid signal is also stamped on the chart.`}
-              </p>
             </div>
           </article>
 
-          <article className={`rfTouchPanel touchPanel ${touchValid ? "valid" : ""}`}>
-            <div className="rfTouchPanelHead">
+          <article className={touchValid ? "cleanPanel valid" : "cleanPanel"}>
+            <div className="cleanHead">
               <div>
-                <span>TOUCH / NO TOUCH ANALYSIS</span>
-                <h3>Barrier pressure</h3>
+                <span>TOUCH / NO TOUCH</span>
+                <h3>Barrier analysis</h3>
               </div>
-              <b>{touchValid ? "ENTRY VALID" : "SCANNING"}</b>
+              <b>{touchValid ? "ENTRY VALID" : "WAIT"}</b>
             </div>
 
-            <div className="rfTouchControls">
-              <label>
-                <span>Barrier distance</span>
-                <select
-                  value={barrierDistance}
-                  onChange={(e) => setBarrierDistance(Number(e.target.value))}
-                >
-                  <option value={1}>Near · 1.0σ</option>
-                  <option value={1.5}>Normal · 1.5σ</option>
-                  <option value={2}>Far · 2.0σ</option>
-                  <option value={2.5}>Very far · 2.5σ</option>
-                </select>
-              </label>
-
-              <label>
-                <span>Duration window</span>
-                <div className="rfReadonlyDuration">
-                  {durationLabel}
-                </div>
-              </label>
+            <div className="barrierControl">
+              <span>BARRIER DISTANCE</span>
+              <select
+                value={barrierDistance}
+                onChange={(e) =>
+                  setBarrierDistance(Number(e.target.value))
+                }
+              >
+                <option value={1}>Near · 1.0σ</option>
+                <option value={1.5}>Normal · 1.5σ</option>
+                <option value={2}>Far · 2.0σ</option>
+                <option value={2.5}>Very far · 2.5σ</option>
+              </select>
             </div>
 
-            <div className={`rfTouchSignalOrb touch ${touchValid ? "blink" : ""}`}>
-              <strong>{touchNoTouch.signal}</strong>
-              <span>{touchNoTouch.confidence.toFixed(1)}%</span>
+            <div className={`cleanSignal ${touchValid ? "blink" : ""}`}>
+              <strong>{touch.signal}</strong>
+              <span>{touch.confidence.toFixed(1)}%</span>
             </div>
 
-            <div className="touchScores">
+            <div className="touchMiniBars">
               <div>
                 <span>TOUCH</span>
-                <i><b style={{ width: `${touchNoTouch.touchScore}%` }} /></i>
-                <strong>{touchNoTouch.touchScore.toFixed(1)}%</strong>
+                <i><b style={{ width: `${touch.touchScore}%` }} /></i>
+                <strong>{touch.touchScore.toFixed(0)}%</strong>
               </div>
 
               <div>
                 <span>NO TOUCH</span>
-                <i><b style={{ width: `${touchNoTouch.noTouchScore}%` }} /></i>
-                <strong>{touchNoTouch.noTouchScore.toFixed(1)}%</strong>
+                <i><b style={{ width: `${touch.noTouchScore}%` }} /></i>
+                <strong>{touch.noTouchScore.toFixed(0)}%</strong>
               </div>
             </div>
 
-            <div className="rfTouchStats">
-              <div><span>Upper barrier</span><b>{fmt(touchNoTouch.upperBarrier)}</b></div>
-              <div><span>Lower barrier</span><b>{fmt(touchNoTouch.lowerBarrier)}</b></div>
-              <div><span>Expected move</span><b>{touchNoTouch.expectedMove.toFixed(5)}</b></div>
-              <div><span>Recent range</span><b>{touchNoTouch.range.toFixed(5)}</b></div>
+            <div className="cleanStats">
+              <div><span>Upper barrier</span><b>{fmt(touch.upperBarrier)}</b></div>
+              <div><span>Lower barrier</span><b>{fmt(touch.lowerBarrier)}</b></div>
             </div>
           </article>
         </section>
 
-        <section className="rfTouchBottom">
-          <div>
-            <span>DURATION</span>
-            <strong>{durationLabel}</strong>
-          </div>
-          <div>
-            <span>RISE/FALL STATUS</span>
-            <strong>{riseValid ? `${riseFall.signal} VALID` : "WAIT"}</strong>
-          </div>
-          <div>
-            <span>TOUCH STATUS</span>
-            <strong>{touchValid ? `${touchNoTouch.signal} VALID` : "WAIT"}</strong>
-          </div>
-          <div>
-            <span>BEST SIGNAL</span>
-            <strong>{bestValid ? bestSignal : "WAIT"}</strong>
-          </div>
-        </section>
-
-        <p className="rfTouchDisclaimer">
-          Analysis only. Chart markers show when the analyzer's filters became valid; they are not guaranteed outcomes.
+        <p className="cleanDisclaimer">
+          Analysis only. Signals and confidence values are estimates from observed live data and are not guaranteed outcomes.
         </p>
       </main>
     </div>

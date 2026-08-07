@@ -1,490 +1,365 @@
-.rfTouchShell {
+.cleanShell {
   min-height: 100vh;
   display: flex;
   background: #030d17;
   color: #edf8ff;
 }
 
-.rfTouchMain {
+.cleanMain {
   flex: 1;
   min-width: 0;
-  padding: 0 15px 18px;
+  padding: 0 14px 16px;
 }
 
-.rfTouchError {
-  margin: 10px 0;
-  padding: 9px 11px;
+.cleanError {
+  margin: 9px 0;
+  padding: 8px 10px;
   border: 1px solid rgba(255, 91, 110, .35);
-  border-radius: 9px;
+  border-radius: 8px;
   background: rgba(255, 91, 110, .07);
   color: #ffc2ca;
-  font-size: 10px;
+  font-size: 9px;
 }
 
-.rfTouchToolbar {
+.cleanToolbar {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 12px 0;
-  padding: 9px 11px;
-  border: 1px solid #16445d;
-  border-radius: 11px;
-  background: #061a28;
-}
-
-.rfTouchToolbar > div:first-child,
-.rfDurationControls {
-  display: flex;
-  align-items: center;
+  align-items: end;
   gap: 8px;
+  margin: 10px 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(40, 96, 120, .5);
+  border-radius: 10px;
+  background: #061a27;
 }
 
-.rfTouchToolbar span,
-.rfTouchHero article > span,
-.rfTouchPanelHead span,
-.rfTouchReason > span,
-.rfTouchBottom span {
+.cleanToolbar label {
+  display: grid;
+  gap: 3px;
+}
+
+.cleanToolbar span,
+.cleanCards article > span,
+.cleanHead span,
+.barrierControl > span {
   color: #22dda5;
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 900;
   letter-spacing: .08em;
 }
 
-.rfTouchToolbar select,
-.rfTouchControls select {
+.cleanToolbar select,
+.barrierControl select {
+  padding: 7px 8px;
   border: 1px solid #24536c;
-  background: #071c29;
-  color: #eef9ff;
-  border-radius: 8px;
-  padding: 7px 9px;
-  font-size: 9px;
-}
-
-.rfDurationControls {
-  padding-left: 12px;
-  border-left: 1px solid rgba(62, 107, 130, .35);
-}
-
-.rfTouchLive {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #829eae;
-  font-size: 9px;
-  font-weight: 800;
-}
-
-.rfTouchLive i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #607687;
-}
-
-.rfTouchLive.on { color: #22dda5; }
-
-.rfTouchLive.on i {
-  background: #22dda5;
-  box-shadow: 0 0 12px rgba(34, 221, 165, .55);
-}
-
-.rfTouchHero {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.rfTouchHero article,
-.rfTouchPanel,
-.rfTouchBottom,
-.rfLiveChartPanel {
-  border: 1px solid rgba(46, 95, 119, .45);
-  border-radius: 11px;
-  background: linear-gradient(180deg, #071b2b, #061622);
-}
-
-.rfTouchHero article {
-  padding: 10px;
-}
-
-.rfTouchHero h2 {
-  margin: 4px 0 2px;
-  font-size: 18px;
-}
-
-.rfTouchHero strong {
-  display: block;
-  color: #22dda5;
-  font-size: 16px;
-}
-
-.rfTouchHero p {
-  margin: 3px 0 0;
-  color: #7996a8;
+  border-radius: 7px;
+  background: #071d2a;
+  color: #edf8ff;
   font-size: 8px;
 }
 
-.rfTouchBest.valid {
-  border-color: rgba(34, 221, 165, .55);
+.cleanToolbar label:first-child select {
+  min-width: 205px;
+}
+
+.cleanLive {
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #7f9aa9;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.cleanLive i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #607887;
+}
+
+.cleanLive.on {
+  color: #22dda5;
+}
+
+.cleanLive.on i {
+  background: #22dda5;
+  box-shadow: 0 0 11px rgba(34, 221, 165, .55);
+}
+
+.cleanCards {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr .75fr;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.cleanCards article,
+.cleanChartPanel,
+.cleanPanel {
+  border: 1px solid rgba(43, 93, 117, .45);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #071b29, #051520);
+}
+
+.cleanCards article {
+  padding: 9px 10px;
+}
+
+.cleanCards article.valid {
+  border-color: rgba(34, 221, 165, .5);
   box-shadow: inset 3px 0 0 #22dda5;
 }
 
-.rfLiveChartPanel {
-  margin-bottom: 8px;
-  padding: 10px;
+.cleanCards h2 {
+  margin: 3px 0;
+  font-size: 17px;
 }
 
-.rfTouchPanelHead {
+.cleanCards strong {
+  display: block;
+  color: #22dda5;
+  font-size: 14px;
+}
+
+.cleanCards small {
+  display: block;
+  margin-top: 2px;
+  color: #7895a6;
+  font-size: 7px;
+}
+
+.cleanChartPanel {
+  padding: 9px;
+  margin-bottom: 7px;
+}
+
+.cleanHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  margin-bottom: 7px;
 }
 
-.rfTouchPanelHead h3 {
+.cleanHead h3 {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: 11px;
 }
 
-.rfTouchPanelHead > b {
-  color: #8ca5b4;
+.cleanHead > b {
+  color: #22dda5;
   font-size: 8px;
 }
 
-.rfChartLegend {
+.cleanLegend {
   display: flex;
   gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
 }
 
-.rfChartLegend span {
-  padding: 4px 6px;
+.cleanLegend b {
+  padding: 3px 6px;
+  border: 1px solid rgba(59, 104, 125, .3);
   border-radius: 999px;
   font-size: 7px;
-  border: 1px solid rgba(70, 111, 132, .35);
 }
 
-.rfChartLegend .rise { color: #22dda5; }
-.rfChartLegend .fall { color: #ff6e7d; }
-.rfChartLegend .touch { color: #57a6ff; }
-.rfChartLegend .noTouch { color: #ffd15a; }
+.rise { color: #22dda5; }
+.fall { color: #ff7181; }
+.touch { color: #5aa9ff; }
+.no-touch { color: #ffd45d; }
 
-.rfChartWrap {
-  position: relative;
-  height: 245px;
-  margin-top: 8px;
+.cleanChart {
+  height: 330px;
   overflow: hidden;
-  border: 1px solid rgba(42, 86, 109, .35);
-  border-radius: 9px;
+  border: 1px solid rgba(43, 90, 112, .35);
+  border-radius: 8px;
   background:
-    linear-gradient(rgba(67, 108, 131, .08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(67, 108, 131, .08) 1px, transparent 1px),
-    #04131e;
-  background-size: 48px 48px;
+    linear-gradient(rgba(65, 105, 126, .075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(65, 105, 126, .075) 1px, transparent 1px),
+    #04131d;
+  background-size: 52px 52px;
 }
 
-.rfChartSvg {
+.cleanChart svg {
   width: 100%;
   height: 100%;
   color: #2c9cff;
-  overflow: visible;
 }
 
-.rfSignalMarker circle {
-  fill: rgba(34, 221, 165, .15);
+.cleanMarker circle {
+  fill: rgba(34, 221, 165, .12);
   stroke: #22dda5;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
-.rfSignalMarker .inner {
-  fill: #22dda5;
+.cleanMarker .inner { fill: #22dda5; }
+
+.cleanMarker.fall circle {
+  stroke: #ff7181;
+  fill: rgba(255, 113, 129, .12);
 }
+.cleanMarker.fall .inner { fill: #ff7181; }
 
-.rfSignalMarker text {
-  fill: #dff9ef;
-  font-size: 18px;
-  font-weight: 800;
+.cleanMarker.touch circle {
+  stroke: #5aa9ff;
+  fill: rgba(90, 169, 255, .12);
 }
+.cleanMarker.touch .inner { fill: #5aa9ff; }
 
-.rfSignalMarker.fall circle {
-  stroke: #ff6e7d;
-  fill: rgba(255, 110, 125, .13);
+.cleanMarker.no-touch circle {
+  stroke: #ffd45d;
+  fill: rgba(255, 212, 93, .12);
 }
+.cleanMarker.no-touch .inner { fill: #ffd45d; }
 
-.rfSignalMarker.fall .inner { fill: #ff6e7d; }
-
-.rfSignalMarker.touch circle {
-  stroke: #57a6ff;
-  fill: rgba(87, 166, 255, .13);
-}
-
-.rfSignalMarker.touch .inner { fill: #57a6ff; }
-
-.rfSignalMarker.no-touch circle {
-  stroke: #ffd15a;
-  fill: rgba(255, 209, 90, .13);
-}
-
-.rfSignalMarker.no-touch .inner { fill: #ffd15a; }
-
-.rfChartEmpty {
+.cleanEmpty {
   height: 100%;
   display: grid;
   place-items: center;
-  color: #718b9b;
-  font-size: 9px;
+  color: #708c9b;
+  font-size: 8px;
 }
 
-.rfChartFooter {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-top: 7px;
-}
-
-.rfChartFooter span {
-  padding: 5px 7px;
-  border: 1px solid rgba(46, 95, 119, .25);
-  border-radius: 6px;
-  color: #7895a7;
-  font-size: 7px;
-}
-
-.rfChartFooter b {
-  color: #edf8ff;
-}
-
-.rfTouchGrid {
+.cleanAnalysisGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 7px;
 }
 
-.rfTouchPanel {
-  min-width: 0;
-  padding: 11px;
+.cleanPanel {
+  padding: 10px;
 }
 
-.rfTouchPanel.valid {
-  border-color: rgba(34, 221, 165, .55);
-  box-shadow: 0 0 24px rgba(34, 221, 165, .05);
+.cleanPanel.valid {
+  border-color: rgba(34, 221, 165, .5);
 }
 
-.rfTouchPanel.valid .rfTouchPanelHead > b {
-  color: #22dda5;
-}
-
-.rfTouchSignalOrb {
-  width: 150px;
-  height: 82px;
-  margin: 16px auto;
-  border-radius: 18px;
+.cleanSignal {
+  width: 145px;
+  min-height: 74px;
+  margin: 12px auto;
   display: grid;
   place-items: center;
   align-content: center;
-  border: 1px solid #2b5d76;
+  border: 1px solid #2a5b73;
+  border-radius: 16px;
   background: #071f2e;
 }
 
-.rfTouchSignalOrb strong {
-  font-size: 22px;
+.cleanSignal strong {
+  font-size: 20px;
 }
 
-.rfTouchSignalOrb span {
-  margin-top: 4px;
+.cleanSignal span {
+  margin-top: 3px;
   color: #22dda5;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
 }
 
-.rfTouchSignalOrb.blink {
+.cleanSignal.blink {
   border-color: #22dda5;
   box-shadow:
-    0 0 0 7px rgba(34, 221, 165, .06),
-    0 0 28px rgba(34, 221, 165, .22);
-  animation: rfTouchPulse .68s ease-in-out infinite alternate;
+    0 0 0 6px rgba(34, 221, 165, .06),
+    0 0 24px rgba(34, 221, 165, .2);
+  animation: cleanPulse .7s ease-in-out infinite alternate;
 }
 
-@keyframes rfTouchPulse {
-  from { transform: scale(.97); opacity: .82; }
+@keyframes cleanPulse {
+  from { transform: scale(.97); opacity: .84; }
   to { transform: scale(1.03); opacity: 1; }
 }
 
-.rfTouchStats {
+.cleanStats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 5px;
 }
 
-.rfTouchStats > div {
+.cleanStats > div {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  padding: 7px 8px;
-  border: 1px solid rgba(46, 95, 119, .27);
-  border-radius: 7px;
-  background: rgba(2, 15, 24, .45);
-  color: #7d99aa;
-  font-size: 8px;
-}
-
-.rfTouchStats b {
-  color: #eef8ff;
-}
-
-.rfTouchReason {
-  margin-top: 8px;
-  padding: 8px;
-  border: 1px solid rgba(34, 221, 165, .15);
-  border-radius: 8px;
-  background: rgba(34, 221, 165, .035);
-}
-
-.rfTouchReason p {
-  margin: 3px 0 0;
-  color: #9cb1bd;
-  font-size: 8px;
-  line-height: 1.45;
-}
-
-.rfTouchControls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 7px;
-  margin-top: 11px;
-}
-
-.rfTouchControls label span {
-  display: block;
-  margin-bottom: 3px;
-  color: #7895a7;
+  padding: 6px 7px;
+  border: 1px solid rgba(47, 91, 112, .25);
+  border-radius: 6px;
+  color: #7895a6;
   font-size: 7px;
 }
 
-.rfTouchControls select {
-  width: 100%;
+.cleanStats b {
+  color: #edf8ff;
 }
 
-.rfReadonlyDuration {
-  border: 1px solid #24536c;
-  background: #071c29;
-  color: #eef9ff;
-  border-radius: 8px;
-  padding: 7px 9px;
-  font-size: 9px;
-}
-
-.touchScores {
-  display: grid;
-  gap: 7px;
-  margin: 10px 0;
-}
-
-.touchScores > div {
-  display: grid;
-  grid-template-columns: 68px 1fr 44px;
+.barrierControl {
+  display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 8px;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.touchScores > div > span {
-  color: #8aa2b1;
+.touchMiniBars {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
 }
 
-.touchScores i {
-  height: 7px;
+.touchMiniBars > div {
+  display: grid;
+  grid-template-columns: 62px 1fr 34px;
+  gap: 6px;
+  align-items: center;
+  font-size: 7px;
+}
+
+.touchMiniBars span {
+  color: #7895a6;
+}
+
+.touchMiniBars i {
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
-  background: #0b2b3c;
+  background: #0a2a3a;
 }
 
-.touchScores i b {
+.touchMiniBars i b {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: #22dda5;
 }
 
-.touchScores strong {
+.touchMiniBars strong {
   text-align: right;
 }
 
-.rfTouchBottom {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 7px;
-  margin-top: 8px;
-  padding: 8px;
-}
-
-.rfTouchBottom > div {
-  padding: 7px;
-  border: 1px solid rgba(46, 95, 119, .25);
-  border-radius: 7px;
-}
-
-.rfTouchBottom strong {
-  display: block;
-  margin-top: 3px;
-  font-size: 10px;
-}
-
-.rfTouchDisclaimer {
-  margin: 7px 0 0;
-  text-align: center;
-  color: #637f91;
+.cleanDisclaimer {
+  margin: 6px 0 0;
+  color: #5e7a8a;
   font-size: 7px;
+  text-align: center;
 }
 
-@media (max-width: 900px) {
-  .rfTouchHero {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .rfTouchGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .rfChartFooter {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (max-width: 650px) {
-  .rfTouchMain {
-    padding: 0 9px 12px;
-  }
-
-  .rfTouchToolbar {
+@media (max-width: 800px) {
+  .cleanToolbar {
+    flex-wrap: wrap;
     align-items: stretch;
-    flex-direction: column;
   }
 
-  .rfDurationControls {
-    padding-left: 0;
-    border-left: 0;
-  }
-
-  .rfTouchLive {
+  .cleanLive {
     margin-left: 0;
   }
 
-  .rfTouchHero,
-  .rfTouchBottom {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .rfTouchControls,
-  .rfTouchStats {
+  .cleanCards,
+  .cleanAnalysisGrid {
     grid-template-columns: 1fr;
   }
 
-  .rfChartWrap {
-    height: 210px;
+  .cleanChart {
+    height: 250px;
   }
 }
