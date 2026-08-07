@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import useDerivTicks from "../hooks/useDerivTicks";
+import { derivMarketName } from "../utils/derivMarketName";
 import "./DerivAIAnalyzer.css";
 
 const clamp = (n, min = 0, max = 100) =>
@@ -369,12 +370,12 @@ export default function DerivAIAnalyzer() {
   const displayPrice =
     Number.isFinite(Number(currentPrice))
       ? Number(currentPrice).toFixed(market?.decimals ?? 2)
-      : "—";
+      : "â€”";
 
   const fmt = (value) =>
     Number.isFinite(Number(value))
       ? Number(value).toFixed(market?.decimals ?? 2)
-      : "—";
+      : "â€”";
 
   const durationLabel =
     durationUnit === "ticks"
@@ -414,7 +415,7 @@ export default function DerivAIAnalyzer() {
             >
               {markets.map((m) => (
                 <option key={m.symbol} value={m.symbol}>
-                  {m.label || m.symbol}
+                  {derivMarketName(m.symbol, m.label)}
                 </option>
               ))}
             </select>
@@ -458,13 +459,13 @@ export default function DerivAIAnalyzer() {
             <span>BEST CURRENT SETUP</span>
             <h2>{bestValid ? bestSignal : "WAIT"}</h2>
             <strong>{bestConfidence.toFixed(1)}%</strong>
-            <p>{bestMode} · {durationLabel}</p>
+            <p>{bestMode} Â· {durationLabel}</p>
           </article>
 
           <article>
             <span>CURRENT PRICE</span>
             <h2>{displayPrice}</h2>
-            <p>{market?.label || symbol || "—"}</p>
+            <p>{derivMarketName(symbol, market?.label)}</p>
           </article>
 
           <article>
@@ -484,7 +485,7 @@ export default function DerivAIAnalyzer() {
           <div className="rfTouchPanelHead">
             <div>
               <span>LIVE SIGNAL CHART</span>
-              <h3>{market?.label || symbol || "Market"} · {durationLabel}</h3>
+              <h3>{derivMarketName(symbol, market?.label)} Â· {durationLabel}</h3>
             </div>
 
             <div className="rfChartLegend">
@@ -600,10 +601,10 @@ export default function DerivAIAnalyzer() {
                   value={barrierDistance}
                   onChange={(e) => setBarrierDistance(Number(e.target.value))}
                 >
-                  <option value={1}>Near · 1.0σ</option>
-                  <option value={1.5}>Normal · 1.5σ</option>
-                  <option value={2}>Far · 2.0σ</option>
-                  <option value={2.5}>Very far · 2.5σ</option>
+                  <option value={1}>Near Â· 1.0Ïƒ</option>
+                  <option value={1.5}>Normal Â· 1.5Ïƒ</option>
+                  <option value={2}>Far Â· 2.0Ïƒ</option>
+                  <option value={2.5}>Very far Â· 2.5Ïƒ</option>
                 </select>
               </label>
 
@@ -669,3 +670,4 @@ export default function DerivAIAnalyzer() {
     </div>
   );
 }
+
