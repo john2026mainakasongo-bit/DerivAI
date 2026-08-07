@@ -1,8 +1,13 @@
-﻿import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 
 const links = [
   { to: "/dashboard", label: "Dashboard", icon: "⌂" },
   { to: "/analysis", label: "Analysis", icon: "◉" },
+  {
+    to: "/deriv-ai-analyzer",
+    label: "Deriv AI Analyzer",
+    icon: "AI",
+  },
   {
     to: "/rise-fall-analysis",
     label: "Rise/Fall",

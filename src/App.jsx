@@ -19,6 +19,7 @@ import FreshEdgeBot from "./pages/FreshEdgeBot";
 import RapidEdgeAI from "./pages/RapidEdgeAI";
 import GeminiXEngine from "./pages/GeminiXEngine";
 import FinalAnalysisBot from "./pages/FinalAnalysisBot";
+import DerivAIAnalyzer from "./pages/DerivAIAnalyzer";
 
 import "./index.css";
 
@@ -26,14 +27,16 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route
-          path="/"
-          element={<Navigate to="/dashboard" replace />}
-        />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/analysis" element={<Analysis />} />
+
+        <Route
+          path="/deriv-ai-analyzer"
+          element={<DerivAIAnalyzer />}
+        />
 
         <Route
           path="/rise-fall-analysis"

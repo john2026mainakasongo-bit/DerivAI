@@ -35,7 +35,6 @@ import {
 import "../styles/AnalysisEngine.css";
 import "../styles/ProfessionalDecision.css";
 import BotDashboardCatalog from "../components/BotDashboardCatalog";
-import DerivAIAnalyzerCard from "../components/DerivAIAnalyzerCard";
 import { GeminiXDashboardPanel } from "./GeminiXEngine";
 
 function buildPath(
@@ -507,8 +506,6 @@ export default function Dashboard() {
 
         <GeminiXDashboardPanel data={deriv} />
 
-        <DerivAIAnalyzerCard data={deriv} />
-
         <section
           className={
             professionalDecision.validated
@@ -569,4 +566,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
