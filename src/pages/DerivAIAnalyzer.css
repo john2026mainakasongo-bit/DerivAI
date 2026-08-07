@@ -1,17 +1,17 @@
-.cleanShell {
+.v12Shell {
   min-height: 100vh;
   display: flex;
   background: #030d17;
   color: #edf8ff;
 }
 
-.cleanMain {
+.v12Main {
   flex: 1;
   min-width: 0;
   padding: 0 14px 16px;
 }
 
-.cleanError {
+.v12Error {
   margin: 9px 0;
   padding: 8px 10px;
   border: 1px solid rgba(255, 91, 110, .35);
@@ -21,7 +21,7 @@
   font-size: 9px;
 }
 
-.cleanToolbar {
+.v12Toolbar {
   display: flex;
   align-items: end;
   gap: 8px;
@@ -32,23 +32,24 @@
   background: #061a27;
 }
 
-.cleanToolbar label {
+.v12Toolbar label {
   display: grid;
   gap: 3px;
 }
 
-.cleanToolbar span,
-.cleanCards article > span,
-.cleanHead span,
-.barrierControl > span {
+.v12Toolbar span,
+.v12Top article > span,
+.v12ChartHead span,
+.v12SectionHead span,
+.v12MiniStats span {
   color: #22dda5;
   font-size: 7px;
   font-weight: 900;
   letter-spacing: .08em;
 }
 
-.cleanToolbar select,
-.barrierControl select {
+.v12Toolbar select,
+.v12TouchPanel select {
   padding: 7px 8px;
   border: 1px solid #24536c;
   border-radius: 7px;
@@ -57,11 +58,11 @@
   font-size: 8px;
 }
 
-.cleanToolbar label:first-child select {
+.v12Toolbar label:first-child select {
   min-width: 205px;
 }
 
-.cleanLive {
+.v12Live {
   margin-left: auto;
   align-self: center;
   display: flex;
@@ -72,70 +73,143 @@
   font-weight: 900;
 }
 
-.cleanLive i {
+.v12Live i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #607887;
 }
 
-.cleanLive.on {
+.v12Live.on {
   color: #22dda5;
 }
 
-.cleanLive.on i {
+.v12Live.on i {
   background: #22dda5;
   box-shadow: 0 0 11px rgba(34, 221, 165, .55);
 }
 
-.cleanCards {
+.v12Top {
   display: grid;
-  grid-template-columns: 1.15fr 1fr .75fr;
+  grid-template-columns: 1.45fr .65fr .75fr;
   gap: 7px;
   margin-bottom: 7px;
 }
 
-.cleanCards article,
-.cleanChartPanel,
-.cleanPanel {
+.v12Top article,
+.v12ChartSection,
+.v12ReasonPanel,
+.v12MiniStats,
+.v12TouchPanel {
   border: 1px solid rgba(43, 93, 117, .45);
   border-radius: 10px;
   background: linear-gradient(180deg, #071b29, #051520);
 }
 
-.cleanCards article {
+.v12Top article {
   padding: 9px 10px;
 }
 
-.cleanCards article.valid {
-  border-color: rgba(34, 221, 165, .5);
+.v12SignalCard.valid {
+  border-color: rgba(34, 221, 165, .55);
   box-shadow: inset 3px 0 0 #22dda5;
 }
 
-.cleanCards h2 {
-  margin: 3px 0;
-  font-size: 17px;
+.v12SignalState {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 5px 0 7px;
 }
 
-.cleanCards strong {
-  display: block;
+.v12SignalState strong {
+  font-size: 18px;
+}
+
+.v12SignalState b {
   color: #22dda5;
-  font-size: 14px;
+  font-size: 16px;
 }
 
-.cleanCards small {
+.v12SignalMeta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.v12SignalMeta p,
+.v12Barriers p {
+  margin: 0;
+  padding: 6px;
+  border: 1px solid rgba(48, 91, 111, .25);
+  border-radius: 6px;
+}
+
+.v12SignalMeta span,
+.v12Barriers span {
+  display: block;
+  color: #7895a6;
+  font-size: 6px;
+}
+
+.v12SignalMeta b,
+.v12Barriers b {
   display: block;
   margin-top: 2px;
+  font-size: 8px;
+}
+
+.v12QualityCard strong {
+  display: block;
+  margin-top: 5px;
+  color: #22dda5;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.v12QualityCard b {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+.v12QualityCard small,
+.v12CountdownCard small {
+  display: block;
+  margin-top: 3px;
   color: #7895a6;
   font-size: 7px;
 }
 
-.cleanChartPanel {
+.v12CountdownCard strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 20px;
+}
+
+.v12Progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #0a2a3a;
+  margin-top: 8px;
+}
+
+.v12Progress i {
+  display: block;
+  height: 100%;
+  background: #22dda5;
+  border-radius: inherit;
+}
+
+.v12ChartSection {
   padding: 9px;
   margin-bottom: 7px;
 }
 
-.cleanHead {
+.v12ChartHead,
+.v12SectionHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -143,35 +217,19 @@
   margin-bottom: 7px;
 }
 
-.cleanHead h3 {
+.v12ChartHead h3,
+.v12SectionHead h3 {
   margin: 2px 0 0;
   font-size: 11px;
 }
 
-.cleanHead > b {
+.v12ChartHead > strong {
   color: #22dda5;
-  font-size: 8px;
+  font-size: 14px;
 }
 
-.cleanLegend {
-  display: flex;
-  gap: 6px;
-}
-
-.cleanLegend b {
-  padding: 3px 6px;
-  border: 1px solid rgba(59, 104, 125, .3);
-  border-radius: 999px;
-  font-size: 7px;
-}
-
-.rise { color: #22dda5; }
-.fall { color: #ff7181; }
-.touch { color: #5aa9ff; }
-.no-touch { color: #ffd45d; }
-
-.cleanChart {
-  height: 330px;
+.v12Chart {
+  height: 390px;
   overflow: hidden;
   border: 1px solid rgba(43, 90, 112, .35);
   border-radius: 8px;
@@ -182,40 +240,59 @@
   background-size: 52px 52px;
 }
 
-.cleanChart svg {
+.v12Chart svg {
   width: 100%;
   height: 100%;
   color: #2c9cff;
 }
 
-.cleanMarker circle {
-  fill: rgba(34, 221, 165, .12);
+.v12Marker .entryLine {
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 5 7;
+  opacity: .28;
+  vector-effect: non-scaling-stroke;
+}
+
+.v12Marker circle {
+  fill: rgba(34, 221, 165, .13);
   stroke: #22dda5;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
-.cleanMarker .inner { fill: #22dda5; }
+.v12Marker .inner {
+  fill: #22dda5;
+}
 
-.cleanMarker.fall circle {
+.v12Marker.fall {
+  color: #ff7181;
+}
+.v12Marker.fall circle {
   stroke: #ff7181;
   fill: rgba(255, 113, 129, .12);
 }
-.cleanMarker.fall .inner { fill: #ff7181; }
+.v12Marker.fall .inner { fill: #ff7181; }
 
-.cleanMarker.touch circle {
+.v12Marker.touch {
+  color: #5aa9ff;
+}
+.v12Marker.touch circle {
   stroke: #5aa9ff;
   fill: rgba(90, 169, 255, .12);
 }
-.cleanMarker.touch .inner { fill: #5aa9ff; }
+.v12Marker.touch .inner { fill: #5aa9ff; }
 
-.cleanMarker.no-touch circle {
+.v12Marker.no-touch {
+  color: #ffd45d;
+}
+.v12Marker.no-touch circle {
   stroke: #ffd45d;
   fill: rgba(255, 212, 93, .12);
 }
-.cleanMarker.no-touch .inner { fill: #ffd45d; }
+.v12Marker.no-touch .inner { fill: #ffd45d; }
 
-.cleanEmpty {
+.v12Empty {
   height: 100%;
   display: grid;
   place-items: center;
@@ -223,143 +300,170 @@
   font-size: 8px;
 }
 
-.cleanAnalysisGrid {
+.v12LowerGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: .9fr .7fr 1fr;
   gap: 7px;
 }
 
-.cleanPanel {
-  padding: 10px;
+.v12ReasonPanel,
+.v12MiniStats,
+.v12TouchPanel {
+  padding: 9px;
 }
 
-.cleanPanel.valid {
-  border-color: rgba(34, 221, 165, .5);
-}
-
-.cleanSignal {
-  width: 145px;
-  min-height: 74px;
-  margin: 12px auto;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  border: 1px solid #2a5b73;
-  border-radius: 16px;
-  background: #071f2e;
-}
-
-.cleanSignal strong {
-  font-size: 20px;
-}
-
-.cleanSignal span {
-  margin-top: 3px;
+.v12SectionHead > b {
   color: #22dda5;
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 8px;
 }
 
-.cleanSignal.blink {
-  border-color: #22dda5;
-  box-shadow:
-    0 0 0 6px rgba(34, 221, 165, .06),
-    0 0 24px rgba(34, 221, 165, .2);
-  animation: cleanPulse .7s ease-in-out infinite alternate;
-}
-
-@keyframes cleanPulse {
-  from { transform: scale(.97); opacity: .84; }
-  to { transform: scale(1.03); opacity: 1; }
-}
-
-.cleanStats {
+.v12ReasonList {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 5px;
 }
 
-.cleanStats > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 7px;
-  padding: 6px 7px;
-  border: 1px solid rgba(47, 91, 112, .25);
+.v12ReasonList > div {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(48, 91, 111, .25);
   border-radius: 6px;
-  color: #7895a6;
   font-size: 7px;
 }
 
-.cleanStats b {
-  color: #edf8ff;
-}
-
-.barrierControl {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.touchMiniBars {
+.v12ReasonList span {
+  width: 18px;
+  height: 18px;
   display: grid;
-  gap: 6px;
-  margin: 8px 0;
+  place-items: center;
+  border-radius: 50%;
+  background: #0b2a3a;
 }
 
-.touchMiniBars > div {
+.v12ReasonList .pass span {
+  color: #22dda5;
+}
+
+.v12ReasonList .wait span {
+  color: #ff7181;
+}
+
+.v12MiniStats {
   display: grid;
-  grid-template-columns: 62px 1fr 34px;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+
+.v12MiniStats > div {
+  padding: 8px;
+  border: 1px solid rgba(48, 91, 111, .25);
+  border-radius: 7px;
+}
+
+.v12MiniStats strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+.v12TouchBars {
+  display: grid;
+  gap: 7px;
+}
+
+.v12TouchBars > div {
+  display: grid;
+  grid-template-columns: 64px 1fr 34px;
   align-items: center;
+  gap: 6px;
   font-size: 7px;
 }
 
-.touchMiniBars span {
+.v12TouchBars span {
   color: #7895a6;
 }
 
-.touchMiniBars i {
-  height: 6px;
+.v12TouchBars i {
+  height: 7px;
   overflow: hidden;
   border-radius: 999px;
   background: #0a2a3a;
 }
 
-.touchMiniBars i b {
+.v12TouchBars i b {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: #22dda5;
 }
 
-.touchMiniBars strong {
+.v12TouchBars strong {
   text-align: right;
 }
 
-.cleanDisclaimer {
+.v12Barriers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.v12Disclaimer {
   margin: 6px 0 0;
   color: #5e7a8a;
   font-size: 7px;
   text-align: center;
 }
 
-@media (max-width: 800px) {
-  .cleanToolbar {
+@media (max-width: 900px) {
+  .v12Top {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .v12SignalCard {
+    grid-column: span 2;
+  }
+
+  .v12LowerGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .v12TouchPanel {
+    grid-column: span 2;
+  }
+
+  .v12Chart {
+    height: 300px;
+  }
+}
+
+@media (max-width: 650px) {
+  .v12Toolbar {
     flex-wrap: wrap;
     align-items: stretch;
   }
 
-  .cleanLive {
+  .v12Live {
     margin-left: 0;
   }
 
-  .cleanCards,
-  .cleanAnalysisGrid {
+  .v12Top,
+  .v12LowerGrid {
     grid-template-columns: 1fr;
   }
 
-  .cleanChart {
-    height: 250px;
+  .v12SignalCard,
+  .v12TouchPanel {
+    grid-column: auto;
+  }
+
+  .v12Chart {
+    height: 245px;
+  }
+
+  .v12SignalMeta {
+    grid-template-columns: 1fr;
   }
 }
