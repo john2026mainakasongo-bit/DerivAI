@@ -1,17 +1,17 @@
-.v12Shell {
+.tvShell {
   min-height: 100vh;
   display: flex;
   background: #030d17;
   color: #edf8ff;
 }
 
-.v12Main {
+.tvMain {
   flex: 1;
   min-width: 0;
   padding: 0 14px 16px;
 }
 
-.v12Error {
+.tvError {
   margin: 9px 0;
   padding: 8px 10px;
   border: 1px solid rgba(255, 91, 110, .35);
@@ -21,7 +21,7 @@
   font-size: 9px;
 }
 
-.v12Toolbar {
+.tvToolbar {
   display: flex;
   align-items: end;
   gap: 8px;
@@ -32,24 +32,23 @@
   background: #061a27;
 }
 
-.v12Toolbar label {
+.tvToolbar label {
   display: grid;
   gap: 3px;
 }
 
-.v12Toolbar span,
-.v12Top article > span,
-.v12ChartHead span,
-.v12SectionHead span,
-.v12MiniStats span {
+.tvToolbar label > span,
+.tvSignalStrip span,
+.tvChartHead span,
+.tvPanelHead span {
   color: #22dda5;
   font-size: 7px;
   font-weight: 900;
   letter-spacing: .08em;
 }
 
-.v12Toolbar select,
-.v12TouchPanel select {
+.tvToolbar select,
+.tvBarrier {
   padding: 7px 8px;
   border: 1px solid #24536c;
   border-radius: 7px;
@@ -58,11 +57,33 @@
   font-size: 8px;
 }
 
-.v12Toolbar label:first-child select {
+.tvToolbar label:first-child select {
   min-width: 205px;
 }
 
-.v12Live {
+.tvChartButtons {
+  display: flex;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.tvChartButtons button {
+  border: 1px solid #24536c;
+  border-radius: 6px;
+  background: #071d2a;
+  color: #91a8b5;
+  padding: 7px 9px;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.tvChartButtons button.active {
+  color: white;
+  border-color: #2c9cff;
+  background: rgba(44, 156, 255, .12);
+}
+
+.tvLive {
   margin-left: auto;
   align-self: center;
   display: flex;
@@ -73,143 +94,73 @@
   font-weight: 900;
 }
 
-.v12Live i {
+.tvLive i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #607887;
 }
 
-.v12Live.on {
+.tvLive.on {
   color: #22dda5;
 }
 
-.v12Live.on i {
+.tvLive.on i {
   background: #22dda5;
   box-shadow: 0 0 11px rgba(34, 221, 165, .55);
 }
 
-.v12Top {
+.tvSignalStrip {
   display: grid;
-  grid-template-columns: 1.45fr .65fr .75fr;
+  grid-template-columns: 1fr 1fr .8fr .8fr;
   gap: 7px;
   margin-bottom: 7px;
 }
 
-.v12Top article,
-.v12ChartSection,
-.v12ReasonPanel,
-.v12MiniStats,
-.v12TouchPanel {
+.tvSignalStrip > div,
+.tvChartPanel,
+.tvPanel {
   border: 1px solid rgba(43, 93, 117, .45);
   border-radius: 10px;
   background: linear-gradient(180deg, #071b29, #051520);
 }
 
-.v12Top article {
-  padding: 9px 10px;
+.tvSignalStrip > div {
+  padding: 8px 9px;
 }
 
-.v12SignalCard.valid {
+.tvSignalStrip > div.valid {
   border-color: rgba(34, 221, 165, .55);
   box-shadow: inset 3px 0 0 #22dda5;
 }
 
-.v12SignalState {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 5px 0 7px;
-}
-
-.v12SignalState strong {
-  font-size: 18px;
-}
-
-.v12SignalState b {
-  color: #22dda5;
-  font-size: 16px;
-}
-
-.v12SignalMeta {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
-}
-
-.v12SignalMeta p,
-.v12Barriers p {
-  margin: 0;
-  padding: 6px;
-  border: 1px solid rgba(48, 91, 111, .25);
-  border-radius: 6px;
-}
-
-.v12SignalMeta span,
-.v12Barriers span {
+.tvSignalStrip strong {
   display: block;
-  color: #7895a6;
-  font-size: 6px;
+  margin-top: 3px;
+  font-size: 14px;
 }
 
-.v12SignalMeta b,
-.v12Barriers b {
+.tvSignalStrip b {
   display: block;
   margin-top: 2px;
-  font-size: 8px;
-}
-
-.v12QualityCard strong {
-  display: block;
-  margin-top: 5px;
   color: #22dda5;
-  font-size: 28px;
-  line-height: 1;
+  font-size: 12px;
 }
 
-.v12QualityCard b {
+.tvSignalStrip small {
   display: block;
-  margin-top: 3px;
-  font-size: 10px;
-}
-
-.v12QualityCard small,
-.v12CountdownCard small {
-  display: block;
-  margin-top: 3px;
+  margin-top: 2px;
   color: #7895a6;
   font-size: 7px;
 }
 
-.v12CountdownCard strong {
-  display: block;
-  margin-top: 5px;
-  font-size: 20px;
-}
-
-.v12Progress {
-  height: 5px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #0a2a3a;
-  margin-top: 8px;
-}
-
-.v12Progress i {
-  display: block;
-  height: 100%;
-  background: #22dda5;
-  border-radius: inherit;
-}
-
-.v12ChartSection {
+.tvChartPanel {
   padding: 9px;
   margin-bottom: 7px;
 }
 
-.v12ChartHead,
-.v12SectionHead {
+.tvChartHead,
+.tvPanelHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -217,19 +168,30 @@
   margin-bottom: 7px;
 }
 
-.v12ChartHead h3,
-.v12SectionHead h3 {
+.tvChartHead h3 {
   margin: 2px 0 0;
   font-size: 11px;
 }
 
-.v12ChartHead > strong {
-  color: #22dda5;
-  font-size: 14px;
+.tvLegend {
+  display: flex;
+  gap: 6px;
 }
 
-.v12Chart {
-  height: 390px;
+.tvLegend span {
+  padding: 3px 6px;
+  border: 1px solid rgba(59, 104, 125, .3);
+  border-radius: 999px;
+  font-size: 7px;
+}
+
+.rise { color: #22dda5 !important; }
+.fall { color: #ff7181 !important; }
+.touch { color: #5aa9ff !important; }
+.no-touch { color: #ffd45d !important; }
+
+.tvChart {
+  height: 440px;
   overflow: hidden;
   border: 1px solid rgba(43, 90, 112, .35);
   border-radius: 8px;
@@ -238,15 +200,33 @@
     linear-gradient(90deg, rgba(65, 105, 126, .075) 1px, transparent 1px),
     #04131d;
   background-size: 52px 52px;
+  cursor: crosshair;
 }
 
-.v12Chart svg {
+.tvChart svg {
   width: 100%;
   height: 100%;
-  color: #2c9cff;
 }
 
-.v12Marker .entryLine {
+.candleUp .wick {
+  stroke: #22dda5;
+  stroke-width: 1.4;
+}
+
+.candleUp .body {
+  fill: #22dda5;
+}
+
+.candleDown .wick {
+  stroke: #ff7181;
+  stroke-width: 1.4;
+}
+
+.candleDown .body {
+  fill: #ff7181;
+}
+
+.tvMarker .entryLine {
   stroke: currentColor;
   stroke-width: 1;
   stroke-dasharray: 5 7;
@@ -254,45 +234,62 @@
   vector-effect: non-scaling-stroke;
 }
 
-.v12Marker circle {
-  fill: rgba(34, 221, 165, .13);
+.tvMarker circle {
+  fill: rgba(34, 221, 165, .12);
   stroke: #22dda5;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
-.v12Marker .inner {
+.tvMarker .inner {
   fill: #22dda5;
 }
 
-.v12Marker.fall {
+.tvMarker.fall {
   color: #ff7181;
 }
-.v12Marker.fall circle {
+.tvMarker.fall circle {
   stroke: #ff7181;
   fill: rgba(255, 113, 129, .12);
 }
-.v12Marker.fall .inner { fill: #ff7181; }
+.tvMarker.fall .inner { fill: #ff7181; }
 
-.v12Marker.touch {
+.tvMarker.touch {
   color: #5aa9ff;
 }
-.v12Marker.touch circle {
+.tvMarker.touch circle {
   stroke: #5aa9ff;
   fill: rgba(90, 169, 255, .12);
 }
-.v12Marker.touch .inner { fill: #5aa9ff; }
+.tvMarker.touch .inner { fill: #5aa9ff; }
 
-.v12Marker.no-touch {
+.tvMarker.no-touch {
   color: #ffd45d;
 }
-.v12Marker.no-touch circle {
+.tvMarker.no-touch circle {
   stroke: #ffd45d;
   fill: rgba(255, 212, 93, .12);
 }
-.v12Marker.no-touch .inner { fill: #ffd45d; }
+.tvMarker.no-touch .inner { fill: #ffd45d; }
 
-.v12Empty {
+.priceScale line {
+  stroke: rgba(145, 168, 181, .35);
+  stroke-width: 1;
+}
+
+.priceScale text,
+.crosshair text {
+  fill: #9eb2bd;
+  font-size: 12px;
+}
+
+.crosshair line {
+  stroke: rgba(200, 220, 230, .32);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.tvEmpty {
   height: 100%;
   display: grid;
   place-items: center;
@@ -300,80 +297,82 @@
   font-size: 8px;
 }
 
-.v12LowerGrid {
+.tvBottomGrid {
   display: grid;
-  grid-template-columns: .9fr .7fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 7px;
 }
 
-.v12ReasonPanel,
-.v12MiniStats,
-.v12TouchPanel {
+.tvPanel {
   padding: 9px;
 }
 
-.v12SectionHead > b {
+.tvPanel.valid {
+  border-color: rgba(34, 221, 165, .5);
+}
+
+.tvPanelHead > b {
   color: #22dda5;
   font-size: 8px;
 }
 
-.v12ReasonList {
+.tvSignalBox {
+  width: 140px;
+  margin: 10px auto;
+  padding: 10px;
+  text-align: center;
+  border: 1px solid rgba(48, 91, 111, .3);
+  border-radius: 14px;
+  background: #071f2e;
+}
+
+.tvSignalBox strong {
+  display: block;
+  font-size: 18px;
+}
+
+.tvSignalBox span {
+  display: block;
+  margin-top: 3px;
+  color: #22dda5;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.tvStats {
   display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 5px;
 }
 
-.v12ReasonList > div {
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  align-items: center;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid rgba(48, 91, 111, .25);
+.tvStats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 6px 7px;
+  border: 1px solid rgba(47, 91, 112, .25);
   border-radius: 6px;
+  color: #7895a6;
   font-size: 7px;
 }
 
-.v12ReasonList span {
-  width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #0b2a3a;
+.tvStats b {
+  color: #edf8ff;
 }
 
-.v12ReasonList .pass span {
-  color: #22dda5;
+.tvBarrier {
+  float: right;
+  margin-bottom: 8px;
 }
 
-.v12ReasonList .wait span {
-  color: #ff7181;
-}
-
-.v12MiniStats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.v12MiniStats > div {
-  padding: 8px;
-  border: 1px solid rgba(48, 91, 111, .25);
-  border-radius: 7px;
-}
-
-.v12MiniStats strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 10px;
-}
-
-.v12TouchBars {
+.tvTouchBars {
+  clear: both;
   display: grid;
   gap: 7px;
+  margin: 8px 0;
 }
 
-.v12TouchBars > div {
+.tvTouchBars > div {
   display: grid;
   grid-template-columns: 64px 1fr 34px;
   align-items: center;
@@ -381,89 +380,65 @@
   font-size: 7px;
 }
 
-.v12TouchBars span {
+.tvTouchBars span {
   color: #7895a6;
 }
 
-.v12TouchBars i {
+.tvTouchBars i {
   height: 7px;
   overflow: hidden;
   border-radius: 999px;
   background: #0a2a3a;
 }
 
-.v12TouchBars i b {
+.tvTouchBars i b {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: #22dda5;
 }
 
-.v12TouchBars strong {
+.tvTouchBars strong {
   text-align: right;
 }
 
-.v12Barriers {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
-  margin-top: 8px;
-}
-
-.v12Disclaimer {
+.tvDisclaimer {
   margin: 6px 0 0;
   color: #5e7a8a;
   font-size: 7px;
   text-align: center;
 }
 
-@media (max-width: 900px) {
-  .v12Top {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .v12SignalCard {
-    grid-column: span 2;
-  }
-
-  .v12LowerGrid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .v12TouchPanel {
-    grid-column: span 2;
-  }
-
-  .v12Chart {
-    height: 300px;
-  }
-}
-
-@media (max-width: 650px) {
-  .v12Toolbar {
+@media (max-width: 850px) {
+  .tvToolbar {
     flex-wrap: wrap;
     align-items: stretch;
   }
 
-  .v12Live {
+  .tvLive {
     margin-left: 0;
   }
 
-  .v12Top,
-  .v12LowerGrid {
+  .tvSignalStrip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tvChart {
+    height: 320px;
+  }
+}
+
+@media (max-width: 650px) {
+  .tvMain {
+    padding: 0 8px 12px;
+  }
+
+  .tvSignalStrip,
+  .tvBottomGrid {
     grid-template-columns: 1fr;
   }
 
-  .v12SignalCard,
-  .v12TouchPanel {
-    grid-column: auto;
-  }
-
-  .v12Chart {
-    height: 245px;
-  }
-
-  .v12SignalMeta {
-    grid-template-columns: 1fr;
+  .tvChart {
+    height: 250px;
   }
 }

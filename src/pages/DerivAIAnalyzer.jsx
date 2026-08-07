@@ -57,64 +57,41 @@ function analyzeRiseFall(prices = []) {
       momentum: "COLLECTING",
       consistency: 0,
       volatility: 0,
-      reasons: {
-        trend: false,
-        momentum: false,
-        volatility: false,
-        pattern: false,
-      },
     };
   }
 
   const short = p.slice(-Math.min(10, p.length));
   const medium = p.slice(-Math.min(30, p.length));
+
   const shortMove = short.at(-1) - short[0];
   const mediumMove = medium.at(-1) - medium[0];
 
   const diffs = short.slice(1).map((x, i) => x - short[i]);
-  const nonZero = diffs.filter((d) => d !== 0);
+  const nz = diffs.filter((d) => d !== 0);
 
-  const up = nonZero.filter((d) => d > 0).length;
-  const down = nonZero.filter((d) => d < 0).length;
-  const consistency = nonZero.length
-    ? (Math.max(up, down) / nonZero.length) * 100
+  const up = nz.filter((d) => d > 0).length;
+  const down = nz.filter((d) => d < 0).length;
+
+  const consistency = nz.length
+    ? (Math.max(up, down) / nz.length) * 100
     : 0;
 
-  const sameDirection =
+  const aligned =
     Math.sign(shortMove) !== 0 &&
     Math.sign(shortMove) === Math.sign(mediumMove);
 
-  const direction =
-    !sameDirection
-      ? "WAIT"
-      : shortMove > 0
-        ? "RISE"
-        : "FALL";
-
-  const vol = std(diffs);
-  const avgMove = mean(diffs.map(Math.abs)) || 1e-9;
-  const volScore = clamp(100 - (vol / avgMove) * 30);
-
-  const momentumScore = clamp(
-    Math.abs(shortMove) / (avgMove * Math.max(1, short.length - 1)) * 100
-  );
+  const dir = !aligned
+    ? "WAIT"
+    : shortMove > 0
+      ? "RISE"
+      : "FALL";
 
   const confidence = clamp(
-    (sameDirection ? 46 : 18) +
-    consistency * 0.34 +
-    momentumScore * 0.12 +
-    volScore * 0.08
+    (aligned ? 46 : 18) + consistency * 0.42
   );
 
-  const reasons = {
-    trend: sameDirection,
-    momentum: momentumScore >= 55,
-    volatility: volScore >= 45,
-    pattern: consistency >= 60,
-  };
-
   return {
-    signal: confidence >= 68 ? direction : "WAIT",
+    signal: confidence >= 68 ? dir : "WAIT",
     confidence,
     trend:
       mediumMove > 0
@@ -129,8 +106,7 @@ function analyzeRiseFall(prices = []) {
           ? "DOWN"
           : "FLAT",
     consistency,
-    volatility: vol,
-    reasons,
+    volatility: std(diffs),
   };
 }
 
@@ -184,53 +160,46 @@ function analyzeTouch(prices = [], barrierDistance = 1.5) {
   };
 }
 
-function qualityFromConfidence(confidence) {
-  if (confidence >= 88) return { grade: "A+", label: "Very Strong" };
-  if (confidence >= 80) return { grade: "A", label: "Strong" };
-  if (confidence >= 72) return { grade: "B", label: "Good" };
-  if (confidence >= 64) return { grade: "C", label: "Weak" };
-  return { grade: "D", label: "Wait" };
+function buildCandles(records = [], size = 5) {
+  const candles = [];
+  for (let i = 0; i < records.length; i += size) {
+    const chunk = records.slice(i, i + size);
+    if (!chunk.length) continue;
+
+    const prices = chunk.map((r) => r.price);
+    candles.push({
+      ts: chunk[0].ts,
+      open: prices[0],
+      high: Math.max(...prices),
+      low: Math.min(...prices),
+      close: prices.at(-1),
+    });
+  }
+  return candles;
 }
 
-function chartPath(records, width = 1000, height = 340) {
-  if (!records || records.length < 2) return "";
-
-  const values = records.map((r) => r.price);
+function makeScale(values, height, pad = 20) {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
+
+  const y = (value) =>
+    height - ((value - min) / range) * (height - pad * 2) - pad;
+
+  return { min, max, range, y };
+}
+
+function linePath(records, width, height) {
+  if (records.length < 2) return "";
+  const values = records.map((r) => r.price);
+  const { y } = makeScale(values, height);
 
   return records
     .map((r, i) => {
       const x = (i / Math.max(1, records.length - 1)) * width;
-      const y =
-        height -
-        ((r.price - min) / range) * (height - 30) -
-        15;
-
-      return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y(r.price).toFixed(2)}`;
     })
     .join(" ");
-}
-
-function markerPosition(marker, records, width = 1000, height = 340) {
-  if (!marker || !records.length) return null;
-
-  const idx = records.findIndex((r) => r.ts === marker.ts);
-  if (idx < 0) return null;
-
-  const values = records.map((r) => r.price);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-
-  return {
-    x: (idx / Math.max(1, records.length - 1)) * width,
-    y:
-      height -
-      ((marker.price - min) / range) * (height - 30) -
-      15,
-  };
 }
 
 export default function DerivAIAnalyzer() {
@@ -253,8 +222,11 @@ export default function DerivAIAnalyzer() {
   const [unit, setUnit] = useState("ticks");
   const [duration, setDuration] = useState(10);
   const [barrierDistance, setBarrierDistance] = useState(1.5);
+  const [chartType, setChartType] = useState("candles");
+  const [zoom, setZoom] = useState(1);
   const [records, setRecords] = useState([]);
   const [markers, setMarkers] = useState([]);
+  const [crosshair, setCrosshair] = useState(null);
 
   const lastQuote = useRef(null);
   const lastSignal = useRef(null);
@@ -276,7 +248,7 @@ export default function DerivAIAnalyzer() {
     lastQuote.current = { price, ts: now };
 
     setRecords((old) => [
-      ...old.slice(-199),
+      ...old.slice(-299),
       { price, ts: now },
     ]);
   }, [currentPrice, connected]);
@@ -284,6 +256,7 @@ export default function DerivAIAnalyzer() {
   useEffect(() => {
     setRecords([]);
     setMarkers([]);
+    setCrosshair(null);
     lastQuote.current = null;
     lastSignal.current = null;
   }, [symbol]);
@@ -355,16 +328,18 @@ export default function DerivAIAnalyzer() {
       ts: last.ts,
       price: last.price,
       signal: best.signal,
+      confidence: best.confidence,
     };
 
     lastSignal.current = marker;
     setMarkers((old) => [...old.slice(-7), marker]);
-  }, [best.valid, best.signal, records]);
+  }, [best.valid, best.signal, best.confidence, records]);
 
-  const chartRecords = records.slice(-120);
-  const path = useMemo(
-    () => chartPath(chartRecords),
-    [chartRecords]
+  const visibleCount = Math.max(30, Math.round(120 / zoom));
+  const chartRecords = records.slice(-visibleCount);
+  const candles = useMemo(
+    () => buildCandles(chartRecords, Math.max(2, Math.round(5 / zoom))),
+    [chartRecords, zoom]
   );
 
   const durationOptions =
@@ -377,22 +352,6 @@ export default function DerivAIAnalyzer() {
       ? `${duration} ticks`
       : `${duration}s`;
 
-  const remaining =
-    unit === "ticks"
-      ? Math.max(0, duration - windowRecords.length)
-      : windowRecords.length
-        ? Math.max(
-            0,
-            duration -
-              (Date.now() - windowRecords[0].ts) / 1000
-          )
-        : duration;
-
-  const progress =
-    unit === "ticks"
-      ? clamp((windowRecords.length / duration) * 100)
-      : clamp(((duration - remaining) / duration) * 100);
-
   const displayPrice =
     Number.isFinite(Number(currentPrice))
       ? Number(currentPrice).toFixed(market?.decimals ?? 2)
@@ -403,23 +362,54 @@ export default function DerivAIAnalyzer() {
       ? Number(value).toFixed(market?.decimals ?? 2)
       : "—";
 
-  const quality = qualityFromConfidence(best.confidence);
+  const chartValues =
+    chartType === "candles"
+      ? candles.flatMap((c) => [c.high, c.low])
+      : chartRecords.map((r) => r.price);
 
-  const risk =
-    best.confidence >= 82
-      ? "LOW"
-      : best.confidence >= 72
-        ? "MEDIUM"
-        : "HIGH";
+  const scale = chartValues.length
+    ? makeScale(chartValues, 340)
+    : null;
+
+  const line = chartType === "line"
+    ? linePath(chartRecords, 1000, 340)
+    : "";
+
+  const markerData = markers
+    .map((marker) => {
+      const idx = chartRecords.findIndex((r) => r.ts === marker.ts);
+      if (idx < 0 || !scale) return null;
+      return {
+        ...marker,
+        x: (idx / Math.max(1, chartRecords.length - 1)) * 1000,
+        y: scale.y(marker.price),
+      };
+    })
+    .filter(Boolean);
+
+  const handleMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xPct = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    const yPct = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+
+    setCrosshair({
+      x: xPct * 1000,
+      y: yPct * 340,
+      price:
+        scale
+          ? scale.max - yPct * (scale.max - scale.min)
+          : null,
+    });
+  };
 
   return (
-    <div className="v12Shell">
+    <div className="tvShell">
       <Sidebar />
 
-      <main className="v12Main">
+      <main className="tvMain">
         <Topbar
           title="Rise/Fall + Touch Analyzer"
-          subtitle="Live signal analysis · manual execution only"
+          subtitle="Deriv live chart with TradingView-style controls"
           connected={connected}
           connecting={status === "CONNECTING" || loadingMarket}
           onConnect={connect}
@@ -427,10 +417,10 @@ export default function DerivAIAnalyzer() {
         />
 
         {statusDetail ? (
-          <div className="v12Error">{statusDetail}</div>
+          <div className="tvError">{statusDetail}</div>
         ) : null}
 
-        <section className="v12Toolbar">
+        <section className="tvToolbar">
           <label>
             <span>MARKET</span>
             <select
@@ -477,192 +467,232 @@ export default function DerivAIAnalyzer() {
             </select>
           </label>
 
-          <div className={`v12Live ${connected ? "on" : ""}`}>
+          <div className="tvChartButtons">
+            <button
+              type="button"
+              className={chartType === "candles" ? "active" : ""}
+              onClick={() => setChartType("candles")}
+            >
+              Candles
+            </button>
+            <button
+              type="button"
+              className={chartType === "line" ? "active" : ""}
+              onClick={() => setChartType("line")}
+            >
+              Line
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom((z) => clamp(z + 0.25, 0.75, 2.5))}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom((z) => clamp(z - 0.25, 0.75, 2.5))}
+            >
+              −
+            </button>
+          </div>
+
+          <div className={`tvLive ${connected ? "on" : ""}`}>
             <i />
             {connected ? "DERIV LIVE" : status}
           </div>
         </section>
 
-        <section className="v12Top">
-          <article className={`v12SignalCard ${best.valid ? "valid" : ""}`}>
+        <section className="tvSignalStrip">
+          <div className={best.valid ? "valid" : ""}>
             <span>AI SIGNAL</span>
-            <div className="v12SignalState">
-              <strong>{best.valid ? "ENTRY VALID" : "WAIT"}</strong>
-              <b>{best.signal}</b>
-            </div>
-            <div className="v12SignalMeta">
-              <p><span>Confidence</span><b>{best.confidence.toFixed(1)}%</b></p>
-              <p><span>Window</span><b>{durationLabel}</b></p>
-              <p><span>Strength</span><b>{quality.label}</b></p>
-            </div>
-          </article>
-
-          <article className="v12QualityCard">
-            <span>TRADE QUALITY</span>
-            <strong>{quality.grade}</strong>
-            <b>{quality.label}</b>
-            <small>{best.valid ? "Setup active" : "Wait for confirmation"}</small>
-          </article>
-
-          <article className="v12CountdownCard">
-            <span>COUNTDOWN</span>
-            <strong>
-              {unit === "ticks"
-                ? `${windowRecords.length} / ${duration}`
-                : `${remaining.toFixed(1)}s`}
-            </strong>
-            <small>
-              {unit === "ticks" ? "ticks collected" : "remaining"}
-            </small>
-
-            <div className="v12Progress">
-              <i style={{ width: `${progress}%` }} />
-            </div>
-          </article>
-        </section>
-
-        <section className="v12ChartSection">
-          <div className="v12ChartHead">
-            <div>
-              <span>LIVE CHART</span>
-              <h3>{derivMarketName(symbol, market?.label)}</h3>
-            </div>
-            <strong>{displayPrice}</strong>
+            <strong>{best.valid ? best.signal : "WAIT"}</strong>
+            <b>{best.confidence.toFixed(1)}%</b>
           </div>
 
-          <div className="v12Chart">
-            {path ? (
-              <svg
-                viewBox="0 0 1000 340"
-                preserveAspectRatio="none"
-              >
-                <path
-                  d={path}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  vectorEffect="non-scaling-stroke"
-                />
+          <div>
+            <span>PRICE</span>
+            <strong>{displayPrice}</strong>
+            <small>{derivMarketName(symbol, market?.label)}</small>
+          </div>
 
-                {markers.map((marker, index) => {
-                  const pos = markerPosition(marker, chartRecords);
-                  if (!pos) return null;
+          <div>
+            <span>WINDOW</span>
+            <strong>{durationLabel}</strong>
+            <small>{windowRecords.length} samples</small>
+          </div>
 
-                  const cls = marker.signal
-                    .toLowerCase()
-                    .replace(/\s+/g, "-");
+          <div>
+            <span>RISE/FALL</span>
+            <strong>{riseFall.signal}</strong>
+            <b>{riseFall.confidence.toFixed(1)}%</b>
+          </div>
+        </section>
+
+        <section className="tvChartPanel">
+          <div className="tvChartHead">
+            <div>
+              <span>DERIV LIVE CHART</span>
+              <h3>{derivMarketName(symbol, market?.label)}</h3>
+            </div>
+
+            <div className="tvLegend">
+              <span className="rise">RISE</span>
+              <span className="fall">FALL</span>
+              <span className="touch">TOUCH</span>
+              <span className="no-touch">NO TOUCH</span>
+            </div>
+          </div>
+
+          <div
+            className="tvChart"
+            onMouseMove={handleMove}
+            onMouseLeave={() => setCrosshair(null)}
+          >
+            {scale ? (
+              <svg viewBox="0 0 1060 340" preserveAspectRatio="none">
+                {chartType === "line" && (
+                  <path
+                    d={line}
+                    fill="none"
+                    stroke="#2c9cff"
+                    strokeWidth="3"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
+
+                {chartType === "candles" &&
+                  candles.map((c, i) => {
+                    const candleW = Math.max(
+                      4,
+                      (930 / Math.max(1, candles.length)) * 0.62
+                    );
+                    const x =
+                      20 +
+                      (i / Math.max(1, candles.length - 1)) * 930;
+                    const openY = scale.y(c.open);
+                    const closeY = scale.y(c.close);
+                    const highY = scale.y(c.high);
+                    const lowY = scale.y(c.low);
+                    const up = c.close >= c.open;
+                    const top = Math.min(openY, closeY);
+                    const bodyH = Math.max(2, Math.abs(closeY - openY));
+
+                    return (
+                      <g key={`${c.ts}-${i}`} className={up ? "candleUp" : "candleDown"}>
+                        <line
+                          x1={x}
+                          x2={x}
+                          y1={highY}
+                          y2={lowY}
+                          className="wick"
+                        />
+                        <rect
+                          x={x - candleW / 2}
+                          y={top}
+                          width={candleW}
+                          height={bodyH}
+                          rx="1"
+                          className="body"
+                        />
+                      </g>
+                    );
+                  })}
+
+                {markerData.map((m, i) => (
+                  <g
+                    key={`${m.ts}-${i}`}
+                    className={`tvMarker ${String(m.signal).toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    <line
+                      x1={m.x}
+                      x2={m.x}
+                      y1="0"
+                      y2="340"
+                      className="entryLine"
+                    />
+                    <circle cx={m.x} cy={m.y} r="8" />
+                    <circle cx={m.x} cy={m.y} r="2.6" className="inner" />
+                  </g>
+                ))}
+
+                {[0, 1, 2, 3, 4].map((i) => {
+                  const value =
+                    scale.max - (i / 4) * (scale.max - scale.min);
+                  const y = 20 + (i / 4) * 300;
 
                   return (
-                    <g
-                      key={`${marker.ts}-${index}`}
-                      className={`v12Marker ${cls}`}
-                    >
-                      <line
-                        x1={pos.x}
-                        x2={pos.x}
-                        y1="0"
-                        y2="340"
-                        className="entryLine"
-                      />
-                      <circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r="8"
-                      />
-                      <circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r="2.8"
-                        className="inner"
-                      />
+                    <g key={i} className="priceScale">
+                      <line x1="970" x2="1000" y1={y} y2={y} />
+                      <text x="1008" y={y + 4}>
+                        {fmt(value)}
+                      </text>
                     </g>
                   );
                 })}
+
+                {crosshair && (
+                  <g className="crosshair">
+                    <line x1={crosshair.x} x2={crosshair.x} y1="0" y2="340" />
+                    <line x1="0" x2="1000" y1={crosshair.y} y2={crosshair.y} />
+                    {crosshair.price != null && (
+                      <text x="1008" y={crosshair.y + 4}>
+                        {fmt(crosshair.price)}
+                      </text>
+                    )}
+                  </g>
+                )}
               </svg>
             ) : (
-              <div className="v12Empty">
-                Waiting for live market data...
+              <div className="tvEmpty">
+                Waiting for Deriv live ticks...
               </div>
             )}
           </div>
         </section>
 
-        <section className="v12LowerGrid">
-          <article className="v12ReasonPanel">
-            <div className="v12SectionHead">
-              <div>
-                <span>AI REASON</span>
-                <h3>Why this signal?</h3>
-              </div>
-              <b>{riseFall.signal}</b>
+        <section className="tvBottomGrid">
+          <article className={riseValid ? "tvPanel valid" : "tvPanel"}>
+            <div className="tvPanelHead">
+              <span>RISE / FALL</span>
+              <b>{riseValid ? "ENTRY VALID" : "WAIT"}</b>
             </div>
 
-            <div className="v12ReasonList">
-              <div className={riseFall.reasons.trend ? "pass" : "wait"}>
-                <span>{riseFall.reasons.trend ? "✓" : "×"}</span>
-                <b>Trend aligned</b>
-              </div>
-              <div className={riseFall.reasons.momentum ? "pass" : "wait"}>
-                <span>{riseFall.reasons.momentum ? "✓" : "×"}</span>
-                <b>Momentum confirmed</b>
-              </div>
-              <div className={riseFall.reasons.volatility ? "pass" : "wait"}>
-                <span>{riseFall.reasons.volatility ? "✓" : "×"}</span>
-                <b>Volatility acceptable</b>
-              </div>
-              <div className={riseFall.reasons.pattern ? "pass" : "wait"}>
-                <span>{riseFall.reasons.pattern ? "✓" : "×"}</span>
-                <b>Pattern consistent</b>
-              </div>
+            <div className="tvSignalBox">
+              <strong>{riseFall.signal}</strong>
+              <span>{riseFall.confidence.toFixed(1)}%</span>
+            </div>
+
+            <div className="tvStats">
+              <div><span>Trend</span><b>{riseFall.trend}</b></div>
+              <div><span>Momentum</span><b>{riseFall.momentum}</b></div>
+              <div><span>Consistency</span><b>{riseFall.consistency.toFixed(1)}%</b></div>
+              <div><span>Volatility</span><b>{riseFall.volatility.toFixed(5)}</b></div>
             </div>
           </article>
 
-          <article className="v12MiniStats">
-            <div>
-              <span>TREND</span>
-              <strong>{riseFall.trend}</strong>
-            </div>
-            <div>
-              <span>MOMENTUM</span>
-              <strong>{riseFall.momentum}</strong>
-            </div>
-            <div>
-              <span>VOLATILITY</span>
-              <strong>{riseFall.volatility.toFixed(5)}</strong>
-            </div>
-            <div>
-              <span>RISK</span>
-              <strong>{risk}</strong>
-            </div>
-          </article>
-
-          <article className="v12TouchPanel">
-            <div className="v12SectionHead">
-              <div>
-                <span>TOUCH / NO TOUCH</span>
-                <h3>Barrier pressure</h3>
-              </div>
-
-              <select
-                value={barrierDistance}
-                onChange={(e) =>
-                  setBarrierDistance(Number(e.target.value))
-                }
-              >
-                <option value={1}>Near · 1.0σ</option>
-                <option value={1.5}>Normal · 1.5σ</option>
-                <option value={2}>Far · 2.0σ</option>
-                <option value={2.5}>Very far · 2.5σ</option>
-              </select>
+          <article className={touchValid ? "tvPanel valid" : "tvPanel"}>
+            <div className="tvPanelHead">
+              <span>TOUCH / NO TOUCH</span>
+              <b>{touchValid ? "ENTRY VALID" : "WAIT"}</b>
             </div>
 
-            <div className="v12TouchBars">
+            <select
+              className="tvBarrier"
+              value={barrierDistance}
+              onChange={(e) => setBarrierDistance(Number(e.target.value))}
+            >
+              <option value={1}>Near · 1.0σ</option>
+              <option value={1.5}>Normal · 1.5σ</option>
+              <option value={2}>Far · 2.0σ</option>
+              <option value={2.5}>Very far · 2.5σ</option>
+            </select>
+
+            <div className="tvTouchBars">
               <div>
                 <span>TOUCH</span>
                 <i><b style={{ width: `${touch.touchScore}%` }} /></i>
                 <strong>{touch.touchScore.toFixed(0)}%</strong>
               </div>
-
               <div>
                 <span>NO TOUCH</span>
                 <i><b style={{ width: `${touch.noTouchScore}%` }} /></i>
@@ -670,15 +700,15 @@ export default function DerivAIAnalyzer() {
               </div>
             </div>
 
-            <div className="v12Barriers">
-              <p><span>Upper</span><b>{fmt(touch.upperBarrier)}</b></p>
-              <p><span>Lower</span><b>{fmt(touch.lowerBarrier)}</b></p>
+            <div className="tvStats">
+              <div><span>Upper</span><b>{fmt(touch.upperBarrier)}</b></div>
+              <div><span>Lower</span><b>{fmt(touch.lowerBarrier)}</b></div>
             </div>
           </article>
         </section>
 
-        <p className="v12Disclaimer">
-          Analysis only. Signal strength and confidence are estimates from observed live data, not guaranteed outcomes.
+        <p className="tvDisclaimer">
+          Analysis only. The chart uses Deriv live data and is styled like TradingView; it is not TradingView market data.
         </p>
       </main>
     </div>
