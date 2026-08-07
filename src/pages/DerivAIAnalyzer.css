@@ -1,448 +1,339 @@
-:root {
-  --daa-bg: #050914;
-  --daa-panel: #0b1220;
-  --daa-panel-2: #0e1727;
-  --daa-line: rgba(148, 163, 184, 0.16);
-  --daa-text: #f8fafc;
-  --daa-muted: #8fa1b8;
-  --daa-green: #1ee783;
-  --daa-yellow: #f6c453;
-  --daa-red: #ff5f6d;
-  --daa-purple: #8b5cf6;
-}
-
-* { box-sizing: border-box; }
-
-.daaShell {
+.rfTouchShell {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 82% 0%, rgba(139, 92, 246, 0.10), transparent 28%),
-    var(--daa-bg);
-  color: var(--daa-text);
   display: flex;
+  background: #030d17;
+  color: #edf8ff;
 }
 
-.daaMain {
-  min-width: 0;
+.rfTouchMain {
   flex: 1;
-  padding: 0 16px 18px;
+  min-width: 0;
+  padding: 0 15px 18px;
 }
 
-.daaError {
+.rfTouchError {
+  margin: 10px 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 91, 110, .35);
+  border-radius: 9px;
+  background: rgba(255, 91, 110, .07);
+  color: #ffc2ca;
+  font-size: 10px;
+}
+
+.rfTouchToolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 12px 0;
-  border: 1px solid rgba(255, 95, 109, .35);
-  background: rgba(255, 95, 109, .08);
-  color: #ffc3c9;
-  padding: 10px 12px;
-  border-radius: 12px;
-}
-
-.daaToolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 14px 0;
-  padding: 10px 12px;
-  border: 1px solid var(--daa-line);
-  background: rgba(11, 18, 32, .78);
-  border-radius: 14px;
-}
-
-.daaToolbar > div:first-child {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.daaToolbar select {
-  color: var(--daa-text);
-  background: #0a1020;
-  border: 1px solid var(--daa-line);
-  border-radius: 10px;
-  padding: 9px 34px 9px 11px;
-  min-width: 210px;
-}
-
-.daaKicker {
-  color: #9ba8ff;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .11em;
-  text-transform: uppercase;
-}
-
-.daaLive {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  color: var(--daa-muted);
-}
-
-.daaLive span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #64748b;
-}
-
-.daaLive.on { color: var(--daa-green); }
-.daaLive.on span {
-  background: var(--daa-green);
-  box-shadow: 0 0 18px rgba(30, 231, 131, .75);
-}
-
-.daaToggle {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--daa-muted);
-  font-size: 12px;
-}
-
-.daaHeroGrid {
-  display: grid;
-  grid-template-columns: 1.15fr 1fr .82fr .82fr;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.daaCard {
-  min-width: 0;
-  border: 1px solid var(--daa-line);
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(14, 23, 39, .96), rgba(8, 14, 25, .96));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.02);
-  padding: 14px;
-}
-
-.daaCard h2, .daaCard h3, .daaCard h4, .daaCard p {
-  margin-top: 0;
-}
-
-.daaCard h2 { margin: 7px 0 6px; font-size: 21px; }
-.daaCard h3 { margin: 4px 0 0; font-size: 15px; }
-.daaCard p { color: var(--daa-muted); font-size: 12px; line-height: 1.45; margin-bottom: 0; }
-
-.daaBigNumber {
-  color: var(--daa-green);
-  font-size: 31px;
-  font-weight: 900;
-  margin: 7px 0 4px;
-}
-
-.daaEntry {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas:
-    "kicker orb"
-    "title orb"
-    "copy copy";
-  column-gap: 12px;
-}
-
-.daaEntry > .daaKicker { grid-area: kicker; }
-.daaEntry > h2 { grid-area: title; }
-.daaEntry > .daaOrb { grid-area: orb; }
-.daaEntry > p { grid-area: copy; }
-
-.daaEntry.valid {
-  border-color: rgba(30, 231, 131, .55);
-  box-shadow: 0 0 28px rgba(30, 231, 131, .08), inset 0 1px 0 rgba(255,255,255,.02);
-}
-
-.daaOrb {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 27px;
-  font-weight: 900;
-  color: #d8e2f0;
-  border: 2px solid #334155;
-  background: #0a1020;
-}
-
-.daaOrb.blink {
-  color: #06130d;
-  background: var(--daa-green);
-  border-color: #7affb8;
-  box-shadow: 0 0 0 8px rgba(30, 231, 131, .10), 0 0 34px rgba(30, 231, 131, .48);
-  animation: daaPulse .72s ease-in-out infinite alternate;
-}
-
-@keyframes daaPulse {
-  from { transform: scale(.96); opacity: .78; }
-  to { transform: scale(1.05); opacity: 1; }
-}
-
-.daaCurrentDigit {
-  color: var(--daa-green);
-  font-size: 42px;
-  line-height: 1;
-  font-weight: 900;
-  margin: 8px 0 9px;
-}
-
-.daaMiniRows {
-  display: grid;
-  gap: 5px;
-}
-
-.daaMiniRows span {
-  display: flex;
-  justify-content: space-between;
-  color: var(--daa-muted);
-  font-size: 11px;
-}
-
-.daaMiniRows b { color: var(--daa-text); }
-
-.daaWorkspace {
-  display: grid;
-  grid-template-columns: 1.55fr 1fr 1fr;
-  gap: 12px;
-}
-
-.daaStreamCard {
-  grid-column: span 2;
-}
-
-.daaCardHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.daaCardHead > strong {
-  color: var(--daa-green);
-  font-size: 12px;
-}
-
-.daaDigitStream {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  min-height: 42px;
-  align-items: center;
-}
-
-.daaDigitStream span {
-  width: 31px;
-  height: 31px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--daa-line);
-  border-radius: 8px;
-  background: #080f1d;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.daaDigitStream span.active {
-  color: #07130d;
-  background: var(--daa-green);
-  border-color: var(--daa-green);
-  box-shadow: 0 0 20px rgba(30, 231, 131, .30);
-}
-
-.daaDigitStream em {
-  color: var(--daa-muted);
-  font-size: 12px;
-}
-
-.daaDistribution {
-  display: grid;
-  grid-template-columns: repeat(10, 1fr);
-  align-items: end;
-  gap: 7px;
-  margin-top: 18px;
-  min-height: 145px;
-}
-
-.daaDistribution > div {
-  min-width: 0;
-  display: grid;
-  justify-items: center;
-  align-items: end;
-  gap: 5px;
-  height: 135px;
-  color: var(--daa-muted);
-}
-
-.daaDistribution span { font-size: 9px; }
-.daaDistribution b { font-size: 11px; color: var(--daa-text); }
-.daaDistribution i {
-  width: min(28px, 72%);
-  max-height: 90px;
-  min-height: 4px;
-  display: block;
-  border-radius: 5px 5px 2px 2px;
-  background: linear-gradient(180deg, #7c5cff, #3449bd);
-}
-.daaDistribution .hot i {
-  background: linear-gradient(180deg, #2cff9a, #0c8a54);
-}
-
-.daaContractColumns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.daaContractColumns h4 {
-  color: var(--daa-green);
-  font-size: 10px;
-  letter-spacing: .12em;
-  margin-bottom: 7px;
-}
-
-.daaContractRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 8px;
-  margin: 3px 0;
-  border-radius: 8px;
-  color: var(--daa-muted);
-  font-size: 11px;
-  border: 1px solid transparent;
-}
-
-.daaContractRow b { color: #cad5e4; }
-.daaContractRow.active {
-  color: white;
-  background: rgba(30, 231, 131, .10);
-  border-color: rgba(30, 231, 131, .35);
-}
-.daaContractRow.active b { color: var(--daa-green); }
-
-.daaParity {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.daaParity > div {
-  display: flex;
-  justify-content: space-between;
-  padding: 9px;
-  border: 1px solid var(--daa-line);
-  border-radius: 9px;
-  font-size: 11px;
-  color: var(--daa-muted);
-}
-
-.daaParity > div.active {
-  border-color: rgba(30, 231, 131, .45);
-  background: rgba(30, 231, 131, .08);
-}
-
-.daaParity b { color: var(--daa-text); }
-
-.daaInsightList {
-  display: grid;
-  gap: 7px;
-}
-
-.daaInsightList > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 7px;
-  border-bottom: 1px solid var(--daa-line);
-  color: var(--daa-muted);
-  font-size: 11px;
-}
-
-.daaInsightList b { color: var(--daa-text); }
-
-.daaReasonBox {
-  margin-top: 12px;
-  padding: 11px;
+  padding: 9px 11px;
+  border: 1px solid #16445d;
   border-radius: 11px;
-  background: rgba(139, 92, 246, .08);
-  border: 1px solid rgba(139, 92, 246, .18);
+  background: #061a28;
 }
 
-.daaReset {
-  width: 100%;
-  margin-top: 10px;
-  border: 1px solid var(--daa-line);
-  border-radius: 9px;
-  padding: 9px 10px;
-  background: #0a1020;
-  color: #cbd5e1;
-  cursor: pointer;
+.rfTouchToolbar > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
-.daaMarketList {
+.rfTouchToolbar span,
+.rfTouchHero article > span,
+.rfTouchPanelHead span,
+.rfTouchReason > span,
+.rfTouchBottom span {
+  color: #22dda5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.rfTouchToolbar select,
+.rfTouchControls select {
+  border: 1px solid #24536c;
+  background: #071c29;
+  color: #eef9ff;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 9px;
+}
+
+.rfTouchLive {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #829eae;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.rfTouchLive i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #607687;
+}
+
+.rfTouchLive.on { color: #22dda5; }
+.rfTouchLive.on i {
+  background: #22dda5;
+  box-shadow: 0 0 12px rgba(34, 221, 165, .55);
+}
+
+.rfTouchHero {
   display: grid;
-  gap: 7px;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
-.daaMarketList button {
+.rfTouchHero article,
+.rfTouchPanel,
+.rfTouchBottom {
+  border: 1px solid rgba(46, 95, 119, .45);
+  border-radius: 11px;
+  background: linear-gradient(180deg, #071b2b, #061622);
+}
+
+.rfTouchHero article {
+  padding: 10px;
+}
+
+.rfTouchHero h2 {
+  margin: 4px 0 2px;
+  font-size: 18px;
+}
+
+.rfTouchHero strong {
+  display: block;
+  color: #22dda5;
+  font-size: 16px;
+}
+
+.rfTouchHero p {
+  margin: 3px 0 0;
+  color: #7996a8;
+  font-size: 8px;
+}
+
+.rfTouchBest.valid {
+  border-color: rgba(34, 221, 165, .55);
+  box-shadow: inset 3px 0 0 #22dda5;
+}
+
+.rfTouchGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.rfTouchPanel {
+  min-width: 0;
+  padding: 11px;
+}
+
+.rfTouchPanel.valid {
+  border-color: rgba(34, 221, 165, .55);
+  box-shadow: 0 0 24px rgba(34, 221, 165, .05);
+}
+
+.rfTouchPanelHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 10px;
-  border-radius: 9px;
-  border: 1px solid var(--daa-line);
-  background: #080f1d;
-  color: #cbd5e1;
-  cursor: pointer;
-  text-align: left;
+  gap: 10px;
 }
 
-.daaMarketList button.active {
-  border-color: rgba(30, 231, 131, .40);
-  background: rgba(30, 231, 131, .07);
+.rfTouchPanelHead h3 {
+  margin: 2px 0 0;
+  font-size: 13px;
 }
 
-.daaMarketList button b {
-  color: var(--daa-green);
+.rfTouchPanelHead > b {
+  color: #8ca5b4;
+  font-size: 8px;
+}
+
+.rfTouchPanel.valid .rfTouchPanelHead > b {
+  color: #22dda5;
+}
+
+.rfTouchSignalOrb {
+  width: 150px;
+  height: 82px;
+  margin: 16px auto;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border: 1px solid #2b5d76;
+  background: #071f2e;
+}
+
+.rfTouchSignalOrb strong {
+  font-size: 22px;
+}
+
+.rfTouchSignalOrb span {
+  margin-top: 4px;
+  color: #22dda5;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.rfTouchSignalOrb.blink {
+  border-color: #22dda5;
+  box-shadow: 0 0 0 7px rgba(34, 221, 165, .06), 0 0 28px rgba(34, 221, 165, .22);
+  animation: rfTouchPulse .68s ease-in-out infinite alternate;
+}
+
+@keyframes rfTouchPulse {
+  from { transform: scale(.97); opacity: .82; }
+  to { transform: scale(1.03); opacity: 1; }
+}
+
+.rfTouchStats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.rfTouchStats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(46, 95, 119, .27);
+  border-radius: 7px;
+  background: rgba(2, 15, 24, .45);
+  color: #7d99aa;
+  font-size: 8px;
+}
+
+.rfTouchStats b {
+  color: #eef8ff;
+}
+
+.rfTouchReason {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(34, 221, 165, .15);
+  border-radius: 8px;
+  background: rgba(34, 221, 165, .035);
+}
+
+.rfTouchReason p {
+  margin: 3px 0 0;
+  color: #9cb1bd;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.rfTouchControls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.rfTouchControls label span {
+  display: block;
+  margin-bottom: 3px;
+  color: #7895a7;
+  font-size: 7px;
+}
+
+.rfTouchControls select {
+  width: 100%;
+}
+
+.touchScores {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0;
+}
+
+.touchScores > div {
+  display: grid;
+  grid-template-columns: 68px 1fr 44px;
+  align-items: center;
+  gap: 7px;
+  font-size: 8px;
+}
+
+.touchScores > div > span {
+  color: #8aa2b1;
+}
+
+.touchScores i {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #0b2b3c;
+}
+
+.touchScores i b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #22dda5;
+}
+
+.touchScores strong {
+  text-align: right;
+}
+
+.rfTouchBottom {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.rfTouchBottom > div {
+  padding: 7px;
+  border: 1px solid rgba(46, 95, 119, .25);
+  border-radius: 7px;
+}
+
+.rfTouchBottom strong {
+  display: block;
+  margin-top: 3px;
   font-size: 10px;
 }
 
-.daaFootnote {
-  margin-top: 10px !important;
-  font-size: 10px !important;
-}
-
-.daaFooter {
-  margin-top: 12px;
-  border: 1px solid rgba(246, 196, 83, .18);
-  background: rgba(246, 196, 83, .05);
-  color: #e7c96d;
-  border-radius: 12px;
-  padding: 9px 12px;
-  font-size: 11px;
+.rfTouchDisclaimer {
+  margin: 7px 0 0;
   text-align: center;
+  color: #637f91;
+  font-size: 7px;
 }
 
-@media (max-width: 1180px) {
-  .daaHeroGrid { grid-template-columns: repeat(2, 1fr); }
-  .daaWorkspace { grid-template-columns: 1fr 1fr; }
-  .daaStreamCard { grid-column: span 2; }
+@media (max-width: 900px) {
+  .rfTouchHero {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .rfTouchGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
-@media (max-width: 760px) {
-  .daaMain { padding: 0 10px 14px; }
-  .daaToolbar { align-items: stretch; flex-direction: column; }
-  .daaToolbar > div:first-child { justify-content: space-between; }
-  .daaToolbar select { min-width: 0; width: 100%; }
-  .daaLive { margin-left: 0; }
-  .daaHeroGrid,
-  .daaWorkspace { grid-template-columns: 1fr; }
-  .daaStreamCard { grid-column: auto; }
-  .daaContractColumns { gap: 5px; }
-  .daaDistribution { gap: 3px; }
-  .daaDigitStream span { width: 28px; height: 28px; }
+@media (max-width: 600px) {
+  .rfTouchMain {
+    padding: 0 9px 12px;
+  }
+
+  .rfTouchHero,
+  .rfTouchBottom {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .rfTouchControls,
+  .rfTouchStats {
+    grid-template-columns: 1fr;
+  }
 }
