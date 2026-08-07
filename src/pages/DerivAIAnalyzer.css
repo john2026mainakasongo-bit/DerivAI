@@ -1,18 +1,18 @@
-.tvShell {
+.terminalShell {
   min-height: 100vh;
   display: flex;
-  background: #030d17;
-  color: #edf8ff;
+  background: #020b13;
+  color: #eef8ff;
 }
 
-.tvMain {
+.terminalMain {
   flex: 1;
   min-width: 0;
-  padding: 0 14px 16px;
+  padding: 0 12px 14px;
 }
 
-.tvError {
-  margin: 9px 0;
+.terminalError {
+  margin: 8px 0;
   padding: 8px 10px;
   border: 1px solid rgba(255, 91, 110, .35);
   border-radius: 8px;
@@ -21,424 +21,421 @@
   font-size: 9px;
 }
 
-.tvToolbar {
+.terminalControls {
   display: flex;
   align-items: end;
-  gap: 8px;
-  margin: 10px 0;
-  padding: 9px 10px;
-  border: 1px solid rgba(40, 96, 120, .5);
-  border-radius: 10px;
-  background: #061a27;
+  gap: 7px;
+  margin: 9px 0;
+  padding: 8px 9px;
+  border: 1px solid rgba(43, 93, 117, .5);
+  border-radius: 9px;
+  background: #061823;
 }
 
-.tvToolbar label {
+.terminalControls label {
   display: grid;
   gap: 3px;
 }
 
-.tvToolbar label > span,
-.tvSignalStrip span,
-.tvChartHead span,
-.tvPanelHead span {
+.terminalControls label > span,
+.terminalChartHeader span,
+.terminalSignalCard > span,
+.terminalMiniCard > span,
+.terminalTouchHead > span {
   color: #22dda5;
   font-size: 7px;
   font-weight: 900;
   letter-spacing: .08em;
 }
 
-.tvToolbar select,
-.tvBarrier {
-  padding: 7px 8px;
+.terminalControls select,
+.terminalControls button,
+.terminalTouchHead select {
+  padding: 6px 8px;
   border: 1px solid #24536c;
-  border-radius: 7px;
-  background: #071d2a;
+  border-radius: 6px;
+  background: #071c29;
   color: #edf8ff;
   font-size: 8px;
 }
 
-.tvToolbar label:first-child select {
+.terminalControls label:first-child select {
   min-width: 205px;
 }
 
-.tvChartButtons {
-  display: flex;
-  gap: 4px;
-  margin-left: 4px;
-}
-
-.tvChartButtons button {
-  border: 1px solid #24536c;
-  border-radius: 6px;
-  background: #071d2a;
-  color: #91a8b5;
-  padding: 7px 9px;
-  font-size: 8px;
+.terminalControls button {
   cursor: pointer;
 }
 
-.tvChartButtons button.active {
-  color: white;
-  border-color: #2c9cff;
-  background: rgba(44, 156, 255, .12);
-}
-
-.tvLive {
+.terminalLive {
   margin-left: auto;
   align-self: center;
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #7f9aa9;
+  color: #7f99a8;
   font-size: 8px;
   font-weight: 900;
 }
 
-.tvLive i {
+.terminalLive i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #607887;
+  background: #617987;
 }
 
-.tvLive.on {
+.terminalLive.on {
   color: #22dda5;
 }
 
-.tvLive.on i {
+.terminalLive.on i {
   background: #22dda5;
-  box-shadow: 0 0 11px rgba(34, 221, 165, .55);
+  box-shadow: 0 0 10px rgba(34, 221, 165, .55);
 }
 
-.tvSignalStrip {
+.terminalWorkspace {
   display: grid;
-  grid-template-columns: 1fr 1fr .8fr .8fr;
+  grid-template-columns: minmax(0, 1fr) 225px;
   gap: 7px;
-  margin-bottom: 7px;
 }
 
-.tvSignalStrip > div,
-.tvChartPanel,
-.tvPanel {
+.terminalChartCard,
+.terminalSignalCard,
+.terminalMiniCard {
   border: 1px solid rgba(43, 93, 117, .45);
-  border-radius: 10px;
-  background: linear-gradient(180deg, #071b29, #051520);
+  border-radius: 9px;
+  background: linear-gradient(180deg, #071a27, #05141f);
 }
 
-.tvSignalStrip > div {
-  padding: 8px 9px;
+.terminalChartCard {
+  padding: 8px;
 }
 
-.tvSignalStrip > div.valid {
-  border-color: rgba(34, 221, 165, .55);
-  box-shadow: inset 3px 0 0 #22dda5;
-}
-
-.tvSignalStrip strong {
-  display: block;
-  margin-top: 3px;
-  font-size: 14px;
-}
-
-.tvSignalStrip b {
-  display: block;
-  margin-top: 2px;
-  color: #22dda5;
-  font-size: 12px;
-}
-
-.tvSignalStrip small {
-  display: block;
-  margin-top: 2px;
-  color: #7895a6;
-  font-size: 7px;
-}
-
-.tvChartPanel {
-  padding: 9px;
-  margin-bottom: 7px;
-}
-
-.tvChartHead,
-.tvPanelHead {
+.terminalChartHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 7px;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 
-.tvChartHead h3 {
+.terminalChartHeader h2 {
   margin: 2px 0 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 
-.tvLegend {
-  display: flex;
-  gap: 6px;
+.terminalPrice {
+  text-align: right;
 }
 
-.tvLegend span {
-  padding: 3px 6px;
-  border: 1px solid rgba(59, 104, 125, .3);
-  border-radius: 999px;
+.terminalPrice strong {
+  display: block;
+  color: #22dda5;
+  font-size: 16px;
+}
+
+.terminalPrice small {
+  color: #7895a5;
   font-size: 7px;
 }
 
-.rise { color: #22dda5 !important; }
-.fall { color: #ff7181 !important; }
-.touch { color: #5aa9ff !important; }
-.no-touch { color: #ffd45d !important; }
-
-.tvChart {
-  height: 440px;
+.terminalChart {
+  height: 575px;
   overflow: hidden;
+  user-select: none;
   border: 1px solid rgba(43, 90, 112, .35);
-  border-radius: 8px;
+  border-radius: 7px;
   background:
-    linear-gradient(rgba(65, 105, 126, .075) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(65, 105, 126, .075) 1px, transparent 1px),
-    #04131d;
-  background-size: 52px 52px;
+    linear-gradient(rgba(65, 105, 126, .07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(65, 105, 126, .07) 1px, transparent 1px),
+    #04121c;
+  background-size: 56px 56px;
   cursor: crosshair;
 }
 
-.tvChart svg {
+.terminalChart svg {
   width: 100%;
   height: 100%;
 }
 
-.candleUp .wick {
+.terminalCandleUp .wick {
   stroke: #22dda5;
-  stroke-width: 1.4;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
 }
 
-.candleUp .body {
+.terminalCandleUp .body {
   fill: #22dda5;
 }
 
-.candleDown .wick {
+.terminalCandleDown .wick {
   stroke: #ff7181;
-  stroke-width: 1.4;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
 }
 
-.candleDown .body {
+.terminalCandleDown .body {
   fill: #ff7181;
 }
 
-.tvMarker .entryLine {
+.currentPriceLine line {
+  stroke: #2c9cff;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: .72;
+  vector-effect: non-scaling-stroke;
+}
+
+.currentPriceLine rect {
+  fill: #2c9cff;
+}
+
+.currentPriceLine text {
+  fill: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.terminalMarker {
+  color: #22dda5;
+}
+
+.terminalMarker .entryLine {
   stroke: currentColor;
   stroke-width: 1;
-  stroke-dasharray: 5 7;
-  opacity: .28;
+  stroke-dasharray: 4 6;
+  opacity: .35;
   vector-effect: non-scaling-stroke;
 }
 
-.tvMarker circle {
-  fill: rgba(34, 221, 165, .12);
-  stroke: #22dda5;
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
+.signalArrow,
+.touchDot {
+  fill: currentColor;
+  stroke: currentColor;
 }
 
-.tvMarker .inner {
-  fill: #22dda5;
+.signalLabel {
+  fill: currentColor;
+  font-size: 10px;
+  font-weight: 900;
 }
 
-.tvMarker.fall {
-  color: #ff7181;
-}
-.tvMarker.fall circle {
-  stroke: #ff7181;
-  fill: rgba(255, 113, 129, .12);
-}
-.tvMarker.fall .inner { fill: #ff7181; }
-
-.tvMarker.touch {
-  color: #5aa9ff;
-}
-.tvMarker.touch circle {
-  stroke: #5aa9ff;
-  fill: rgba(90, 169, 255, .12);
-}
-.tvMarker.touch .inner { fill: #5aa9ff; }
-
-.tvMarker.no-touch {
-  color: #ffd45d;
-}
-.tvMarker.no-touch circle {
-  stroke: #ffd45d;
-  fill: rgba(255, 212, 93, .12);
-}
-.tvMarker.no-touch .inner { fill: #ffd45d; }
-
-.priceScale line {
-  stroke: rgba(145, 168, 181, .35);
+.terminalPriceScale line,
+.terminalTimeScale line {
+  stroke: rgba(154, 177, 189, .35);
   stroke-width: 1;
 }
 
-.priceScale text,
-.crosshair text {
-  fill: #9eb2bd;
-  font-size: 12px;
+.terminalPriceScale text,
+.terminalTimeScale text {
+  fill: #8fa6b5;
+  font-size: 10px;
 }
 
-.crosshair line {
-  stroke: rgba(200, 220, 230, .32);
+.terminalCrosshair line {
+  stroke: rgba(210, 227, 236, .34);
   stroke-width: 1;
   stroke-dasharray: 4 4;
 }
 
-.tvEmpty {
+.terminalCrosshair rect {
+  fill: #253746;
+}
+
+.terminalCrosshair text {
+  fill: #eef8ff;
+  font-size: 10px;
+}
+
+.terminalEmpty {
   height: 100%;
   display: grid;
   place-items: center;
-  color: #708c9b;
+  color: #708b9b;
   font-size: 8px;
 }
 
-.tvBottomGrid {
+.terminalChartFooter {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.terminalChartFooter span {
+  padding: 5px 6px;
+  border: 1px solid rgba(48, 91, 111, .22);
+  border-radius: 5px;
+  color: #758f9f;
+  font-size: 7px;
+}
+
+.terminalChartFooter b {
+  color: #eaf5fb;
+}
+
+.terminalSide {
+  display: grid;
+  align-content: start;
   gap: 7px;
 }
 
-.tvPanel {
+.terminalSignalCard,
+.terminalMiniCard {
   padding: 9px;
 }
 
-.tvPanel.valid {
-  border-color: rgba(34, 221, 165, .5);
+.terminalSignalCard.valid {
+  border-color: rgba(34, 221, 165, .55);
+  box-shadow: inset 3px 0 0 #22dda5;
 }
 
-.tvPanelHead > b {
-  color: #22dda5;
-  font-size: 8px;
-}
-
-.tvSignalBox {
-  width: 140px;
-  margin: 10px auto;
-  padding: 10px;
-  text-align: center;
-  border: 1px solid rgba(48, 91, 111, .3);
-  border-radius: 14px;
-  background: #071f2e;
-}
-
-.tvSignalBox strong {
+.terminalSignalCard > strong {
   display: block;
-  font-size: 18px;
+  margin-top: 5px;
+  font-size: 22px;
 }
 
-.tvSignalBox span {
+.terminalSignalCard > b {
   display: block;
-  margin-top: 3px;
   color: #22dda5;
-  font-size: 11px;
-  font-weight: 900;
+  font-size: 16px;
 }
 
-.tvStats {
+.signalRows,
+.miniRows {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 5px;
+  margin-top: 8px;
 }
 
-.tvStats > div {
+.signalRows p,
+.miniRows p {
+  margin: 0;
   display: flex;
   justify-content: space-between;
   gap: 7px;
-  padding: 6px 7px;
-  border: 1px solid rgba(47, 91, 112, .25);
+  padding: 6px;
+  border: 1px solid rgba(48, 91, 111, .24);
   border-radius: 6px;
   color: #7895a6;
   font-size: 7px;
 }
 
-.tvStats b {
+.signalRows b,
+.miniRows b {
   color: #edf8ff;
 }
 
-.tvBarrier {
-  float: right;
-  margin-bottom: 8px;
+.terminalDecision {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
 }
 
-.tvTouchBars {
-  clear: both;
-  display: grid;
-  gap: 7px;
-  margin: 8px 0;
+.terminalDecision strong {
+  font-size: 17px;
 }
 
-.tvTouchBars > div {
-  display: grid;
-  grid-template-columns: 64px 1fr 34px;
+.terminalDecision b {
+  color: #22dda5;
+  font-size: 13px;
+}
+
+.terminalTouchHead {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
+}
+
+.terminalTouchHead select {
+  width: 62px;
+}
+
+.touchBars {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.touchBars > div {
+  display: grid;
+  grid-template-columns: 54px 1fr 30px;
+  align-items: center;
+  gap: 5px;
   font-size: 7px;
 }
 
-.tvTouchBars span {
+.touchBars span {
   color: #7895a6;
 }
 
-.tvTouchBars i {
-  height: 7px;
+.touchBars i {
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
-  background: #0a2a3a;
+  background: #0a2938;
 }
 
-.tvTouchBars i b {
+.touchBars i b {
   display: block;
   height: 100%;
-  border-radius: inherit;
   background: #22dda5;
+  border-radius: inherit;
 }
 
-.tvTouchBars strong {
+.touchBars strong {
   text-align: right;
 }
 
-.tvDisclaimer {
-  margin: 6px 0 0;
-  color: #5e7a8a;
-  font-size: 7px;
+.terminalDisclaimer {
+  margin: 5px 0 0;
   text-align: center;
+  color: #5f7989;
+  font-size: 7px;
 }
 
-@media (max-width: 850px) {
-  .tvToolbar {
+@media (max-width: 1050px) {
+  .terminalWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .terminalSide {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .terminalChart {
+    height: 480px;
+  }
+}
+
+@media (max-width: 700px) {
+  .terminalMain {
+    padding: 0 8px 10px;
+  }
+
+  .terminalControls {
     flex-wrap: wrap;
     align-items: stretch;
   }
 
-  .tvLive {
+  .terminalLive {
     margin-left: 0;
   }
 
-  .tvSignalStrip {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .tvChart {
-    height: 320px;
-  }
-}
-
-@media (max-width: 650px) {
-  .tvMain {
-    padding: 0 8px 12px;
-  }
-
-  .tvSignalStrip,
-  .tvBottomGrid {
+  .terminalSide {
     grid-template-columns: 1fr;
   }
 
-  .tvChart {
-    height: 250px;
+  .terminalChart {
+    height: 340px;
+  }
+
+  .terminalChartFooter {
+    grid-template-columns: 1fr 1fr;
   }
 }

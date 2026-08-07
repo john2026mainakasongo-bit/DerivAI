@@ -60,8 +60,8 @@ function analyzeRiseFall(prices = []) {
     };
   }
 
-  const short = p.slice(-Math.min(10, p.length));
-  const medium = p.slice(-Math.min(30, p.length));
+  const short = p.slice(-Math.min(12, p.length));
+  const medium = p.slice(-Math.min(36, p.length));
 
   const shortMove = short.at(-1) - short[0];
   const mediumMove = medium.at(-1) - medium[0];
@@ -80,18 +80,19 @@ function analyzeRiseFall(prices = []) {
     Math.sign(shortMove) !== 0 &&
     Math.sign(shortMove) === Math.sign(mediumMove);
 
-  const dir = !aligned
-    ? "WAIT"
-    : shortMove > 0
-      ? "RISE"
-      : "FALL";
+  const direction =
+    !aligned
+      ? "WAIT"
+      : shortMove > 0
+        ? "RISE"
+        : "FALL";
 
   const confidence = clamp(
-    (aligned ? 46 : 18) + consistency * 0.42
+    (aligned ? 47 : 18) + consistency * 0.41
   );
 
   return {
-    signal: confidence >= 68 ? dir : "WAIT",
+    signal: confidence >= 68 ? direction : "WAIT",
     confidence,
     trend:
       mediumMove > 0
@@ -125,7 +126,7 @@ function analyzeTouch(prices = [], barrierDistance = 1.5) {
   }
 
   const current = p.at(-1);
-  const recent = p.slice(-Math.min(40, p.length));
+  const recent = p.slice(-Math.min(50, p.length));
   const diffs = recent.slice(1).map((x, i) => x - recent[i]);
 
   const sigma = std(diffs);
@@ -139,7 +140,7 @@ function analyzeTouch(prices = [], barrierDistance = 1.5) {
   const range = Math.max(...recent) - Math.min(...recent);
   const ratio = distance > 0 ? range / distance : 0;
 
-  const touchScore = clamp(ratio * 45);
+  const touchScore = clamp(ratio * 43);
   const noTouchScore = clamp(100 - touchScore);
   const confidence = Math.max(touchScore, noTouchScore);
 
@@ -160,46 +161,50 @@ function analyzeTouch(prices = [], barrierDistance = 1.5) {
   };
 }
 
-function buildCandles(records = [], size = 5) {
+function buildCandles(records = [], size = 2) {
   const candles = [];
+
   for (let i = 0; i < records.length; i += size) {
     const chunk = records.slice(i, i + size);
     if (!chunk.length) continue;
 
     const prices = chunk.map((r) => r.price);
+
     candles.push({
       ts: chunk[0].ts,
+      endTs: chunk.at(-1).ts,
       open: prices[0],
       high: Math.max(...prices),
       low: Math.min(...prices),
       close: prices.at(-1),
     });
   }
+
   return candles;
 }
 
-function makeScale(values, height, pad = 20) {
+function makeScale(values, height, top = 16, bottom = 24) {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
 
-  const y = (value) =>
-    height - ((value - min) / range) * (height - pad * 2) - pad;
+  const pad = range * 0.08 || 1;
+  const lo = min - pad;
+  const hi = max + pad;
+  const span = hi - lo || 1;
 
-  return { min, max, range, y };
+  const y = (value) =>
+    top + ((hi - value) / span) * (height - top - bottom);
+
+  return { min: lo, max: hi, span, y };
 }
 
-function linePath(records, width, height) {
-  if (records.length < 2) return "";
-  const values = records.map((r) => r.price);
-  const { y } = makeScale(values, height);
-
-  return records
-    .map((r, i) => {
-      const x = (i / Math.max(1, records.length - 1)) * width;
-      return `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y(r.price).toFixed(2)}`;
-    })
-    .join(" ");
+function signalColor(signal) {
+  if (signal === "RISE") return "#22dda5";
+  if (signal === "FALL") return "#ff7181";
+  if (signal === "TOUCH") return "#5aa9ff";
+  if (signal === "NO TOUCH") return "#ffd45d";
+  return "#8fa6b5";
 }
 
 export default function DerivAIAnalyzer() {
@@ -222,12 +227,15 @@ export default function DerivAIAnalyzer() {
   const [unit, setUnit] = useState("ticks");
   const [duration, setDuration] = useState(10);
   const [barrierDistance, setBarrierDistance] = useState(1.5);
-  const [chartType, setChartType] = useState("candles");
-  const [zoom, setZoom] = useState(1);
+
   const [records, setRecords] = useState([]);
   const [markers, setMarkers] = useState([]);
+
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState(0);
   const [crosshair, setCrosshair] = useState(null);
 
+  const dragRef = useRef(null);
   const lastQuote = useRef(null);
   const lastSignal = useRef(null);
 
@@ -240,7 +248,7 @@ export default function DerivAIAnalyzer() {
     if (
       lastQuote.current &&
       lastQuote.current.price === price &&
-      now - lastQuote.current.ts < 100
+      now - lastQuote.current.ts < 80
     ) {
       return;
     }
@@ -248,7 +256,7 @@ export default function DerivAIAnalyzer() {
     lastQuote.current = { price, ts: now };
 
     setRecords((old) => [
-      ...old.slice(-299),
+      ...old.slice(-499),
       { price, ts: now },
     ]);
   }, [currentPrice, connected]);
@@ -256,6 +264,8 @@ export default function DerivAIAnalyzer() {
   useEffect(() => {
     setRecords([]);
     setMarkers([]);
+    setPan(0);
+    setZoom(1);
     setCrosshair(null);
     lastQuote.current = null;
     lastSignal.current = null;
@@ -332,15 +342,40 @@ export default function DerivAIAnalyzer() {
     };
 
     lastSignal.current = marker;
-    setMarkers((old) => [...old.slice(-7), marker]);
+    setMarkers((old) => [...old.slice(-11), marker]);
   }, [best.valid, best.signal, best.confidence, records]);
 
-  const visibleCount = Math.max(30, Math.round(120 / zoom));
-  const chartRecords = records.slice(-visibleCount);
-  const candles = useMemo(
-    () => buildCandles(chartRecords, Math.max(2, Math.round(5 / zoom))),
-    [chartRecords, zoom]
+  const visibleCount = Math.round(clamp(160 / zoom, 45, 220));
+  const safePan = Math.max(
+    0,
+    Math.min(
+      pan,
+      Math.max(0, records.length - visibleCount)
+    )
   );
+
+  const visibleEnd = records.length - safePan;
+  const visibleStart = Math.max(0, visibleEnd - visibleCount);
+  const chartRecords = records.slice(visibleStart, visibleEnd);
+
+  const candleSize = Math.max(
+    1,
+    Math.round(3 / zoom)
+  );
+
+  const candles = useMemo(
+    () => buildCandles(chartRecords, candleSize),
+    [chartRecords, candleSize]
+  );
+
+  const chartValues = candles.flatMap((c) => [
+    c.high,
+    c.low,
+  ]);
+
+  const scale = chartValues.length
+    ? makeScale(chartValues, 420)
+    : null;
 
   const durationOptions =
     unit === "ticks"
@@ -362,74 +397,147 @@ export default function DerivAIAnalyzer() {
       ? Number(value).toFixed(market?.decimals ?? 2)
       : "—";
 
-  const chartValues =
-    chartType === "candles"
-      ? candles.flatMap((c) => [c.high, c.low])
-      : chartRecords.map((r) => r.price);
+  const entry = markers.at(-1) || null;
 
-  const scale = chartValues.length
-    ? makeScale(chartValues, 340)
-    : null;
+  const signalQuality =
+    best.confidence >= 86
+      ? "VERY STRONG"
+      : best.confidence >= 78
+        ? "STRONG"
+        : best.confidence >= 70
+          ? "GOOD"
+          : "WAIT";
 
-  const line = chartType === "line"
-    ? linePath(chartRecords, 1000, 340)
-    : "";
+  const handleWheel = (e) => {
+    e.preventDefault();
+
+    setZoom((old) =>
+      clamp(
+        old + (e.deltaY < 0 ? 0.12 : -0.12),
+        0.7,
+        3
+      )
+    );
+  };
+
+  const startDrag = (e) => {
+    dragRef.current = {
+      x: e.clientX,
+      pan,
+    };
+  };
+
+  const dragMove = (e) => {
+    if (!dragRef.current) return;
+
+    const dx = e.clientX - dragRef.current.x;
+    const ticksPerPixel = visibleCount / 900;
+
+    const nextPan = Math.round(
+      dragRef.current.pan - dx * ticksPerPixel
+    );
+
+    setPan(
+      Math.max(
+        0,
+        Math.min(
+          nextPan,
+          Math.max(0, records.length - visibleCount)
+        )
+      )
+    );
+  };
+
+  const endDrag = () => {
+    dragRef.current = null;
+  };
+
+  const handleCrosshair = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xPct = clamp(
+      (e.clientX - rect.left) / rect.width,
+      0,
+      1
+    );
+    const yPct = clamp(
+      (e.clientY - rect.top) / rect.height,
+      0,
+      1
+    );
+
+    const index = Math.round(
+      xPct * Math.max(0, chartRecords.length - 1)
+    );
+
+    const record = chartRecords[index];
+
+    setCrosshair({
+      x: xPct * 1000,
+      y: yPct * 420,
+      price:
+        scale
+          ? scale.max - yPct * scale.span
+          : null,
+      record,
+    });
+  };
 
   const markerData = markers
     .map((marker) => {
-      const idx = chartRecords.findIndex((r) => r.ts === marker.ts);
-      if (idx < 0 || !scale) return null;
+      if (!scale) return null;
+
+      const idx = chartRecords.findIndex(
+        (r) => r.ts === marker.ts
+      );
+
+      if (idx < 0) return null;
+
       return {
         ...marker,
-        x: (idx / Math.max(1, chartRecords.length - 1)) * 1000,
+        x:
+          (idx /
+            Math.max(1, chartRecords.length - 1)) *
+          1000,
         y: scale.y(marker.price),
       };
     })
     .filter(Boolean);
 
-  const handleMove = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const xPct = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-    const yPct = clamp((e.clientY - rect.top) / rect.height, 0, 1);
-
-    setCrosshair({
-      x: xPct * 1000,
-      y: yPct * 340,
-      price:
-        scale
-          ? scale.max - yPct * (scale.max - scale.min)
-          : null,
-    });
-  };
-
   return (
-    <div className="tvShell">
+    <div className="terminalShell">
       <Sidebar />
 
-      <main className="tvMain">
+      <main className="terminalMain">
         <Topbar
-          title="Rise/Fall + Touch Analyzer"
-          subtitle="Deriv live chart with TradingView-style controls"
+          title="Deriv AI Analyzer"
+          subtitle="Chart-first live analysis · manual execution only"
           connected={connected}
-          connecting={status === "CONNECTING" || loadingMarket}
+          connecting={
+            status === "CONNECTING" || loadingMarket
+          }
           onConnect={connect}
           onDisconnect={disconnect}
         />
 
         {statusDetail ? (
-          <div className="tvError">{statusDetail}</div>
+          <div className="terminalError">
+            {statusDetail}
+          </div>
         ) : null}
 
-        <section className="tvToolbar">
+        <section className="terminalControls">
           <label>
             <span>MARKET</span>
             <select
               value={symbol || ""}
               disabled={loadingMarket}
-              onChange={(e) => changeSymbol(e.target.value)}
+              onChange={(e) =>
+                changeSymbol(e.target.value)
+              }
             >
               {markets.map((m) => {
                 const id = m.symbol || m.id;
+
                 return (
                   <option key={id} value={id}>
                     {derivMarketName(id, m.label)}
@@ -457,128 +565,127 @@ export default function DerivAIAnalyzer() {
             <span>DURATION</span>
             <select
               value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
+              onChange={(e) =>
+                setDuration(Number(e.target.value))
+              }
             >
               {durationOptions.map((v) => (
                 <option key={v} value={v}>
-                  {unit === "ticks" ? `${v} ticks` : `${v} sec`}
+                  {unit === "ticks"
+                    ? `${v} ticks`
+                    : `${v} sec`}
                 </option>
               ))}
             </select>
           </label>
 
-          <div className="tvChartButtons">
-            <button
-              type="button"
-              className={chartType === "candles" ? "active" : ""}
-              onClick={() => setChartType("candles")}
-            >
-              Candles
-            </button>
-            <button
-              type="button"
-              className={chartType === "line" ? "active" : ""}
-              onClick={() => setChartType("line")}
-            >
-              Line
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => clamp(z + 0.25, 0.75, 2.5))}
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => clamp(z - 0.25, 0.75, 2.5))}
-            >
-              −
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setZoom(1);
+              setPan(0);
+            }}
+          >
+            Reset chart
+          </button>
 
-          <div className={`tvLive ${connected ? "on" : ""}`}>
+          <div
+            className={`terminalLive ${
+              connected ? "on" : ""
+            }`}
+          >
             <i />
             {connected ? "DERIV LIVE" : status}
           </div>
         </section>
 
-        <section className="tvSignalStrip">
-          <div className={best.valid ? "valid" : ""}>
-            <span>AI SIGNAL</span>
-            <strong>{best.valid ? best.signal : "WAIT"}</strong>
-            <b>{best.confidence.toFixed(1)}%</b>
-          </div>
+        <section className="terminalWorkspace">
+          <article className="terminalChartCard">
+            <div className="terminalChartHeader">
+              <div>
+                <span>LIVE MARKET</span>
+                <h2>
+                  {derivMarketName(
+                    symbol,
+                    market?.label
+                  )}
+                </h2>
+              </div>
 
-          <div>
-            <span>PRICE</span>
-            <strong>{displayPrice}</strong>
-            <small>{derivMarketName(symbol, market?.label)}</small>
-          </div>
-
-          <div>
-            <span>WINDOW</span>
-            <strong>{durationLabel}</strong>
-            <small>{windowRecords.length} samples</small>
-          </div>
-
-          <div>
-            <span>RISE/FALL</span>
-            <strong>{riseFall.signal}</strong>
-            <b>{riseFall.confidence.toFixed(1)}%</b>
-          </div>
-        </section>
-
-        <section className="tvChartPanel">
-          <div className="tvChartHead">
-            <div>
-              <span>DERIV LIVE CHART</span>
-              <h3>{derivMarketName(symbol, market?.label)}</h3>
+              <div className="terminalPrice">
+                <strong>{displayPrice}</strong>
+                <small>{durationLabel}</small>
+              </div>
             </div>
 
-            <div className="tvLegend">
-              <span className="rise">RISE</span>
-              <span className="fall">FALL</span>
-              <span className="touch">TOUCH</span>
-              <span className="no-touch">NO TOUCH</span>
-            </div>
-          </div>
+            <div
+              className="terminalChart"
+              onWheel={handleWheel}
+              onMouseDown={startDrag}
+              onMouseMove={(e) => {
+                dragMove(e);
+                handleCrosshair(e);
+              }}
+              onMouseUp={endDrag}
+              onMouseLeave={() => {
+                endDrag();
+                setCrosshair(null);
+              }}
+            >
+              {scale && candles.length ? (
+                <svg
+                  viewBox="0 0 1080 420"
+                  preserveAspectRatio="none"
+                >
+                  {candles.map((c, i) => {
+                    const count = Math.max(
+                      1,
+                      candles.length
+                    );
 
-          <div
-            className="tvChart"
-            onMouseMove={handleMove}
-            onMouseLeave={() => setCrosshair(null)}
-          >
-            {scale ? (
-              <svg viewBox="0 0 1060 340" preserveAspectRatio="none">
-                {chartType === "line" && (
-                  <path
-                    d={line}
-                    fill="none"
-                    stroke="#2c9cff"
-                    strokeWidth="3"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                )}
+                    const x =
+                      16 +
+                      (i /
+                        Math.max(1, count - 1)) *
+                        930;
 
-                {chartType === "candles" &&
-                  candles.map((c, i) => {
                     const candleW = Math.max(
                       4,
-                      (930 / Math.max(1, candles.length)) * 0.62
+                      Math.min(
+                        13,
+                        (900 / count) * 0.64
+                      )
                     );
-                    const x =
-                      20 +
-                      (i / Math.max(1, candles.length - 1)) * 930;
+
                     const openY = scale.y(c.open);
                     const closeY = scale.y(c.close);
                     const highY = scale.y(c.high);
                     const lowY = scale.y(c.low);
-                    const up = c.close >= c.open;
-                    const top = Math.min(openY, closeY);
-                    const bodyH = Math.max(2, Math.abs(closeY - openY));
+
+                    const bullish =
+                      c.close >= c.open;
+
+                    const top = Math.min(
+                      openY,
+                      closeY
+                    );
+
+                    const bodyH = Math.max(
+                      2,
+                      Math.abs(
+                        closeY - openY
+                      )
+                    );
 
                     return (
-                      <g key={`${c.ts}-${i}`} className={up ? "candleUp" : "candleDown"}>
+                      <g
+                        key={`${c.ts}-${i}`}
+                        className={
+                          bullish
+                            ? "terminalCandleUp"
+                            : "terminalCandleDown"
+                        }
+                      >
                         <line
                           x1={x}
                           x2={x}
@@ -598,117 +705,458 @@ export default function DerivAIAnalyzer() {
                     );
                   })}
 
-                {markerData.map((m, i) => (
-                  <g
-                    key={`${m.ts}-${i}`}
-                    className={`tvMarker ${String(m.signal).toLowerCase().replace(/\s+/g, "-")}`}
-                  >
-                    <line
-                      x1={m.x}
-                      x2={m.x}
-                      y1="0"
-                      y2="340"
-                      className="entryLine"
-                    />
-                    <circle cx={m.x} cy={m.y} r="8" />
-                    <circle cx={m.x} cy={m.y} r="2.6" className="inner" />
-                  </g>
-                ))}
-
-                {[0, 1, 2, 3, 4].map((i) => {
-                  const value =
-                    scale.max - (i / 4) * (scale.max - scale.min);
-                  const y = 20 + (i / 4) * 300;
-
-                  return (
-                    <g key={i} className="priceScale">
-                      <line x1="970" x2="1000" y1={y} y2={y} />
-                      <text x="1008" y={y + 4}>
-                        {fmt(value)}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {crosshair && (
-                  <g className="crosshair">
-                    <line x1={crosshair.x} x2={crosshair.x} y1="0" y2="340" />
-                    <line x1="0" x2="1000" y1={crosshair.y} y2={crosshair.y} />
-                    {crosshair.price != null && (
-                      <text x="1008" y={crosshair.y + 4}>
-                        {fmt(crosshair.price)}
-                      </text>
+                  {scale &&
+                    Number.isFinite(
+                      Number(currentPrice)
+                    ) && (
+                      <g className="currentPriceLine">
+                        <line
+                          x1="0"
+                          x2="950"
+                          y1={scale.y(
+                            Number(currentPrice)
+                          )}
+                          y2={scale.y(
+                            Number(currentPrice)
+                          )}
+                        />
+                        <rect
+                          x="957"
+                          y={
+                            scale.y(
+                              Number(
+                                currentPrice
+                              )
+                            ) - 10
+                          }
+                          width="74"
+                          height="20"
+                          rx="4"
+                        />
+                        <text
+                          x="965"
+                          y={
+                            scale.y(
+                              Number(
+                                currentPrice
+                              )
+                            ) + 4
+                          }
+                        >
+                          {displayPrice}
+                        </text>
+                      </g>
                     )}
-                  </g>
-                )}
-              </svg>
-            ) : (
-              <div className="tvEmpty">
-                Waiting for Deriv live ticks...
-              </div>
-            )}
-          </div>
-        </section>
 
-        <section className="tvBottomGrid">
-          <article className={riseValid ? "tvPanel valid" : "tvPanel"}>
-            <div className="tvPanelHead">
-              <span>RISE / FALL</span>
-              <b>{riseValid ? "ENTRY VALID" : "WAIT"}</b>
+                  {markerData.map((m, i) => {
+                    const color = signalColor(
+                      m.signal
+                    );
+
+                    const isRise =
+                      m.signal === "RISE";
+                    const isFall =
+                      m.signal === "FALL";
+                    const isTouch =
+                      m.signal === "TOUCH";
+                    const isNoTouch =
+                      m.signal === "NO TOUCH";
+
+                    return (
+                      <g
+                        key={`${m.ts}-${i}`}
+                        className="terminalMarker"
+                        style={{ color }}
+                      >
+                        <line
+                          x1={m.x}
+                          x2={m.x}
+                          y1="0"
+                          y2="420"
+                          className="entryLine"
+                        />
+
+                        {(isRise || isFall) && (
+                          <>
+                            <polygon
+                              points={
+                                isRise
+                                  ? `${m.x},${m.y - 22} ${m.x - 8},${m.y - 8} ${m.x + 8},${m.y - 8}`
+                                  : `${m.x},${m.y + 22} ${m.x - 8},${m.y + 8} ${m.x + 8},${m.y + 8}`
+                              }
+                              className="signalArrow"
+                            />
+                            <text
+                              x={Math.min(
+                                850,
+                                m.x + 10
+                              )}
+                              y={
+                                isRise
+                                  ? m.y - 18
+                                  : m.y + 30
+                              }
+                              className="signalLabel"
+                            >
+                              {isRise
+                                ? "BUY RISE"
+                                : "BUY FALL"}
+                            </text>
+                          </>
+                        )}
+
+                        {(isTouch ||
+                          isNoTouch) && (
+                          <>
+                            <circle
+                              cx={m.x}
+                              cy={m.y}
+                              r="7"
+                              className="touchDot"
+                            />
+                            <text
+                              x={Math.min(
+                                850,
+                                m.x + 10
+                              )}
+                              y={m.y - 10}
+                              className="signalLabel"
+                            >
+                              {m.signal}
+                            </text>
+                          </>
+                        )}
+                      </g>
+                    );
+                  })}
+
+                  {[0, 1, 2, 3, 4].map((i) => {
+                    const value =
+                      scale.max -
+                      (i / 4) * scale.span;
+
+                    const y =
+                      18 + (i / 4) * 370;
+
+                    return (
+                      <g
+                        key={`price-${i}`}
+                        className="terminalPriceScale"
+                      >
+                        <line
+                          x1="952"
+                          x2="968"
+                          y1={y}
+                          y2={y}
+                        />
+                        <text
+                          x="976"
+                          y={y + 4}
+                        >
+                          {fmt(value)}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {[0, 1, 2, 3, 4, 5].map(
+                    (i) => {
+                      const x =
+                        20 + (i / 5) * 900;
+
+                      const idx = Math.round(
+                        (i / 5) *
+                          Math.max(
+                            0,
+                            chartRecords.length -
+                              1
+                          )
+                      );
+
+                      const rec =
+                        chartRecords[idx];
+
+                      let label = "";
+
+                      if (rec) {
+                        label =
+                          unit === "ticks"
+                            ? `T${visibleStart + idx + 1}`
+                            : new Date(
+                                rec.ts
+                              ).toLocaleTimeString(
+                                [],
+                                {
+                                  minute:
+                                    "2-digit",
+                                  second:
+                                    "2-digit",
+                                }
+                              );
+                      }
+
+                      return (
+                        <g
+                          key={`time-${i}`}
+                          className="terminalTimeScale"
+                        >
+                          <line
+                            x1={x}
+                            x2={x}
+                            y1="392"
+                            y2="400"
+                          />
+                          <text
+                            x={x - 12}
+                            y="415"
+                          >
+                            {label}
+                          </text>
+                        </g>
+                      );
+                    }
+                  )}
+
+                  {crosshair && (
+                    <g className="terminalCrosshair">
+                      <line
+                        x1={crosshair.x}
+                        x2={crosshair.x}
+                        y1="0"
+                        y2="392"
+                      />
+                      <line
+                        x1="0"
+                        x2="950"
+                        y1={crosshair.y}
+                        y2={crosshair.y}
+                      />
+
+                      {crosshair.price !=
+                        null && (
+                        <>
+                          <rect
+                            x="957"
+                            y={
+                              crosshair.y -
+                              10
+                            }
+                            width="74"
+                            height="20"
+                            rx="4"
+                          />
+                          <text
+                            x="965"
+                            y={
+                              crosshair.y + 4
+                            }
+                          >
+                            {fmt(
+                              crosshair.price
+                            )}
+                          </text>
+                        </>
+                      )}
+                    </g>
+                  )}
+                </svg>
+              ) : (
+                <div className="terminalEmpty">
+                  Waiting for live Deriv
+                  ticks...
+                </div>
+              )}
             </div>
 
-            <div className="tvSignalBox">
-              <strong>{riseFall.signal}</strong>
-              <span>{riseFall.confidence.toFixed(1)}%</span>
-            </div>
-
-            <div className="tvStats">
-              <div><span>Trend</span><b>{riseFall.trend}</b></div>
-              <div><span>Momentum</span><b>{riseFall.momentum}</b></div>
-              <div><span>Consistency</span><b>{riseFall.consistency.toFixed(1)}%</b></div>
-              <div><span>Volatility</span><b>{riseFall.volatility.toFixed(5)}</b></div>
+            <div className="terminalChartFooter">
+              <span>
+                Mouse wheel: <b>Zoom</b>
+              </span>
+              <span>
+                Drag: <b>History</b>
+              </span>
+              <span>
+                Visible ticks:{" "}
+                <b>{chartRecords.length}</b>
+              </span>
+              <span>
+                Zoom: <b>{zoom.toFixed(2)}x</b>
+              </span>
             </div>
           </article>
 
-          <article className={touchValid ? "tvPanel valid" : "tvPanel"}>
-            <div className="tvPanelHead">
-              <span>TOUCH / NO TOUCH</span>
-              <b>{touchValid ? "ENTRY VALID" : "WAIT"}</b>
-            </div>
-
-            <select
-              className="tvBarrier"
-              value={barrierDistance}
-              onChange={(e) => setBarrierDistance(Number(e.target.value))}
+          <aside className="terminalSide">
+            <section
+              className={`terminalSignalCard ${
+                best.valid ? "valid" : ""
+              }`}
             >
-              <option value={1}>Near · 1.0σ</option>
-              <option value={1.5}>Normal · 1.5σ</option>
-              <option value={2}>Far · 2.0σ</option>
-              <option value={2.5}>Very far · 2.5σ</option>
-            </select>
+              <span>AI SIGNAL</span>
 
-            <div className="tvTouchBars">
-              <div>
-                <span>TOUCH</span>
-                <i><b style={{ width: `${touch.touchScore}%` }} /></i>
-                <strong>{touch.touchScore.toFixed(0)}%</strong>
-              </div>
-              <div>
-                <span>NO TOUCH</span>
-                <i><b style={{ width: `${touch.noTouchScore}%` }} /></i>
-                <strong>{touch.noTouchScore.toFixed(0)}%</strong>
-              </div>
-            </div>
+              <strong>
+                {best.valid
+                  ? best.signal
+                  : "WAIT"}
+              </strong>
 
-            <div className="tvStats">
-              <div><span>Upper</span><b>{fmt(touch.upperBarrier)}</b></div>
-              <div><span>Lower</span><b>{fmt(touch.lowerBarrier)}</b></div>
-            </div>
-          </article>
+              <b>
+                {best.confidence.toFixed(1)}%
+              </b>
+
+              <div className="signalRows">
+                <p>
+                  <span>Mode</span>
+                  <b>{best.mode}</b>
+                </p>
+
+                <p>
+                  <span>Quality</span>
+                  <b>{signalQuality}</b>
+                </p>
+
+                <p>
+                  <span>Duration</span>
+                  <b>{durationLabel}</b>
+                </p>
+
+                <p>
+                  <span>Entry</span>
+                  <b>
+                    {entry
+                      ? fmt(entry.price)
+                      : "—"}
+                  </b>
+                </p>
+              </div>
+            </section>
+
+            <section className="terminalMiniCard">
+              <span>RISE / FALL</span>
+
+              <div className="terminalDecision">
+                <strong>
+                  {riseFall.signal}
+                </strong>
+                <b>
+                  {riseFall.confidence.toFixed(
+                    1
+                  )}
+                  %
+                </b>
+              </div>
+
+              <div className="miniRows">
+                <p>
+                  <span>Trend</span>
+                  <b>{riseFall.trend}</b>
+                </p>
+                <p>
+                  <span>Momentum</span>
+                  <b>{riseFall.momentum}</b>
+                </p>
+                <p>
+                  <span>Consistency</span>
+                  <b>
+                    {riseFall.consistency.toFixed(
+                      0
+                    )}
+                    %
+                  </b>
+                </p>
+              </div>
+            </section>
+
+            <section className="terminalMiniCard">
+              <div className="terminalTouchHead">
+                <span>TOUCH / NO TOUCH</span>
+
+                <select
+                  value={barrierDistance}
+                  onChange={(e) =>
+                    setBarrierDistance(
+                      Number(e.target.value)
+                    )
+                  }
+                >
+                  <option value={1}>
+                    1.0σ
+                  </option>
+                  <option value={1.5}>
+                    1.5σ
+                  </option>
+                  <option value={2}>
+                    2.0σ
+                  </option>
+                  <option value={2.5}>
+                    2.5σ
+                  </option>
+                </select>
+              </div>
+
+              <div className="touchBars">
+                <div>
+                  <span>TOUCH</span>
+                  <i>
+                    <b
+                      style={{
+                        width: `${touch.touchScore}%`,
+                      }}
+                    />
+                  </i>
+                  <strong>
+                    {touch.touchScore.toFixed(
+                      0
+                    )}
+                    %
+                  </strong>
+                </div>
+
+                <div>
+                  <span>NO TOUCH</span>
+                  <i>
+                    <b
+                      style={{
+                        width: `${touch.noTouchScore}%`,
+                      }}
+                    />
+                  </i>
+                  <strong>
+                    {touch.noTouchScore.toFixed(
+                      0
+                    )}
+                    %
+                  </strong>
+                </div>
+              </div>
+
+              <div className="miniRows">
+                <p>
+                  <span>Upper</span>
+                  <b>
+                    {fmt(
+                      touch.upperBarrier
+                    )}
+                  </b>
+                </p>
+                <p>
+                  <span>Lower</span>
+                  <b>
+                    {fmt(
+                      touch.lowerBarrier
+                    )}
+                  </b>
+                </p>
+              </div>
+            </section>
+          </aside>
         </section>
 
-        <p className="tvDisclaimer">
-          Analysis only. The chart uses Deriv live data and is styled like TradingView; it is not TradingView market data.
+        <p className="terminalDisclaimer">
+          Analysis only. This is a
+          TradingView-style renderer using Deriv
+          live market data; it is not TradingView
+          market data and signals are not
+          guaranteed outcomes.
         </p>
       </main>
     </div>
