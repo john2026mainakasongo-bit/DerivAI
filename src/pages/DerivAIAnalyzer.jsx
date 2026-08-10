@@ -503,6 +503,23 @@ export default function DerivAIAnalyzer() {
     })
     .filter(Boolean);
 
+  const marketStatus = connected ? "OPEN" : "OFFLINE";
+  const volatilityLabel =
+    riseFall.volatility > 1 ? "HIGH" :
+    riseFall.volatility > 0.25 ? "NORMAL" : "LOW";
+  const tickSpeed = records.length > 1
+    ? Math.max(
+        0,
+        1000 /
+          Math.max(
+            1,
+            records.at(-1).ts - records.at(-2).ts
+          )
+      )
+    : 0;
+
+  const recentSignals = [...markers].reverse().slice(0, 6);
+
   return (
     <div className="terminalShell">
       <Sidebar />
@@ -510,7 +527,7 @@ export default function DerivAIAnalyzer() {
       <main className="terminalMain">
         <Topbar
           title="Deriv AI Analyzer"
-          subtitle="Chart-first live analysis · manual execution only"
+          subtitle="Real-time market analysis for clearer manual trading decisions"
           connected={connected}
           connecting={
             status === "CONNECTING" || loadingMarket
@@ -1151,12 +1168,56 @@ export default function DerivAIAnalyzer() {
           </aside>
         </section>
 
+        <section className="terminalMetrics">
+          <div><span>MARKET STATUS</span><strong>{marketStatus}</strong><small>{connected ? "Ticks streaming" : status}</small></div>
+          <div><span>VOLATILITY</span><strong>{volatilityLabel}</strong><small>Live movement estimate</small></div>
+          <div><span>TICK SPEED</span><strong>{tickSpeed ? `${tickSpeed.toFixed(1)} / sec` : "—"}</strong><small>Observed feed speed</small></div>
+          <div><span>AI CONFIDENCE</span><strong>{best.confidence.toFixed(1)}%</strong><small>{signalQuality}</small></div>
+          <div><span>DECISION</span><strong>{best.valid ? best.signal : "WAIT"}</strong><small>Threshold 72%</small></div>
+          <div><span>SIGNALS LOGGED</span><strong>{markers.length}</strong><small>Current market session</small></div>
+        </section>
+
+        <section className="terminalBottomGrid">
+          <article className="terminalLogCard">
+            <div className="terminalSectionHead">
+              <div><span>RECENT SIGNALS</span><h3>Signal history</h3></div>
+              <small>Current session</small>
+            </div>
+            <div className="terminalTableWrap">
+              <table className="terminalTable">
+                <thead><tr><th>TIME</th><th>MODE</th><th>SIGNAL</th><th>ENTRY</th><th>CONFIDENCE</th></tr></thead>
+                <tbody>
+                  {recentSignals.length ? recentSignals.map((item) => (
+                    <tr key={item.ts}>
+                      <td>{new Date(item.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</td>
+                      <td>{item.signal === "RISE" || item.signal === "FALL" ? "RISE/FALL" : "TOUCH"}</td>
+                      <td><b style={{color: signalColor(item.signal)}}>{item.signal}</b></td>
+                      <td>{fmt(item.price)}</td>
+                      <td>{Number(item.confidence).toFixed(1)}%</td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan="5" className="terminalNoRows">No qualified signals yet. Analyzer is watching the live market.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article className="terminalExplainCard">
+            <div className="terminalSectionHead">
+              <div><span>HOW TO READ THIS</span><h3>Decision guide</h3></div>
+            </div>
+            <div className="terminalGuide">
+              <p><i className="guideDot green" /><span><b>72%+ confidence</b>Qualified signal. Confirm direction and duration before manual execution.</span></p>
+              <p><i className="guideDot amber" /><span><b>Below 72%</b>WAIT means the current evidence is not strong enough.</span></p>
+              <p><i className="guideDot blue" /><span><b>Touch / No Touch</b>Barrier probabilities are shown separately from Rise / Fall.</span></p>
+              <p><i className="guideDot gray" /><span><b>Chart markers</b>Show where qualified signals were detected; they are not guaranteed outcomes.</span></p>
+            </div>
+          </article>
+        </section>
+
         <p className="terminalDisclaimer">
-          Analysis only. This is a
-          TradingView-style renderer using Deriv
-          live market data; it is not TradingView
-          market data and signals are not
-          guaranteed outcomes.
+          Analysis only · Deriv live market data · Manual execution · Signals are probabilistic and are not guaranteed outcomes.
         </p>
       </main>
     </div>

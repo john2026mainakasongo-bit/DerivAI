@@ -439,3 +439,22 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Analyzer clarity + final layout */
+.terminalMain{max-width:1600px;margin:0 auto;padding:0 14px 16px;background:radial-gradient(circle at 70% 0%,rgba(20,78,103,.12),transparent 30%)}
+.terminalControls{padding:10px 12px;border-radius:11px;background:linear-gradient(180deg,#071b27,#061722);box-shadow:0 8px 30px rgba(0,0,0,.12)}
+.terminalControls select{min-height:32px;font-size:9px}.terminalControls button{min-height:32px;padding-inline:13px}
+.terminalWorkspace{grid-template-columns:minmax(0,1fr) 250px;gap:10px}
+.terminalChartCard,.terminalSignalCard,.terminalMiniCard,.terminalMetrics,.terminalLogCard,.terminalExplainCard{border-color:rgba(52,107,132,.42);box-shadow:0 10px 28px rgba(0,0,0,.13)}
+.terminalChartCard{padding:10px}.terminalChartHeader{margin-bottom:8px}.terminalChartHeader h2{font-size:13px}.terminalChart{height:min(54vh,570px);min-height:410px;border-radius:9px}
+.terminalSide{gap:10px}.terminalSignalCard,.terminalMiniCard{padding:11px;border-radius:10px}.terminalSignalCard>strong{font-size:25px}.terminalSignalCard>b{font-size:17px}
+.signalRows p,.miniRows p{padding:7px 8px}.terminalDecision strong{font-size:18px}
+.terminalMetrics{display:grid;grid-template-columns:repeat(6,1fr);margin-top:10px;background:linear-gradient(180deg,#071a27,#05141f);border:1px solid rgba(43,93,117,.45);border-radius:10px;overflow:hidden}
+.terminalMetrics>div{min-width:0;padding:12px 14px;border-right:1px solid rgba(48,91,111,.28)}.terminalMetrics>div:last-child{border-right:0}.terminalMetrics span{display:block;color:#6e8a9a;font-size:7px;font-weight:900;letter-spacing:.08em}.terminalMetrics strong{display:block;margin-top:5px;color:#eff9ff;font-size:13px}.terminalMetrics>div:first-child strong,.terminalMetrics>div:nth-child(4) strong{color:#22dda5}.terminalMetrics small{display:block;margin-top:3px;color:#688493;font-size:7px}
+.terminalBottomGrid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:10px;margin-top:10px}.terminalLogCard,.terminalExplainCard{background:linear-gradient(180deg,#071a27,#05141f);border:1px solid rgba(43,93,117,.45);border-radius:10px;padding:12px}.terminalSectionHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}.terminalSectionHead span{color:#22dda5;font-size:7px;font-weight:900;letter-spacing:.08em}.terminalSectionHead h3{margin:3px 0 0;font-size:12px}.terminalSectionHead small{color:#718c9b;font-size:7px}
+.terminalTableWrap{overflow:auto;border:1px solid rgba(48,91,111,.25);border-radius:8px}.terminalTable{width:100%;border-collapse:collapse;font-size:8px}.terminalTable th{padding:8px;text-align:left;color:#718c9b;font-size:7px;letter-spacing:.05em;background:#061722}.terminalTable td{padding:8px;border-top:1px solid rgba(48,91,111,.2);color:#dceaf2}.terminalNoRows{text-align:center!important;color:#718c9b!important;padding:20px!important}
+.terminalGuide{display:grid;gap:7px}.terminalGuide p{display:grid;grid-template-columns:9px 1fr;gap:8px;align-items:start;margin:0;padding:8px;border:1px solid rgba(48,91,111,.22);border-radius:7px;color:#7895a6;font-size:8px;line-height:1.45}.terminalGuide b{display:block;color:#edf8ff;margin-bottom:1px}.guideDot{width:7px;height:7px;border-radius:50%;margin-top:3px}.guideDot.green{background:#22dda5}.guideDot.amber{background:#ffc44d}.guideDot.blue{background:#5aa9ff}.guideDot.gray{background:#7895a6}
+.terminalDisclaimer{padding:7px 0 0}
+@media(max-width:1200px){.terminalMetrics{grid-template-columns:repeat(3,1fr)}.terminalMetrics>div:nth-child(3){border-right:0}.terminalBottomGrid{grid-template-columns:1fr}.terminalChart{height:500px}}
+@media(max-width:1050px){.terminalWorkspace{grid-template-columns:1fr}.terminalSide{grid-template-columns:repeat(3,1fr)}.terminalChart{min-height:390px}}
+@media(max-width:700px){.terminalMetrics{grid-template-columns:repeat(2,1fr)}.terminalMetrics>div{border-bottom:1px solid rgba(48,91,111,.2)}.terminalSide{grid-template-columns:1fr}.terminalChart{height:360px;min-height:330px}.terminalBottomGrid{grid-template-columns:1fr}.terminalTable{min-width:560px}}
