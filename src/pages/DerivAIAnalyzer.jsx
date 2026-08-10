@@ -455,6 +455,20 @@ export default function DerivAIAnalyzer() {
     candidateConfirmation.current = { signal: "WAIT", count: 0, lastTs: 0 };
   }, [symbol]);
 
+  // Any contract/barrier change starts a brand-new analysis cycle.
+  // This prevents a qualified signal from a previous setup leaking into the
+  // current barrier, duration or contract configuration.
+  useEffect(() => {
+    setMarkers([]);
+    lastSignal.current = null;
+    signalCycle.current = { locked: false, waitTicks: 0 };
+    candidateConfirmation.current = {
+      signal: "WAIT",
+      count: 0,
+      lastTs: cleanPriceRecords(records).at(-1)?.ts || 0,
+    };
+  }, [unit, duration, barrierMode, barrierOffset, fixedBarrier]);
+
   // Analysis history must be independent from contract duration.
   // Previously a 10-tick contract only supplied 10 samples while the
   // analyzer required at least 18, so it could stay in COLLECTING forever.
@@ -688,18 +702,12 @@ export default function DerivAIAnalyzer() {
 
   const entry = markers.at(-1) || null;
 
-  const signalQuality = best.valid
-    ? best.confidence >= 84
-      ? "HIGH CONVICTION"
-      : "QUALIFIED"
-    : touch.setup;
-
   const confirmationCount = candidateConfirmation.current.signal === best.signal
     ? candidateConfirmation.current.count
     : 0;
 
   const engineStage = signalCycle.current.locked
-    ? "COOLDOWN"
+    ? signalCycle.current.waitTicks < 3 ? "ENTRY READY" : "COOLDOWN"
     : scannerTouch.sampleCount < scannerTouch.minSamples
       ? "COLLECTING"
       : best.valid && confirmationCount >= 3
@@ -707,6 +715,32 @@ export default function DerivAIAnalyzer() {
         : best.valid || scannerTouch.confidence >= 64
           ? "SETUP FORMING"
           : "ANALYZING";
+
+  // One master decision drives every decision surface on this page.
+  // Candidate analysis can recommend a barrier side and show probability, but
+  // it is NOT a trade signal until three fresh live ticks confirm the same
+  // qualified setup. During cooldown we continue to display only the last
+  // confirmed entry, never a new unconfirmed candidate.
+  const masterEntry = markers.at(-1) || null;
+  const masterSignal = engineStage === "ENTRY READY" && masterEntry
+    ? masterEntry.signal
+    : "WAIT";
+  const masterConfidence = masterSignal === "WAIT"
+    ? Math.min(Number(scannerTouch.confidence || 0), MASTER_THRESHOLD - 1)
+    : Number(masterEntry?.confidence ?? 0);
+  const masterReady = masterSignal !== "WAIT";
+  const signalQuality = masterReady
+    ? masterConfidence >= 84
+      ? "HIGH CONVICTION"
+      : "CONFIRMED"
+    : engineStage === "SETUP FORMING"
+      ? "CONFIRMING"
+      : engineStage;
+  const masterReason = masterReady
+    ? masterEntry?.reason || scannerTouch.reason
+    : best.valid
+      ? `Candidate ${best.signal} ${String(best.direction).toUpperCase()} · ${Math.min(confirmationCount, 3)}/3 live confirmations`
+      : scannerTouch.reason;
 
 
   // Never present an extreme Rise/Fall bias before there is enough history.
@@ -1419,12 +1453,12 @@ export default function DerivAIAnalyzer() {
 
           <aside className="terminalSide v8Side">
             <section className="terminalMiniCard autoBarrierScannerCard">
-              <div className="v8CardTitle"><span>AUTO BARRIER SCANNER</span><small>Same Deriv offset · both sides</small></div>
+              <div className="v8CardTitle"><span>AUTO BARRIER SCANNER</span><small>Barrier recommendation · master decision below</small></div>
               <div className="autoBarrierRecommendation">
                 <div>
                   <em>BEST BARRIER SIDE</em>
                   <strong>{autoBarrierScan?.label || "WAIT"}</strong>
-                  <span>Trade decision: {autoBarrierScan?.analysis?.signal || "WAIT"}</span>
+                  <span>Trade decision: {masterSignal}</span>
                 </div>
                 <button type="button" onClick={() => setBarrierMode(autoBarrierScan?.direction || "below")}>USE BARRIER</button>
               </div>
@@ -1432,7 +1466,7 @@ export default function DerivAIAnalyzer() {
                 <div><span>Touch probability</span><strong>{Number(autoBarrierScan?.analysis?.touchScore || 50).toFixed(0)}%</strong></div>
                 <div><span>No Touch probability</span><strong>{Number(autoBarrierScan?.analysis?.noTouchScore || 50).toFixed(0)}%</strong></div>
                 <div><span>Distance</span><strong>{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong></div>
-                <div><span>Decision</span><strong className={autoBarrierScan?.analysis?.signal === "WAIT" ? "wait" : "ready"}>{autoBarrierScan?.analysis?.signal || "WAIT"}</strong></div>
+                <div><span>Decision</span><strong className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal}</strong></div>
               </div>
               <div className="autoBarrierCompare">
                 <div><span>ABOVE</span><b>{touchAbove.signal}</b><strong>{touchAbove.confidence.toFixed(0)}%</strong></div>
@@ -1440,7 +1474,7 @@ export default function DerivAIAnalyzer() {
               </div>
             </section>
 
-            <section className={`terminalSignalCard v8EntryCard ${best.valid ? "valid" : ""}`}>
+            <section className={`terminalSignalCard v8EntryCard ${masterReady ? "valid" : ""}`}>
               <div className="v8CardTitle"><span>ENTRY ENGINE</span><small>{durationLabel}</small></div>
 
               <div className="v8StageTrack" aria-label="Entry analysis stages">
@@ -1461,10 +1495,10 @@ export default function DerivAIAnalyzer() {
               <div className="v8EntryHero">
                 <div>
                   <em>{engineStage}</em>
-                  <strong>{engineStage === "ENTRY READY" ? best.signal : "WAIT"}</strong>
-                  <p>{best.valid && engineStage !== "ENTRY READY" ? `Confirming ${best.signal} ${String(best.direction).toUpperCase()} setup ${Math.min(confirmationCount, 3)}/3 live ticks` : scannerTouch.reason}</p>
+                  <strong>{masterSignal}</strong>
+                  <p>{masterReason}</p>
                 </div>
-                <b>{best.confidence.toFixed(0)}%</b>
+                <b>{masterConfidence.toFixed(0)}%</b>
               </div>
 
               <div className="v8DataRows">
@@ -1564,9 +1598,9 @@ export default function DerivAIAnalyzer() {
               <div><span>Volatility</span><strong>{clamp(riseFall.volatility * 100,0,100).toFixed(0)}%</strong><small>{volatilityLabel}</small></div>
               <div><span>Momentum</span><strong>{riseFall.confidence.toFixed(0)}%</strong><small>{riseFall.momentum}</small></div>
               <div><span>Consistency</span><strong>{riseFall.consistency.toFixed(0)}%</strong><small>{riseFall.consistency >= 65 ? "Strong" : "Mixed"}</small></div>
-              <div><span>Barrier Test</span><strong>{clamp(touch.travelRatio * 60,0,100).toFixed(0)}%</strong><small>{touch.travelRatio >= .9 ? "Active" : "Stable"}</small></div>
-              <div><span>Touch Prob.</span><strong>{touch.touchScore.toFixed(0)}%</strong><small>{touch.touchScore >= MASTER_THRESHOLD ? "Qualified" : "Watching"}</small></div>
-              <div><span>No Touch Prob.</span><strong>{touch.noTouchScore.toFixed(0)}%</strong><small>{touch.noTouchScore >= MASTER_THRESHOLD ? "Qualified" : "Watching"}</small></div>
+              <div><span>Barrier Test</span><strong>{clamp(scannerTouch.travelRatio * 60,0,100).toFixed(0)}%</strong><small>{scannerTouch.travelRatio >= .9 ? "Active" : "Stable"}</small></div>
+              <div><span>Touch Prob.</span><strong>{scannerTouch.touchScore.toFixed(0)}%</strong><small>{masterSignal === "TOUCH" ? "CONFIRMED" : scannerTouch.touchScore >= MASTER_THRESHOLD ? "Candidate" : "Watching"}</small></div>
+              <div><span>No Touch Prob.</span><strong>{scannerTouch.noTouchScore.toFixed(0)}%</strong><small>{masterSignal === "NO TOUCH" ? "CONFIRMED" : scannerTouch.noTouchScore >= MASTER_THRESHOLD ? "Candidate" : "Watching"}</small></div>
             </div>
           </article>
         </section>
@@ -1603,7 +1637,8 @@ export default function DerivAIAnalyzer() {
           <div><span>Spot</span><b>{displayPrice}</b></div>
           <div><span>Ticks</span><b>{cleanRecords.length}</b></div>
           <div><span>Setup</span><b>{engineStage}</b></div>
-          <div><span>Confidence</span><b>{best.confidence.toFixed(0)}%</b></div>
+          <div><span>Decision</span><b>{masterSignal}</b></div>
+          <div><span>Confidence</span><b>{masterConfidence.toFixed(0)}%</b></div>
           <div><span>Deriv API</span><b className={connected ? "ok" : ""}>{connected ? "● Connected" : "○ Offline"}</b></div>
         </footer>
       </main>
