@@ -6,9 +6,7 @@ const clamp = (n, min = 0, max = 100) =>
   Math.max(min, Math.min(max, Number(n) || 0));
 
 const MASTER_THRESHOLD = 78;
-const SHARP_THRESHOLD = 84;
-const STANDARD_CONFIRMATIONS = 3;
-const SHARP_CONFIRMATIONS = 2;
+const STANDARD_CONFIRMATIONS = 2;
 
 function derivMarketName(symbol, fallback = "") {
   const exact = {
@@ -462,52 +460,8 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     (100 - accelerationScore) * 0.08
   );
 
-  // V25 Early Entry / No-Chase filter. A strong move is not automatically a good
-  // entry: if price has already travelled to the directional extreme, the setup
-  // is marked LATE and cannot publish a TOUCH signal. This favours pullbacks,
-  // fresh continuation and retest entries instead of buying the top/selling the bottom.
-  const timingWindow = p.slice(-Math.min(28, p.length));
-  const timingHigh = Math.max(...timingWindow);
-  const timingLow = Math.min(...timingWindow);
-  const timingRange = Math.max(timingHigh - timingLow, longSigma, Math.abs(current) * 0.000001);
-  const rangePosition = clamp((current - timingLow) / timingRange, 0, 1);
-  const directionalExtension = barrierDirection === "below" ? 1 - rangePosition : rangePosition;
-  const last6 = p.slice(-Math.min(7, p.length));
-  const impulse = last6.length > 1 ? last6.at(-1) - last6[0] : 0;
-  const directedImpulse = impulse * (barrierDirection === "below" ? -1 : 1);
-  const impulseUnits = directedImpulse / Math.max(longSigma, Math.abs(current) * 0.000001);
-  const last3 = p.slice(-Math.min(4, p.length));
-  const microMove = last3.length > 1 ? last3.at(-1) - last3[0] : 0;
-  const directedMicroMove = microMove * (barrierDirection === "below" ? -1 : 1);
-  const reversing = directedMicroMove < -Math.max(longSigma * 0.18, barrier * 0.12);
-  const exhausted = directionalExtension >= 0.84 && impulseUnits > 0.75;
-  const overExtended = directionalExtension >= 0.91;
-  const lateEntry = overExtended || exhausted || (directionalExtension >= 0.80 && reversing);
-  const timingLabel = lateEntry
-    ? "LATE · NO CHASE"
-    : directionalExtension >= 0.38 && directionalExtension <= 0.76 && !reversing
-      ? "IDEAL"
-      : directionalExtension < 0.38
-        ? "EARLY"
-        : "WAIT RETEST";
-  const timingScore = clamp(
-    100 - Math.abs(directionalExtension - 0.58) * 125 - (reversing ? 18 : 0) - (exhausted ? 28 : 0),
-    0,
-    100
-  );
-
-  // Penalise sharp score when timing is late. This prevents a high momentum score
-  // from overriding bad location.
-  const rawSharpScore = preferredSignal === "TOUCH" ? sharpTouchScore : sharpNoTouchScore;
-  const sharpScore = preferredSignal === "TOUCH"
-    ? clamp(rawSharpScore * 0.78 + timingScore * 0.22 - (lateEntry ? 30 : 0))
-    : rawSharpScore;
-  const confidence = preferredSignal === "TOUCH" && lateEntry
-    ? Math.min(entryConfidence, MASTER_THRESHOLD - 1)
-    : entryConfidence;
-
-  // Final hard gate: never issue TOUCH after the directional move is already exhausted.
-  if (signal === "TOUCH" && lateEntry) signal = "WAIT";
+  const sharpScore = preferredSignal === "TOUCH" ? sharpTouchScore : sharpNoTouchScore;
+  const confidence = entryConfidence;
 
   const setup =
     signal !== "WAIT"
@@ -552,15 +506,99 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     sharpNoTouchScore,
     microEfficiency,
     accelerationScore,
-    timingLabel,
-    timingScore,
-    directionalExtension,
-    lateEntry,
-    exhausted,
-    reversing,
-    reason: lateEntry && preferredSignal === "TOUCH"
-      ? "NO CHASE: directional move is extended; wait for a pullback/retest before a new barrier entry"
-      : reason,
+    reason,
+  };
+}
+
+
+function structuralBarrierSignal(prices = [], barrierGap = 0.15, direction = "above", horizon = 10) {
+  const p = prices.map(Number).filter(Number.isFinite);
+  if (p.length < 32) {
+    return {
+      signal: "WAIT", timing: "WARMING UP", structure: "COLLECTING",
+      trigger: "Need more market history", reachable: false, late: false,
+      reason: "Waiting for enough price structure"
+    };
+  }
+
+  const current = p.at(-1);
+  const gap = Math.max(Math.abs(Number(barrierGap) || 0), Math.abs(current) * 0.000001);
+  const dir = direction === "below" ? -1 : 1;
+  const fastSeries = ema(p.slice(-80), 9);
+  const slowSeries = ema(p.slice(-80), 21);
+  const fast = Number(fastSeries.at(-1));
+  const slow = Number(slowSeries.at(-1));
+  const previous = p.at(-2);
+  const lastMove = (current - previous) * dir;
+  const micro = p.slice(-8);
+  const microMoves = micro.slice(1).map((x, i) => (x - micro[i]) * dir);
+  const recent = p.slice(-28);
+  const prior = p.slice(-14, -1);
+  const priorEdge = direction === "below" ? Math.min(...prior) : Math.max(...prior);
+  const breakoutDistance = direction === "below" ? priorEdge - current : current - priorEdge;
+  const emaAligned = direction === "below" ? fast < slow : fast > slow;
+  const priceOnTrendSide = direction === "below" ? current <= fast : current >= fast;
+  const microPositive = microMoves.filter((x) => x > 0).length;
+  const continuation = microPositive >= 4 && lastMove > 0;
+  const breakout = breakoutDistance > Math.max(gap * 0.08, Math.abs(current) * 0.000002);
+  const nearFast = Math.abs(current - fast) <= gap * 0.85;
+  const retest = emaAligned && nearFast && priceOnTrendSide && lastMove > 0;
+
+  const diffs = recent.slice(1).map((x, i) => x - recent[i]);
+  const sigma = Math.max(std(diffs), Math.abs(current) * 0.000002);
+  const short = p.slice(-12);
+  const drift = Math.abs(short.at(-1) - short[0]) / Math.max(1, short.length - 1);
+  const expectedTravel = sigma * Math.sqrt(Math.max(3, Number(horizon) || 10)) + drift * Math.max(3, Number(horizon) || 10) * 0.45;
+  const reachable = expectedTravel >= gap * 0.72;
+
+  const extension = Math.abs(current - fast) / gap;
+  const run = p.slice(-7);
+  const runMoves = run.slice(1).map((x, i) => (x - run[i]) * dir);
+  const sameDirectionRun = runMoves.filter((x) => x > 0).length;
+  const firstHalf = mean(runMoves.slice(0, 3).map(Math.abs));
+  const lastHalf = mean(runMoves.slice(-3).map(Math.abs));
+  const exhausting = sameDirectionRun >= 5 && lastHalf < firstHalf * 0.72;
+  const late = extension > 1.45 || (sameDirectionRun >= 5 && !nearFast) || exhausting;
+
+  let timing = "WATCH";
+  let structure = "SCANNING";
+  let signal = "WAIT";
+  let trigger = "Wait for breakout or retest";
+
+  if (late) {
+    timing = "LATE · NO CHASE";
+    structure = exhausting ? "EXHAUSTION" : "EXTENDED MOVE";
+    trigger = "Wait for a fresh pullback/retest";
+  } else if (retest && reachable) {
+    timing = "IDEAL";
+    structure = "PULLBACK / RETEST";
+    signal = "TOUCH";
+    trigger = "Confirm continuation on fresh ticks";
+  } else if (breakout && continuation && emaAligned && reachable) {
+    timing = "EARLY";
+    structure = "BREAKOUT CONTINUATION";
+    signal = "TOUCH";
+    trigger = "Confirm breakout holds";
+  } else if (emaAligned && continuation && reachable && extension <= 0.95) {
+    timing = "EARLY";
+    structure = "TREND CONTINUATION";
+    signal = "TOUCH";
+    trigger = "Confirm continuation on fresh ticks";
+  } else if (!reachable && !continuation && !breakout) {
+    timing = "IDEAL";
+    structure = "BARRIER UNREACHABLE";
+    signal = "NO TOUCH";
+    trigger = "Confirm price remains contained";
+  } else if (emaAligned && reachable) {
+    timing = "WAIT RETEST";
+    structure = "TREND ACTIVE";
+    trigger = "Need pullback/retest before entry";
+  }
+
+  return {
+    signal, timing, structure, trigger, reachable, late, exhausting,
+    breakout, retest, continuation, emaAligned, expectedTravel, extension,
+    reason: signal !== "WAIT" ? `${timing} ${structure}` : `${timing} · ${trigger}`
   };
 }
 
@@ -873,39 +911,46 @@ export default function DerivAIAnalyzer() {
     return options[0];
   }, [touchAbove, touchBelow]);
 
-  const riseValid =
-    connected &&
-    riseFall.signal !== "WAIT" &&
-    riseFall.confidence >= MASTER_THRESHOLD;
+  const structuralAbove = useMemo(
+    () => structuralBarrierSignal(analysisPrices, selectedBarrierGap, "above", duration),
+    [analysisPrices, selectedBarrierGap, duration]
+  );
+  const structuralBelow = useMemo(
+    () => structuralBarrierSignal(analysisPrices, selectedBarrierGap, "below", duration),
+    [analysisPrices, selectedBarrierGap, duration]
+  );
 
-  // The master entry engine is intentionally Touch / No Touch only.
-  // Rise/Fall remains a secondary market-bias confirmation.
-  const scannerTouch = autoBarrierScan?.analysis || touch;
-  const scannerDirection = autoBarrierScan?.direction || selectedBarrierDirection;
-  const touchValid =
-    connected &&
-    timeframeReady &&
-    scannerTouch.signal !== "WAIT" &&
-    scannerTouch.confidence >= MASTER_THRESHOLD;
+  const sideCandidates = [
+    { direction: "above", analysis: touchAbove, structure: structuralAbove },
+    { direction: "below", analysis: touchBelow, structure: structuralBelow },
+  ];
+  const readyCandidates = sideCandidates.filter((x) =>
+    connected && timeframeReady && x.structure.signal !== "WAIT" && !x.structure.late
+  );
+  const preferred = readyCandidates.find((x) => x.structure.timing === "IDEAL") ||
+    readyCandidates.find((x) => x.structure.timing === "EARLY") ||
+    readyCandidates[0] ||
+    sideCandidates.find((x) => x.direction === autoBarrierScan?.direction) ||
+    sideCandidates[0];
 
-  const sharpEligible =
-    touchValid &&
-    Number(scannerTouch.sharpScore || 0) >= SHARP_THRESHOLD &&
-    Number(scannerTouch.strategyAgreement || 0) >= 10 &&
-    Number(scannerTouch.timingScore || 0) >= 64 &&
-    !scannerTouch.lateEntry &&
-    !scannerTouch.hardConflict;
+  const scannerTouch = preferred?.analysis || touch;
+  const scannerStructure = preferred?.structure || structuralAbove;
+  const scannerDirection = preferred?.direction || selectedBarrierDirection;
+  const touchValid = Boolean(
+    connected && timeframeReady && scannerStructure.signal !== "WAIT" && !scannerStructure.late
+  );
 
   const best = {
     mode: `TOUCH/NO TOUCH · ${String(scannerDirection).toUpperCase()}`,
-    signal: touchValid ? scannerTouch.signal : "WAIT",
-    confidence: scannerTouch.confidence,
-    sharpScore: Number(scannerTouch.sharpScore || 0),
-    sharpEligible,
-    requiredConfirmations: sharpEligible ? SHARP_CONFIRMATIONS : STANDARD_CONFIRMATIONS,
+    signal: touchValid ? scannerStructure.signal : "WAIT",
+    confidence: Number(scannerTouch.entryConfidence || scannerTouch.confidence || 0),
+    requiredConfirmations: STANDARD_CONFIRMATIONS,
     valid: touchValid,
-    setup: scannerTouch.setup,
+    setup: scannerStructure.timing,
     direction: scannerDirection,
+    structure: scannerStructure.structure,
+    trigger: scannerStructure.trigger,
+    timing: scannerStructure.timing,
   };
 
   useEffect(() => {
@@ -962,8 +1007,9 @@ export default function DerivAIAnalyzer() {
       barrierDirection: scannerDirection,
       recordCount: cleanRecords.length,
       confirmations: nextCount,
-      entryType: best.sharpEligible ? "SHARP" : "CONFIRMED",
-      sharpScore: best.sharpScore,
+      entryType: "STRUCTURAL",
+      timing: best.timing,
+      structure: best.structure,
       analyzed: true,
     };
 
@@ -977,8 +1023,6 @@ export default function DerivAIAnalyzer() {
     best.mode,
     best.confidence,
     best.requiredConfirmations,
-    best.sharpEligible,
-    best.sharpScore,
     cleanRecords,
     markers,
     scannerTouch.upperBarrier,
@@ -1065,7 +1109,7 @@ export default function DerivAIAnalyzer() {
         ? "COLLECTING"
       : best.valid && confirmationCount >= best.requiredConfirmations
         ? "ENTRY READY"
-        : best.valid || scannerTouch.confidence >= 64
+        : best.valid || scannerStructure.timing === "WAIT RETEST" || scannerStructure.timing === "EARLY"
           ? "SETUP FORMING"
           : "ANALYZING";
 
@@ -1092,8 +1136,8 @@ export default function DerivAIAnalyzer() {
   const masterReason = masterReady
     ? masterEntry?.reason || scannerTouch.reason
     : best.valid
-      ? `${best.sharpEligible ? "SHARP" : "STANDARD"} ${best.signal} ${String(best.direction).toUpperCase()} · ${Math.min(confirmationCount, best.requiredConfirmations)}/${best.requiredConfirmations} live confirmations`
-      : scannerTouch.reason;
+      ? `${best.timing} ${best.signal} ${String(best.direction).toUpperCase()} · ${Math.min(confirmationCount, best.requiredConfirmations)}/${best.requiredConfirmations} fresh confirmations`
+      : scannerStructure.reason;
 
 
   // Never present an extreme Rise/Fall bias before there is enough history.
@@ -1485,8 +1529,8 @@ export default function DerivAIAnalyzer() {
             <div className="analysisChartStatus">
               <span>BEST SIDE <b>{String(scannerDirection).toUpperCase()}</b></span>
               <span>DECISION <b className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal}</b></span>
-              <span>CONFIDENCE <b>{masterConfidence.toFixed(0)}%</b></span>
-              <span>CONFLUENCE <b>{Number(scannerTouch?.confluence?.score || 50).toFixed(0)}%</b></span>
+              <span>TIMING <b>{best.timing}</b></span>
+              <span>STRUCTURE <b>{best.structure}</b></span>
             </div>
 
             <div
@@ -1838,56 +1882,39 @@ export default function DerivAIAnalyzer() {
 
           <aside className="terminalSide v8Side">
             <section className="terminalMiniCard autoBarrierScannerCard fixedSideScanner">
-              <div className="v8CardTitle"><span>ABOVE / BELOW SCANNER</span><small>Both sides stay visible</small></div>
+              <div className="v8CardTitle"><span>ABOVE / BELOW ENTRY MAP</span><small>Structure first · no chase</small></div>
 
               <div className="fixedSideGrid">
-                <div className={`fixedSideCard above ${scannerDirection === "above" ? "preferred" : ""}`}>
-                  <header>
-                    <div>
-                      <em>ABOVE SPOT</em>
-                      <strong>+{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong>
+                {[
+                  { direction: "above", label: "ABOVE SPOT", prefix: "+", analysis: touchAbove, structure: structuralAbove },
+                  { direction: "below", label: "BELOW SPOT", prefix: "-", analysis: touchBelow, structure: structuralBelow },
+                ].map((side) => (
+                  <div className={`fixedSideCard ${side.direction} ${scannerDirection === side.direction ? "preferred" : ""}`} key={side.direction}>
+                    <header>
+                      <div>
+                        <em>{side.label}</em>
+                        <strong>{side.prefix}{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong>
+                      </div>
+                      <b>{side.structure.timing === "IDEAL" ? "READY" : side.structure.timing === "EARLY" ? "EARLY" : side.structure.late ? "NO CHASE" : "WATCH"}</b>
+                    </header>
+                    <div className="fixedSideDecision">
+                      <strong>{timeframeReady ? side.structure.signal : "WARMING UP"}</strong>
+                      <span>{timeframeReady ? side.structure.timing : `${timeframeContext.count}/${timeframeContext.required} ${timeframeContext.label}`}</span>
                     </div>
-                    <b>{scannerDirection === "above" ? "BEST" : "WATCH"}</b>
-                  </header>
-                  <div className="fixedSideDecision">
-                    <strong>{timeframeReady ? touchAbove.signal : "WARMING UP"}</strong>
-                    <span>{timeframeReady ? `${touchAbove.confidence.toFixed(0)}% setup` : `${timeframeContext.count}/${timeframeContext.required} ${timeframeContext.label}`}</span>
-                  </div>
-                  <div className="fixedSideMetrics">
-                    <p><span>TOUCH</span><b>{touchAbove.touchScore.toFixed(0)}%</b></p>
-                    <p><span>NO TOUCH</span><b>{touchAbove.noTouchScore.toFixed(0)}%</b></p>
-                    <p><span>SHARP</span><b>{Number(touchAbove.sharpScore || 0).toFixed(0)}%</b></p>
-                    <p><span>TIMING</span><b>{touchAbove.timingLabel || "SCANNING"}</b></p>
-                    <p><span>TF Context</span><b>{touchAbove.contextScore.toFixed(0)}%</b></p>
-                  </div>
-                </div>
-
-                <div className={`fixedSideCard below ${scannerDirection === "below" ? "preferred" : ""}`}>
-                  <header>
-                    <div>
-                      <em>BELOW SPOT</em>
-                      <strong>-{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong>
+                    <div className="fixedSideMetrics structuralMetrics">
+                      <p><span>STRUCTURE</span><b>{side.structure.structure}</b></p>
+                      <p><span>BARRIER</span><b>{side.structure.reachable ? "REACHABLE" : "FAR"}</b></p>
+                      <p><span>TRIGGER</span><b>{side.structure.trigger}</b></p>
+                      <p><span>STATUS</span><b>{side.structure.late ? "WAIT" : side.structure.signal !== "WAIT" ? "SIGNAL" : "SCANNING"}</b></p>
                     </div>
-                    <b>{scannerDirection === "below" ? "BEST" : "WATCH"}</b>
-                  </header>
-                  <div className="fixedSideDecision">
-                    <strong>{timeframeReady ? touchBelow.signal : "WARMING UP"}</strong>
-                    <span>{timeframeReady ? `${touchBelow.confidence.toFixed(0)}% setup` : `${timeframeContext.count}/${timeframeContext.required} ${timeframeContext.label}`}</span>
                   </div>
-                  <div className="fixedSideMetrics">
-                    <p><span>TOUCH</span><b>{touchBelow.touchScore.toFixed(0)}%</b></p>
-                    <p><span>NO TOUCH</span><b>{touchBelow.noTouchScore.toFixed(0)}%</b></p>
-                    <p><span>SHARP</span><b>{Number(touchBelow.sharpScore || 0).toFixed(0)}%</b></p>
-                    <p><span>TIMING</span><b>{touchBelow.timingLabel || "SCANNING"}</b></p>
-                    <p><span>TF Context</span><b>{touchBelow.contextScore.toFixed(0)}%</b></p>
-                  </div>
-                </div>
+                ))}
               </div>
 
               <div className="fixedSideMaster">
                 <span>MASTER ENTRY</span>
-                <strong className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal}</strong>
-                <b>{masterConfidence.toFixed(0)}%</b>
+                <strong className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal === "WAIT" ? "WAIT" : `${masterSignal} ${String(best.direction).toUpperCase()}`}</strong>
+                <b>{best.timing}</b>
               </div>
             </section>
 
@@ -1915,16 +1942,15 @@ export default function DerivAIAnalyzer() {
                   <strong>{masterSignal}</strong>
                   <p>{masterReason}</p>
                 </div>
-                <b>{masterConfidence.toFixed(0)}%</b>
+                <b>{best.timing}</b>
               </div>
 
               <div className="v8DataRows">
                 <p><span>Contract</span><b>TOUCH / NO TOUCH</b></p>
                 <p><span>Barrier side</span><b>{String(best.direction || "—").toUpperCase()}</b></p>
                 <p><span>Quality</span><b>{signalQuality}</b></p>
-                <p><span>Entry speed</span><b>{best.sharpEligible ? "SHARP · 2 TICKS" : "STANDARD · 3 TICKS"}</b></p>
-                <p><span>Sharp score</span><b>{Number(best.sharpScore || 0).toFixed(0)}%</b></p>
-                <p><span>Entry timing</span><b>{scannerTouch.timingLabel || "SCANNING"}</b></p>
+                <p><span>Structure</span><b>{best.structure || "SCANNING"}</b></p>
+                <p><span>Timing</span><b>{best.timing || "WATCH"}</b></p>
                 <p><span>Live confirmation</span><b>{best.valid ? `${Math.min(confirmationCount, best.requiredConfirmations)}/${best.requiredConfirmations}` : "—"}</b></p>
                 <p><span>Trend</span><b>{riseFall.trend}</b></p>
                 <p><span>Volatility</span><b>{volatilityLabel}</b></p>
@@ -1944,7 +1970,7 @@ export default function DerivAIAnalyzer() {
             <section className="terminalMiniCard v8LastSignalCard">
               <div className="v8CardTitle"><span>LAST SIGNAL</span><small>Qualified setup</small></div>
               <div className="v8LastSignal">
-                <div><strong>{entry?.signal || "WAIT"}</strong><span>{entry ? `${entry.confidence.toFixed(0)}% confidence` : "Waiting for strong setup…"}</span></div>
+                <div><strong>{entry?.signal || "WAIT"}</strong><span>{entry ? `${entry.timing || "CONFIRMED"} · ${entry.structure || "STRUCTURAL"}` : "Waiting for structure…"}</span></div>
                 <i>◷</i>
               </div>
             </section>
@@ -1962,7 +1988,7 @@ export default function DerivAIAnalyzer() {
                   <span>{item.signal} · ANALYZED</span>
                   <strong>{fmt(item.price)}</strong>
                   <small>{new Date(item.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</small>
-                  <b>{item.confidence.toFixed(0)}%</b>
+                  <b>{item.timing || "CONFIRMED"}</b>
                 </div>
               )) : <div className="v8EmptySignal">No qualified entry yet. The engine is scanning.</div>}
             </div>
@@ -1971,12 +1997,12 @@ export default function DerivAIAnalyzer() {
           <article className="v8SummaryPanel">
             <div className="v8SectionTitle"><div><span>ANALYSIS SUMMARY</span><h3>Current market evidence</h3></div><small>Live</small></div>
             <div className="v8SummaryGrid">
-              <div><span>Confluence</span><strong>{Number(scannerTouch?.confluence?.score || 50).toFixed(0)}%</strong><small>{scannerTouch?.confluence?.label || "Scanning"}</small></div>
-              <div><span>Momentum</span><strong>{Number(scannerTouch?.confluence?.momentum || 50).toFixed(0)}%</strong><small>{riseFall.momentum}</small></div>
-              <div><span>Price Action</span><strong>{Number(scannerTouch?.confluence?.priceAction || 50).toFixed(0)}%</strong><small>Barrier side</small></div>
-              <div><span>Travel</span><strong>{clamp(scannerTouch.travelRatio * 60,0,100).toFixed(0)}%</strong><small>{scannerTouch.travelRatio >= .9 ? "Active" : "Stable"}</small></div>
-              <div><span>Touch Prob.</span><strong>{scannerTouch.touchScore.toFixed(0)}%</strong><small>{masterSignal === "TOUCH" ? "CONFIRMED" : "Watching"}</small></div>
-              <div><span>No Touch Prob.</span><strong>{scannerTouch.noTouchScore.toFixed(0)}%</strong><small>{masterSignal === "NO TOUCH" ? "CONFIRMED" : "Watching"}</small></div>
+              <div><span>Confluence</span><strong>{scannerTouch?.confluence?.label || "SCANNING"}</strong><small>Strategy agreement</small></div>
+              <div><span>Momentum</span><strong>{riseFall.momentum}</strong><small>{scannerStructure.continuation ? "CONTINUING" : "MIXED"}</small></div>
+              <div><span>Price Action</span><strong>{scannerStructure.structure}</strong><small>{scannerStructure.timing}</small></div>
+              <div><span>Barrier Travel</span><strong>{scannerStructure.reachable ? "REACHABLE" : "TOO FAR"}</strong><small>{scannerStructure.late ? "NO CHASE" : "LIVE"}</small></div>
+              <div><span>Entry Trigger</span><strong>{best.signal}</strong><small>{best.valid ? "CONFIRMING" : "WAITING"}</small></div>
+              <div><span>Entry Timing</span><strong>{best.timing}</strong><small>{masterSignal === "WAIT" ? "SCANNING" : "CONFIRMED"}</small></div>
             </div>
           </article>
         </section>
@@ -1989,7 +2015,7 @@ export default function DerivAIAnalyzer() {
           <div><span>Ticks</span><b>{cleanRecords.length}</b></div>
           <div><span>Setup</span><b>{engineStage}</b></div>
           <div><span>Decision</span><b>{masterSignal}</b></div>
-          <div><span>Confidence</span><b>{masterConfidence.toFixed(0)}%</b></div>
+          <div><span>Timing</span><b>{best.timing}</b></div>
           <div><span>Deriv feed</span><b className={connected ? "ok" : ""}>{connected ? "● Live" : "○ Offline"}</b></div>
         </footer>
       </main>

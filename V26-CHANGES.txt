@@ -1,0 +1,10 @@
+V26 — Structural Signal Engine
+
+- Replaces percentage-led entry decisions with price-structure entry rules.
+- ABOVE and BELOW stay visible independently.
+- Detects: breakout continuation, pullback/retest, trend continuation, barrier reachability, exhaustion and extended moves.
+- Timing states: EARLY, IDEAL, WAIT RETEST, LATE · NO CHASE, WARMING UP.
+- Signals can be TOUCH or NO TOUCH only when a concrete structural trigger is present.
+- Uses 2 fresh live-tick confirmations for qualified structural setups.
+- LATE / NO CHASE is a hard block, preventing entries after an extended run.
+- Analysis Summary now emphasizes structure, momentum, barrier reachability, trigger and timing instead of raw percentages.
