@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -144,7 +144,7 @@ export default function useDerivTicks() {
           quote: Number(tick.quote),
           epoch: Number(tick.epoch),
         },
-      ].slice(-400)
+      ].slice(-6500)
     );
 
     setLiveTickCount((current) =>
@@ -166,10 +166,20 @@ export default function useDerivTicks() {
     setLiveTickCount(0);
 
     try {
-      const history = await derivPublicClient.getHistory(nextSymbol, 60);
+      let history = [];
+      try {
+        // Load enough native Deriv history for stable 5s/15s/30s/1m candles.
+        // Volatility (1s) indices produce roughly one tick per second, so 5,000
+        // ticks gives ~83 one-minute candles before the live stream continues.
+        history = await derivPublicClient.getHistory(nextSymbol, 5000);
+      } catch (historyError) {
+        // Keep the analyzer usable if a connection/API limit temporarily rejects
+        // the large request. The live stream will continue filling the buffer.
+        history = await derivPublicClient.getHistory(nextSymbol, 1000);
+      }
       if (!mountedRef.current) return;
 
-      setTicks(history.slice(-60));
+      setTicks(history.slice(-6500));
 
       try {
         await derivPublicClient.subscribeTicks(nextSymbol);

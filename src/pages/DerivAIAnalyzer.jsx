@@ -713,15 +713,15 @@ export default function DerivAIAnalyzer() {
   // Give timed candles enough history to look like Deriv/TradingView instead of
   // compressing a whole interval into only a handful of oversized candles.
   const intervalRecordTargets = {
-    tick: 180,
-    "5s": 260,
-    "15s": 360,
-    "30s": 440,
-    "1m": 500,
+    tick: 320,
+    "5s": 900,
+    "15s": 1800,
+    "30s": 3000,
+    "1m": 5000,
   };
   const baseVisibleCount = intervalRecordTargets[chartInterval] || 180;
   const visibleCount = Math.round(
-    clamp(baseVisibleCount / zoom, 70, Math.min(500, cleanRecords.length || 500))
+    clamp(baseVisibleCount / zoom, 70, Math.min(5200, cleanRecords.length || 5200))
   );
   const safePan = Math.max(
     0,

@@ -984,3 +984,90 @@
   .analysisOnlyMain .terminalWorkspace{grid-template-columns:minmax(0,1fr) 292px!important}
   .v8DataRows p:nth-child(6){display:none}
 }
+
+/* === V19 FINAL FULL ANALYZER — REFERENCE COLOR SYSTEM + ONE-SCREEN FIT === */
+:root{
+  --ai-bg:#020b13;
+  --ai-bg-2:#03111a;
+  --ai-panel:#061723;
+  --ai-panel-2:#071c29;
+  --ai-border:#123b52;
+  --ai-border-soft:rgba(39,91,118,.42);
+  --ai-text:#eef8ff;
+  --ai-muted:#86a1b2;
+  --ai-green:#1ce7a7;
+  --ai-blue:#2389ff;
+  --ai-yellow:#f5c542;
+  --ai-purple:#8a62ff;
+  --ai-red:#ff5367;
+}
+
+.analysisOnlyPage,
+.terminalShell{background:radial-gradient(circle at 50% -20%,#082031 0,#020b13 48%,#01070d 100%)!important;color:var(--ai-text)!important}
+.analysisOnlyMain{background:transparent!important}
+.analysisOnlyHeader,
+.analysisStrategyBar,
+.terminalControls,
+.terminalChartCard,
+.terminalSignalCard,
+.terminalMiniCard,
+.v8RecentPanel,
+.v8SummaryPanel,
+.v8MarketFooter{
+  border-color:var(--ai-border-soft)!important;
+  background:linear-gradient(180deg,rgba(6,23,35,.98),rgba(3,16,25,.98))!important;
+  box-shadow:0 10px 30px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.015);
+}
+.analysisOnlyTitle h1{color:#f5fbff!important;letter-spacing:-.025em}
+.analysisOnlyTitle h1 span,.analysisOnlyLive,.analysisOnlyStats strong.ok,
+.terminalPrice strong,.terminalLive.on,.v8CardTitle>span,.v8SectionTitle span,
+.analysisStrategyTitle span{color:var(--ai-green)!important}
+.analysisOnlyLive i,.terminalLive.on i{background:var(--ai-green)!important;box-shadow:0 0 12px rgba(28,231,167,.55)!important}
+.analysisOnlyStats>div{border-color:var(--ai-border)!important;background:#03121d!important}
+.analysisOnlyStats span,.analysisOnlyTitle p,.v8CardTitle small,.v8SectionTitle small{color:var(--ai-muted)!important}
+.analysisStrategyBar{border-color:rgba(28,231,167,.26)!important}
+.analysisStrategyTitle b{border-color:rgba(35,137,255,.48)!important;color:#65b0ff!important;background:rgba(35,137,255,.08)!important}
+.analysisStrategyChips span{border-color:#173b50!important;background:#04131e!important;color:#9bb2c0!important}
+.analysisStrategyChips span:nth-child(3n+1){box-shadow:inset 2px 0 0 rgba(28,231,167,.75)}
+.analysisStrategyChips span:nth-child(3n+2){box-shadow:inset 2px 0 0 rgba(35,137,255,.72)}
+.analysisStrategyChips span:nth-child(3n){box-shadow:inset 2px 0 0 rgba(138,98,255,.72)}
+.terminalControls select,.terminalControls button,.terminalTouchHead select{border-color:#1a526f!important;background:#041724!important;color:#f4fbff!important}
+.terminalControls select:focus,.terminalControls button:hover{border-color:var(--ai-blue)!important;box-shadow:0 0 0 2px rgba(35,137,255,.10)!important}
+.terminalChart{border-color:#12384d!important;background:linear-gradient(rgba(64,112,139,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(64,112,139,.055) 1px,transparent 1px),#020f18!important;background-size:58px 58px!important}
+.terminalCandleUp .wick{stroke:var(--ai-green)!important}.terminalCandleUp .body{fill:var(--ai-green)!important}
+.terminalCandleDown .wick{stroke:var(--ai-red)!important}.terminalCandleDown .body{fill:var(--ai-red)!important}
+.derivEma9{stroke:var(--ai-yellow)!important;stroke-width:1.35!important}.derivEma21{stroke:var(--ai-purple)!important;stroke-width:1.35!important}
+.currentPriceLine line{stroke:var(--ai-blue)!important}.currentPriceLine rect{fill:var(--ai-blue)!important}
+.derivChartBarrier line{stroke:var(--ai-red)!important}.derivChartBarrier text{fill:#ff6b7d!important}
+.scannerBarrierLine line{stroke:var(--ai-blue)!important}.scannerBarrierLine text{fill:#65b0ff!important}
+.derivChartToolbar button{border-color:#17445e!important;background:#04131e!important;color:#91a9b8!important}
+.derivChartToolbar button.active{border-color:var(--ai-blue)!important;background:#08253a!important;color:#fff!important;box-shadow:inset 0 -2px 0 var(--ai-blue)!important}
+.analysisChartStatus{border-color:#153d52!important;background:#03111b!important}
+.analysisChartStatus b.wait,.autoBarrierStats strong.wait{color:var(--ai-yellow)!important}
+.analysisChartStatus b.ready,.autoBarrierStats strong.ready{color:var(--ai-green)!important}
+.autoBarrierScannerCard{border-color:rgba(28,231,167,.32)!important}
+.autoBarrierRecommendation{border-color:rgba(28,231,167,.28)!important;background:#03131e!important}
+.autoBarrierRecommendation strong{color:#fff!important}.autoBarrierRecommendation span{color:var(--ai-green)!important}
+.autoBarrierStats>div,.autoBarrierCompare>div{border-color:#14394d!important;background:#020f18!important}
+.autoBarrierStats strong,.autoBarrierCompare strong{color:#f7fbff!important}
+.v8EntryCard.valid{border-color:rgba(28,231,167,.65)!important;box-shadow:0 0 0 1px rgba(28,231,167,.09),0 0 24px rgba(28,231,167,.05)!important}
+.v8Stage.done i{background:var(--ai-green)!important;border-color:var(--ai-green)!important;color:#02120d!important}.v8Stage.active i{border-color:var(--ai-blue)!important;color:#fff!important;background:#0b55ac!important;box-shadow:0 0 0 3px rgba(35,137,255,.16)!important}
+.v8EntryHero strong{color:#fff!important}.v8EntryHero>b{color:var(--ai-blue)!important}
+.v8SignalMini{border-color:#17445e!important;background:#03131e!important}.v8SignalMini.valid,.v8SignalMini.win{border-color:rgba(28,231,167,.42)!important}.v8SignalMini strong{color:#f4fbff!important}
+.v8SummaryGrid>div{border-color:#14394d!important;background:#03111b!important}
+.v8SummaryGrid strong{color:#f6fbff!important}
+.v8MarketFooter{border-color:#12384d!important}
+.terminalChartFooter span{border-color:#14384c!important;background:#03111b!important;color:#7894a5!important}.terminalChartFooter b{color:#edf8ff!important}
+
+@media (min-width:1101px){
+  .analysisOnlyMain{grid-template-rows:43px 31px 38px minmax(0,1fr) 118px 25px!important;gap:5px!important;padding:6px 12px 5px!important}
+  .analysisOnlyMain .terminalWorkspace{grid-template-columns:minmax(0,1fr) 322px!important;gap:7px!important}
+  .analysisOnlyMain .terminalChartCard{border-radius:10px!important}
+  .analysisOnlyMain .terminalChart{min-height:300px!important;border-radius:8px!important}
+  .analysisOnlyMain .v8LowerGrid{grid-template-columns:1.03fr 1.12fr!important;gap:6px!important}
+}
+
+@media (min-width:1101px) and (max-height:760px){
+  .analysisOnlyMain{grid-template-rows:39px 29px 35px minmax(0,1fr) 108px 23px!important;gap:4px!important;padding:4px 9px!important}
+  .analysisOnlyMain .terminalWorkspace{grid-template-columns:minmax(0,1fr) 306px!important}
+}
