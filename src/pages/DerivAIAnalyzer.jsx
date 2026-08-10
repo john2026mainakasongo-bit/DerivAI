@@ -622,7 +622,19 @@ export default function DerivAIAnalyzer() {
     scannerDirection,
   ]);
 
-  const visibleCount = Math.round(clamp(160 / zoom, 45, 220));
+  // Give timed candles enough history to look like Deriv/TradingView instead of
+  // compressing a whole interval into only a handful of oversized candles.
+  const intervalRecordTargets = {
+    tick: 180,
+    "5s": 260,
+    "15s": 360,
+    "30s": 440,
+    "1m": 500,
+  };
+  const baseVisibleCount = intervalRecordTargets[chartInterval] || 180;
+  const visibleCount = Math.round(
+    clamp(baseVisibleCount / zoom, 70, Math.min(500, cleanRecords.length || 500))
+  );
   const safePan = Math.max(
     0,
     Math.min(
@@ -890,6 +902,7 @@ export default function DerivAIAnalyzer() {
   };
 
   const markerData = markers
+    .slice(-3)
     .map((marker) => {
       if (!scale) return null;
 
@@ -1119,7 +1132,7 @@ export default function DerivAIAnalyzer() {
                         const target = Number(currentPrice) + (scannerDirection === "below" ? -selectedBarrierGap : selectedBarrierGap);
                         return <>
                           <line x1="0" x2="950" y1={scale.y(target)} y2={scale.y(target)} />
-                          <text x="690" y={scale.y(target) - 8}>AI {String(scannerDirection).toUpperCase()} · {scannerTouch.signal} {scannerTouch.confidence.toFixed(0)}%</text>
+                          <text x="660" y={scale.y(target) - 8}>AI BEST SIDE: {String(scannerDirection).toUpperCase()} · DECISION {scannerTouch.signal}</text>
                         </>;
                       })()}
                     </g>
@@ -1396,8 +1409,7 @@ export default function DerivAIAnalyzer() {
                 Drag: <b>History</b>
               </span>
               <span>
-                Visible ticks:{" "}
-                <b>{chartRecords.length}</b>
+                Chart data: <b>{chartInterval === "tick" ? `${chartRecords.length} ticks` : `${candles.length} candles`}</b>
               </span>
               <span>
                 Zoom: <b>{zoom.toFixed(2)}x</b>
@@ -1407,20 +1419,25 @@ export default function DerivAIAnalyzer() {
 
           <aside className="terminalSide v8Side">
             <section className="terminalMiniCard autoBarrierScannerCard">
-              <div className="v8CardTitle"><span>AUTO BARRIER SCANNER</span><small>Compares both sides</small></div>
+              <div className="v8CardTitle"><span>AUTO BARRIER SCANNER</span><small>Same Deriv offset · both sides</small></div>
               <div className="autoBarrierRecommendation">
                 <div>
-                  <em>{autoBarrierScan?.analysis?.signal !== "WAIT" ? "BEST QUALIFIED SIDE" : "BEST CURRENT SIDE"}</em>
+                  <em>BEST BARRIER SIDE</em>
                   <strong>{autoBarrierScan?.label || "WAIT"}</strong>
-                  <span>{autoBarrierScan?.analysis?.signal || "WAIT"} · {Number(autoBarrierScan?.analysis?.confidence || 0).toFixed(0)}%</span>
+                  <span>Trade decision: {autoBarrierScan?.analysis?.signal || "WAIT"}</span>
                 </div>
                 <button type="button" onClick={() => setBarrierMode(autoBarrierScan?.direction || "below")}>USE BARRIER</button>
+              </div>
+              <div className="autoBarrierStats">
+                <div><span>Touch probability</span><strong>{Number(autoBarrierScan?.analysis?.touchScore || 50).toFixed(0)}%</strong></div>
+                <div><span>No Touch probability</span><strong>{Number(autoBarrierScan?.analysis?.noTouchScore || 50).toFixed(0)}%</strong></div>
+                <div><span>Distance</span><strong>{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong></div>
+                <div><span>Decision</span><strong className={autoBarrierScan?.analysis?.signal === "WAIT" ? "wait" : "ready"}>{autoBarrierScan?.analysis?.signal || "WAIT"}</strong></div>
               </div>
               <div className="autoBarrierCompare">
                 <div><span>ABOVE</span><b>{touchAbove.signal}</b><strong>{touchAbove.confidence.toFixed(0)}%</strong></div>
                 <div><span>BELOW</span><b>{touchBelow.signal}</b><strong>{touchBelow.confidence.toFixed(0)}%</strong></div>
               </div>
-              <p>Scanner compares the same offset above and below spot. It does not assume Below is always better; it waits for the side with stronger live evidence.</p>
             </section>
 
             <section className={`terminalSignalCard v8EntryCard ${best.valid ? "valid" : ""}`}>
