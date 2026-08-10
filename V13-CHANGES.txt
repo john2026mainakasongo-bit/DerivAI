@@ -1,0 +1,13 @@
+V13 — AUTO ENTRY SCANNER + DERIV-STYLE CHART WORKSPACE
+
+- Analyzer compares ABOVE SPOT and BELOW SPOT at the same selected offset.
+- Entry engine follows the stronger side instead of assuming Below is always better.
+- Recommended barrier is shown as an AI line on the live chart.
+- USE BARRIER button copies the recommended side into manual Deriv barrier controls.
+- Confirmed-entry rule remains 3 fresh live ticks before publishing an entry.
+- Chart modes: Candles / Line.
+- Chart aggregation: Ticks, 5s, 15s, 30s, 1m.
+- EMA 9/21 overlay toggle.
+- Existing Deriv proposal, Demo/Real manual buy, barrier sheet, safe scale and history seed retained.
+
+Important: a closer barrier can be easier to touch but normally changes payout/price. The scanner therefore compares live evidence rather than treating Below Spot as guaranteed easier.

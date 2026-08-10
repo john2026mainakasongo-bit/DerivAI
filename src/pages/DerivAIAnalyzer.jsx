@@ -313,6 +313,39 @@ function buildCandles(records = [], size = 2) {
   return candles;
 }
 
+function buildTimedCandles(records = [], intervalMs = 5000) {
+  const buckets = new Map();
+  for (const r of records) {
+    const ts = Number(r?.ts);
+    const price = Number(r?.price);
+    if (!Number.isFinite(ts) || !Number.isFinite(price)) continue;
+    const key = Math.floor(ts / intervalMs) * intervalMs;
+    const prev = buckets.get(key);
+    if (!prev) {
+      buckets.set(key, { ts: key, endTs: ts, open: price, high: price, low: price, close: price });
+    } else {
+      prev.endTs = ts;
+      prev.high = Math.max(prev.high, price);
+      prev.low = Math.min(prev.low, price);
+      prev.close = price;
+    }
+  }
+  return [...buckets.values()].sort((a,b) => a.ts - b.ts);
+}
+
+function ema(values = [], period = 9) {
+  const out = [];
+  const k = 2 / (period + 1);
+  let prev = null;
+  for (const value of values) {
+    const v = Number(value);
+    if (!Number.isFinite(v)) { out.push(null); continue; }
+    prev = prev == null ? v : v * k + prev * (1-k);
+    out.push(prev);
+  }
+  return out;
+}
+
 function makeScale(values, height, top = 16, bottom = 24) {
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -368,8 +401,12 @@ export default function DerivAIAnalyzer() {
   const [barrierOffset, setBarrierOffset] = useState(0.15);
   const [fixedBarrier, setFixedBarrier] = useState("");
   const [stake, setStake] = useState(0.35);
+  const [barrierOpen, setBarrierOpen] = useState(false);
   const [manualTradeStatus, setManualTradeStatus] = useState(null);
   const [proposalPreview, setProposalPreview] = useState({ touch: null, noTouch: null, loading: false, error: "" });
+  const [chartInterval, setChartInterval] = useState("tick");
+  const [chartType, setChartType] = useState("candles");
+  const [showEma, setShowEma] = useState(true);
 
   const [records, setRecords] = useState([]);
   const [markers, setMarkers] = useState([]);
@@ -472,6 +509,23 @@ export default function DerivAIAnalyzer() {
     [analysisPrices, selectedBarrierGap, duration, selectedBarrierDirection]
   );
 
+  const touchAbove = useMemo(
+    () => analyzeTouch(analysisPrices, selectedBarrierGap, duration, "above"),
+    [analysisPrices, selectedBarrierGap, duration]
+  );
+  const touchBelow = useMemo(
+    () => analyzeTouch(analysisPrices, selectedBarrierGap, duration, "below"),
+    [analysisPrices, selectedBarrierGap, duration]
+  );
+  const autoBarrierScan = useMemo(() => {
+    const options = [
+      { direction: "above", label: "ABOVE SPOT", analysis: touchAbove },
+      { direction: "below", label: "BELOW SPOT", analysis: touchBelow },
+    ];
+    options.sort((a,b) => Number(b.analysis?.confidence || 0) - Number(a.analysis?.confidence || 0));
+    return options[0];
+  }, [touchAbove, touchBelow]);
+
   const riseValid =
     connected &&
     riseFall.signal !== "WAIT" &&
@@ -479,17 +533,20 @@ export default function DerivAIAnalyzer() {
 
   // The master entry engine is intentionally Touch / No Touch only.
   // Rise/Fall remains a secondary market-bias confirmation.
+  const scannerTouch = autoBarrierScan?.analysis || touch;
+  const scannerDirection = autoBarrierScan?.direction || selectedBarrierDirection;
   const touchValid =
     connected &&
-    touch.signal !== "WAIT" &&
-    touch.confidence >= MASTER_THRESHOLD;
+    scannerTouch.signal !== "WAIT" &&
+    scannerTouch.confidence >= MASTER_THRESHOLD;
 
   const best = {
-    mode: "TOUCH/NO TOUCH",
-    signal: touchValid ? touch.signal : "WAIT",
-    confidence: touch.confidence,
+    mode: `TOUCH/NO TOUCH · ${String(scannerDirection).toUpperCase()}`,
+    signal: touchValid ? scannerTouch.signal : "WAIT",
+    confidence: scannerTouch.confidence,
     valid: touchValid,
-    setup: touch.setup,
+    setup: scannerTouch.setup,
+    direction: scannerDirection,
   };
 
   useEffect(() => {
@@ -539,9 +596,10 @@ export default function DerivAIAnalyzer() {
       signal: best.signal,
       mode: best.mode,
       confidence: best.confidence,
-      upperBarrier: touch.upperBarrier,
-      lowerBarrier: touch.lowerBarrier,
-      reason: touch.reason,
+      upperBarrier: scannerTouch.upperBarrier,
+      lowerBarrier: scannerTouch.lowerBarrier,
+      reason: scannerTouch.reason,
+      barrierDirection: scannerDirection,
       recordCount: cleanRecords.length,
       confirmations: nextCount,
       analyzed: true,
@@ -558,9 +616,10 @@ export default function DerivAIAnalyzer() {
     best.confidence,
     cleanRecords,
     markers,
-    touch.upperBarrier,
-    touch.lowerBarrier,
-    touch.reason,
+    scannerTouch.upperBarrier,
+    scannerTouch.lowerBarrier,
+    scannerTouch.reason,
+    scannerDirection,
   ]);
 
   const visibleCount = Math.round(clamp(160 / zoom, 45, 220));
@@ -581,15 +640,15 @@ export default function DerivAIAnalyzer() {
     Math.round(3 / zoom)
   );
 
-  const candles = useMemo(
-    () => buildCandles(chartRecords, candleSize),
-    [chartRecords, candleSize]
-  );
+  const candles = useMemo(() => {
+    if (chartInterval === "tick") return buildCandles(chartRecords, candleSize);
+    const intervalMap = { "5s": 5000, "15s": 15000, "30s": 30000, "1m": 60000 };
+    return buildTimedCandles(chartRecords, intervalMap[chartInterval] || 5000);
+  }, [chartRecords, candleSize, chartInterval]);
 
-  const chartValues = candles.flatMap((c) => [
-    c.high,
-    c.low,
-  ]);
+  const chartValues = candles.flatMap((c) => [c.high, c.low]);
+  const ema9 = useMemo(() => ema(candles.map(c => c.close), 9), [candles]);
+  const ema21 = useMemo(() => ema(candles.map(c => c.close), 21), [candles]);
 
   const scale = chartValues.length
     ? makeScale(chartValues, 420)
@@ -629,11 +688,11 @@ export default function DerivAIAnalyzer() {
 
   const engineStage = signalCycle.current.locked
     ? "COOLDOWN"
-    : touch.sampleCount < touch.minSamples
+    : scannerTouch.sampleCount < scannerTouch.minSamples
       ? "COLLECTING"
       : best.valid && confirmationCount >= 3
         ? "ENTRY READY"
-        : best.valid || touch.confidence >= 64
+        : best.valid || scannerTouch.confidence >= 64
           ? "SETUP FORMING"
           : "ANALYZING";
 
@@ -983,6 +1042,21 @@ export default function DerivAIAnalyzer() {
               </div>
             </div>
 
+            <div className="derivChartToolbar">
+              <div className="derivIntervalGroup">
+                {["tick","5s","15s","30s","1m"].map((v) => (
+                  <button key={v} type="button" className={chartInterval === v ? "active" : ""} onClick={() => setChartInterval(v)}>
+                    {v === "tick" ? "Ticks" : v}
+                  </button>
+                ))}
+              </div>
+              <div className="derivChartActions">
+                <button type="button" className={chartType === "candles" ? "active" : ""} onClick={() => setChartType("candles")}>Candles</button>
+                <button type="button" className={chartType === "line" ? "active" : ""} onClick={() => setChartType("line")}>Line</button>
+                <button type="button" className={showEma ? "active" : ""} onClick={() => setShowEma(v => !v)}>EMA 9/21</button>
+              </div>
+            </div>
+
             <div
               className="terminalChart"
               onWheel={handleWheel}
@@ -1002,73 +1076,54 @@ export default function DerivAIAnalyzer() {
                   viewBox="0 0 1080 420"
                   preserveAspectRatio="none"
                 >
-                  {candles.map((c, i) => {
-                    const count = Math.max(
-                      1,
-                      candles.length
-                    );
-
-                    const x =
-                      16 +
-                      (i /
-                        Math.max(1, count - 1)) *
-                        930;
-
-                    const candleW = Math.max(
-                      4,
-                      Math.min(
-                        13,
-                        (900 / count) * 0.64
-                      )
-                    );
-
+                  {chartType === "candles" ? candles.map((c, i) => {
+                    const count = Math.max(1, candles.length);
+                    const x = 16 + (i / Math.max(1, count - 1)) * 930;
+                    const candleW = Math.max(4, Math.min(13, (900 / count) * 0.64));
                     const openY = scale.y(c.open);
                     const closeY = scale.y(c.close);
                     const highY = scale.y(c.high);
                     const lowY = scale.y(c.low);
-
-                    const bullish =
-                      c.close >= c.open;
-
-                    const top = Math.min(
-                      openY,
-                      closeY
-                    );
-
-                    const bodyH = Math.max(
-                      2,
-                      Math.abs(
-                        closeY - openY
-                      )
-                    );
-
+                    const bullish = c.close >= c.open;
+                    const top = Math.min(openY, closeY);
+                    const bodyH = Math.max(2, Math.abs(closeY - openY));
                     return (
-                      <g
-                        key={`${c.ts}-${i}`}
-                        className={
-                          bullish
-                            ? "terminalCandleUp"
-                            : "terminalCandleDown"
-                        }
-                      >
-                        <line
-                          x1={x}
-                          x2={x}
-                          y1={highY}
-                          y2={lowY}
-                          className="wick"
-                        />
-                        <rect
-                          x={x - candleW / 2}
-                          y={top}
-                          width={candleW}
-                          height={bodyH}
-                          rx="1"
-                          className="body"
-                        />
+                      <g key={`${c.ts}-${i}`} className={bullish ? "terminalCandleUp" : "terminalCandleDown"}>
+                        <line x1={x} x2={x} y1={highY} y2={lowY} className="wick" />
+                        <rect x={x - candleW / 2} y={top} width={candleW} height={bodyH} rx="1" className="body" />
                       </g>
                     );
-                  })}
+                  }) : (
+                    <polyline className="derivPriceLine" fill="none" points={candles.map((c,i) => `${16 + (i / Math.max(1, candles.length - 1)) * 930},${scale.y(c.close)}`).join(" ")} />
+                  )}
+
+                  {showEma && candles.length > 2 && (
+                    <>
+                      <polyline className="derivEma9" fill="none" points={ema9.map((v,i) => `${16 + (i / Math.max(1, candles.length - 1)) * 930},${scale.y(v)}`).join(" ")} />
+                      <polyline className="derivEma21" fill="none" points={ema21.map((v,i) => `${16 + (i / Math.max(1, candles.length - 1)) * 930},${scale.y(v)}`).join(" ")} />
+                    </>
+                  )}
+
+                  {scale && Number.isFinite(Number(selectedBarrierTarget)) && (
+                    <g className="derivChartBarrier">
+                      <line x1="0" x2="950" y1={scale.y(Number(selectedBarrierTarget))} y2={scale.y(Number(selectedBarrierTarget))} />
+                      <text x="805" y={scale.y(Number(selectedBarrierTarget)) - 8}>
+                        {barrierMode === "below" ? "−" : barrierMode === "fixed" ? "=" : "+"}{barrierMode === "fixed" ? fmt(selectedBarrierTarget) : Number(barrierOffset).toFixed(2)}
+                      </text>
+                    </g>
+                  )}
+
+                  {scale && Number.isFinite(Number(currentPrice)) && scannerDirection && (
+                    <g className="scannerBarrierLine">
+                      {(() => {
+                        const target = Number(currentPrice) + (scannerDirection === "below" ? -selectedBarrierGap : selectedBarrierGap);
+                        return <>
+                          <line x1="0" x2="950" y1={scale.y(target)} y2={scale.y(target)} />
+                          <text x="690" y={scale.y(target) - 8}>AI {String(scannerDirection).toUpperCase()} · {scannerTouch.signal} {scannerTouch.confidence.toFixed(0)}%</text>
+                        </>;
+                      })()}
+                    </g>
+                  )}
 
                   {scale &&
                     Number.isFinite(
@@ -1351,6 +1406,23 @@ export default function DerivAIAnalyzer() {
           </article>
 
           <aside className="terminalSide v8Side">
+            <section className="terminalMiniCard autoBarrierScannerCard">
+              <div className="v8CardTitle"><span>AUTO BARRIER SCANNER</span><small>Compares both sides</small></div>
+              <div className="autoBarrierRecommendation">
+                <div>
+                  <em>{autoBarrierScan?.analysis?.signal !== "WAIT" ? "BEST QUALIFIED SIDE" : "BEST CURRENT SIDE"}</em>
+                  <strong>{autoBarrierScan?.label || "WAIT"}</strong>
+                  <span>{autoBarrierScan?.analysis?.signal || "WAIT"} · {Number(autoBarrierScan?.analysis?.confidence || 0).toFixed(0)}%</span>
+                </div>
+                <button type="button" onClick={() => setBarrierMode(autoBarrierScan?.direction || "below")}>USE BARRIER</button>
+              </div>
+              <div className="autoBarrierCompare">
+                <div><span>ABOVE</span><b>{touchAbove.signal}</b><strong>{touchAbove.confidence.toFixed(0)}%</strong></div>
+                <div><span>BELOW</span><b>{touchBelow.signal}</b><strong>{touchBelow.confidence.toFixed(0)}%</strong></div>
+              </div>
+              <p>Scanner compares the same offset above and below spot. It does not assume Below is always better; it waits for the side with stronger live evidence.</p>
+            </section>
+
             <section className={`terminalSignalCard v8EntryCard ${best.valid ? "valid" : ""}`}>
               <div className="v8CardTitle"><span>ENTRY ENGINE</span><small>{durationLabel}</small></div>
 
@@ -1373,13 +1445,14 @@ export default function DerivAIAnalyzer() {
                 <div>
                   <em>{engineStage}</em>
                   <strong>{engineStage === "ENTRY READY" ? best.signal : "WAIT"}</strong>
-                  <p>{best.valid && engineStage !== "ENTRY READY" ? `Confirming ${best.signal} setup ${Math.min(confirmationCount, 3)}/3 live ticks` : touch.reason}</p>
+                  <p>{best.valid && engineStage !== "ENTRY READY" ? `Confirming ${best.signal} ${String(best.direction).toUpperCase()} setup ${Math.min(confirmationCount, 3)}/3 live ticks` : scannerTouch.reason}</p>
                 </div>
                 <b>{best.confidence.toFixed(0)}%</b>
               </div>
 
               <div className="v8DataRows">
                 <p><span>Contract</span><b>TOUCH / NO TOUCH</b></p>
+                <p><span>Barrier side</span><b>{String(best.direction || "—").toUpperCase()}</b></p>
                 <p><span>Quality</span><b>{signalQuality}</b></p>
                 <p><span>Live confirmation</span><b>{best.valid ? `${Math.min(confirmationCount, 3)}/3` : "—"}</b></p>
                 <p><span>Trend</span><b>{riseFall.trend}</b></p>
@@ -1417,31 +1490,17 @@ export default function DerivAIAnalyzer() {
                 <label><span>CONTRACT</span><select disabled value="touch"><option value="touch">Touch / No Touch</option></select></label>
               </div>
 
-              <div className="derivBarrierBox">
-                <div className="derivBarrierTitle"><strong>Barrier</strong><span title="Barrier target used for both analysis and order">ⓘ</span></div>
-                <div className="derivBarrierTabs">
-                  <button type="button" className={barrierMode === "above" ? "active" : ""} onClick={() => setBarrierMode("above")}>Above spot</button>
-                  <button type="button" className={barrierMode === "below" ? "active" : ""} onClick={() => setBarrierMode("below")}>Below spot</button>
-                  <button type="button" className={barrierMode === "fixed" ? "active" : ""} onClick={() => setBarrierMode("fixed")}>Fixed barrier</button>
-                </div>
+              <button type="button" className="derivBarrierLauncher" onClick={() => setBarrierOpen(true)}>
+                <span><small>BARRIER</small><strong>{barrierMode === "above" ? "Above spot" : barrierMode === "below" ? "Below spot" : "Fixed barrier"}</strong></span>
+                <span className="barrierLauncherValue">
+                  <b>{barrierMode === "fixed" ? manualBarrierText : `${barrierMode === "below" ? "−" : "+"}${Number(barrierOffset).toFixed(2)}`}</b>
+                  <small>Target {manualBarrierText}</small>
+                </span>
+              </button>
 
-                {barrierMode === "fixed" ? (
-                  <div className="derivBarrierInput">
-                    <span>=</span>
-                    <input type="number" step="0.01" value={fixedBarrier} placeholder={displayPrice} onChange={(e) => setFixedBarrier(e.target.value)} />
-                  </div>
-                ) : (
-                  <div className="derivBarrierInput">
-                    <span>{barrierMode === "below" ? "−" : "+"}</span>
-                    <button type="button" onClick={() => setBarrierOffset((v) => Math.max(0.01, Number(v || 0) - 0.01))}>−</button>
-                    <input type="number" min="0.01" step="0.01" value={barrierOffset} onChange={(e) => setBarrierOffset(Math.max(0.01, Number(e.target.value) || 0.01))} />
-                    <button type="button" onClick={() => setBarrierOffset((v) => Number((Number(v || 0) + 0.01).toFixed(4)))}>+</button>
-                  </div>
-                )}
-
-                <div className="derivSpotRow"><span>Current spot</span><strong>{displayPrice}</strong></div>
-                <div className="derivSpotRow"><span>Barrier price</span><strong>{manualBarrierText}</strong></div>
-                <div className="derivSpotRow"><span>Order barrier</span><strong>{manualOrderBarrier || "—"}</strong></div>
+              <div className="derivSpotInline">
+                <span>Current spot <b>{displayPrice}</b></span>
+                <span>Barrier <b>{manualBarrierText}</b></span>
               </div>
 
               <div className="manualTradeGrid v8ManualGrid derivStakeRow">
@@ -1495,6 +1554,33 @@ export default function DerivAIAnalyzer() {
           </article>
         </section>
 
+
+        {barrierOpen ? (
+          <div className="derivBarrierOverlay" role="presentation" onMouseDown={() => setBarrierOpen(false)}>
+            <section className="derivBarrierSheet" role="dialog" aria-modal="true" aria-label="Barrier" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="derivSheetHandle" />
+              <header><h2>Barrier</h2><button type="button" aria-label="Close" onClick={() => setBarrierOpen(false)}>ⓘ</button></header>
+              <div className="derivSheetTabs">
+                <button type="button" className={barrierMode === "above" ? "active" : ""} onClick={() => setBarrierMode("above")}>Above spot</button>
+                <button type="button" className={barrierMode === "below" ? "active" : ""} onClick={() => setBarrierMode("below")}>Below spot</button>
+                <button type="button" className={barrierMode === "fixed" ? "active" : ""} onClick={() => setBarrierMode("fixed")}>Fixed barrier</button>
+              </div>
+              {barrierMode === "fixed" ? (
+                <div className="derivSheetInput"><span>=</span><input type="number" step="0.01" value={fixedBarrier} placeholder={displayPrice} onChange={(e) => setFixedBarrier(e.target.value)} /></div>
+              ) : (
+                <div className="derivSheetInput">
+                  <span>{barrierMode === "below" ? "−" : "+"}</span>
+                  <button type="button" onClick={() => setBarrierOffset((v) => Math.max(0.01, Number((Number(v || 0) - 0.01).toFixed(4))))}>−</button>
+                  <input type="number" min="0.01" step="0.01" value={barrierOffset} onChange={(e) => setBarrierOffset(Math.max(0.01, Number(e.target.value) || 0.01))} />
+                  <button type="button" onClick={() => setBarrierOffset((v) => Number((Number(v || 0) + 0.01).toFixed(4)))}>+</button>
+                </div>
+              )}
+              <div className="derivSheetSpot"><span>Current spot</span><strong>{displayPrice}</strong></div>
+              <div className="derivSheetSpot"><span>Barrier price</span><strong>{manualBarrierText}</strong></div>
+              <button type="button" className="derivSheetSave" onClick={() => setBarrierOpen(false)}>Save</button>
+            </section>
+          </div>
+        ) : null}
         <footer className="v8MarketFooter">
           <div><span>Market</span><b>{derivMarketName(symbol, market?.label)}</b></div>
           <div><span>Spot</span><b>{displayPrice}</b></div>
