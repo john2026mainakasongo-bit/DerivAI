@@ -146,6 +146,74 @@ function analyzeRiseFall(prices = []) {
 }
 
 
+
+function advancedConfluence(prices = [], barrierGap = 0.15, barrierDirection = "above") {
+  const p = prices.map(Number).filter(Number.isFinite);
+  if (p.length < 24) {
+    return {
+      score: 50, momentum: 50, trend: 50, multiWindow: 50,
+      priceAction: 50, rejection: 50, choppiness: 50, regime: 50,
+      label: "COLLECTING"
+    };
+  }
+
+  const current = p.at(-1);
+  const gap = Math.max(Math.abs(Number(barrierGap) || 0), Math.abs(current) * 0.000001);
+  const dir = barrierDirection === "below" ? -1 : 1;
+  const windows = [6, 12, 24, 48].map((n) => p.slice(-Math.min(n, p.length)));
+  const moves = windows.map((w) => (w.at(-1) - w[0]) * dir);
+  const moveScores = moves.map((m, i) => clamp(50 + (m / gap) * (18 - i * 2), 0, 100));
+  const multiWindow = mean(moveScores);
+
+  const diffs = p.slice(-40).slice(1).map((x, i, arr) => {
+    const src = p.slice(-40);
+    return x - src[i];
+  });
+  const signed = diffs.map((d) => Math.sign(d)).filter(Boolean);
+  let flips = 0;
+  for (let i = 1; i < signed.length; i++) if (signed[i] !== signed[i-1]) flips += 1;
+  const flipRate = signed.length > 1 ? flips / (signed.length - 1) : 0.5;
+  const choppiness = clamp(flipRate * 100, 0, 100);
+
+  const recent = p.slice(-32);
+  const high = Math.max(...recent);
+  const low = Math.min(...recent);
+  const range = Math.max(high - low, gap);
+  const position = clamp((current - low) / range, 0, 1);
+  const priceAction = barrierDirection === "below" ? (1 - position) * 100 : position * 100;
+
+  const shortMove = (p.at(-1) - p.at(-8)) * dir;
+  const momentum = clamp(50 + (shortMove / gap) * 22, 0, 100);
+
+  const fast = ema(p.slice(-40), 9).at(-1);
+  const slow = ema(p.slice(-40), 21).at(-1);
+  const emaDelta = Number(fast) - Number(slow);
+  const trend = clamp(50 + ((emaDelta * dir) / gap) * 28, 0, 100);
+
+  const longSigma = Math.max(std(diffs), Math.abs(current) * 0.000002);
+  const shortDiffs = diffs.slice(-10);
+  const shortSigma = Math.max(std(shortDiffs), longSigma * 0.1);
+  const regimeRatio = longSigma > 0 ? shortSigma / longSigma : 1;
+  const regime = clamp(70 - Math.abs(regimeRatio - 1) * 35, 15, 95);
+
+  const prev = p.slice(-12, -1);
+  const prevHigh = Math.max(...prev);
+  const prevLow = Math.min(...prev);
+  const breakout = barrierDirection === "below" ? prevLow - current : current - prevHigh;
+  const rejection = clamp(50 + (breakout / gap) * 30, 0, 100);
+
+  const score = clamp(
+    multiWindow * 0.24 + momentum * 0.18 + trend * 0.18 +
+    priceAction * 0.14 + rejection * 0.10 + regime * 0.08 +
+    (100 - choppiness) * 0.08
+  );
+
+  return {
+    score, momentum, trend, multiWindow, priceAction, rejection,
+    choppiness, regime, label: score >= 70 ? "ALIGNED" : score >= 58 ? "MIXED+" : score <= 42 ? "OPPOSED" : "MIXED"
+  };
+}
+
 function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirection = "above") {
   const p = prices.map(Number).filter(Number.isFinite);
   const minSamples = Math.max(18, Math.min(40, Number(horizon) + 8));
@@ -217,8 +285,11 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     100
   ) / 100;
 
+  const confluence = advancedConfluence(p, barrier, barrierDirection);
+
   const touchRaw =
     44 +
+    clamp((confluence.score - 50) * 0.20, -10, 10) +
     clamp((travelRatio - 0.65) * 30, -12, 25) +
     clamp((persistence - 0.5) * 32, -7, 14) +
     clamp((expansion - 0.9) * 13, -6, 10) +
@@ -227,6 +298,8 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
 
   const noTouchRaw =
     44 +
+    clamp((50 - confluence.score) * 0.12, -7, 7) +
+    clamp((confluence.choppiness - 50) * 0.08, -4, 4) +
     clamp((0.9 - travelRatio) * 34, -12, 25) +
     clamp((0.62 - persistence) * 24, -6, 11) +
     clamp((1.0 - expansion) * 13, -5, 8) +
@@ -242,14 +315,16 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     touchScore >= MASTER_THRESHOLD &&
     dominance >= 20 &&
     travelRatio >= 0.95 &&
-    persistence >= 0.62;
+    persistence >= 0.62 &&
+    confluence.score >= 62;
 
   const noTouchQualified =
     noTouchScore >= MASTER_THRESHOLD &&
     dominance >= 20 &&
     travelRatio <= 0.72 &&
     persistence <= 0.68 &&
-    expansion <= 1.12;
+    expansion <= 1.12 &&
+    confluence.score <= 58;
 
   let signal = "WAIT";
   if (touchQualified) signal = "TOUCH";
@@ -285,6 +360,7 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     persistence,
     expansion,
     directionAlignment,
+    confluence,
     reason,
   };
 }
@@ -972,6 +1048,21 @@ export default function DerivAIAnalyzer() {
 
   const recentSignals = [...markers].reverse().slice(0, 6);
 
+  const strategyNames = [
+    "EMA 9/21 Trend",
+    "Multi-Window Momentum",
+    "Price Action",
+    "Barrier Distance",
+    "Expected Travel",
+    "Volatility Regime",
+    "Persistence",
+    "Range Position",
+    "Breakout / Rejection",
+    "Choppiness Filter",
+    "Rise/Fall Bias",
+    "3-Tick Live Confirmation"
+  ];
+
   return (
     <div className="analysisOnlyPage">
       <main className="analysisOnlyMain">
@@ -987,6 +1078,16 @@ export default function DerivAIAnalyzer() {
             <div><span>Analysis engine</span><strong className={connected ? "ok" : ""}>{connected ? "LIVE" : "OFFLINE"}</strong></div>
           </div>
         </header>
+
+        <section className="analysisStrategyBar">
+          <div className="analysisStrategyTitle">
+            <span>ACTIVE ANALYSIS STRATEGIES</span>
+            <b>{scannerTouch?.confluence?.label || "SCANNING"}</b>
+          </div>
+          <div className="analysisStrategyChips">
+            {strategyNames.map((name) => <span key={name}>{name}</span>)}
+          </div>
+        </section>
 
         {statusDetail ? (
           <div className="terminalError">
@@ -1102,6 +1203,13 @@ export default function DerivAIAnalyzer() {
               </div>
             </div>
 
+            <div className="analysisChartStatus">
+              <span>BEST SIDE <b>{String(scannerDirection).toUpperCase()}</b></span>
+              <span>DECISION <b className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal}</b></span>
+              <span>CONFIDENCE <b>{masterConfidence.toFixed(0)}%</b></span>
+              <span>CONFLUENCE <b>{Number(scannerTouch?.confluence?.score || 50).toFixed(0)}%</b></span>
+            </div>
+
             <div
               className="terminalChart"
               onWheel={handleWheel}
@@ -1164,7 +1272,7 @@ export default function DerivAIAnalyzer() {
                         const target = Number(currentPrice) + (scannerDirection === "below" ? -selectedBarrierGap : selectedBarrierGap);
                         return <>
                           <line x1="0" x2="950" y1={scale.y(target)} y2={scale.y(target)} />
-                          <text x="660" y={scale.y(target) - 8}>AI BEST SIDE: {String(scannerDirection).toUpperCase()} · DECISION {scannerTouch.signal}</text>
+
                         </>;
                       })()}
                     </g>
@@ -1507,7 +1615,7 @@ export default function DerivAIAnalyzer() {
                 <p><span>Trend</span><b>{riseFall.trend}</b></p>
                 <p><span>Volatility</span><b>{volatilityLabel}</b></p>
                 <p><span>Duration</span><b>{durationLabel}</b></p>
-                <p><span>Last entry</span><b>{entry ? fmt(entry.price) : "—"}</b></p>
+                <p><span>Last confirmed</span><b>{entry ? fmt(entry.price) : "—"}</b></p>
               </div>
             </section>
 
@@ -1549,12 +1657,12 @@ export default function DerivAIAnalyzer() {
           <article className="v8SummaryPanel">
             <div className="v8SectionTitle"><div><span>ANALYSIS SUMMARY</span><h3>Current market evidence</h3></div><small>Live</small></div>
             <div className="v8SummaryGrid">
-              <div><span>Volatility</span><strong>{clamp(riseFall.volatility * 100,0,100).toFixed(0)}%</strong><small>{volatilityLabel}</small></div>
-              <div><span>Momentum</span><strong>{riseFall.confidence.toFixed(0)}%</strong><small>{riseFall.momentum}</small></div>
-              <div><span>Consistency</span><strong>{riseFall.consistency.toFixed(0)}%</strong><small>{riseFall.consistency >= 65 ? "Strong" : "Mixed"}</small></div>
-              <div><span>Barrier Test</span><strong>{clamp(scannerTouch.travelRatio * 60,0,100).toFixed(0)}%</strong><small>{scannerTouch.travelRatio >= .9 ? "Active" : "Stable"}</small></div>
-              <div><span>Touch Prob.</span><strong>{scannerTouch.touchScore.toFixed(0)}%</strong><small>{masterSignal === "TOUCH" ? "CONFIRMED" : scannerTouch.touchScore >= MASTER_THRESHOLD ? "Candidate" : "Watching"}</small></div>
-              <div><span>No Touch Prob.</span><strong>{scannerTouch.noTouchScore.toFixed(0)}%</strong><small>{masterSignal === "NO TOUCH" ? "CONFIRMED" : scannerTouch.noTouchScore >= MASTER_THRESHOLD ? "Candidate" : "Watching"}</small></div>
+              <div><span>Confluence</span><strong>{Number(scannerTouch?.confluence?.score || 50).toFixed(0)}%</strong><small>{scannerTouch?.confluence?.label || "Scanning"}</small></div>
+              <div><span>Momentum</span><strong>{Number(scannerTouch?.confluence?.momentum || 50).toFixed(0)}%</strong><small>{riseFall.momentum}</small></div>
+              <div><span>Price Action</span><strong>{Number(scannerTouch?.confluence?.priceAction || 50).toFixed(0)}%</strong><small>Barrier side</small></div>
+              <div><span>Travel</span><strong>{clamp(scannerTouch.travelRatio * 60,0,100).toFixed(0)}%</strong><small>{scannerTouch.travelRatio >= .9 ? "Active" : "Stable"}</small></div>
+              <div><span>Touch Prob.</span><strong>{scannerTouch.touchScore.toFixed(0)}%</strong><small>{masterSignal === "TOUCH" ? "CONFIRMED" : "Watching"}</small></div>
+              <div><span>No Touch Prob.</span><strong>{scannerTouch.noTouchScore.toFixed(0)}%</strong><small>{masterSignal === "NO TOUCH" ? "CONFIRMED" : "Watching"}</small></div>
             </div>
           </article>
         </section>
