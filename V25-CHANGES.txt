@@ -1,0 +1,9 @@
+V25 — Early Entry / No-Chase
+
+- Blocks late TOUCH entries after price is already extended toward the directional extreme.
+- Adds EARLY / IDEAL / WAIT RETEST / LATE · NO CHASE timing state independently for ABOVE and BELOW.
+- Adds exhaustion and micro-reversal detection.
+- Sharp-entry score now includes entry-location/timing quality.
+- Sharp entry requires timing score >= 64 and cannot fire while late-entry gate is active.
+- Keeps ABOVE and BELOW visible side-by-side and preserves the compact V24 analyzer layout.
+- Analysis only; no guaranteed outcomes and no automatic trading added.

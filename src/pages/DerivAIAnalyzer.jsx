@@ -462,8 +462,52 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     (100 - accelerationScore) * 0.08
   );
 
-  const sharpScore = preferredSignal === "TOUCH" ? sharpTouchScore : sharpNoTouchScore;
-  const confidence = entryConfidence;
+  // V25 Early Entry / No-Chase filter. A strong move is not automatically a good
+  // entry: if price has already travelled to the directional extreme, the setup
+  // is marked LATE and cannot publish a TOUCH signal. This favours pullbacks,
+  // fresh continuation and retest entries instead of buying the top/selling the bottom.
+  const timingWindow = p.slice(-Math.min(28, p.length));
+  const timingHigh = Math.max(...timingWindow);
+  const timingLow = Math.min(...timingWindow);
+  const timingRange = Math.max(timingHigh - timingLow, longSigma, Math.abs(current) * 0.000001);
+  const rangePosition = clamp((current - timingLow) / timingRange, 0, 1);
+  const directionalExtension = barrierDirection === "below" ? 1 - rangePosition : rangePosition;
+  const last6 = p.slice(-Math.min(7, p.length));
+  const impulse = last6.length > 1 ? last6.at(-1) - last6[0] : 0;
+  const directedImpulse = impulse * (barrierDirection === "below" ? -1 : 1);
+  const impulseUnits = directedImpulse / Math.max(longSigma, Math.abs(current) * 0.000001);
+  const last3 = p.slice(-Math.min(4, p.length));
+  const microMove = last3.length > 1 ? last3.at(-1) - last3[0] : 0;
+  const directedMicroMove = microMove * (barrierDirection === "below" ? -1 : 1);
+  const reversing = directedMicroMove < -Math.max(longSigma * 0.18, barrier * 0.12);
+  const exhausted = directionalExtension >= 0.84 && impulseUnits > 0.75;
+  const overExtended = directionalExtension >= 0.91;
+  const lateEntry = overExtended || exhausted || (directionalExtension >= 0.80 && reversing);
+  const timingLabel = lateEntry
+    ? "LATE · NO CHASE"
+    : directionalExtension >= 0.38 && directionalExtension <= 0.76 && !reversing
+      ? "IDEAL"
+      : directionalExtension < 0.38
+        ? "EARLY"
+        : "WAIT RETEST";
+  const timingScore = clamp(
+    100 - Math.abs(directionalExtension - 0.58) * 125 - (reversing ? 18 : 0) - (exhausted ? 28 : 0),
+    0,
+    100
+  );
+
+  // Penalise sharp score when timing is late. This prevents a high momentum score
+  // from overriding bad location.
+  const rawSharpScore = preferredSignal === "TOUCH" ? sharpTouchScore : sharpNoTouchScore;
+  const sharpScore = preferredSignal === "TOUCH"
+    ? clamp(rawSharpScore * 0.78 + timingScore * 0.22 - (lateEntry ? 30 : 0))
+    : rawSharpScore;
+  const confidence = preferredSignal === "TOUCH" && lateEntry
+    ? Math.min(entryConfidence, MASTER_THRESHOLD - 1)
+    : entryConfidence;
+
+  // Final hard gate: never issue TOUCH after the directional move is already exhausted.
+  if (signal === "TOUCH" && lateEntry) signal = "WAIT";
 
   const setup =
     signal !== "WAIT"
@@ -508,7 +552,15 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     sharpNoTouchScore,
     microEfficiency,
     accelerationScore,
-    reason,
+    timingLabel,
+    timingScore,
+    directionalExtension,
+    lateEntry,
+    exhausted,
+    reversing,
+    reason: lateEntry && preferredSignal === "TOUCH"
+      ? "NO CHASE: directional move is extended; wait for a pullback/retest before a new barrier entry"
+      : reason,
   };
 }
 
@@ -840,6 +892,8 @@ export default function DerivAIAnalyzer() {
     touchValid &&
     Number(scannerTouch.sharpScore || 0) >= SHARP_THRESHOLD &&
     Number(scannerTouch.strategyAgreement || 0) >= 10 &&
+    Number(scannerTouch.timingScore || 0) >= 64 &&
+    !scannerTouch.lateEntry &&
     !scannerTouch.hardConflict;
 
   const best = {
@@ -1803,6 +1857,7 @@ export default function DerivAIAnalyzer() {
                     <p><span>TOUCH</span><b>{touchAbove.touchScore.toFixed(0)}%</b></p>
                     <p><span>NO TOUCH</span><b>{touchAbove.noTouchScore.toFixed(0)}%</b></p>
                     <p><span>SHARP</span><b>{Number(touchAbove.sharpScore || 0).toFixed(0)}%</b></p>
+                    <p><span>TIMING</span><b>{touchAbove.timingLabel || "SCANNING"}</b></p>
                     <p><span>TF Context</span><b>{touchAbove.contextScore.toFixed(0)}%</b></p>
                   </div>
                 </div>
@@ -1823,6 +1878,7 @@ export default function DerivAIAnalyzer() {
                     <p><span>TOUCH</span><b>{touchBelow.touchScore.toFixed(0)}%</b></p>
                     <p><span>NO TOUCH</span><b>{touchBelow.noTouchScore.toFixed(0)}%</b></p>
                     <p><span>SHARP</span><b>{Number(touchBelow.sharpScore || 0).toFixed(0)}%</b></p>
+                    <p><span>TIMING</span><b>{touchBelow.timingLabel || "SCANNING"}</b></p>
                     <p><span>TF Context</span><b>{touchBelow.contextScore.toFixed(0)}%</b></p>
                   </div>
                 </div>
@@ -1868,6 +1924,7 @@ export default function DerivAIAnalyzer() {
                 <p><span>Quality</span><b>{signalQuality}</b></p>
                 <p><span>Entry speed</span><b>{best.sharpEligible ? "SHARP · 2 TICKS" : "STANDARD · 3 TICKS"}</b></p>
                 <p><span>Sharp score</span><b>{Number(best.sharpScore || 0).toFixed(0)}%</b></p>
+                <p><span>Entry timing</span><b>{scannerTouch.timingLabel || "SCANNING"}</b></p>
                 <p><span>Live confirmation</span><b>{best.valid ? `${Math.min(confirmationCount, best.requiredConfirmations)}/${best.requiredConfirmations}` : "—"}</b></p>
                 <p><span>Trend</span><b>{riseFall.trend}</b></p>
                 <p><span>Volatility</span><b>{volatilityLabel}</b></p>
