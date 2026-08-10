@@ -1395,7 +1395,7 @@ export default function DerivAIAnalyzer() {
                               y={m.y - 10}
                               className="signalLabel"
                             >
-                              {m.signal}
+                              {`✓ ${m.signal}`}
                             </text>
                           </>
                         )}
@@ -1641,7 +1641,7 @@ export default function DerivAIAnalyzer() {
 
         <section className="v8LowerGrid">
           <article className="v8RecentPanel">
-            <div className="v8SectionTitle"><div><span>RECENT SIGNALS</span><h3>Qualified setups only</h3></div><small>{markers.length} this session</small></div>
+            <div className="v8SectionTitle"><div><span>RECENT SIGNALS</span><h3>Confirmed analyzed entries</h3></div><small>{markers.length} this session</small></div>
             <div className="v8SignalCards">
               {recentSignals.length ? recentSignals.slice(0,5).map((item) => (
                 <div className={`v8SignalMini ${item.signal === "TOUCH" ? "touch" : "notouch"}`} key={item.ts}>

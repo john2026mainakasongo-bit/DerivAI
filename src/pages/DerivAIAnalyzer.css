@@ -903,3 +903,84 @@
 @media (min-width:1101px) and (max-height:720px){
   .analysisOnlyMain{grid-template-rows:36px 27px 34px minmax(0,1fr) 92px 23px;gap:4px;padding:4px 8px}.analysisStrategyBar{min-height:27px;padding:3px 6px}.analysisStrategyChips span{font-size:6px;padding:2px 5px}.analysisOnlyStats>div:nth-child(2){display:none}.analysisOnlyStats{grid-template-columns:repeat(2,100px)}.analysisOnlyMain .terminalWorkspace{grid-template-columns:minmax(0,1fr) 280px!important}.v8DataRows p:nth-child(5),.v8DataRows p:nth-child(6){display:none}.terminalChartFooter span:nth-child(2){display:none}.terminalChartFooter{grid-template-columns:1fr 1fr!important}
 }
+
+
+/* === V18 FINAL ONE-SCREEN POLISH === */
+@media (min-width:1101px){
+  .analysisOnlyMain{
+    grid-template-rows:42px 31px 37px minmax(0,1fr) 116px 24px;
+    gap:5px;
+    padding:6px 10px 5px;
+  }
+  .analysisOnlyTitle h1{font-size:24px!important}
+  .analysisOnlyTitle p{font-size:9px!important}
+  .analysisOnlyLive{font-size:9px!important}
+  .analysisOnlyStats{grid-template-columns:repeat(3,108px)!important}
+  .analysisOnlyStats span{font-size:7.5px!important}
+  .analysisOnlyStats strong{font-size:13px!important}
+
+  .analysisStrategyBar{min-height:31px!important;padding:4px 8px!important}
+  .analysisStrategyTitle span{font-size:7.5px!important}
+  .analysisStrategyTitle b{font-size:7px!important;padding:3px 7px!important}
+  .analysisStrategyChips{gap:5px!important}
+  .analysisStrategyChips span{font-size:7px!important;padding:3px 6px!important}
+
+  .analysisOnlyMain .terminalControls{min-height:37px!important;padding:5px 8px!important}
+  .analysisOnlyMain .terminalControls label>span{font-size:7.5px!important}
+  .analysisOnlyMain .terminalControls select,
+  .analysisOnlyMain .terminalControls button{height:26px!important;font-size:8.5px!important}
+
+  .analysisOnlyMain .terminalWorkspace{grid-template-columns:minmax(0,1fr) 318px!important;gap:7px!important}
+  .analysisOnlyMain .terminalChartCard{padding:7px!important}
+  .analysisOnlyMain .terminalChartHeader h2{font-size:12px!important}
+  .analysisOnlyMain .terminalPrice strong{font-size:17px!important}
+  .derivChartToolbar button{height:21px!important;font-size:7px!important}
+  .analysisChartStatus{font-size:7.2px!important;padding:4px 7px!important;gap:14px!important}
+  .analysisOnlyMain .terminalChartFooter span{font-size:7px!important}
+
+  .analysisOnlyMain .terminalSignalCard,
+  .analysisOnlyMain .terminalMiniCard{padding:7px!important}
+  .v8CardTitle>span{font-size:7.8px!important}
+  .v8CardTitle>small{font-size:6.5px!important}
+  .autoBarrierRecommendation strong{font-size:12px!important}
+  .autoBarrierRecommendation em,.autoBarrierRecommendation span{font-size:6.7px!important}
+  .autoBarrierStats span,.autoBarrierCompare span,.autoBarrierCompare b{font-size:6.6px!important}
+  .autoBarrierStats strong,.autoBarrierCompare strong{font-size:8.5px!important}
+  .v8Stage span{font-size:6px!important}
+  .v8EntryHero em{font-size:6.5px!important}
+  .v8EntryHero strong{font-size:18px!important}
+  .v8EntryHero p{font-size:7px!important;line-height:1.3!important}
+  .v8EntryHero>b{font-size:15px!important}
+  .v8DataRows p{padding:3px 1px!important;font-size:7px!important}
+
+  .analysisOnlyMain .v8LowerGrid{grid-template-columns:1fr 1.15fr!important;gap:6px!important}
+  .analysisOnlyMain .v8RecentPanel,
+  .analysisOnlyMain .v8SummaryPanel{padding:7px!important}
+  .v8SectionTitle h3{font-size:10px!important}
+  .v8SectionTitle span,.v8SectionTitle small{font-size:6.8px!important}
+  .v8SignalCards{gap:5px!important}
+  .v8SignalMini{padding:6px!important}
+  .v8SignalMini span,.v8SignalMini small{font-size:6.7px!important}
+  .v8SignalMini strong{font-size:10px!important}
+  .v8SignalMini b{font-size:7.5px!important}
+  .v8SummaryGrid{gap:5px!important}
+  .v8SummaryGrid>div{padding:5px!important}
+  .v8SummaryGrid span,.v8SummaryGrid small{font-size:6.7px!important}
+  .v8SummaryGrid strong{font-size:11px!important}
+
+  .analysisOnlyMain .v8MarketFooter{min-height:24px!important;padding:3px 7px!important}
+  .v8MarketFooter div span{font-size:5.8px!important}
+  .v8MarketFooter div b{font-size:6.8px!important}
+
+  .terminalMarker .signalLabel{font-size:8px!important;font-weight:900!important;paint-order:stroke;stroke:#03111a;stroke-width:3px}
+  .terminalMarker .entryLine{opacity:.28!important;stroke-dasharray:4 6!important}
+  .terminalMarker .touchDot{r:5px}
+}
+
+@media (min-width:1101px) and (max-height:720px){
+  .analysisOnlyMain{grid-template-rows:37px 28px 34px minmax(0,1fr) 104px 22px!important;gap:4px!important;padding:4px 8px!important}
+  .analysisOnlyTitle h1{font-size:21px!important}
+  .analysisStrategyChips span{font-size:6.4px!important;padding:2px 5px!important}
+  .analysisOnlyMain .terminalWorkspace{grid-template-columns:minmax(0,1fr) 292px!important}
+  .v8DataRows p:nth-child(6){display:none}
+}
