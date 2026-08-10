@@ -7,6 +7,8 @@ import "./DerivAIAnalyzer.css";
 const clamp = (n, min = 0, max = 100) =>
   Math.max(min, Math.min(max, Number(n) || 0));
 
+const MASTER_THRESHOLD = 72;
+
 function derivMarketName(symbol, fallback = "") {
   const exact = {
     "1HZ10V": "Volatility 10 (1s) Index",
@@ -114,22 +116,23 @@ function analyzeRiseFall(prices = []) {
 function analyzeTouch(prices = [], barrierDistance = 1.5) {
   const p = prices.map(Number).filter(Number.isFinite);
 
-  if (p.length < 8) {
+  if (p.length < 10) {
     return {
       signal: "WAIT",
       confidence: 0,
-      touchScore: 0,
-      noTouchScore: 0,
+      touchScore: 50,
+      noTouchScore: 50,
       upperBarrier: null,
       lowerBarrier: null,
+      movementScore: 0,
     };
   }
 
   const current = p.at(-1);
-  const recent = p.slice(-Math.min(50, p.length));
+  const recent = p.slice(-Math.min(60, p.length));
   const diffs = recent.slice(1).map((x, i) => x - recent[i]);
-
   const sigma = std(diffs);
+
   const distance = Math.max(
     sigma * barrierDistance,
     Math.abs(current) * 0.00001
@@ -137,19 +140,32 @@ function analyzeTouch(prices = [], barrierDistance = 1.5) {
 
   const upperBarrier = current + distance;
   const lowerBarrier = current - distance;
-  const range = Math.max(...recent) - Math.min(...recent);
-  const ratio = distance > 0 ? range / distance : 0;
 
-  const touchScore = clamp(ratio * 43);
-  const noTouchScore = clamp(100 - touchScore);
+  const short = recent.slice(-Math.min(12, recent.length));
+  const shortRange = Math.max(...short) - Math.min(...short);
+  const fullRange = Math.max(...recent) - Math.min(...recent);
+  const netMove = Math.abs(recent.at(-1) - recent[0]);
+
+  const rangePressure = distance > 0 ? shortRange / distance : 0;
+  const expansion = distance > 0 ? fullRange / (distance * 2) : 0;
+  const drift = distance > 0 ? netMove / distance : 0;
+
+  // Calibrated evidence score rather than an artificial 0/100 certainty.
+  // The cap deliberately prevents repeated 100% "signals" from noisy ticks.
+  const movementScore = clamp(
+    46 + rangePressure * 15 + expansion * 8 + drift * 5,
+    38,
+    92
+  );
+
+  const touchScore = movementScore;
+  const noTouchScore = 100 - touchScore;
   const confidence = Math.max(touchScore, noTouchScore);
 
-  const signal =
-    confidence < 65
-      ? "WAIT"
-      : touchScore > noTouchScore
-        ? "TOUCH"
-        : "NO TOUCH";
+  let signal = "WAIT";
+  if (confidence >= MASTER_THRESHOLD) {
+    signal = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
+  }
 
   return {
     signal,
@@ -158,6 +174,7 @@ function analyzeTouch(prices = [], barrierDistance = 1.5) {
     noTouchScore,
     upperBarrier,
     lowerBarrier,
+    movementScore,
   };
 }
 
@@ -298,52 +315,83 @@ export default function DerivAIAnalyzer() {
   const riseValid =
     connected &&
     riseFall.signal !== "WAIT" &&
-    riseFall.confidence >= 72;
+    riseFall.confidence >= MASTER_THRESHOLD;
 
   const touchValid =
     connected &&
     touch.signal !== "WAIT" &&
-    touch.confidence >= 70;
+    touch.confidence >= MASTER_THRESHOLD;
 
-  const best =
-    riseFall.confidence >= touch.confidence
-      ? {
-          mode: "RISE/FALL",
-          signal: riseFall.signal,
-          confidence: riseFall.confidence,
-          valid: riseValid,
-        }
-      : {
-          mode: "TOUCH/NO TOUCH",
-          signal: touch.signal,
-          confidence: touch.confidence,
-          valid: touchValid,
-        };
+  const qualifiedCandidates = [
+    {
+      mode: "RISE/FALL",
+      signal: riseFall.signal,
+      confidence: riseFall.confidence,
+      valid: riseValid,
+    },
+    {
+      mode: "TOUCH/NO TOUCH",
+      signal: touch.signal,
+      confidence: touch.confidence,
+      valid: touchValid,
+    },
+  ].filter((candidate) => candidate.valid);
+
+  const strongestQualified = qualifiedCandidates.sort(
+    (a, b) => b.confidence - a.confidence
+  )[0];
+
+  const strongestEvidence = Math.max(
+    riseFall.confidence,
+    touch.confidence
+  );
+
+  const best = strongestQualified || {
+    mode: "ANALYZER",
+    signal: "WAIT",
+    confidence: strongestEvidence,
+    valid: false,
+  };
 
   useEffect(() => {
     if (!best.valid || !records.length) return;
 
     const last = records.at(-1);
     const previous = lastSignal.current;
+    const minimumGapMs = unit === "ticks"
+      ? Math.max(8000, duration * 850)
+      : Math.max(10000, duration * 1000);
 
-    if (
-      previous &&
-      previous.signal === best.signal &&
-      last.ts - previous.ts < 5000
-    ) {
-      return;
+    if (previous) {
+      const sameSignal = previous.signal === best.signal;
+      const tooSoon = last.ts - previous.ts < minimumGapMs;
+      const notMateriallyStronger =
+        best.confidence < previous.confidence + 8;
+
+      if (tooSoon && (sameSignal || notMateriallyStronger)) {
+        return;
+      }
     }
 
     const marker = {
       ts: last.ts,
       price: last.price,
       signal: best.signal,
+      mode: best.mode,
       confidence: best.confidence,
     };
 
     lastSignal.current = marker;
-    setMarkers((old) => [...old.slice(-11), marker]);
-  }, [best.valid, best.signal, best.confidence, records]);
+    setMarkers((old) => [...old.slice(-9), marker]);
+  }, [
+    best.valid,
+    best.signal,
+    best.mode,
+    best.confidence,
+    records,
+    unit,
+    duration,
+  ]);
 
   const visibleCount = Math.round(clamp(160 / zoom, 45, 220));
   const safePan = Math.max(
@@ -399,14 +447,13 @@ export default function DerivAIAnalyzer() {
 
   const entry = markers.at(-1) || null;
 
-  const signalQuality =
-    best.confidence >= 86
+  const signalQuality = !best.valid
+    ? "WAIT"
+    : best.confidence >= 86
       ? "VERY STRONG"
       : best.confidence >= 78
         ? "STRONG"
-        : best.confidence >= 70
-          ? "GOOD"
-          : "WAIT";
+        : "QUALIFIED";
 
   const handleWheel = (e) => {
     e.preventDefault();
@@ -1032,6 +1079,11 @@ export default function DerivAIAnalyzer() {
                 </p>
 
                 <p>
+                  <span>Threshold</span>
+                  <b>{MASTER_THRESHOLD}%</b>
+                </p>
+
+                <p>
                   <span>Duration</span>
                   <b>{durationLabel}</b>
                 </p>
@@ -1173,7 +1225,7 @@ export default function DerivAIAnalyzer() {
           <div><span>VOLATILITY</span><strong>{volatilityLabel}</strong><small>Live movement estimate</small></div>
           <div><span>TICK SPEED</span><strong>{tickSpeed ? `${tickSpeed.toFixed(1)} / sec` : "—"}</strong><small>Observed feed speed</small></div>
           <div><span>AI CONFIDENCE</span><strong>{best.confidence.toFixed(1)}%</strong><small>{signalQuality}</small></div>
-          <div><span>DECISION</span><strong>{best.valid ? best.signal : "WAIT"}</strong><small>Threshold 72%</small></div>
+          <div><span>DECISION</span><strong>{best.valid ? best.signal : "WAIT"}</strong><small>Threshold {MASTER_THRESHOLD}%</small></div>
           <div><span>SIGNALS LOGGED</span><strong>{markers.length}</strong><small>Current market session</small></div>
         </section>
 
@@ -1190,7 +1242,7 @@ export default function DerivAIAnalyzer() {
                   {recentSignals.length ? recentSignals.map((item) => (
                     <tr key={item.ts}>
                       <td>{new Date(item.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</td>
-                      <td>{item.signal === "RISE" || item.signal === "FALL" ? "RISE/FALL" : "TOUCH"}</td>
+                      <td>{item.mode || (item.signal === "RISE" || item.signal === "FALL" ? "RISE/FALL" : "TOUCH/NO TOUCH")}</td>
                       <td><b style={{color: signalColor(item.signal)}}>{item.signal}</b></td>
                       <td>{fmt(item.price)}</td>
                       <td>{Number(item.confidence).toFixed(1)}%</td>
@@ -1208,8 +1260,8 @@ export default function DerivAIAnalyzer() {
               <div><span>HOW TO READ THIS</span><h3>Decision guide</h3></div>
             </div>
             <div className="terminalGuide">
-              <p><i className="guideDot green" /><span><b>72%+ confidence</b>Qualified signal. Confirm direction and duration before manual execution.</span></p>
-              <p><i className="guideDot amber" /><span><b>Below 72%</b>WAIT means the current evidence is not strong enough.</span></p>
+              <p><i className="guideDot green" /><span><b>{MASTER_THRESHOLD}%+ confidence</b>Qualified signal. Confirm direction and duration before manual execution.</span></p>
+              <p><i className="guideDot amber" /><span><b>Below {MASTER_THRESHOLD}%</b>WAIT means the current evidence is not strong enough.</span></p>
               <p><i className="guideDot blue" /><span><b>Touch / No Touch</b>Barrier probabilities are shown separately from Rise / Fall.</span></p>
               <p><i className="guideDot gray" /><span><b>Chart markers</b>Show where qualified signals were detected; they are not guaranteed outcomes.</span></p>
             </div>
