@@ -1,0 +1,11 @@
+V24 — Sharp Entry Signal Engine
+
+- Keeps ABOVE SPOT and BELOW SPOT visible side-by-side.
+- Adds independent SHARP score for each side.
+- Sharp-entry mode requires stronger multi-strategy agreement than normal setups.
+- High-conviction sharp setups can confirm after 2 fresh live ticks.
+- Standard setups still require 3 fresh live confirmations.
+- Sharp score blends entry confidence, confluence, momentum, rejection, micro directional efficiency, acceleration, expected travel, and choppiness.
+- Hard conflicts still force WAIT.
+- Entry Engine shows SHARP vs STANDARD speed, sharp score, and dynamic confirmation count.
+- No auto-trading is added; this remains an analysis/signal workspace.

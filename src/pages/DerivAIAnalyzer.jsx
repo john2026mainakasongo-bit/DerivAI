@@ -5,7 +5,10 @@ import "./DerivAIAnalyzer.css";
 const clamp = (n, min = 0, max = 100) =>
   Math.max(min, Math.min(max, Number(n) || 0));
 
-const MASTER_THRESHOLD = 76;
+const MASTER_THRESHOLD = 78;
+const SHARP_THRESHOLD = 84;
+const STANDARD_CONFIRMATIONS = 3;
+const SHARP_CONFIRMATIONS = 2;
 
 function derivMarketName(symbol, fallback = "") {
   const exact = {
@@ -421,6 +424,45 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
 
   const preferredSignal = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
   const entryConfidence = preferredSignal === "TOUCH" ? touchEntryConfidence : noTouchEntryConfidence;
+
+  // V24 Sharp Entry: a fast-entry score that is intentionally stricter than
+  // the ordinary setup score. It rewards clean directional efficiency,
+  // barrier approach, breakout/rejection quality and low chop. Fast entry is
+  // allowed only when the broader strategy stack is already qualified.
+  const micro = p.slice(-Math.min(10, p.length));
+  const microDiffs = micro.slice(1).map((x, i) => x - micro[i]);
+  const directedMicro = microDiffs.map((d) => d * (barrierDirection === "below" ? -1 : 1));
+  const directedPositive = directedMicro.filter((d) => d > 0).length;
+  const microEfficiency = directedMicro.length
+    ? (directedPositive / directedMicro.length) * 100
+    : 50;
+  const acceleration = microDiffs.length >= 4
+    ? Math.abs(mean(microDiffs.slice(-3))) / Math.max(longSigma, Math.abs(current) * 0.000001)
+    : 0;
+  const accelerationScore = clamp(acceleration * 32, 0, 100);
+
+  const sharpTouchScore = clamp(
+    touchEntryConfidence * 0.34 +
+    confluence.score * 0.16 +
+    confluence.momentum * 0.12 +
+    confluence.rejection * 0.10 +
+    microEfficiency * 0.12 +
+    accelerationScore * 0.06 +
+    travelQualityTouch * 0.06 +
+    (100 - confluence.choppiness) * 0.04
+  );
+
+  const sharpNoTouchScore = clamp(
+    noTouchEntryConfidence * 0.36 +
+    confluence.regime * 0.12 +
+    confluence.choppiness * 0.12 +
+    travelQualityNoTouch * 0.14 +
+    persistenceQualityNoTouch * 0.10 +
+    expansionQualityNoTouch * 0.08 +
+    (100 - accelerationScore) * 0.08
+  );
+
+  const sharpScore = preferredSignal === "TOUCH" ? sharpTouchScore : sharpNoTouchScore;
   const confidence = entryConfidence;
 
   const setup =
@@ -461,6 +503,11 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     strategyAgreement: signal === "TOUCH" ? touchVoteCount : signal === "NO TOUCH" ? noTouchVoteCount : Math.max(touchVoteCount, noTouchVoteCount),
     strategyTotal: signal === "TOUCH" ? touchVotes.length : signal === "NO TOUCH" ? noTouchVotes.length : Math.max(touchVotes.length, noTouchVotes.length),
     hardConflict: signal === "TOUCH" ? touchHardConflict : signal === "NO TOUCH" ? noTouchHardConflict : touchHardConflict || noTouchHardConflict,
+    sharpScore,
+    sharpTouchScore,
+    sharpNoTouchScore,
+    microEfficiency,
+    accelerationScore,
     reason,
   };
 }
@@ -789,10 +836,19 @@ export default function DerivAIAnalyzer() {
     scannerTouch.signal !== "WAIT" &&
     scannerTouch.confidence >= MASTER_THRESHOLD;
 
+  const sharpEligible =
+    touchValid &&
+    Number(scannerTouch.sharpScore || 0) >= SHARP_THRESHOLD &&
+    Number(scannerTouch.strategyAgreement || 0) >= 10 &&
+    !scannerTouch.hardConflict;
+
   const best = {
     mode: `TOUCH/NO TOUCH · ${String(scannerDirection).toUpperCase()}`,
     signal: touchValid ? scannerTouch.signal : "WAIT",
     confidence: scannerTouch.confidence,
+    sharpScore: Number(scannerTouch.sharpScore || 0),
+    sharpEligible,
+    requiredConfirmations: sharpEligible ? SHARP_CONFIRMATIONS : STANDARD_CONFIRMATIONS,
     valid: touchValid,
     setup: scannerTouch.setup,
     direction: scannerDirection,
@@ -832,9 +888,10 @@ export default function DerivAIAnalyzer() {
     const nextCount = previous.signal === best.signal ? previous.count + 1 : 1;
     candidateConfirmation.current = { signal: best.signal, count: nextCount, lastTs: last.ts };
 
-    // A chart entry is not a raw analyzer candidate. Require the same qualified
-    // Touch/No Touch decision on 3 consecutive fresh ticks before publishing it.
-    if (nextCount < 3) return;
+    // A sharp setup may publish after 2 consecutive fresh ticks, but only when
+    // its stricter fast-entry score and strategy agreement are already strong.
+    // Ordinary setups still require 3 fresh confirmations.
+    if (nextCount < best.requiredConfirmations) return;
 
     const previousMarker = markers.at(-1);
     if (previousMarker && cleanRecords.length - Number(previousMarker.recordCount || 0) < 24) return;
@@ -851,6 +908,8 @@ export default function DerivAIAnalyzer() {
       barrierDirection: scannerDirection,
       recordCount: cleanRecords.length,
       confirmations: nextCount,
+      entryType: best.sharpEligible ? "SHARP" : "CONFIRMED",
+      sharpScore: best.sharpScore,
       analyzed: true,
     };
 
@@ -863,6 +922,9 @@ export default function DerivAIAnalyzer() {
     best.signal,
     best.mode,
     best.confidence,
+    best.requiredConfirmations,
+    best.sharpEligible,
+    best.sharpScore,
     cleanRecords,
     markers,
     scannerTouch.upperBarrier,
@@ -947,7 +1009,7 @@ export default function DerivAIAnalyzer() {
       ? "WARMING UP"
       : scannerTouch.sampleCount < scannerTouch.minSamples
         ? "COLLECTING"
-      : best.valid && confirmationCount >= 3
+      : best.valid && confirmationCount >= best.requiredConfirmations
         ? "ENTRY READY"
         : best.valid || scannerTouch.confidence >= 64
           ? "SETUP FORMING"
@@ -976,7 +1038,7 @@ export default function DerivAIAnalyzer() {
   const masterReason = masterReady
     ? masterEntry?.reason || scannerTouch.reason
     : best.valid
-      ? `Candidate ${best.signal} ${String(best.direction).toUpperCase()} · ${Math.min(confirmationCount, 3)}/3 live confirmations`
+      ? `${best.sharpEligible ? "SHARP" : "STANDARD"} ${best.signal} ${String(best.direction).toUpperCase()} · ${Math.min(confirmationCount, best.requiredConfirmations)}/${best.requiredConfirmations} live confirmations`
       : scannerTouch.reason;
 
 
@@ -1740,6 +1802,7 @@ export default function DerivAIAnalyzer() {
                   <div className="fixedSideMetrics">
                     <p><span>TOUCH</span><b>{touchAbove.touchScore.toFixed(0)}%</b></p>
                     <p><span>NO TOUCH</span><b>{touchAbove.noTouchScore.toFixed(0)}%</b></p>
+                    <p><span>SHARP</span><b>{Number(touchAbove.sharpScore || 0).toFixed(0)}%</b></p>
                     <p><span>TF Context</span><b>{touchAbove.contextScore.toFixed(0)}%</b></p>
                   </div>
                 </div>
@@ -1759,6 +1822,7 @@ export default function DerivAIAnalyzer() {
                   <div className="fixedSideMetrics">
                     <p><span>TOUCH</span><b>{touchBelow.touchScore.toFixed(0)}%</b></p>
                     <p><span>NO TOUCH</span><b>{touchBelow.noTouchScore.toFixed(0)}%</b></p>
+                    <p><span>SHARP</span><b>{Number(touchBelow.sharpScore || 0).toFixed(0)}%</b></p>
                     <p><span>TF Context</span><b>{touchBelow.contextScore.toFixed(0)}%</b></p>
                   </div>
                 </div>
@@ -1802,7 +1866,9 @@ export default function DerivAIAnalyzer() {
                 <p><span>Contract</span><b>TOUCH / NO TOUCH</b></p>
                 <p><span>Barrier side</span><b>{String(best.direction || "—").toUpperCase()}</b></p>
                 <p><span>Quality</span><b>{signalQuality}</b></p>
-                <p><span>Live confirmation</span><b>{best.valid ? `${Math.min(confirmationCount, 3)}/3` : "—"}</b></p>
+                <p><span>Entry speed</span><b>{best.sharpEligible ? "SHARP · 2 TICKS" : "STANDARD · 3 TICKS"}</b></p>
+                <p><span>Sharp score</span><b>{Number(best.sharpScore || 0).toFixed(0)}%</b></p>
+                <p><span>Live confirmation</span><b>{best.valid ? `${Math.min(confirmationCount, best.requiredConfirmations)}/${best.requiredConfirmations}` : "—"}</b></p>
                 <p><span>Trend</span><b>{riseFall.trend}</b></p>
                 <p><span>Volatility</span><b>{volatilityLabel}</b></p>
                 <p><span>Duration</span><b>{durationLabel}</b></p>
