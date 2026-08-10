@@ -148,7 +148,7 @@ function analyzeRiseFall(prices = []) {
 }
 
 
-function analyzeTouch(prices = [], barrierDistance = 1.5, horizon = 10) {
+function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirection = "above") {
   const p = prices.map(Number).filter(Number.isFinite);
   const minSamples = Math.max(18, Math.min(40, Number(horizon) + 8));
 
@@ -192,15 +192,19 @@ function analyzeTouch(prices = [], barrierDistance = 1.5, horizon = 10) {
     driftPerStep * horizonSteps * 0.45;
 
   const recentRange = Math.max(...recent) - Math.min(...recent);
+  // Use the same user-selected target distance shown in the Deriv-style barrier control.
+  // Analysis and order execution must evaluate the exact same barrier.
   const barrier = Math.max(
-    longSigma * barrierDistance * Math.sqrt(horizonSteps),
-    recentRange * 0.18,
-    Math.abs(current) * 0.000012
+    Math.abs(Number(barrierGap) || 0),
+    Math.abs(current) * 0.000001
   );
 
   const upperBarrier = current + barrier;
   const lowerBarrier = current - barrier;
   const travelRatio = barrier > 0 ? expectedTravel / barrier : 0;
+  const signedMove = shortMove;
+  const towardBarrier = barrierDirection === "below" ? -signedMove : signedMove;
+  const directionAlignment = clamp(towardBarrier / Math.max(barrier, longSigma), -1, 1);
   const expansion = longSigma > 0 ? shortSigma / longSigma : 1;
 
   const recentHigh = Math.max(...recent);
@@ -220,13 +224,15 @@ function analyzeTouch(prices = [], barrierDistance = 1.5, horizon = 10) {
     clamp((travelRatio - 0.65) * 30, -12, 25) +
     clamp((persistence - 0.5) * 32, -7, 14) +
     clamp((expansion - 0.9) * 13, -6, 10) +
-    clamp((edgePosition - 0.55) * 12, -4, 6);
+    clamp((edgePosition - 0.55) * 12, -4, 6) +
+    clamp(directionAlignment * 12, -10, 10);
 
   const noTouchRaw =
     44 +
     clamp((0.9 - travelRatio) * 34, -12, 25) +
     clamp((0.62 - persistence) * 24, -6, 11) +
-    clamp((1.0 - expansion) * 13, -5, 8);
+    clamp((1.0 - expansion) * 13, -5, 8) +
+    clamp(-directionAlignment * 8, -6, 6);
 
   const delta = touchRaw - noTouchRaw;
   const touchScore = clamp(50 + delta * 1.25, 12, 88);
@@ -280,6 +286,7 @@ function analyzeTouch(prices = [], barrierDistance = 1.5, horizon = 10) {
     travelRatio,
     persistence,
     expansion,
+    directionAlignment,
     reason,
   };
 }
@@ -347,6 +354,7 @@ export default function DerivAIAnalyzer() {
     disconnect,
     changeSymbol,
     placeTrade,
+    quoteTrade,
     tradeBusy,
     tradeError,
     selectedAccountId,
@@ -356,10 +364,12 @@ export default function DerivAIAnalyzer() {
 
   const [unit, setUnit] = useState("ticks");
   const [duration, setDuration] = useState(10);
-  const [barrierDistance, setBarrierDistance] = useState(1.5);
+  const [barrierMode, setBarrierMode] = useState("above");
+  const [barrierOffset, setBarrierOffset] = useState(0.15);
+  const [fixedBarrier, setFixedBarrier] = useState("");
   const [stake, setStake] = useState(0.35);
-  const [manualBarrierSide, setManualBarrierSide] = useState("upper");
   const [manualTradeStatus, setManualTradeStatus] = useState(null);
+  const [proposalPreview, setProposalPreview] = useState({ touch: null, noTouch: null, loading: false, error: "" });
 
   const [records, setRecords] = useState([]);
   const [markers, setMarkers] = useState([]);
@@ -431,9 +441,35 @@ export default function DerivAIAnalyzer() {
     [analysisPrices]
   );
 
+  const selectedBarrierTarget = useMemo(() => {
+    const spot = Number(currentPrice);
+    if (!Number.isFinite(spot) || spot <= 0) return null;
+    if (barrierMode === "fixed") {
+      const fixed = Number(fixedBarrier);
+      return Number.isFinite(fixed) && fixed > 0 ? fixed : null;
+    }
+    const offset = Math.max(0.000001, Math.abs(Number(barrierOffset) || 0));
+    return barrierMode === "below" ? spot - offset : spot + offset;
+  }, [currentPrice, barrierMode, barrierOffset, fixedBarrier]);
+
+  const selectedBarrierGap = useMemo(() => {
+    const spot = Number(currentPrice);
+    const target = Number(selectedBarrierTarget);
+    if (!Number.isFinite(spot) || !Number.isFinite(target)) return 0.15;
+    return Math.max(Math.abs(target - spot), Math.abs(spot) * 0.000001);
+  }, [currentPrice, selectedBarrierTarget]);
+
+  const selectedBarrierDirection = useMemo(() => {
+    const spot = Number(currentPrice);
+    const target = Number(selectedBarrierTarget);
+    if (barrierMode === "below") return "below";
+    if (barrierMode === "above") return "above";
+    return Number.isFinite(spot) && Number.isFinite(target) && target < spot ? "below" : "above";
+  }, [barrierMode, currentPrice, selectedBarrierTarget]);
+
   const touch = useMemo(
-    () => analyzeTouch(analysisPrices, barrierDistance, duration),
-    [analysisPrices, barrierDistance, duration]
+    () => analyzeTouch(analysisPrices, selectedBarrierGap, duration, selectedBarrierDirection),
+    [analysisPrices, selectedBarrierGap, duration, selectedBarrierDirection]
   );
 
   const riseValid =
@@ -613,43 +649,60 @@ export default function DerivAIAnalyzer() {
       : clamp(100 - riseFall.confidence, 5, 50);
   const fallBias = 100 - riseBias;
 
-  const manualBarrier = useMemo(() => {
-    const current = Number(currentPrice);
-    if (!Number.isFinite(current) || current <= 0) return null;
-
-    const recent = cleanRecords.slice(-60).map((r) => r.price);
-    if (recent.length < 8) return null;
-
-    const step = Math.max(robustStep(recent), Math.abs(current) * 0.000001);
-    const recentRange = Math.max(...recent) - Math.min(...recent);
-    const steps = Math.max(3, Math.min(60, Number(duration) || 10));
-
-    // Barrier is based only on real market-price movement. Never use a plotted
-    // or contaminated outlier, and cap the distance to the recent market range.
-    const rawGap = step * Number(barrierDistance || 1.5) * Math.sqrt(steps);
-    const minGap = Math.max(step * 2.5, Math.abs(current) * 0.000005);
-    const maxGap = Math.max(step * 12, recentRange * 0.85, minGap);
-    const gap = Math.min(Math.max(rawGap, minGap), maxGap);
-
-    return manualBarrierSide === "upper" ? current + gap : current - gap;
-  }, [currentPrice, cleanRecords, manualBarrierSide, duration, barrierDistance]);
+  const manualBarrier = selectedBarrierTarget;
 
   const manualBarrierText = Number.isFinite(Number(manualBarrier))
     ? Number(manualBarrier).toFixed(market?.decimals ?? 2)
     : "—";
 
-  // Deriv accepts relative barriers for short contracts. Use the gap from
-  // the live spot so the order remains valid even if price moves slightly
-  // between analysis and proposal submission.
+  // Deriv short-duration Touch/No Touch uses relative barriers (+/-).
+  // Synthetic Indices also support absolute barriers, so Fixed Barrier sends
+  // the exact absolute target while Above/Below Spot sends the exact offset.
   const manualOrderBarrier = useMemo(() => {
     const spot = Number(currentPrice);
     const target = Number(manualBarrier);
     if (!Number.isFinite(spot) || !Number.isFinite(target)) return null;
+    const decimals = Math.max(2, Math.min(6, Number(market?.decimals ?? 2)));
+    if (barrierMode === "fixed") return target.toFixed(decimals);
     const gap = Math.abs(target - spot);
     if (!(gap > 0)) return null;
-    const decimals = Math.max(2, Math.min(6, Number(market?.decimals ?? 2)));
-    return `${manualBarrierSide === "upper" ? "+" : "-"}${gap.toFixed(decimals)}`;
-  }, [currentPrice, manualBarrier, manualBarrierSide, market?.decimals]);
+    return `${barrierMode === "below" ? "-" : "+"}${gap.toFixed(decimals)}`;
+  }, [currentPrice, manualBarrier, barrierMode, market?.decimals]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (typeof quoteTrade !== "function" || !connected || !selectedAccountId || !manualOrderBarrier || !symbol) {
+      setProposalPreview((old) => ({ ...old, touch: null, noTouch: null, loading: false, error: "" }));
+      return undefined;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setProposalPreview((old) => ({ ...old, loading: true, error: "" }));
+      const common = {
+        amount: Number(stake),
+        duration: Number(duration),
+        durationUnit: unit === "ticks" ? "t" : "s",
+        barrier: manualOrderBarrier,
+        symbol,
+      };
+      try {
+        const [touchQuote, noTouchQuote] = await Promise.all([
+          quoteTrade({ ...common, contractType: "ONETOUCH" }),
+          quoteTrade({ ...common, contractType: "NOTOUCH" }),
+        ]);
+        if (!cancelled) setProposalPreview({ touch: touchQuote, noTouch: noTouchQuote, loading: false, error: "" });
+      } catch (error) {
+        if (!cancelled) setProposalPreview({ touch: null, noTouch: null, loading: false, error: error instanceof Error ? error.message : "Proposal unavailable" });
+      }
+    }, 650);
+
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [quoteTrade, connected, selectedAccountId, manualOrderBarrier, symbol, stake, duration, unit]);
+
+  const touchPayout = Number(proposalPreview.touch?.payout || 0);
+  const touchAsk = Number(proposalPreview.touch?.askPrice || 0);
+  const noTouchPayout = Number(proposalPreview.noTouch?.payout || 0);
+  const noTouchAsk = Number(proposalPreview.noTouch?.askPrice || 0);
 
   const placeManualTrade = async (signal) => {
     setManualTradeStatus(null);
@@ -676,10 +729,8 @@ export default function DerivAIAnalyzer() {
     }
 
     const barrierGap = Math.abs(Number(manualBarrier) - Number(currentPrice));
-    const recentPrices = cleanRecords.slice(-40).map((r) => r.price);
-    const normalStep = Math.max(robustStep(recentPrices), Math.abs(Number(currentPrice)) * 0.000001);
-    if (!(barrierGap > 0) || barrierGap > normalStep * 20) {
-      setManualTradeStatus({ type: "error", text: "Barrier safety check failed. Wait for the chart to stabilize." });
+    if (!(barrierGap > 0)) {
+      setManualTradeStatus({ type: "error", text: "Barrier must be different from the current spot." });
       return;
     }
 
@@ -1366,20 +1417,48 @@ export default function DerivAIAnalyzer() {
                 <label><span>CONTRACT</span><select disabled value="touch"><option value="touch">Touch / No Touch</option></select></label>
               </div>
 
-              <div className="manualTradeGrid v8ManualGrid">
-                <label><span>STAKE (USD)</span><input type="number" min="0.01" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
-                <label><span>BARRIER</span><select value={manualBarrierSide} onChange={(e) => setManualBarrierSide(e.target.value)}><option value="upper">Upper</option><option value="lower">Lower</option></select></label>
+              <div className="derivBarrierBox">
+                <div className="derivBarrierTitle"><strong>Barrier</strong><span title="Barrier target used for both analysis and order">ⓘ</span></div>
+                <div className="derivBarrierTabs">
+                  <button type="button" className={barrierMode === "above" ? "active" : ""} onClick={() => setBarrierMode("above")}>Above spot</button>
+                  <button type="button" className={barrierMode === "below" ? "active" : ""} onClick={() => setBarrierMode("below")}>Below spot</button>
+                  <button type="button" className={barrierMode === "fixed" ? "active" : ""} onClick={() => setBarrierMode("fixed")}>Fixed barrier</button>
+                </div>
+
+                {barrierMode === "fixed" ? (
+                  <div className="derivBarrierInput">
+                    <span>=</span>
+                    <input type="number" step="0.01" value={fixedBarrier} placeholder={displayPrice} onChange={(e) => setFixedBarrier(e.target.value)} />
+                  </div>
+                ) : (
+                  <div className="derivBarrierInput">
+                    <span>{barrierMode === "below" ? "−" : "+"}</span>
+                    <button type="button" onClick={() => setBarrierOffset((v) => Math.max(0.01, Number(v || 0) - 0.01))}>−</button>
+                    <input type="number" min="0.01" step="0.01" value={barrierOffset} onChange={(e) => setBarrierOffset(Math.max(0.01, Number(e.target.value) || 0.01))} />
+                    <button type="button" onClick={() => setBarrierOffset((v) => Number((Number(v || 0) + 0.01).toFixed(4)))}>+</button>
+                  </div>
+                )}
+
+                <div className="derivSpotRow"><span>Current spot</span><strong>{displayPrice}</strong></div>
+                <div className="derivSpotRow"><span>Barrier price</span><strong>{manualBarrierText}</strong></div>
+                <div className="derivSpotRow"><span>Order barrier</span><strong>{manualOrderBarrier || "—"}</strong></div>
               </div>
 
-              <div className="v8BarrierControls">
-                <label><span>BARRIER DISTANCE</span><select value={barrierDistance} onChange={(e) => setBarrierDistance(Number(e.target.value))}><option value={1}>1.0σ</option><option value={1.5}>1.5σ</option><option value={2}>2.0σ</option><option value={2.5}>2.5σ</option></select></label>
-                <div><span>EXPECTED BARRIER</span><strong>{manualBarrierText}</strong><small>{manualOrderBarrier || "Waiting…"}</small></div>
+              <div className="manualTradeGrid v8ManualGrid derivStakeRow">
+                <label><span>STAKE (USD)</span><input type="number" min="0.01" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
+                <div className="derivDurationEcho"><span>DURATION</span><strong>{durationLabel}</strong></div>
+              </div>
+
+              <div className="derivProposalGrid">
+                <div><span>TOUCH PAYOUT</span><strong>{proposalPreview.loading ? "…" : touchPayout > 0 ? `${touchPayout.toFixed(2)} USD` : "—"}</strong><small>{touchAsk > 0 ? `Price ${touchAsk.toFixed(2)}` : "Live proposal"}</small></div>
+                <div><span>NO TOUCH PAYOUT</span><strong>{proposalPreview.loading ? "…" : noTouchPayout > 0 ? `${noTouchPayout.toFixed(2)} USD` : "—"}</strong><small>{noTouchAsk > 0 ? `Price ${noTouchAsk.toFixed(2)}` : "Live proposal"}</small></div>
               </div>
 
               <div className="manualTradeButtons">
-                <button type="button" className="manualTouchButton" disabled={tradeBusy || !connected || !selectedAccountId} onClick={() => placeManualTrade("TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY TOUCH ↗"}</button>
-                <button type="button" className="manualNoTouchButton" disabled={tradeBusy || !connected || !selectedAccountId} onClick={() => placeManualTrade("NO TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY NO TOUCH ↘"}</button>
+                <button type="button" className="manualTouchButton" disabled={tradeBusy || !connected || !selectedAccountId || !manualOrderBarrier} onClick={() => placeManualTrade("TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY TOUCH"}</button>
+                <button type="button" className="manualNoTouchButton" disabled={tradeBusy || !connected || !selectedAccountId || !manualOrderBarrier} onClick={() => placeManualTrade("NO TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY NO TOUCH"}</button>
               </div>
+              {proposalPreview.error ? <div className="manualTradeStatus warning">{proposalPreview.error}</div> : null}
 
               <p className="manualTradeHint">Manual orders use the Demo/Real account selected in the top bar. Analyzer signals are guidance; only press buy when you choose to enter.</p>
               {(manualTradeStatus || tradeError) ? <div className={`manualTradeStatus ${(manualTradeStatus?.type || "error")}`}>{manualTradeStatus?.text || tradeError}</div> : null}

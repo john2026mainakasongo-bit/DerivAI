@@ -495,6 +495,43 @@ export default function useDerivTicks() {
     [connect, connected, loadSymbol]
   );
 
+  const quoteTrade = useCallback(
+    async ({
+      contractType,
+      amount,
+      basis = "stake",
+      currency,
+      duration = 5,
+      durationUnit = "t",
+      barrier,
+      symbol: tradeSymbol,
+    }) => {
+      if (!auth.authenticated || !selectedAccountId) {
+        throw new Error("Log in and choose a Demo or Real account first.");
+      }
+
+      const finalSymbol = tradeSymbol || symbolRef.current;
+      if (!finalSymbol) throw new Error("Choose and connect a market first.");
+
+      if (!derivPublicClient.socketAuthenticated) {
+        await derivPublicClient.ensureTradingConnection();
+      }
+      setTradingReady(true);
+
+      return derivPublicClient.quoteContract({
+        symbol: finalSymbol,
+        contractType,
+        amount,
+        basis,
+        currency: currency || auth.selectedAccount?.currency || "USD",
+        duration,
+        durationUnit,
+        barrier,
+      });
+    },
+    [auth.authenticated, auth.selectedAccount?.currency, selectedAccountId]
+  );
+
   const placeTrade = useCallback(
     async ({
       contractType,
@@ -715,6 +752,7 @@ export default function useDerivTicks() {
     connect,
     disconnect,
     changeSymbol,
+    quoteTrade,
     placeTrade,
     refreshContract,
     sellContract,
