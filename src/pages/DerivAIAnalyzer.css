@@ -605,3 +605,38 @@
     height: 390px;
   }
 }
+
+/* V5 — compact workflow + direct manual Deriv execution */
+.terminalChart{height:clamp(320px,41vh,410px);min-height:320px}
+.terminalWorkspace{grid-template-columns:minmax(0,1fr) 258px;align-items:start}
+.terminalSide{gap:8px}
+.terminalSignalCard,.terminalMiniCard{padding:9px}
+
+.manualTradeCard{border-color:rgba(70,132,165,.5);background:linear-gradient(180deg,#081d2a,#061622)}
+.manualTradeHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.manualTradeHead>div>span{display:block;color:#22dda5;font-size:7px;font-weight:900;letter-spacing:.09em}
+.manualTradeHead>div>strong{display:block;margin-top:3px;font-size:11px;color:#f1f8fc}
+.accountMode{padding:4px 6px;border:1px solid rgba(91,140,164,.35);border-radius:999px;color:#9bb3c1;font-size:7px;letter-spacing:.06em}
+.accountMode.demo,.accountMode.virtual{color:#5aa9ff;border-color:rgba(90,169,255,.35);background:rgba(90,169,255,.08)}
+.accountMode.real{color:#ffcf66;border-color:rgba(255,207,102,.35);background:rgba(255,207,102,.07)}
+.manualTradeGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.manualTradeGrid label{display:grid;gap:3px}.manualTradeGrid label span{color:#7895a6;font-size:7px;font-weight:800}
+.manualTradeGrid input,.manualTradeGrid select{width:100%;min-width:0;padding:7px 8px;border:1px solid #24536c;border-radius:6px;background:#071c29;color:#edf8ff;font-size:8px;outline:none}
+.manualBarrierReadout{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;margin-top:7px;padding:7px 8px;border:1px solid rgba(48,91,111,.25);border-radius:7px;background:rgba(2,12,19,.28)}
+.manualBarrierReadout span{color:#7895a6;font-size:7px}.manualBarrierReadout strong{color:#ecf7fc;font-size:10px}.manualBarrierReadout small{grid-column:1/-1;color:#58788a;font-size:7px}
+.manualTradeButtons{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}.manualTradeButtons button{min-height:34px;border-radius:7px;border:1px solid transparent;font-size:8px;font-weight:900;cursor:pointer;transition:.15s ease}.manualTradeButtons button:disabled{opacity:.42;cursor:not-allowed}
+.manualTouchButton{color:#031810;background:#22dda5;border-color:#22dda5!important}.manualTouchButton:hover:not(:disabled){filter:brightness(1.08)}
+.manualNoTouchButton{color:#eaf5ff;background:#10304a;border-color:#2a6788!important}.manualNoTouchButton:hover:not(:disabled){background:#153b59}
+.manualTradeHint{margin:7px 0 0;color:#688493;font-size:7px;line-height:1.45}
+.manualTradeStatus{margin-top:7px;padding:6px 7px;border-radius:6px;font-size:7px;line-height:1.4}.manualTradeStatus.success{color:#70f1c5;background:rgba(34,221,165,.08);border:1px solid rgba(34,221,165,.22)}.manualTradeStatus.error{color:#ffc1c8;background:rgba(255,91,110,.07);border:1px solid rgba(255,91,110,.22)}.manualTradeStatus.warning{color:#ffd778;background:rgba(255,196,77,.06);border:1px solid rgba(255,196,77,.18)}
+
+/* Keep key analyzer content visible on ordinary laptop screens. */
+@media (min-width:1201px) and (max-height:820px){
+  .terminalChart{height:345px;min-height:315px}
+  .terminalControls{margin:4px 0;padding:5px 7px}
+  .terminalSignalCard,.terminalMiniCard{padding:7px}
+  .signalRows p,.miniRows p{padding:4px 5px}
+  .manualTradeButtons button{min-height:30px}
+}
+@media(max-width:1050px){.terminalWorkspace{grid-template-columns:1fr}.terminalSide{grid-template-columns:repeat(2,minmax(0,1fr))}.manualTradeCard{grid-column:1/-1}}
+@media(max-width:700px){.terminalSide{grid-template-columns:1fr}.manualTradeCard{grid-column:auto}.manualTradeGrid,.manualTradeButtons{grid-template-columns:1fr}}

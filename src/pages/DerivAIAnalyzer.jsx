@@ -311,11 +311,20 @@ export default function DerivAIAnalyzer() {
     connect,
     disconnect,
     changeSymbol,
+    placeTrade,
+    tradeBusy,
+    tradeError,
+    selectedAccountId,
+    selectedAccountType,
+    authenticatedFeed,
   } = deriv;
 
   const [unit, setUnit] = useState("ticks");
   const [duration, setDuration] = useState(10);
   const [barrierDistance, setBarrierDistance] = useState(1.5);
+  const [stake, setStake] = useState(0.35);
+  const [manualBarrierSide, setManualBarrierSide] = useState("upper");
+  const [manualTradeStatus, setManualTradeStatus] = useState(null);
 
   const [records, setRecords] = useState([]);
   const [markers, setMarkers] = useState([]);
@@ -508,6 +517,88 @@ export default function DerivAIAnalyzer() {
       ? "HIGH CONVICTION"
       : "QUALIFIED"
     : touch.setup;
+
+  const engineStage = signalCycle.current.locked
+    ? "COOLDOWN"
+    : touch.sampleCount < touch.minSamples
+      ? "COLLECTING"
+      : best.valid
+        ? "ENTRY READY"
+        : touch.confidence >= 64
+          ? "SETUP FORMING"
+          : "ANALYZING";
+
+  const manualBarrier = useMemo(() => {
+    const current = Number(currentPrice);
+    if (!Number.isFinite(current)) return null;
+
+    const preferred = manualBarrierSide === "upper"
+      ? Number(touch.upperBarrier)
+      : Number(touch.lowerBarrier);
+
+    if (Number.isFinite(preferred) && preferred > 0) return preferred;
+
+    const recent = records.slice(-24).map((r) => Number(r.price)).filter(Number.isFinite);
+    const diffs = recent.slice(1).map((x, i) => x - recent[i]);
+    const sigma = Math.max(std(diffs), Math.abs(current) * 0.00001);
+    const steps = Math.max(3, Number(duration) || 10);
+    const gap = Math.max(
+      sigma * Number(barrierDistance || 1.5) * Math.sqrt(steps),
+      Math.abs(current) * 0.00002
+    );
+
+    return manualBarrierSide === "upper" ? current + gap : current - gap;
+  }, [currentPrice, touch.upperBarrier, touch.lowerBarrier, manualBarrierSide, records, duration, barrierDistance]);
+
+  const manualBarrierText = Number.isFinite(Number(manualBarrier))
+    ? Number(manualBarrier).toFixed(market?.decimals ?? 2)
+    : "—";
+
+  const placeManualTrade = async (signal) => {
+    setManualTradeStatus(null);
+
+    if (!selectedAccountId) {
+      setManualTradeStatus({ type: "error", text: "Choose a Deriv Demo or Real account first." });
+      return;
+    }
+
+    if (!connected) {
+      setManualTradeStatus({ type: "error", text: "Connect the Deriv feed first." });
+      return;
+    }
+
+    const amount = Number(stake);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setManualTradeStatus({ type: "error", text: "Enter a valid stake." });
+      return;
+    }
+
+    if (!Number.isFinite(Number(manualBarrier))) {
+      setManualTradeStatus({ type: "error", text: "Barrier is not ready yet." });
+      return;
+    }
+
+    try {
+      const result = await placeTrade({
+        contractType: signal === "TOUCH" ? "ONETOUCH" : "NOTOUCH",
+        amount,
+        duration: Number(duration),
+        durationUnit: unit === "ticks" ? "t" : "s",
+        barrier: manualBarrierText,
+        symbol,
+      });
+
+      setManualTradeStatus({
+        type: "success",
+        text: `${signal} opened on ${String(selectedAccountType || "Deriv").toUpperCase()} · Contract ${result?.contractId || "confirmed"}`,
+      });
+    } catch (error) {
+      setManualTradeStatus({
+        type: "error",
+        text: error instanceof Error ? error.message : "Trade failed.",
+      });
+    }
+  };
 
   const handleWheel = (e) => {
     e.preventDefault();
@@ -1215,7 +1306,7 @@ export default function DerivAIAnalyzer() {
               </div>
 
               <div className="touchSetupLine">
-                <span>{touch.setup}</span>
+                <span>{engineStage}</span>
                 <b>{touch.sampleCount}/{touch.minSamples} samples</b>
               </div>
 
@@ -1282,6 +1373,78 @@ export default function DerivAIAnalyzer() {
                 </p>
               </div>
             </section>
+
+            <section className="terminalMiniCard manualTradeCard">
+              <div className="manualTradeHead">
+                <div>
+                  <span>MANUAL ENTRY</span>
+                  <strong>Direct Deriv trade</strong>
+                </div>
+                <b className={`accountMode ${String(selectedAccountType || "").toLowerCase()}`}>
+                  {selectedAccountId ? String(selectedAccountType || "ACCOUNT").toUpperCase() : "NO ACCOUNT"}
+                </b>
+              </div>
+
+              <div className="manualTradeGrid">
+                <label>
+                  <span>STAKE</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={stake}
+                    onChange={(e) => setStake(e.target.value)}
+                  />
+                </label>
+
+                <label>
+                  <span>BARRIER</span>
+                  <select value={manualBarrierSide} onChange={(e) => setManualBarrierSide(e.target.value)}>
+                    <option value="upper">Upper</option>
+                    <option value="lower">Lower</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="manualBarrierReadout">
+                <span>Barrier price</span>
+                <strong>{manualBarrierText}</strong>
+                <small>{durationLabel} · {barrierDistance.toFixed(1)}σ</small>
+              </div>
+
+              <div className="manualTradeButtons">
+                <button
+                  type="button"
+                  className="manualTouchButton"
+                  disabled={tradeBusy || !connected || !selectedAccountId}
+                  onClick={() => placeManualTrade("TOUCH")}
+                >
+                  {tradeBusy ? "PROCESSING…" : "BUY TOUCH"}
+                </button>
+                <button
+                  type="button"
+                  className="manualNoTouchButton"
+                  disabled={tradeBusy || !connected || !selectedAccountId}
+                  onClick={() => placeManualTrade("NO TOUCH")}
+                >
+                  {tradeBusy ? "PROCESSING…" : "BUY NO TOUCH"}
+                </button>
+              </div>
+
+              <p className="manualTradeHint">
+                Buttons execute on the account selected in the top bar. Analyzer signal is guidance only; manual buttons can be used independently.
+              </p>
+
+              {(manualTradeStatus || tradeError) ? (
+                <div className={`manualTradeStatus ${(manualTradeStatus?.type || "error")}`}>
+                  {manualTradeStatus?.text || tradeError}
+                </div>
+              ) : null}
+
+              {!authenticatedFeed && selectedAccountId ? (
+                <div className="manualTradeStatus warning">Trading connection will authenticate when you place the order.</div>
+              ) : null}
+            </section>
           </aside>
         </section>
 
@@ -1289,7 +1452,7 @@ export default function DerivAIAnalyzer() {
           <div><span>MARKET STATUS</span><strong>{marketStatus}</strong><small>{connected ? "Ticks streaming" : status}</small></div>
           <div><span>VOLATILITY</span><strong>{volatilityLabel}</strong><small>Live movement estimate</small></div>
           <div><span>TICK SPEED</span><strong>{tickSpeed ? `${tickSpeed.toFixed(1)} / sec` : "—"}</strong><small>Observed feed speed</small></div>
-          <div><span>SETUP STATE</span><strong>{touch.setup}</strong><small>{best.confidence.toFixed(1)}% evidence</small></div>
+          <div><span>SETUP STATE</span><strong>{engineStage}</strong><small>{best.confidence.toFixed(1)}% evidence</small></div>
           <div><span>ENTRY</span><strong>{best.valid ? best.signal : "WAIT"}</strong><small>Needs {MASTER_THRESHOLD}% + confirmation</small></div>
           <div><span>ENTRIES LOGGED</span><strong>{markers.length}</strong><small>One entry per setup cycle</small></div>
         </section>
@@ -1325,7 +1488,7 @@ export default function DerivAIAnalyzer() {
               <div><span>HOW TO READ THIS</span><h3>Decision guide</h3></div>
             </div>
             <div className="terminalGuide">
-              <p><i className="guideDot green" /><span><b>ENTRY READY</b>Only appears when Touch or No Touch passes the evidence threshold and confirmation rules.</span></p>
+              <p><i className="guideDot green" /><span><b>COLLECTING → ANALYZING → SETUP FORMING → ENTRY READY → COOLDOWN</b>The engine shows exactly where the current setup is instead of firing repeated signals.</span></p>
               <p><i className="guideDot amber" /><span><b>SETUP FORMING</b>Evidence is improving, but the tool deliberately waits instead of firing an early signal.</span></p>
               <p><i className="guideDot blue" /><span><b>One entry per setup</b>The same market condition is not logged repeatedly. It must reset to WAIT before a new entry can appear.</span></p>
               <p><i className="guideDot gray" /><span><b>Rise / Fall is context</b>It is shown as market bias and does not create the master entry by itself.</span></p>
