@@ -48,6 +48,40 @@ function std(values = []) {
   return Math.sqrt(mean(values.map((x) => (x - m) ** 2)));
 }
 
+function median(values = []) {
+  const v = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!v.length) return 0;
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+function robustStep(values = []) {
+  const p = values.map(Number).filter(Number.isFinite);
+  if (p.length < 3) return 0;
+  const diffs = p.slice(1).map((x, i) => Math.abs(x - p[i])).filter((x) => x > 0);
+  if (!diffs.length) return 0;
+  const med = median(diffs);
+  const cap = med > 0 ? med * 8 : Math.max(...diffs);
+  const trimmed = diffs.filter((x) => x <= cap);
+  return median(trimmed.length ? trimmed : diffs);
+}
+
+function cleanPriceRecords(records = []) {
+  const out = [];
+  for (const r of records) {
+    const price = Number(r?.price);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    if (!out.length) { out.push({ ...r, price }); continue; }
+    const recent = out.slice(-25).map((x) => x.price);
+    const center = median(recent);
+    const step = Math.max(robustStep(recent), Math.abs(center) * 0.000001);
+    const allowedJump = Math.max(step * 35, Math.abs(center) * 0.02);
+    if (Math.abs(price - center) > allowedJump) continue;
+    out.push({ ...r, price });
+  }
+  return out;
+}
+
 function analyzeRiseFall(prices = []) {
   const p = prices.map(Number).filter(Number.isFinite);
 
@@ -374,13 +408,15 @@ export default function DerivAIAnalyzer() {
   // Analysis history must be independent from contract duration.
   // Previously a 10-tick contract only supplied 10 samples while the
   // analyzer required at least 18, so it could stay in COLLECTING forever.
+  const cleanRecords = useMemo(() => cleanPriceRecords(records), [records]);
+
   const analysisRecords = useMemo(() => {
-    if (unit === "ticks") return records.slice(-120);
+    if (unit === "ticks") return cleanRecords.slice(-120);
 
     const cutoff = Date.now() - Math.max(90, Number(duration) * 4) * 1000;
-    const byTime = records.filter((r) => r.ts >= cutoff);
+    const byTime = cleanRecords.filter((r) => r.ts >= cutoff);
     return byTime.slice(-180);
-  }, [records, unit, duration]);
+  }, [cleanRecords, unit, duration]);
 
   const analysisPrices = useMemo(
     () => analysisRecords.map((r) => r.price),
@@ -423,18 +459,21 @@ export default function DerivAIAnalyzer() {
     if (!best.valid) {
       if (signalCycle.current.locked) {
         signalCycle.current.waitTicks += 1;
-        if (signalCycle.current.waitTicks >= 3) {
+        if (signalCycle.current.waitTicks >= 12) {
           signalCycle.current = { locked: false, waitTicks: 0 };
         }
       }
       return;
     }
 
-    // Only one entry per qualified setup. A new marker can be created
-    // after the market returns to WAIT for several updates and re-qualifies.
+    // Only one marker per confirmed setup. Repeated candidates are suppressed
+    // until enough clean ticks have passed and the engine has returned to WAIT.
     if (signalCycle.current.locked) return;
+    const previousMarker = markers.at(-1);
+    if (previousMarker && cleanRecords.length - Number(previousMarker.recordCount || 0) < 24) return;
 
-    const last = records.at(-1);
+    const last = cleanRecords.at(-1);
+    if (!last) return;
     const marker = {
       ts: last.ts,
       price: last.price,
@@ -444,6 +483,7 @@ export default function DerivAIAnalyzer() {
       upperBarrier: touch.upperBarrier,
       lowerBarrier: touch.lowerBarrier,
       reason: touch.reason,
+      recordCount: cleanRecords.length,
     };
 
     lastSignal.current = marker;
@@ -454,7 +494,8 @@ export default function DerivAIAnalyzer() {
     best.signal,
     best.mode,
     best.confidence,
-    records,
+    cleanRecords,
+    markers,
     touch.upperBarrier,
     touch.lowerBarrier,
     touch.reason,
@@ -465,13 +506,13 @@ export default function DerivAIAnalyzer() {
     0,
     Math.min(
       pan,
-      Math.max(0, records.length - visibleCount)
+      Math.max(0, cleanRecords.length - visibleCount)
     )
   );
 
-  const visibleEnd = records.length - safePan;
+  const visibleEnd = cleanRecords.length - safePan;
   const visibleStart = Math.max(0, visibleEnd - visibleCount);
-  const chartRecords = records.slice(visibleStart, visibleEnd);
+  const chartRecords = cleanRecords.slice(visibleStart, visibleEnd);
 
   const candleSize = Math.max(
     1,
@@ -532,25 +573,24 @@ export default function DerivAIAnalyzer() {
 
   const manualBarrier = useMemo(() => {
     const current = Number(currentPrice);
-    if (!Number.isFinite(current)) return null;
+    if (!Number.isFinite(current) || current <= 0) return null;
 
-    const preferred = manualBarrierSide === "upper"
-      ? Number(touch.upperBarrier)
-      : Number(touch.lowerBarrier);
+    const recent = cleanRecords.slice(-60).map((r) => r.price);
+    if (recent.length < 8) return null;
 
-    if (Number.isFinite(preferred) && preferred > 0) return preferred;
+    const step = Math.max(robustStep(recent), Math.abs(current) * 0.000001);
+    const recentRange = Math.max(...recent) - Math.min(...recent);
+    const steps = Math.max(3, Math.min(60, Number(duration) || 10));
 
-    const recent = records.slice(-24).map((r) => Number(r.price)).filter(Number.isFinite);
-    const diffs = recent.slice(1).map((x, i) => x - recent[i]);
-    const sigma = Math.max(std(diffs), Math.abs(current) * 0.00001);
-    const steps = Math.max(3, Number(duration) || 10);
-    const gap = Math.max(
-      sigma * Number(barrierDistance || 1.5) * Math.sqrt(steps),
-      Math.abs(current) * 0.00002
-    );
+    // Barrier is based only on real market-price movement. Never use a plotted
+    // or contaminated outlier, and cap the distance to the recent market range.
+    const rawGap = step * Number(barrierDistance || 1.5) * Math.sqrt(steps);
+    const minGap = Math.max(step * 2.5, Math.abs(current) * 0.000005);
+    const maxGap = Math.max(step * 12, recentRange * 0.85, minGap);
+    const gap = Math.min(Math.max(rawGap, minGap), maxGap);
 
     return manualBarrierSide === "upper" ? current + gap : current - gap;
-  }, [currentPrice, touch.upperBarrier, touch.lowerBarrier, manualBarrierSide, records, duration, barrierDistance]);
+  }, [currentPrice, cleanRecords, manualBarrierSide, duration, barrierDistance]);
 
   const manualBarrierText = Number.isFinite(Number(manualBarrier))
     ? Number(manualBarrier).toFixed(market?.decimals ?? 2)
@@ -588,8 +628,16 @@ export default function DerivAIAnalyzer() {
       return;
     }
 
-    if (!manualOrderBarrier) {
-      setManualTradeStatus({ type: "error", text: "Barrier is not ready yet." });
+    if (!manualOrderBarrier || !Number.isFinite(Number(manualBarrier))) {
+      setManualTradeStatus({ type: "error", text: "Barrier is not ready yet. Wait for clean market data." });
+      return;
+    }
+
+    const barrierGap = Math.abs(Number(manualBarrier) - Number(currentPrice));
+    const recentPrices = cleanRecords.slice(-40).map((r) => r.price);
+    const normalStep = Math.max(robustStep(recentPrices), Math.abs(Number(currentPrice)) * 0.000001);
+    if (!(barrierGap > 0) || barrierGap > normalStep * 20) {
+      setManualTradeStatus({ type: "error", text: "Barrier safety check failed. Wait for the chart to stabilize." });
       return;
     }
 
@@ -649,7 +697,7 @@ export default function DerivAIAnalyzer() {
         0,
         Math.min(
           nextPan,
-          Math.max(0, records.length - visibleCount)
+          Math.max(0, cleanRecords.length - visibleCount)
         )
       )
     );
@@ -714,13 +762,13 @@ export default function DerivAIAnalyzer() {
   const volatilityLabel =
     riseFall.volatility > 1 ? "HIGH" :
     riseFall.volatility > 0.25 ? "NORMAL" : "LOW";
-  const tickSpeed = records.length > 1
+  const tickSpeed = cleanRecords.length > 1
     ? Math.max(
         0,
         1000 /
           Math.max(
             1,
-            records.at(-1).ts - records.at(-2).ts
+            cleanRecords.at(-1).ts - cleanRecords.at(-2).ts
           )
       )
     : 0;

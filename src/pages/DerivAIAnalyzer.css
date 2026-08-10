@@ -676,3 +676,19 @@
   .terminalWorkspace{grid-template-columns:minmax(0,1fr) 270px!important}
   .terminalSignalCard,.terminalMiniCard{padding:8px!important}
 }
+
+/* V7 stability/readability pass */
+.terminalChart { height: 500px; }
+.terminalControls label > span,
+.terminalChartHeader span,
+.terminalSignalCard > span,
+.terminalMiniCard > span,
+.terminalTouchHead > span { font-size: 8px; }
+.terminalControls select,
+.terminalControls button,
+.terminalTouchHead select { font-size: 9px; }
+.signalRows p,
+.miniRows p,
+.terminalChartFooter span { font-size: 8px; }
+.manualBarrierReadout strong { font-size: 15px; }
+.manualTradeHint { font-size: 8px; line-height: 1.45; }
