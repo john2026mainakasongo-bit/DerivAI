@@ -1257,317 +1257,130 @@ export default function DerivAIAnalyzer() {
             </div>
           </article>
 
-          <aside className="terminalSide">
-            <section
-              className={`terminalSignalCard ${
-                best.valid ? "valid" : ""
-              }`}
-            >
-              <span>ENTRY ENGINE</span>
+          <aside className="terminalSide v8Side">
+            <section className={`terminalSignalCard v8EntryCard ${best.valid ? "valid" : ""}`}>
+              <div className="v8CardTitle"><span>ENTRY ENGINE</span><small>{durationLabel}</small></div>
 
-              <div className="entryState">
-                <em>{best.valid ? "ENTRY READY" : touch.setup}</em>
-                <strong>{best.valid ? best.signal : "WAIT"}</strong>
-                <b>{best.confidence.toFixed(1)}%</b>
+              <div className="v8StageTrack" aria-label="Entry analysis stages">
+                {["COLLECTING", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"].map((stage, i) => {
+                  const stages = ["COLLECTING", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"];
+                  const activeIndex = Math.max(0, stages.indexOf(engineStage));
+                  const done = i < activeIndex;
+                  const active = i === activeIndex;
+                  return (
+                    <div className={`v8Stage ${done ? "done" : ""} ${active ? "active" : ""}`} key={stage}>
+                      <i>{done ? "✓" : i + 1}</i>
+                      <span>{stage}</span>
+                    </div>
+                  );
+                })}
               </div>
 
-              <p className="entryReason">{touch.reason}</p>
+              <div className="v8EntryHero">
+                <div>
+                  <em>{engineStage}</em>
+                  <strong>{best.valid ? best.signal : "WAIT"}</strong>
+                  <p>{touch.reason}</p>
+                </div>
+                <b>{best.confidence.toFixed(0)}%</b>
+              </div>
 
-              <div className="signalRows">
-                <p>
-                  <span>Contract</span>
-                  <b>TOUCH / NO TOUCH</b>
-                </p>
-
-                <p>
-                  <span>Quality</span>
-                  <b>{signalQuality}</b>
-                </p>
-
-                <p>
-                  <span>Threshold</span>
-                  <b>{MASTER_THRESHOLD}%</b>
-                </p>
-
-                <p>
-                  <span>Duration</span>
-                  <b>{durationLabel}</b>
-                </p>
-
-                <p>
-                  <span>Entry</span>
-                  <b>
-                    {best.valid
-                      ? displayPrice
-                      : "—"}
-                  </b>
-                </p>
+              <div className="v8DataRows">
+                <p><span>Contract</span><b>TOUCH / NO TOUCH</b></p>
+                <p><span>Quality</span><b>{signalQuality}</b></p>
+                <p><span>Trend</span><b>{riseFall.trend}</b></p>
+                <p><span>Volatility</span><b>{volatilityLabel}</b></p>
+                <p><span>Duration</span><b>{durationLabel}</b></p>
+                <p><span>Last entry</span><b>{best.valid ? displayPrice : "—"}</b></p>
               </div>
             </section>
 
-            <section className="terminalMiniCard manualTradeCard">
+            <section className="terminalMiniCard v8BiasCard">
+              <div className="v8CardTitle"><span>MARKET BIAS</span><small>Rise / Fall context</small></div>
+              <div className="v8BiasGrid">
+                <div className="rise"><span>RISE</span><strong>{riseFall.signal === "RISE" ? riseFall.confidence.toFixed(0) : (100-riseFall.confidence).toFixed(0)}%</strong><i>↗</i></div>
+                <div className="fall"><span>FALL</span><strong>{riseFall.signal === "FALL" ? riseFall.confidence.toFixed(0) : riseFall.confidence.toFixed(0)}%</strong><i>↘</i></div>
+              </div>
+            </section>
+
+            <section className="terminalMiniCard v8LastSignalCard">
+              <div className="v8CardTitle"><span>LAST SIGNAL</span><small>Qualified setup</small></div>
+              <div className="v8LastSignal">
+                <div><strong>{entry?.signal || "WAIT"}</strong><span>{entry ? `${entry.confidence.toFixed(0)}% confidence` : "Waiting for strong setup…"}</span></div>
+                <i>◷</i>
+              </div>
+            </section>
+
+            <section className="terminalMiniCard manualTradeCard v8ManualCard">
               <div className="manualTradeHead">
-                <div>
-                  <span>MANUAL ENTRY</span>
-                  <strong>Direct Deriv trade</strong>
-                </div>
+                <div><span>MANUAL ENTRY</span><strong>Direct Deriv trade</strong></div>
                 <b className={`accountMode ${String(selectedAccountType || "").toLowerCase()}`}>
                   {selectedAccountId ? String(selectedAccountType || "ACCOUNT").toUpperCase() : "NO ACCOUNT"}
                 </b>
               </div>
 
-              <div className="manualTradeGrid">
-                <label>
-                  <span>STAKE</span>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={stake}
-                    onChange={(e) => setStake(e.target.value)}
-                  />
-                </label>
-
-                <label>
-                  <span>BARRIER</span>
-                  <select value={manualBarrierSide} onChange={(e) => setManualBarrierSide(e.target.value)}>
-                    <option value="upper">Upper</option>
-                    <option value="lower">Lower</option>
-                  </select>
-                </label>
+              <div className="v8ContractRow">
+                <label><span>CONTRACT</span><select disabled value="touch"><option value="touch">Touch / No Touch</option></select></label>
               </div>
 
-              <div className="manualBarrierReadout">
-                <span>Barrier price</span>
-                <strong>{manualBarrierText}</strong>
-                <small>{durationLabel} · {barrierDistance.toFixed(1)}σ · order {manualOrderBarrier || "—"}</small>
+              <div className="manualTradeGrid v8ManualGrid">
+                <label><span>STAKE (USD)</span><input type="number" min="0.01" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
+                <label><span>BARRIER</span><select value={manualBarrierSide} onChange={(e) => setManualBarrierSide(e.target.value)}><option value="upper">Upper</option><option value="lower">Lower</option></select></label>
+              </div>
+
+              <div className="v8BarrierControls">
+                <label><span>BARRIER DISTANCE</span><select value={barrierDistance} onChange={(e) => setBarrierDistance(Number(e.target.value))}><option value={1}>1.0σ</option><option value={1.5}>1.5σ</option><option value={2}>2.0σ</option><option value={2.5}>2.5σ</option></select></label>
+                <div><span>EXPECTED BARRIER</span><strong>{manualBarrierText}</strong><small>{manualOrderBarrier || "Waiting…"}</small></div>
               </div>
 
               <div className="manualTradeButtons">
-                <button
-                  type="button"
-                  className="manualTouchButton"
-                  disabled={tradeBusy || !connected || !selectedAccountId}
-                  onClick={() => placeManualTrade("TOUCH")}
-                >
-                  {tradeBusy ? "PROCESSING…" : "BUY TOUCH"}
-                </button>
-                <button
-                  type="button"
-                  className="manualNoTouchButton"
-                  disabled={tradeBusy || !connected || !selectedAccountId}
-                  onClick={() => placeManualTrade("NO TOUCH")}
-                >
-                  {tradeBusy ? "PROCESSING…" : "BUY NO TOUCH"}
-                </button>
+                <button type="button" className="manualTouchButton" disabled={tradeBusy || !connected || !selectedAccountId} onClick={() => placeManualTrade("TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY TOUCH ↗"}</button>
+                <button type="button" className="manualNoTouchButton" disabled={tradeBusy || !connected || !selectedAccountId} onClick={() => placeManualTrade("NO TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY NO TOUCH ↘"}</button>
               </div>
 
-              <p className="manualTradeHint">
-                Buttons execute on the account selected in the top bar. Analyzer signal is guidance only; manual buttons can be used independently.
-              </p>
-
-              {(manualTradeStatus || tradeError) ? (
-                <div className={`manualTradeStatus ${(manualTradeStatus?.type || "error")}`}>
-                  {manualTradeStatus?.text || tradeError}
-                </div>
-              ) : null}
-
-              {!authenticatedFeed && selectedAccountId ? (
-                <div className="manualTradeStatus warning">Trading connection will authenticate when you place the order.</div>
-              ) : null}
+              <p className="manualTradeHint">Manual orders use the Demo/Real account selected in the top bar. Analyzer signals are guidance; only press buy when you choose to enter.</p>
+              {(manualTradeStatus || tradeError) ? <div className={`manualTradeStatus ${(manualTradeStatus?.type || "error")}`}>{manualTradeStatus?.text || tradeError}</div> : null}
+              {!authenticatedFeed && selectedAccountId ? <div className="manualTradeStatus warning">Trading connection authenticates when an order is submitted.</div> : null}
             </section>
-
-            <section className="terminalMiniCard">
-              <span>MARKET BIAS · RISE / FALL</span>
-
-              <div className="terminalDecision">
-                <strong>
-                  {riseFall.signal}
-                </strong>
-                <b>
-                  {riseFall.confidence.toFixed(
-                    1
-                  )}
-                  %
-                </b>
-              </div>
-
-              <div className="miniRows">
-                <p>
-                  <span>Trend</span>
-                  <b>{riseFall.trend}</b>
-                </p>
-                <p>
-                  <span>Momentum</span>
-                  <b>{riseFall.momentum}</b>
-                </p>
-                <p>
-                  <span>Consistency</span>
-                  <b>
-                    {riseFall.consistency.toFixed(
-                      0
-                    )}
-                    %
-                  </b>
-                </p>
-              </div>
-            </section>
-
-            <section className="terminalMiniCard">
-              <div className="terminalTouchHead">
-                <span>TOUCH / NO TOUCH</span>
-
-                <select
-                  value={barrierDistance}
-                  onChange={(e) =>
-                    setBarrierDistance(
-                      Number(e.target.value)
-                    )
-                  }
-                >
-                  <option value={1}>
-                    1.0σ
-                  </option>
-                  <option value={1.5}>
-                    1.5σ
-                  </option>
-                  <option value={2}>
-                    2.0σ
-                  </option>
-                  <option value={2.5}>
-                    2.5σ
-                  </option>
-                </select>
-              </div>
-
-              <div className="touchSetupLine">
-                <span>{engineStage}</span>
-                <b>{touch.sampleCount}/{touch.minSamples} samples</b>
-              </div>
-
-              <div className="touchBars">
-                <div>
-                  <span>TOUCH EVIDENCE</span>
-                  <i>
-                    <b
-                      style={{
-                        width: `${touch.touchScore}%`,
-                      }}
-                    />
-                  </i>
-                  <strong>
-                    {touch.touchScore.toFixed(
-                      0
-                    )}
-                    %
-                  </strong>
-                </div>
-
-                <div>
-                  <span>NO TOUCH EVIDENCE</span>
-                  <i>
-                    <b
-                      style={{
-                        width: `${touch.noTouchScore}%`,
-                      }}
-                    />
-                  </i>
-                  <strong>
-                    {touch.noTouchScore.toFixed(
-                      0
-                    )}
-                    %
-                  </strong>
-                </div>
-              </div>
-
-              <div className="miniRows">
-                <p>
-                  <span>Upper</span>
-                  <b>
-                    {fmt(
-                      touch.upperBarrier
-                    )}
-                  </b>
-                </p>
-                <p>
-                  <span>Lower</span>
-                  <b>
-                    {fmt(
-                      touch.lowerBarrier
-                    )}
-                  </b>
-                </p>
-                <p>
-                  <span>Analysis samples</span>
-                  <b>{touch.sampleCount}/{touch.minSamples} min</b>
-                </p>
-                <p>
-                  <span>Expected travel</span>
-                  <b>{touch.travelRatio.toFixed(2)}× barrier</b>
-                </p>
-                <p>
-                  <span>Persistence</span>
-                  <b>{(touch.persistence * 100).toFixed(0)}%</b>
-                </p>
-              </div>
-            </section>
-
-
           </aside>
         </section>
 
-        <section className="terminalMetrics">
-          <div><span>MARKET STATUS</span><strong>{marketStatus}</strong><small>{connected ? "Ticks streaming" : status}</small></div>
-          <div><span>VOLATILITY</span><strong>{volatilityLabel}</strong><small>Live movement estimate</small></div>
-          <div><span>TICK SPEED</span><strong>{tickSpeed ? `${tickSpeed.toFixed(1)} / sec` : "—"}</strong><small>Observed feed speed</small></div>
-          <div><span>SETUP STATE</span><strong>{engineStage}</strong><small>{best.confidence.toFixed(1)}% evidence</small></div>
-          <div><span>ENTRY</span><strong>{best.valid ? best.signal : "WAIT"}</strong><small>Needs {MASTER_THRESHOLD}% + confirmation</small></div>
-          <div><span>ENTRIES LOGGED</span><strong>{markers.length}</strong><small>One entry per setup cycle</small></div>
-        </section>
-
-        <section className="terminalBottomGrid">
-          <article className="terminalLogCard">
-            <div className="terminalSectionHead">
-              <div><span>QUALIFIED ENTRIES</span><h3>Entry history</h3></div>
-              <small>Current session</small>
-            </div>
-            <div className="terminalTableWrap">
-              <table className="terminalTable">
-                <thead><tr><th>TIME</th><th>MODE</th><th>SIGNAL</th><th>ENTRY</th><th>CONFIDENCE</th></tr></thead>
-                <tbody>
-                  {recentSignals.length ? recentSignals.map((item) => (
-                    <tr key={item.ts}>
-                      <td>{new Date(item.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</td>
-                      <td>{item.mode || (item.signal === "RISE" || item.signal === "FALL" ? "RISE/FALL" : "TOUCH/NO TOUCH")}</td>
-                      <td><b style={{color: signalColor(item.signal)}}>{item.signal}</b></td>
-                      <td>{fmt(item.price)}</td>
-                      <td>{Number(item.confidence).toFixed(1)}%</td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan="5" className="terminalNoRows">No qualified Touch / No Touch entry yet. The scanner is still analyzing.</td></tr>
-                  )}
-                </tbody>
-              </table>
+        <section className="v8LowerGrid">
+          <article className="v8RecentPanel">
+            <div className="v8SectionTitle"><div><span>RECENT SIGNALS</span><h3>Qualified setups only</h3></div><small>{markers.length} this session</small></div>
+            <div className="v8SignalCards">
+              {recentSignals.length ? recentSignals.slice(0,5).map((item) => (
+                <div className={`v8SignalMini ${item.signal === "TOUCH" ? "touch" : "notouch"}`} key={item.ts}>
+                  <span>{item.signal}</span>
+                  <strong>{fmt(item.price)}</strong>
+                  <small>{new Date(item.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</small>
+                  <b>{item.confidence.toFixed(0)}%</b>
+                </div>
+              )) : <div className="v8EmptySignal">No qualified entry yet. The engine is scanning.</div>}
             </div>
           </article>
 
-          <article className="terminalExplainCard">
-            <div className="terminalSectionHead">
-              <div><span>HOW TO READ THIS</span><h3>Decision guide</h3></div>
-            </div>
-            <div className="terminalGuide">
-              <p><i className="guideDot green" /><span><b>COLLECTING → ANALYZING → SETUP FORMING → ENTRY READY → COOLDOWN</b>The engine shows exactly where the current setup is instead of firing repeated signals.</span></p>
-              <p><i className="guideDot amber" /><span><b>SETUP FORMING</b>Evidence is improving, but the tool deliberately waits instead of firing an early signal.</span></p>
-              <p><i className="guideDot blue" /><span><b>One entry per setup</b>The same market condition is not logged repeatedly. It must reset to WAIT before a new entry can appear.</span></p>
-              <p><i className="guideDot gray" /><span><b>Rise / Fall is context</b>It is shown as market bias and does not create the master entry by itself.</span></p>
+          <article className="v8SummaryPanel">
+            <div className="v8SectionTitle"><div><span>ANALYSIS SUMMARY</span><h3>Current market evidence</h3></div><small>Live</small></div>
+            <div className="v8SummaryGrid">
+              <div><span>Volatility</span><strong>{clamp(riseFall.volatility * 100,0,100).toFixed(0)}%</strong><small>{volatilityLabel}</small></div>
+              <div><span>Momentum</span><strong>{riseFall.confidence.toFixed(0)}%</strong><small>{riseFall.momentum}</small></div>
+              <div><span>Consistency</span><strong>{riseFall.consistency.toFixed(0)}%</strong><small>{riseFall.consistency >= 65 ? "Strong" : "Mixed"}</small></div>
+              <div><span>Barrier Test</span><strong>{clamp(touch.travelRatio * 60,0,100).toFixed(0)}%</strong><small>{touch.travelRatio >= .9 ? "Active" : "Stable"}</small></div>
+              <div><span>Touch Prob.</span><strong>{touch.touchScore.toFixed(0)}%</strong><small>{touch.touchScore >= MASTER_THRESHOLD ? "Qualified" : "Watching"}</small></div>
+              <div><span>No Touch Prob.</span><strong>{touch.noTouchScore.toFixed(0)}%</strong><small>{touch.noTouchScore >= MASTER_THRESHOLD ? "Qualified" : "Watching"}</small></div>
             </div>
           </article>
         </section>
 
-        <p className="terminalDisclaimer">
-          Analysis only · Live Deriv market data · Manual execution · Entry labels are filtered estimates, not guaranteed outcomes.
-        </p>
+        <footer className="v8MarketFooter">
+          <div><span>Market</span><b>{derivMarketName(symbol, market?.label)}</b></div>
+          <div><span>Spot</span><b>{displayPrice}</b></div>
+          <div><span>Ticks</span><b>{cleanRecords.length}</b></div>
+          <div><span>Setup</span><b>{engineStage}</b></div>
+          <div><span>Confidence</span><b>{best.confidence.toFixed(0)}%</b></div>
+          <div><span>Deriv API</span><b className={connected ? "ok" : ""}>{connected ? "● Connected" : "○ Offline"}</b></div>
+        </footer>
       </main>
     </div>
   );
