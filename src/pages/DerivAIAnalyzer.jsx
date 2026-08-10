@@ -1658,25 +1658,53 @@ export default function DerivAIAnalyzer() {
           </article>
 
           <aside className="terminalSide v8Side">
-            <section className="terminalMiniCard autoBarrierScannerCard">
-              <div className="v8CardTitle"><span>AUTO BARRIER SCANNER</span><small>Barrier recommendation · master decision below</small></div>
-              <div className="autoBarrierRecommendation">
-                <div>
-                  <em>BEST BARRIER SIDE</em>
-                  <strong>{autoBarrierScan?.label || "WAIT"}</strong>
-                  <span>Trade decision: {masterSignal}</span>
+            <section className="terminalMiniCard autoBarrierScannerCard fixedSideScanner">
+              <div className="v8CardTitle"><span>ABOVE / BELOW SCANNER</span><small>Both sides stay visible</small></div>
+
+              <div className="fixedSideGrid">
+                <div className={`fixedSideCard above ${scannerDirection === "above" ? "preferred" : ""}`}>
+                  <header>
+                    <div>
+                      <em>ABOVE SPOT</em>
+                      <strong>+{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong>
+                    </div>
+                    <b>{scannerDirection === "above" ? "BEST" : "WATCH"}</b>
+                  </header>
+                  <div className="fixedSideDecision">
+                    <strong>{touchAbove.signal}</strong>
+                    <span>{touchAbove.confidence.toFixed(0)}% setup</span>
+                  </div>
+                  <div className="fixedSideMetrics">
+                    <p><span>TOUCH</span><b>{touchAbove.touchScore.toFixed(0)}%</b></p>
+                    <p><span>NO TOUCH</span><b>{touchAbove.noTouchScore.toFixed(0)}%</b></p>
+                    <p><span>Confluence</span><b>{Number(touchAbove?.confluence?.score || 50).toFixed(0)}%</b></p>
+                  </div>
                 </div>
 
+                <div className={`fixedSideCard below ${scannerDirection === "below" ? "preferred" : ""}`}>
+                  <header>
+                    <div>
+                      <em>BELOW SPOT</em>
+                      <strong>-{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong>
+                    </div>
+                    <b>{scannerDirection === "below" ? "BEST" : "WATCH"}</b>
+                  </header>
+                  <div className="fixedSideDecision">
+                    <strong>{touchBelow.signal}</strong>
+                    <span>{touchBelow.confidence.toFixed(0)}% setup</span>
+                  </div>
+                  <div className="fixedSideMetrics">
+                    <p><span>TOUCH</span><b>{touchBelow.touchScore.toFixed(0)}%</b></p>
+                    <p><span>NO TOUCH</span><b>{touchBelow.noTouchScore.toFixed(0)}%</b></p>
+                    <p><span>Confluence</span><b>{Number(touchBelow?.confluence?.score || 50).toFixed(0)}%</b></p>
+                  </div>
+                </div>
               </div>
-              <div className="autoBarrierStats">
-                <div><span>Touch probability</span><strong>{Number(autoBarrierScan?.analysis?.touchScore || 50).toFixed(0)}%</strong></div>
-                <div><span>No Touch probability</span><strong>{Number(autoBarrierScan?.analysis?.noTouchScore || 50).toFixed(0)}%</strong></div>
-                <div><span>Distance</span><strong>{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong></div>
-                <div><span>Decision</span><strong className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal}</strong></div>
-              </div>
-              <div className="autoBarrierCompare">
-                <div><span>ABOVE</span><b>{touchAbove.signal}</b><strong>{touchAbove.confidence.toFixed(0)}%</strong></div>
-                <div><span>BELOW</span><b>{touchBelow.signal}</b><strong>{touchBelow.confidence.toFixed(0)}%</strong></div>
+
+              <div className="fixedSideMaster">
+                <span>MASTER ENTRY</span>
+                <strong className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal}</strong>
+                <b>{masterConfidence.toFixed(0)}%</b>
               </div>
             </section>
 
