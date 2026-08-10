@@ -371,28 +371,30 @@ export default function DerivAIAnalyzer() {
     signalCycle.current = { locked: false, waitTicks: 0 };
   }, [symbol]);
 
-  const windowRecords = useMemo(() => {
-    if (unit === "ticks") {
-      return records.slice(-Math.max(5, duration));
-    }
+  // Analysis history must be independent from contract duration.
+  // Previously a 10-tick contract only supplied 10 samples while the
+  // analyzer required at least 18, so it could stay in COLLECTING forever.
+  const analysisRecords = useMemo(() => {
+    if (unit === "ticks") return records.slice(-120);
 
-    const cutoff = Date.now() - duration * 1000;
-    return records.filter((r) => r.ts >= cutoff);
-  }, [records, unit, duration, currentPrice]);
+    const cutoff = Date.now() - Math.max(90, Number(duration) * 4) * 1000;
+    const byTime = records.filter((r) => r.ts >= cutoff);
+    return byTime.slice(-180);
+  }, [records, unit, duration]);
 
-  const windowPrices = useMemo(
-    () => windowRecords.map((r) => r.price),
-    [windowRecords]
+  const analysisPrices = useMemo(
+    () => analysisRecords.map((r) => r.price),
+    [analysisRecords]
   );
 
   const riseFall = useMemo(
-    () => analyzeRiseFall(windowPrices),
-    [windowPrices]
+    () => analyzeRiseFall(analysisPrices),
+    [analysisPrices]
   );
 
   const touch = useMemo(
-    () => analyzeTouch(windowPrices, barrierDistance, duration),
-    [windowPrices, barrierDistance]
+    () => analyzeTouch(analysisPrices, barrierDistance, duration),
+    [analysisPrices, barrierDistance, duration]
   );
 
   const riseValid =
@@ -554,6 +556,19 @@ export default function DerivAIAnalyzer() {
     ? Number(manualBarrier).toFixed(market?.decimals ?? 2)
     : "—";
 
+  // Deriv accepts relative barriers for short contracts. Use the gap from
+  // the live spot so the order remains valid even if price moves slightly
+  // between analysis and proposal submission.
+  const manualOrderBarrier = useMemo(() => {
+    const spot = Number(currentPrice);
+    const target = Number(manualBarrier);
+    if (!Number.isFinite(spot) || !Number.isFinite(target)) return null;
+    const gap = Math.abs(target - spot);
+    if (!(gap > 0)) return null;
+    const decimals = Math.max(2, Math.min(6, Number(market?.decimals ?? 2)));
+    return `${manualBarrierSide === "upper" ? "+" : "-"}${gap.toFixed(decimals)}`;
+  }, [currentPrice, manualBarrier, manualBarrierSide, market?.decimals]);
+
   const placeManualTrade = async (signal) => {
     setManualTradeStatus(null);
 
@@ -573,7 +588,7 @@ export default function DerivAIAnalyzer() {
       return;
     }
 
-    if (!Number.isFinite(Number(manualBarrier))) {
+    if (!manualOrderBarrier) {
       setManualTradeStatus({ type: "error", text: "Barrier is not ready yet." });
       return;
     }
@@ -584,7 +599,7 @@ export default function DerivAIAnalyzer() {
         amount,
         duration: Number(duration),
         durationUnit: unit === "ticks" ? "t" : "s",
-        barrier: manualBarrierText,
+        barrier: manualOrderBarrier,
         symbol,
       });
 
@@ -1242,6 +1257,78 @@ export default function DerivAIAnalyzer() {
               </div>
             </section>
 
+            <section className="terminalMiniCard manualTradeCard">
+              <div className="manualTradeHead">
+                <div>
+                  <span>MANUAL ENTRY</span>
+                  <strong>Direct Deriv trade</strong>
+                </div>
+                <b className={`accountMode ${String(selectedAccountType || "").toLowerCase()}`}>
+                  {selectedAccountId ? String(selectedAccountType || "ACCOUNT").toUpperCase() : "NO ACCOUNT"}
+                </b>
+              </div>
+
+              <div className="manualTradeGrid">
+                <label>
+                  <span>STAKE</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={stake}
+                    onChange={(e) => setStake(e.target.value)}
+                  />
+                </label>
+
+                <label>
+                  <span>BARRIER</span>
+                  <select value={manualBarrierSide} onChange={(e) => setManualBarrierSide(e.target.value)}>
+                    <option value="upper">Upper</option>
+                    <option value="lower">Lower</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="manualBarrierReadout">
+                <span>Barrier price</span>
+                <strong>{manualBarrierText}</strong>
+                <small>{durationLabel} · {barrierDistance.toFixed(1)}σ · order {manualOrderBarrier || "—"}</small>
+              </div>
+
+              <div className="manualTradeButtons">
+                <button
+                  type="button"
+                  className="manualTouchButton"
+                  disabled={tradeBusy || !connected || !selectedAccountId}
+                  onClick={() => placeManualTrade("TOUCH")}
+                >
+                  {tradeBusy ? "PROCESSING…" : "BUY TOUCH"}
+                </button>
+                <button
+                  type="button"
+                  className="manualNoTouchButton"
+                  disabled={tradeBusy || !connected || !selectedAccountId}
+                  onClick={() => placeManualTrade("NO TOUCH")}
+                >
+                  {tradeBusy ? "PROCESSING…" : "BUY NO TOUCH"}
+                </button>
+              </div>
+
+              <p className="manualTradeHint">
+                Buttons execute on the account selected in the top bar. Analyzer signal is guidance only; manual buttons can be used independently.
+              </p>
+
+              {(manualTradeStatus || tradeError) ? (
+                <div className={`manualTradeStatus ${(manualTradeStatus?.type || "error")}`}>
+                  {manualTradeStatus?.text || tradeError}
+                </div>
+              ) : null}
+
+              {!authenticatedFeed && selectedAccountId ? (
+                <div className="manualTradeStatus warning">Trading connection will authenticate when you place the order.</div>
+              ) : null}
+            </section>
+
             <section className="terminalMiniCard">
               <span>MARKET BIAS · RISE / FALL</span>
 
@@ -1364,6 +1451,10 @@ export default function DerivAIAnalyzer() {
                   </b>
                 </p>
                 <p>
+                  <span>Analysis samples</span>
+                  <b>{touch.sampleCount}/{touch.minSamples} min</b>
+                </p>
+                <p>
                   <span>Expected travel</span>
                   <b>{touch.travelRatio.toFixed(2)}× barrier</b>
                 </p>
@@ -1374,77 +1465,7 @@ export default function DerivAIAnalyzer() {
               </div>
             </section>
 
-            <section className="terminalMiniCard manualTradeCard">
-              <div className="manualTradeHead">
-                <div>
-                  <span>MANUAL ENTRY</span>
-                  <strong>Direct Deriv trade</strong>
-                </div>
-                <b className={`accountMode ${String(selectedAccountType || "").toLowerCase()}`}>
-                  {selectedAccountId ? String(selectedAccountType || "ACCOUNT").toUpperCase() : "NO ACCOUNT"}
-                </b>
-              </div>
 
-              <div className="manualTradeGrid">
-                <label>
-                  <span>STAKE</span>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={stake}
-                    onChange={(e) => setStake(e.target.value)}
-                  />
-                </label>
-
-                <label>
-                  <span>BARRIER</span>
-                  <select value={manualBarrierSide} onChange={(e) => setManualBarrierSide(e.target.value)}>
-                    <option value="upper">Upper</option>
-                    <option value="lower">Lower</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="manualBarrierReadout">
-                <span>Barrier price</span>
-                <strong>{manualBarrierText}</strong>
-                <small>{durationLabel} · {barrierDistance.toFixed(1)}σ</small>
-              </div>
-
-              <div className="manualTradeButtons">
-                <button
-                  type="button"
-                  className="manualTouchButton"
-                  disabled={tradeBusy || !connected || !selectedAccountId}
-                  onClick={() => placeManualTrade("TOUCH")}
-                >
-                  {tradeBusy ? "PROCESSING…" : "BUY TOUCH"}
-                </button>
-                <button
-                  type="button"
-                  className="manualNoTouchButton"
-                  disabled={tradeBusy || !connected || !selectedAccountId}
-                  onClick={() => placeManualTrade("NO TOUCH")}
-                >
-                  {tradeBusy ? "PROCESSING…" : "BUY NO TOUCH"}
-                </button>
-              </div>
-
-              <p className="manualTradeHint">
-                Buttons execute on the account selected in the top bar. Analyzer signal is guidance only; manual buttons can be used independently.
-              </p>
-
-              {(manualTradeStatus || tradeError) ? (
-                <div className={`manualTradeStatus ${(manualTradeStatus?.type || "error")}`}>
-                  {manualTradeStatus?.text || tradeError}
-                </div>
-              ) : null}
-
-              {!authenticatedFeed && selectedAccountId ? (
-                <div className="manualTradeStatus warning">Trading connection will authenticate when you place the order.</div>
-              ) : null}
-            </section>
           </aside>
         </section>
 
