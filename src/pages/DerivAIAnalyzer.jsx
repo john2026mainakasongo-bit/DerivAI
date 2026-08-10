@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Sidebar from "../components/Sidebar";
-import Topbar from "../components/Topbar";
 import useDerivTicks from "../hooks/useDerivTicks";
 import "./DerivAIAnalyzer.css";
 
@@ -975,20 +973,20 @@ export default function DerivAIAnalyzer() {
   const recentSignals = [...markers].reverse().slice(0, 6);
 
   return (
-    <div className="terminalShell">
-      <Sidebar />
-
-      <main className="terminalMain">
-        <Topbar
-          title="Deriv AI Analyzer"
-          subtitle="Touch / No Touch setup scanner · entries only after confirmation"
-          connected={connected}
-          connecting={
-            status === "CONNECTING" || loadingMarket
-          }
-          onConnect={connect}
-          onDisconnect={disconnect}
-        />
+    <div className="analysisOnlyPage">
+      <main className="analysisOnlyMain">
+        <header className="analysisOnlyHeader">
+          <div className="analysisOnlyTitle">
+            <h1>Deriv <span>AI</span> Analyzer</h1>
+            <p>Advanced Touch / No Touch Analysis</p>
+          </div>
+          <div className="analysisOnlyLive"><i />{connected ? "LIVE" : status}</div>
+          <div className="analysisOnlyStats">
+            <div><span>Current spot</span><strong>{displayPrice}</strong></div>
+            <div><span>Live ticks</span><strong>{cleanRecords.length}</strong></div>
+            <div><span>Analysis engine</span><strong className={connected ? "ok" : ""}>{connected ? "LIVE" : "OFFLINE"}</strong></div>
+          </div>
+        </header>
 
         {statusDetail ? (
           <div className="terminalError">
@@ -1460,7 +1458,7 @@ export default function DerivAIAnalyzer() {
                   <strong>{autoBarrierScan?.label || "WAIT"}</strong>
                   <span>Trade decision: {masterSignal}</span>
                 </div>
-                <button type="button" onClick={() => setBarrierMode(autoBarrierScan?.direction || "below")}>USE BARRIER</button>
+
               </div>
               <div className="autoBarrierStats">
                 <div><span>Touch probability</span><strong>{Number(autoBarrierScan?.analysis?.touchScore || 50).toFixed(0)}%</strong></div>
@@ -1529,51 +1527,7 @@ export default function DerivAIAnalyzer() {
               </div>
             </section>
 
-            <section className="terminalMiniCard manualTradeCard v8ManualCard">
-              <div className="manualTradeHead">
-                <div><span>MANUAL ENTRY</span><strong>Direct Deriv trade</strong></div>
-                <b className={`accountMode ${String(selectedAccountType || "").toLowerCase()}`}>
-                  {selectedAccountId ? String(selectedAccountType || "ACCOUNT").toUpperCase() : "NO ACCOUNT"}
-                </b>
-              </div>
 
-              <div className="v8ContractRow">
-                <label><span>CONTRACT</span><select disabled value="touch"><option value="touch">Touch / No Touch</option></select></label>
-              </div>
-
-              <button type="button" className="derivBarrierLauncher" onClick={() => setBarrierOpen(true)}>
-                <span><small>BARRIER</small><strong>{barrierMode === "above" ? "Above spot" : barrierMode === "below" ? "Below spot" : "Fixed barrier"}</strong></span>
-                <span className="barrierLauncherValue">
-                  <b>{barrierMode === "fixed" ? manualBarrierText : `${barrierMode === "below" ? "−" : "+"}${Number(barrierOffset).toFixed(2)}`}</b>
-                  <small>Target {manualBarrierText}</small>
-                </span>
-              </button>
-
-              <div className="derivSpotInline">
-                <span>Current spot <b>{displayPrice}</b></span>
-                <span>Barrier <b>{manualBarrierText}</b></span>
-              </div>
-
-              <div className="manualTradeGrid v8ManualGrid derivStakeRow">
-                <label><span>STAKE (USD)</span><input type="number" min="0.01" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
-                <div className="derivDurationEcho"><span>DURATION</span><strong>{durationLabel}</strong></div>
-              </div>
-
-              <div className="derivProposalGrid">
-                <div><span>TOUCH PAYOUT</span><strong>{proposalPreview.loading ? "…" : touchPayout > 0 ? `${touchPayout.toFixed(2)} USD` : "—"}</strong><small>{touchAsk > 0 ? `Price ${touchAsk.toFixed(2)}` : "Live proposal"}</small></div>
-                <div><span>NO TOUCH PAYOUT</span><strong>{proposalPreview.loading ? "…" : noTouchPayout > 0 ? `${noTouchPayout.toFixed(2)} USD` : "—"}</strong><small>{noTouchAsk > 0 ? `Price ${noTouchAsk.toFixed(2)}` : "Live proposal"}</small></div>
-              </div>
-
-              <div className="manualTradeButtons">
-                <button type="button" className="manualTouchButton" disabled={tradeBusy || !connected || !selectedAccountId || !manualOrderBarrier} onClick={() => placeManualTrade("TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY TOUCH"}</button>
-                <button type="button" className="manualNoTouchButton" disabled={tradeBusy || !connected || !selectedAccountId || !manualOrderBarrier} onClick={() => placeManualTrade("NO TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY NO TOUCH"}</button>
-              </div>
-              {proposalPreview.error ? <div className="manualTradeStatus warning">{proposalPreview.error}</div> : null}
-
-              <p className="manualTradeHint">Manual orders use the Demo/Real account selected in the top bar. Analyzer signals are guidance; only press buy when you choose to enter.</p>
-              {(manualTradeStatus || tradeError) ? <div className={`manualTradeStatus ${(manualTradeStatus?.type || "error")}`}>{manualTradeStatus?.text || tradeError}</div> : null}
-              {!authenticatedFeed && selectedAccountId ? <div className="manualTradeStatus warning">Trading connection authenticates when an order is submitted.</div> : null}
-            </section>
           </aside>
         </section>
 
@@ -1606,32 +1560,7 @@ export default function DerivAIAnalyzer() {
         </section>
 
 
-        {barrierOpen ? (
-          <div className="derivBarrierOverlay" role="presentation" onMouseDown={() => setBarrierOpen(false)}>
-            <section className="derivBarrierSheet" role="dialog" aria-modal="true" aria-label="Barrier" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="derivSheetHandle" />
-              <header><h2>Barrier</h2><button type="button" aria-label="Close" onClick={() => setBarrierOpen(false)}>ⓘ</button></header>
-              <div className="derivSheetTabs">
-                <button type="button" className={barrierMode === "above" ? "active" : ""} onClick={() => setBarrierMode("above")}>Above spot</button>
-                <button type="button" className={barrierMode === "below" ? "active" : ""} onClick={() => setBarrierMode("below")}>Below spot</button>
-                <button type="button" className={barrierMode === "fixed" ? "active" : ""} onClick={() => setBarrierMode("fixed")}>Fixed barrier</button>
-              </div>
-              {barrierMode === "fixed" ? (
-                <div className="derivSheetInput"><span>=</span><input type="number" step="0.01" value={fixedBarrier} placeholder={displayPrice} onChange={(e) => setFixedBarrier(e.target.value)} /></div>
-              ) : (
-                <div className="derivSheetInput">
-                  <span>{barrierMode === "below" ? "−" : "+"}</span>
-                  <button type="button" onClick={() => setBarrierOffset((v) => Math.max(0.01, Number((Number(v || 0) - 0.01).toFixed(4))))}>−</button>
-                  <input type="number" min="0.01" step="0.01" value={barrierOffset} onChange={(e) => setBarrierOffset(Math.max(0.01, Number(e.target.value) || 0.01))} />
-                  <button type="button" onClick={() => setBarrierOffset((v) => Number((Number(v || 0) + 0.01).toFixed(4)))}>+</button>
-                </div>
-              )}
-              <div className="derivSheetSpot"><span>Current spot</span><strong>{displayPrice}</strong></div>
-              <div className="derivSheetSpot"><span>Barrier price</span><strong>{manualBarrierText}</strong></div>
-              <button type="button" className="derivSheetSave" onClick={() => setBarrierOpen(false)}>Save</button>
-            </section>
-          </div>
-        ) : null}
+
         <footer className="v8MarketFooter">
           <div><span>Market</span><b>{derivMarketName(symbol, market?.label)}</b></div>
           <div><span>Spot</span><b>{displayPrice}</b></div>
@@ -1639,7 +1568,7 @@ export default function DerivAIAnalyzer() {
           <div><span>Setup</span><b>{engineStage}</b></div>
           <div><span>Decision</span><b>{masterSignal}</b></div>
           <div><span>Confidence</span><b>{masterConfidence.toFixed(0)}%</b></div>
-          <div><span>Deriv API</span><b className={connected ? "ok" : ""}>{connected ? "● Connected" : "○ Offline"}</b></div>
+          <div><span>Deriv feed</span><b className={connected ? "ok" : ""}>{connected ? "● Live" : "○ Offline"}</b></div>
         </footer>
       </main>
     </div>

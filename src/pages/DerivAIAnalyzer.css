@@ -756,3 +756,127 @@
 @media(min-width:1201px){.terminalWorkspace{grid-template-columns:minmax(0,1fr) 270px}.terminalSide{gap:6px}.terminalSignalCard,.terminalMiniCard{padding:8px}.terminalChartCard{padding:7px}.terminalChartHeader{margin-bottom:4px}.terminalChartFooter{margin-top:4px}}
 @media(min-width:1201px) and (max-height:900px){.terminalChart{height:335px!important;min-height:335px!important}.terminalMain{padding-bottom:8px}.terminalControls{margin:4px 0 6px!important;padding:6px 8px!important}.derivChartToolbar{margin-bottom:4px}.terminalChartFooter span{padding:4px 5px}.autoBarrierStats>div{padding:5px 6px}.v8MarketFooter{margin-top:5px!important}.v8LowerGrid{margin-top:6px!important}}
 @media(max-width:760px){.autoBarrierStats{grid-template-columns:repeat(2,1fr)}}
+
+/* V16 ANALYSIS-ONLY WORKSPACE */
+.analysisOnlyPage {
+  min-height: 100vh;
+  background: #020a12;
+  color: #eff8ff;
+}
+.analysisOnlyMain {
+  width: min(1600px, 100%);
+  margin: 0 auto;
+  padding: 14px 18px 12px;
+  box-sizing: border-box;
+}
+.analysisOnlyHeader {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.analysisOnlyTitle h1 {
+  margin: 0;
+  font-size: clamp(22px, 2vw, 34px);
+  line-height: 1;
+  letter-spacing: -.03em;
+}
+.analysisOnlyTitle h1 span { color: #21dda4; }
+.analysisOnlyTitle p {
+  margin: 5px 0 0;
+  color: #9bb0be;
+  font-size: 11px;
+}
+.analysisOnlyLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #21dda4;
+  font-size: 11px;
+  font-weight: 900;
+}
+.analysisOnlyLive i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #21dda4;
+  box-shadow: 0 0 14px rgba(33,221,164,.65);
+}
+.analysisOnlyStats {
+  justify-self: end;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(115px, 1fr));
+  gap: 9px;
+}
+.analysisOnlyStats > div {
+  min-width: 115px;
+  padding: 9px 12px;
+  border: 1px solid rgba(54,104,130,.48);
+  border-radius: 9px;
+  background: #061622;
+}
+.analysisOnlyStats span { display:block; color:#829baa; font-size:9px; margin-bottom:3px; }
+.analysisOnlyStats strong { color:#f4fbff; font-size:16px; }
+.analysisOnlyStats strong.ok, .analysisOnlyStats > div:first-child strong { color:#21dda4; }
+
+.analysisOnlyMain .terminalControls {
+  margin: 0 0 9px;
+  padding: 9px 12px;
+  border-radius: 9px;
+}
+.analysisOnlyMain .terminalControls label > span { font-size: 8px; }
+.analysisOnlyMain .terminalControls select,
+.analysisOnlyMain .terminalControls button { font-size: 10px; padding: 7px 10px; }
+.analysisOnlyMain .terminalWorkspace {
+  grid-template-columns: 1fr;
+  gap: 9px;
+}
+.analysisOnlyMain .terminalChartCard { padding: 9px; }
+.analysisOnlyMain .terminalChart { height: min(49vh, 525px); min-height: 390px; }
+.analysisOnlyMain .terminalSide.v8Side {
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr .9fr .8fr;
+  gap: 9px;
+  align-items: stretch;
+}
+.analysisOnlyMain .terminalSide.v8Side > section { min-width: 0; height: 100%; }
+.analysisOnlyMain .autoBarrierRecommendation { grid-template-columns: 1fr; }
+.analysisOnlyMain .autoBarrierRecommendation button { display:none !important; }
+.analysisOnlyMain .v8LowerGrid {
+  display: grid;
+  grid-template-columns: 1fr 1.05fr;
+  gap: 9px;
+  margin-top: 9px;
+}
+.analysisOnlyMain .manualTradeCard,
+.analysisOnlyMain .v8ManualCard,
+.analysisOnlyMain .derivBarrierOverlay { display:none !important; }
+.analysisOnlyMain .v8MarketFooter {
+  margin-top: 9px;
+  border-radius: 9px;
+}
+.analysisOnlyMain .terminalSignalCard,
+.analysisOnlyMain .terminalMiniCard,
+.analysisOnlyMain .v8RecentPanel,
+.analysisOnlyMain .v8SummaryPanel { border-radius: 9px; }
+.analysisOnlyMain .v8CardTitle span,
+.analysisOnlyMain .v8SectionTitle span { font-size: 8px; }
+.analysisOnlyMain .v8EntryHero strong { font-size: 23px; }
+
+@media (max-width: 1100px) {
+  .analysisOnlyHeader { grid-template-columns: 1fr auto; }
+  .analysisOnlyStats { grid-column: 1 / -1; justify-self: stretch; }
+  .analysisOnlyMain .terminalSide.v8Side { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .analysisOnlyMain { padding: 9px; }
+  .analysisOnlyStats { grid-template-columns: repeat(3,1fr); gap:5px; }
+  .analysisOnlyStats > div { min-width:0; padding:7px; }
+  .analysisOnlyStats strong { font-size:12px; }
+  .analysisOnlyMain .terminalControls { overflow-x:auto; align-items:end; }
+  .analysisOnlyMain .terminalControls label:first-child select { min-width:170px; }
+  .analysisOnlyMain .terminalChart { height: 48vh; min-height: 330px; }
+  .analysisOnlyMain .terminalSide.v8Side,
+  .analysisOnlyMain .v8LowerGrid { grid-template-columns:1fr; }
+}
