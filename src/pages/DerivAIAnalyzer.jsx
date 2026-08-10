@@ -372,6 +372,7 @@ export default function DerivAIAnalyzer() {
   const lastQuote = useRef(null);
   const lastSignal = useRef(null);
   const signalCycle = useRef({ locked: false, waitTicks: 0 });
+  const candidateConfirmation = useRef({ signal: "WAIT", count: 0, lastTs: 0 });
 
   // Seed the analyzer from Deriv tick history immediately, then keep it synced
   // with the live tick stream. useDerivTicks already loads history on market
@@ -404,6 +405,7 @@ export default function DerivAIAnalyzer() {
     lastQuote.current = null;
     lastSignal.current = null;
     signalCycle.current = { locked: false, waitTicks: 0 };
+    candidateConfirmation.current = { signal: "WAIT", count: 0, lastTs: 0 };
   }, [symbol]);
 
   // Analysis history must be independent from contract duration.
@@ -455,26 +457,46 @@ export default function DerivAIAnalyzer() {
   };
 
   useEffect(() => {
-    if (!records.length) return;
+    const last = cleanRecords.at(-1);
+    if (!last) return;
 
-    if (!best.valid) {
-      if (signalCycle.current.locked) {
-        signalCycle.current.waitTicks += 1;
-        if (signalCycle.current.waitTicks >= 12) {
-          signalCycle.current = { locked: false, waitTicks: 0 };
-        }
+    // Never convert the historical seed into an entry. The first evaluated
+    // timestamp only arms the scanner; a qualified entry must be confirmed by
+    // fresh live ticks that arrive afterwards.
+    if (!candidateConfirmation.current.lastTs) {
+      candidateConfirmation.current = { signal: "WAIT", count: 0, lastTs: last.ts };
+      return;
+    }
+
+    // React can re-render several times for one tick. Evaluate each market tick
+    // once so a setup cannot accumulate fake confirmations from UI renders.
+    if (candidateConfirmation.current.lastTs === last.ts) return;
+
+    if (signalCycle.current.locked) {
+      signalCycle.current.waitTicks += 1;
+      candidateConfirmation.current = { signal: "WAIT", count: 0, lastTs: last.ts };
+      if (signalCycle.current.waitTicks >= 12) {
+        signalCycle.current = { locked: false, waitTicks: 0 };
       }
       return;
     }
 
-    // Only one marker per confirmed setup. Repeated candidates are suppressed
-    // until enough clean ticks have passed and the engine has returned to WAIT.
-    if (signalCycle.current.locked) return;
+    if (!best.valid) {
+      candidateConfirmation.current = { signal: "WAIT", count: 0, lastTs: last.ts };
+      return;
+    }
+
+    const previous = candidateConfirmation.current;
+    const nextCount = previous.signal === best.signal ? previous.count + 1 : 1;
+    candidateConfirmation.current = { signal: best.signal, count: nextCount, lastTs: last.ts };
+
+    // A chart entry is not a raw analyzer candidate. Require the same qualified
+    // Touch/No Touch decision on 3 consecutive fresh ticks before publishing it.
+    if (nextCount < 3) return;
+
     const previousMarker = markers.at(-1);
     if (previousMarker && cleanRecords.length - Number(previousMarker.recordCount || 0) < 24) return;
 
-    const last = cleanRecords.at(-1);
-    if (!last) return;
     const marker = {
       ts: last.ts,
       price: last.price,
@@ -485,10 +507,13 @@ export default function DerivAIAnalyzer() {
       lowerBarrier: touch.lowerBarrier,
       reason: touch.reason,
       recordCount: cleanRecords.length,
+      confirmations: nextCount,
+      analyzed: true,
     };
 
     lastSignal.current = marker;
     signalCycle.current = { locked: true, waitTicks: 0 };
+    candidateConfirmation.current = { signal: "WAIT", count: 0, lastTs: last.ts };
     setMarkers((old) => [...old.slice(-7), marker]);
   }, [
     best.valid,
@@ -562,13 +587,17 @@ export default function DerivAIAnalyzer() {
       : "QUALIFIED"
     : touch.setup;
 
+  const confirmationCount = candidateConfirmation.current.signal === best.signal
+    ? candidateConfirmation.current.count
+    : 0;
+
   const engineStage = signalCycle.current.locked
     ? "COOLDOWN"
     : touch.sampleCount < touch.minSamples
       ? "COLLECTING"
-      : best.valid
+      : best.valid && confirmationCount >= 3
         ? "ENTRY READY"
-        : touch.confidence >= 64
+        : best.valid || touch.confidence >= 64
           ? "SETUP FORMING"
           : "ANALYZING";
 
@@ -1292,8 +1321,8 @@ export default function DerivAIAnalyzer() {
               <div className="v8EntryHero">
                 <div>
                   <em>{engineStage}</em>
-                  <strong>{best.valid ? best.signal : "WAIT"}</strong>
-                  <p>{touch.reason}</p>
+                  <strong>{engineStage === "ENTRY READY" ? best.signal : "WAIT"}</strong>
+                  <p>{best.valid && engineStage !== "ENTRY READY" ? `Confirming ${best.signal} setup ${Math.min(confirmationCount, 3)}/3 live ticks` : touch.reason}</p>
                 </div>
                 <b>{best.confidence.toFixed(0)}%</b>
               </div>
@@ -1301,10 +1330,11 @@ export default function DerivAIAnalyzer() {
               <div className="v8DataRows">
                 <p><span>Contract</span><b>TOUCH / NO TOUCH</b></p>
                 <p><span>Quality</span><b>{signalQuality}</b></p>
+                <p><span>Live confirmation</span><b>{best.valid ? `${Math.min(confirmationCount, 3)}/3` : "—"}</b></p>
                 <p><span>Trend</span><b>{riseFall.trend}</b></p>
                 <p><span>Volatility</span><b>{volatilityLabel}</b></p>
                 <p><span>Duration</span><b>{durationLabel}</b></p>
-                <p><span>Last entry</span><b>{best.valid ? displayPrice : "—"}</b></p>
+                <p><span>Last entry</span><b>{entry ? fmt(entry.price) : "—"}</b></p>
               </div>
             </section>
 
@@ -1364,7 +1394,7 @@ export default function DerivAIAnalyzer() {
             <div className="v8SignalCards">
               {recentSignals.length ? recentSignals.slice(0,5).map((item) => (
                 <div className={`v8SignalMini ${item.signal === "TOUCH" ? "touch" : "notouch"}`} key={item.ts}>
-                  <span>{item.signal}</span>
+                  <span>{item.signal} · ANALYZED</span>
                   <strong>{fmt(item.price)}</strong>
                   <small>{new Date(item.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</small>
                   <b>{item.confidence.toFixed(0)}%</b>
