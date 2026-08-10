@@ -308,8 +308,52 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
   const delta = touchRaw - noTouchRaw;
   const touchScore = clamp(50 + delta * 1.25, 12, 88);
   const noTouchScore = clamp(100 - touchScore, 12, 88);
-  const confidence = Math.max(touchScore, noTouchScore);
+  const probabilityConfidence = Math.max(touchScore, noTouchScore);
   const dominance = Math.abs(touchScore - noTouchScore);
+
+  // V21: probability and entry confidence are separate concepts.
+  // Touch/No-Touch probability estimates barrier interaction only.
+  // Entry confidence is a weighted agreement score across the full strategy stack.
+  const travelQualityTouch = clamp((travelRatio / 1.15) * 100, 0, 100);
+  const persistenceQualityTouch = clamp(((persistence - 0.45) / 0.40) * 100, 0, 100);
+  const expansionQualityTouch = clamp(((expansion - 0.60) / 0.80) * 100, 0, 100);
+  const directionQualityTouch = clamp(50 + directionAlignment * 50, 0, 100);
+
+  const touchEntryConfidence = clamp(
+    touchScore * 0.18 +
+    confluence.score * 0.18 +
+    confluence.multiWindow * 0.10 +
+    confluence.momentum * 0.10 +
+    confluence.trend * 0.10 +
+    confluence.priceAction * 0.08 +
+    confluence.rejection * 0.06 +
+    confluence.regime * 0.05 +
+    (100 - confluence.choppiness) * 0.05 +
+    travelQualityTouch * 0.04 +
+    persistenceQualityTouch * 0.03 +
+    expansionQualityTouch * 0.015 +
+    directionQualityTouch * 0.015
+  );
+
+  const travelQualityNoTouch = clamp((1.0 - Math.min(travelRatio, 1.4) / 1.4) * 100, 0, 100);
+  const persistenceQualityNoTouch = clamp((1.0 - Math.max(0, persistence - 0.45) / 0.45) * 100, 0, 100);
+  const expansionQualityNoTouch = clamp((1.25 - Math.min(expansion, 1.25)) / 0.75 * 100, 0, 100);
+  const directionQualityNoTouch = clamp((1 - Math.min(1, Math.abs(directionAlignment))) * 100, 0, 100);
+
+  const noTouchEntryConfidence = clamp(
+    noTouchScore * 0.22 +
+    (100 - confluence.score) * 0.10 +
+    (100 - confluence.multiWindow) * 0.07 +
+    (100 - confluence.momentum) * 0.07 +
+    (100 - confluence.trend) * 0.07 +
+    (100 - confluence.priceAction) * 0.06 +
+    confluence.choppiness * 0.08 +
+    confluence.regime * 0.07 +
+    travelQualityNoTouch * 0.10 +
+    persistenceQualityNoTouch * 0.07 +
+    expansionQualityNoTouch * 0.05 +
+    directionQualityNoTouch * 0.04
+  );
 
   // V20: strict multi-strategy quality gate. A high Touch/No-Touch
   // probability alone is never enough to create an entry. The barrier setup
@@ -358,14 +402,16 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     Math.abs(directionAlignment) > 0.82;
 
   const touchQualified =
-    touchScore >= MASTER_THRESHOLD &&
-    dominance >= 22 &&
+    touchScore >= 72 &&
+    touchEntryConfidence >= MASTER_THRESHOLD &&
+    dominance >= 18 &&
     touchVoteCount >= 9 &&
     !touchHardConflict;
 
   const noTouchQualified =
-    noTouchScore >= MASTER_THRESHOLD &&
-    dominance >= 22 &&
+    noTouchScore >= 72 &&
+    noTouchEntryConfidence >= MASTER_THRESHOLD &&
+    dominance >= 18 &&
     noTouchVoteCount >= 8 &&
     !noTouchHardConflict;
 
@@ -373,10 +419,14 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
   if (touchQualified) signal = "TOUCH";
   if (noTouchQualified) signal = "NO TOUCH";
 
+  const preferredSignal = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
+  const entryConfidence = preferredSignal === "TOUCH" ? touchEntryConfidence : noTouchEntryConfidence;
+  const confidence = entryConfidence;
+
   const setup =
     signal !== "WAIT"
       ? "ENTRY READY"
-      : confidence >= 68
+      : entryConfidence >= 68 || probabilityConfidence >= 76
         ? "SETUP FORMING"
         : "SCANNING";
 
@@ -392,6 +442,10 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
   return {
     signal,
     confidence,
+    entryConfidence,
+    touchEntryConfidence,
+    noTouchEntryConfidence,
+    probabilityConfidence,
     touchScore,
     noTouchScore,
     upperBarrier,
