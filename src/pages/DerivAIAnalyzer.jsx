@@ -608,7 +608,7 @@ export default function DerivAIAnalyzer() {
         ts: Number(tick?.epoch) > 0 ? Number(tick.epoch) * 1000 : Date.now(),
       }))
       .filter((r) => Number.isFinite(r.price) && r.price > 0)
-      .slice(-500);
+      .slice(-6500);
 
     if (!mapped.length) return;
 
@@ -697,14 +697,74 @@ export default function DerivAIAnalyzer() {
     [analysisPrices, selectedBarrierGap, duration, selectedBarrierDirection]
   );
 
-  const touchAbove = useMemo(
+  const touchAboveRaw = useMemo(
     () => analyzeTouch(analysisPrices, selectedBarrierGap, duration, "above"),
     [analysisPrices, selectedBarrierGap, duration]
   );
-  const touchBelow = useMemo(
+  const touchBelowRaw = useMemo(
     () => analyzeTouch(analysisPrices, selectedBarrierGap, duration, "below"),
     [analysisPrices, selectedBarrierGap, duration]
   );
+
+  // V23: every chart timeframe must have its own completed history before it can
+  // influence an entry. This prevents a 1m chart with only a handful of candles
+  // from publishing an apparently high-confidence signal.
+  const timeframeContext = useMemo(() => {
+    if (chartInterval === "tick") {
+      const prices = cleanRecords.slice(-320).map((r) => r.price);
+      return { prices, count: prices.length, required: 120, label: "ticks" };
+    }
+    const intervalMap = { "5s": 5000, "15s": 15000, "30s": 30000, "1m": 60000 };
+    const all = buildTimedCandles(cleanRecords, intervalMap[chartInterval] || 5000);
+    const completed = all.length > 1 ? all.slice(0, -1) : [];
+    return {
+      prices: completed.slice(-120).map((c) => c.close),
+      count: completed.length,
+      required: chartInterval === "1m" ? 30 : 36,
+      label: "candles",
+    };
+  }, [cleanRecords, chartInterval]);
+
+  const timeframeReady = timeframeContext.count >= timeframeContext.required;
+  const contextAbove = useMemo(
+    () => advancedConfluence(timeframeContext.prices, selectedBarrierGap, "above"),
+    [timeframeContext.prices, selectedBarrierGap]
+  );
+  const contextBelow = useMemo(
+    () => advancedConfluence(timeframeContext.prices, selectedBarrierGap, "below"),
+    [timeframeContext.prices, selectedBarrierGap]
+  );
+
+  const makeSideAnalysis = (raw, context) => {
+    const blendedConfidence = clamp(
+      Number(raw?.confidence || 0) * 0.68 + Number(context?.score || 50) * 0.32
+    );
+    const contextConflict = Number(context?.score || 50) < 48;
+    const readySignal = timeframeReady && !contextConflict ? raw.signal : "WAIT";
+    return {
+      ...raw,
+      confidence: blendedConfidence,
+      rawConfidence: Number(raw?.confidence || 0),
+      contextScore: Number(context?.score || 50),
+      signal: readySignal,
+      setup: !timeframeReady ? "WARMING UP" : contextConflict ? "CONTEXT CONFLICT" : raw.setup,
+      reason: !timeframeReady
+        ? `Warming up ${timeframeContext.count}/${timeframeContext.required} ${timeframeContext.label}`
+        : contextConflict
+          ? "Higher-timeframe context conflicts with this barrier side"
+          : raw.reason,
+    };
+  };
+
+  const touchAbove = useMemo(
+    () => makeSideAnalysis(touchAboveRaw, contextAbove),
+    [touchAboveRaw, contextAbove, timeframeReady, timeframeContext.count, timeframeContext.required, timeframeContext.label]
+  );
+  const touchBelow = useMemo(
+    () => makeSideAnalysis(touchBelowRaw, contextBelow),
+    [touchBelowRaw, contextBelow, timeframeReady, timeframeContext.count, timeframeContext.required, timeframeContext.label]
+  );
+
   const autoBarrierScan = useMemo(() => {
     const options = [
       { direction: "above", label: "ABOVE SPOT", analysis: touchAbove },
@@ -725,6 +785,7 @@ export default function DerivAIAnalyzer() {
   const scannerDirection = autoBarrierScan?.direction || selectedBarrierDirection;
   const touchValid =
     connected &&
+    timeframeReady &&
     scannerTouch.signal !== "WAIT" &&
     scannerTouch.confidence >= MASTER_THRESHOLD;
 
@@ -882,8 +943,10 @@ export default function DerivAIAnalyzer() {
 
   const engineStage = signalCycle.current.locked
     ? signalCycle.current.waitTicks < 3 ? "ENTRY READY" : "COOLDOWN"
-    : scannerTouch.sampleCount < scannerTouch.minSamples
-      ? "COLLECTING"
+    : !timeframeReady
+      ? "WARMING UP"
+      : scannerTouch.sampleCount < scannerTouch.minSamples
+        ? "COLLECTING"
       : best.valid && confirmationCount >= 3
         ? "ENTRY READY"
         : best.valid || scannerTouch.confidence >= 64
@@ -1649,7 +1712,7 @@ export default function DerivAIAnalyzer() {
                 Drag: <b>History</b>
               </span>
               <span>
-                Chart data: <b>{chartInterval === "tick" ? `${chartRecords.length} ticks` : `${candles.length} candles`}</b>
+                Chart data: <b>{chartInterval === "tick" ? `${chartRecords.length} ticks` : `${candles.length} candles`} · {timeframeReady ? "READY" : `WARMING ${timeframeContext.count}/${timeframeContext.required}`}</b>
               </span>
               <span>
                 Zoom: <b>{zoom.toFixed(2)}x</b>
@@ -1671,13 +1734,13 @@ export default function DerivAIAnalyzer() {
                     <b>{scannerDirection === "above" ? "BEST" : "WATCH"}</b>
                   </header>
                   <div className="fixedSideDecision">
-                    <strong>{touchAbove.signal}</strong>
-                    <span>{touchAbove.confidence.toFixed(0)}% setup</span>
+                    <strong>{timeframeReady ? touchAbove.signal : "WARMING UP"}</strong>
+                    <span>{timeframeReady ? `${touchAbove.confidence.toFixed(0)}% setup` : `${timeframeContext.count}/${timeframeContext.required} ${timeframeContext.label}`}</span>
                   </div>
                   <div className="fixedSideMetrics">
                     <p><span>TOUCH</span><b>{touchAbove.touchScore.toFixed(0)}%</b></p>
                     <p><span>NO TOUCH</span><b>{touchAbove.noTouchScore.toFixed(0)}%</b></p>
-                    <p><span>Confluence</span><b>{Number(touchAbove?.confluence?.score || 50).toFixed(0)}%</b></p>
+                    <p><span>TF Context</span><b>{touchAbove.contextScore.toFixed(0)}%</b></p>
                   </div>
                 </div>
 
@@ -1690,13 +1753,13 @@ export default function DerivAIAnalyzer() {
                     <b>{scannerDirection === "below" ? "BEST" : "WATCH"}</b>
                   </header>
                   <div className="fixedSideDecision">
-                    <strong>{touchBelow.signal}</strong>
-                    <span>{touchBelow.confidence.toFixed(0)}% setup</span>
+                    <strong>{timeframeReady ? touchBelow.signal : "WARMING UP"}</strong>
+                    <span>{timeframeReady ? `${touchBelow.confidence.toFixed(0)}% setup` : `${timeframeContext.count}/${timeframeContext.required} ${timeframeContext.label}`}</span>
                   </div>
                   <div className="fixedSideMetrics">
                     <p><span>TOUCH</span><b>{touchBelow.touchScore.toFixed(0)}%</b></p>
                     <p><span>NO TOUCH</span><b>{touchBelow.noTouchScore.toFixed(0)}%</b></p>
-                    <p><span>Confluence</span><b>{Number(touchBelow?.confluence?.score || 50).toFixed(0)}%</b></p>
+                    <p><span>TF Context</span><b>{touchBelow.contextScore.toFixed(0)}%</b></p>
                   </div>
                 </div>
               </div>
@@ -1712,8 +1775,8 @@ export default function DerivAIAnalyzer() {
               <div className="v8CardTitle"><span>ENTRY ENGINE</span><small>{durationLabel}</small></div>
 
               <div className="v8StageTrack" aria-label="Entry analysis stages">
-                {["COLLECTING", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"].map((stage, i) => {
-                  const stages = ["COLLECTING", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"];
+                {["WARMING UP", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"].map((stage, i) => {
+                  const stages = ["WARMING UP", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"];
                   const activeIndex = Math.max(0, stages.indexOf(engineStage));
                   const done = i < activeIndex;
                   const active = i === activeIndex;
