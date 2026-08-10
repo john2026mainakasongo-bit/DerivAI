@@ -342,6 +342,7 @@ export default function DerivAIAnalyzer() {
     connected,
     loadingMarket,
     currentPrice,
+    ticks = [],
     connect,
     disconnect,
     changeSymbol,
@@ -372,27 +373,27 @@ export default function DerivAIAnalyzer() {
   const lastSignal = useRef(null);
   const signalCycle = useRef({ locked: false, waitTicks: 0 });
 
+  // Seed the analyzer from Deriv tick history immediately, then keep it synced
+  // with the live tick stream. useDerivTicks already loads history on market
+  // selection, so the analyzer should not start from only the ticks received
+  // after this page mounted.
   useEffect(() => {
-    if (!connected || !Number.isFinite(Number(currentPrice))) return;
+    if (!connected || !Array.isArray(ticks) || !ticks.length) return;
 
-    const price = Number(currentPrice);
-    const now = Date.now();
+    const mapped = ticks
+      .map((tick) => ({
+        price: Number(tick?.quote),
+        ts: Number(tick?.epoch) > 0 ? Number(tick.epoch) * 1000 : Date.now(),
+      }))
+      .filter((r) => Number.isFinite(r.price) && r.price > 0)
+      .slice(-500);
 
-    if (
-      lastQuote.current &&
-      lastQuote.current.price === price &&
-      now - lastQuote.current.ts < 80
-    ) {
-      return;
-    }
+    if (!mapped.length) return;
 
-    lastQuote.current = { price, ts: now };
-
-    setRecords((old) => [
-      ...old.slice(-499),
-      { price, ts: now },
-    ]);
-  }, [currentPrice, connected]);
+    const last = mapped.at(-1);
+    lastQuote.current = last || null;
+    setRecords(mapped);
+  }, [ticks, connected, symbol]);
 
   useEffect(() => {
     setRecords([]);
@@ -570,6 +571,18 @@ export default function DerivAIAnalyzer() {
         : touch.confidence >= 64
           ? "SETUP FORMING"
           : "ANALYZING";
+
+
+  // Never present an extreme Rise/Fall bias before there is enough history.
+  // WAIT is intentionally neutral because the page is a Touch/No Touch entry
+  // scanner and Rise/Fall is only supporting context.
+  const riseFallReady = analysisPrices.length >= 12;
+  const riseBias = !riseFallReady || riseFall.signal === "WAIT"
+    ? 50
+    : riseFall.signal === "RISE"
+      ? clamp(riseFall.confidence, 50, 95)
+      : clamp(100 - riseFall.confidence, 5, 50);
+  const fallBias = 100 - riseBias;
 
   const manualBarrier = useMemo(() => {
     const current = Number(currentPrice);
@@ -1298,8 +1311,8 @@ export default function DerivAIAnalyzer() {
             <section className="terminalMiniCard v8BiasCard">
               <div className="v8CardTitle"><span>MARKET BIAS</span><small>Rise / Fall context</small></div>
               <div className="v8BiasGrid">
-                <div className="rise"><span>RISE</span><strong>{riseFall.signal === "RISE" ? riseFall.confidence.toFixed(0) : (100-riseFall.confidence).toFixed(0)}%</strong><i>↗</i></div>
-                <div className="fall"><span>FALL</span><strong>{riseFall.signal === "FALL" ? riseFall.confidence.toFixed(0) : riseFall.confidence.toFixed(0)}%</strong><i>↘</i></div>
+                <div className="rise"><span>RISE</span><strong>{riseBias.toFixed(0)}%</strong><i>↗</i></div>
+                <div className="fall"><span>FALL</span><strong>{fallBias.toFixed(0)}%</strong><i>↘</i></div>
               </div>
             </section>
 
