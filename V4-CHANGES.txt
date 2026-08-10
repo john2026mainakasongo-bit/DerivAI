@@ -1,0 +1,13 @@
+Deriv AI Analyzer V4 Focused Cleanup
+
+- Master entry engine now produces TOUCH / NO TOUCH only.
+- Rise/Fall is retained as market-bias context, not a competing master signal.
+- Entry requires more samples, evidence threshold, dominance, travel and persistence confirmation.
+- One entry is logged per setup cycle; the market must return to WAIT before another entry can be logged.
+- Added SCANNING / SETUP FORMING / ENTRY READY states and a reason for the current state.
+- Touch/No Touch percentages are presented as evidence scores rather than certainty.
+- Chart height and workspace spacing were tightened for laptop screens.
+- Sidebar was grouped into Workspace, Market tools, Automation and System.
+- Removed old backup/snapshot files and unused Vite starter assets/App.css.
+
+Note: npm build could not be executed in the generation environment because its internal npm mirror did not contain zod-validation-error@4.0.2. Run npm install/npm run build on the project PC before pushing.

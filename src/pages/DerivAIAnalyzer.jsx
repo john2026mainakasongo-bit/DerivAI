@@ -7,7 +7,7 @@ import "./DerivAIAnalyzer.css";
 const clamp = (n, min = 0, max = 100) =>
   Math.max(min, Math.min(max, Number(n) || 0));
 
-const MASTER_THRESHOLD = 72;
+const MASTER_THRESHOLD = 76;
 
 function derivMarketName(symbol, fallback = "") {
   const exact = {
@@ -113,10 +113,12 @@ function analyzeRiseFall(prices = []) {
   };
 }
 
-function analyzeTouch(prices = [], barrierDistance = 1.5) {
-  const p = prices.map(Number).filter(Number.isFinite);
 
-  if (p.length < 10) {
+function analyzeTouch(prices = [], barrierDistance = 1.5, horizon = 10) {
+  const p = prices.map(Number).filter(Number.isFinite);
+  const minSamples = Math.max(18, Math.min(40, Number(horizon) + 8));
+
+  if (p.length < minSamples) {
     return {
       signal: "WAIT",
       confidence: 0,
@@ -124,48 +126,112 @@ function analyzeTouch(prices = [], barrierDistance = 1.5) {
       noTouchScore: 50,
       upperBarrier: null,
       lowerBarrier: null,
-      movementScore: 0,
+      setup: "COLLECTING",
+      sampleCount: p.length,
+      minSamples,
+      travelRatio: 0,
+      persistence: 0,
+      expansion: 0,
+      reason: `Collecting ${minSamples - p.length} more observations`,
     };
   }
 
   const current = p.at(-1);
-  const recent = p.slice(-Math.min(60, p.length));
+  const recent = p.slice(-Math.min(90, p.length));
   const diffs = recent.slice(1).map((x, i) => x - recent[i]);
-  const sigma = std(diffs);
+  const shortDiffs = diffs.slice(-Math.min(12, diffs.length));
+  const longSigma = Math.max(std(diffs), Math.abs(current) * 0.000002);
+  const shortSigma = Math.max(std(shortDiffs), longSigma * 0.15);
 
-  const distance = Math.max(
-    sigma * barrierDistance,
-    Math.abs(current) * 0.00001
+  const nz = shortDiffs.filter((d) => d !== 0);
+  const up = nz.filter((d) => d > 0).length;
+  const down = nz.filter((d) => d < 0).length;
+  const persistence = nz.length ? Math.max(up, down) / nz.length : 0.5;
+
+  const short = recent.slice(-Math.min(16, recent.length));
+  const shortMove = short.at(-1) - short[0];
+  const driftPerStep = Math.abs(shortMove) / Math.max(1, short.length - 1);
+
+  const horizonSteps = Math.max(3, Math.min(60, Number(horizon) || 10));
+  const expectedTravel =
+    longSigma * Math.sqrt(horizonSteps) +
+    driftPerStep * horizonSteps * 0.45;
+
+  const recentRange = Math.max(...recent) - Math.min(...recent);
+  const barrier = Math.max(
+    longSigma * barrierDistance * Math.sqrt(horizonSteps),
+    recentRange * 0.18,
+    Math.abs(current) * 0.000012
   );
 
-  const upperBarrier = current + distance;
-  const lowerBarrier = current - distance;
+  const upperBarrier = current + barrier;
+  const lowerBarrier = current - barrier;
+  const travelRatio = barrier > 0 ? expectedTravel / barrier : 0;
+  const expansion = longSigma > 0 ? shortSigma / longSigma : 1;
 
-  const short = recent.slice(-Math.min(12, recent.length));
-  const shortRange = Math.max(...short) - Math.min(...short);
-  const fullRange = Math.max(...recent) - Math.min(...recent);
-  const netMove = Math.abs(recent.at(-1) - recent[0]);
+  const recentHigh = Math.max(...recent);
+  const recentLow = Math.min(...recent);
+  const range = Math.max(recentHigh - recentLow, barrier);
+  const edgePosition = clamp(
+    Math.max(
+      (current - recentLow) / range,
+      (recentHigh - current) / range
+    ) * 100,
+    0,
+    100
+  ) / 100;
 
-  const rangePressure = distance > 0 ? shortRange / distance : 0;
-  const expansion = distance > 0 ? fullRange / (distance * 2) : 0;
-  const drift = distance > 0 ? netMove / distance : 0;
+  const touchRaw =
+    44 +
+    clamp((travelRatio - 0.65) * 30, -12, 25) +
+    clamp((persistence - 0.5) * 32, -7, 14) +
+    clamp((expansion - 0.9) * 13, -6, 10) +
+    clamp((edgePosition - 0.55) * 12, -4, 6);
 
-  // Calibrated evidence score rather than an artificial 0/100 certainty.
-  // The cap deliberately prevents repeated 100% "signals" from noisy ticks.
-  const movementScore = clamp(
-    46 + rangePressure * 15 + expansion * 8 + drift * 5,
-    38,
-    92
-  );
+  const noTouchRaw =
+    44 +
+    clamp((0.9 - travelRatio) * 34, -12, 25) +
+    clamp((0.62 - persistence) * 24, -6, 11) +
+    clamp((1.0 - expansion) * 13, -5, 8);
 
-  const touchScore = movementScore;
-  const noTouchScore = 100 - touchScore;
+  const delta = touchRaw - noTouchRaw;
+  const touchScore = clamp(50 + delta * 1.25, 12, 88);
+  const noTouchScore = clamp(100 - touchScore, 12, 88);
   const confidence = Math.max(touchScore, noTouchScore);
+  const dominance = Math.abs(touchScore - noTouchScore);
+
+  const touchQualified =
+    touchScore >= MASTER_THRESHOLD &&
+    dominance >= 20 &&
+    travelRatio >= 0.95 &&
+    persistence >= 0.62;
+
+  const noTouchQualified =
+    noTouchScore >= MASTER_THRESHOLD &&
+    dominance >= 20 &&
+    travelRatio <= 0.72 &&
+    persistence <= 0.68 &&
+    expansion <= 1.12;
 
   let signal = "WAIT";
-  if (confidence >= MASTER_THRESHOLD) {
-    signal = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
-  }
+  if (touchQualified) signal = "TOUCH";
+  if (noTouchQualified) signal = "NO TOUCH";
+
+  const setup =
+    signal !== "WAIT"
+      ? "ENTRY READY"
+      : confidence >= 68
+        ? "SETUP FORMING"
+        : "SCANNING";
+
+  const reason =
+    signal === "TOUCH"
+      ? "Movement, persistence and expected travel support a barrier test"
+      : signal === "NO TOUCH"
+        ? "Low expected travel and contained movement support barrier avoidance"
+        : travelRatio > 0.85
+          ? "Movement is active, but confirmation is not strong enough yet"
+          : "Barrier edge is not qualified; keep scanning";
 
   return {
     signal,
@@ -174,7 +240,13 @@ function analyzeTouch(prices = [], barrierDistance = 1.5) {
     noTouchScore,
     upperBarrier,
     lowerBarrier,
-    movementScore,
+    setup,
+    sampleCount: p.length,
+    minSamples,
+    travelRatio,
+    persistence,
+    expansion,
+    reason,
   };
 }
 
@@ -255,6 +327,7 @@ export default function DerivAIAnalyzer() {
   const dragRef = useRef(null);
   const lastQuote = useRef(null);
   const lastSignal = useRef(null);
+  const signalCycle = useRef({ locked: false, waitTicks: 0 });
 
   useEffect(() => {
     if (!connected || !Number.isFinite(Number(currentPrice))) return;
@@ -286,6 +359,7 @@ export default function DerivAIAnalyzer() {
     setCrosshair(null);
     lastQuote.current = null;
     lastSignal.current = null;
+    signalCycle.current = { locked: false, waitTicks: 0 };
   }, [symbol]);
 
   const windowRecords = useMemo(() => {
@@ -308,7 +382,7 @@ export default function DerivAIAnalyzer() {
   );
 
   const touch = useMemo(
-    () => analyzeTouch(windowPrices, barrierDistance),
+    () => analyzeTouch(windowPrices, barrierDistance, duration),
     [windowPrices, barrierDistance]
   );
 
@@ -317,80 +391,62 @@ export default function DerivAIAnalyzer() {
     riseFall.signal !== "WAIT" &&
     riseFall.confidence >= MASTER_THRESHOLD;
 
+  // The master entry engine is intentionally Touch / No Touch only.
+  // Rise/Fall remains a secondary market-bias confirmation.
   const touchValid =
     connected &&
     touch.signal !== "WAIT" &&
     touch.confidence >= MASTER_THRESHOLD;
 
-  const qualifiedCandidates = [
-    {
-      mode: "RISE/FALL",
-      signal: riseFall.signal,
-      confidence: riseFall.confidence,
-      valid: riseValid,
-    },
-    {
-      mode: "TOUCH/NO TOUCH",
-      signal: touch.signal,
-      confidence: touch.confidence,
-      valid: touchValid,
-    },
-  ].filter((candidate) => candidate.valid);
-
-  const strongestQualified = qualifiedCandidates.sort(
-    (a, b) => b.confidence - a.confidence
-  )[0];
-
-  const strongestEvidence = Math.max(
-    riseFall.confidence,
-    touch.confidence
-  );
-
-  const best = strongestQualified || {
-    mode: "ANALYZER",
-    signal: "WAIT",
-    confidence: strongestEvidence,
-    valid: false,
+  const best = {
+    mode: "TOUCH/NO TOUCH",
+    signal: touchValid ? touch.signal : "WAIT",
+    confidence: touch.confidence,
+    valid: touchValid,
+    setup: touch.setup,
   };
 
   useEffect(() => {
-    if (!best.valid || !records.length) return;
+    if (!records.length) return;
 
-    const last = records.at(-1);
-    const previous = lastSignal.current;
-    const minimumGapMs = unit === "ticks"
-      ? Math.max(8000, duration * 850)
-      : Math.max(10000, duration * 1000);
-
-    if (previous) {
-      const sameSignal = previous.signal === best.signal;
-      const tooSoon = last.ts - previous.ts < minimumGapMs;
-      const notMateriallyStronger =
-        best.confidence < previous.confidence + 8;
-
-      if (tooSoon && (sameSignal || notMateriallyStronger)) {
-        return;
+    if (!best.valid) {
+      if (signalCycle.current.locked) {
+        signalCycle.current.waitTicks += 1;
+        if (signalCycle.current.waitTicks >= 3) {
+          signalCycle.current = { locked: false, waitTicks: 0 };
+        }
       }
+      return;
     }
 
+    // Only one entry per qualified setup. A new marker can be created
+    // after the market returns to WAIT for several updates and re-qualifies.
+    if (signalCycle.current.locked) return;
+
+    const last = records.at(-1);
     const marker = {
       ts: last.ts,
       price: last.price,
       signal: best.signal,
       mode: best.mode,
       confidence: best.confidence,
+      upperBarrier: touch.upperBarrier,
+      lowerBarrier: touch.lowerBarrier,
+      reason: touch.reason,
     };
 
     lastSignal.current = marker;
-    setMarkers((old) => [...old.slice(-9), marker]);
+    signalCycle.current = { locked: true, waitTicks: 0 };
+    setMarkers((old) => [...old.slice(-7), marker]);
   }, [
     best.valid,
     best.signal,
     best.mode,
     best.confidence,
     records,
-    unit,
-    duration,
+    touch.upperBarrier,
+    touch.lowerBarrier,
+    touch.reason,
   ]);
 
   const visibleCount = Math.round(clamp(160 / zoom, 45, 220));
@@ -447,13 +503,11 @@ export default function DerivAIAnalyzer() {
 
   const entry = markers.at(-1) || null;
 
-  const signalQuality = !best.valid
-    ? "WAIT"
-    : best.confidence >= 86
-      ? "VERY STRONG"
-      : best.confidence >= 78
-        ? "STRONG"
-        : "QUALIFIED";
+  const signalQuality = best.valid
+    ? best.confidence >= 84
+      ? "HIGH CONVICTION"
+      : "QUALIFIED"
+    : touch.setup;
 
   const handleWheel = (e) => {
     e.preventDefault();
@@ -574,7 +628,7 @@ export default function DerivAIAnalyzer() {
       <main className="terminalMain">
         <Topbar
           title="Deriv AI Analyzer"
-          subtitle="Real-time market analysis for clearer manual trading decisions"
+          subtitle="Touch / No Touch setup scanner · entries only after confirmation"
           connected={connected}
           connecting={
             status === "CONNECTING" || loadingMarket
@@ -1055,22 +1109,20 @@ export default function DerivAIAnalyzer() {
                 best.valid ? "valid" : ""
               }`}
             >
-              <span>AI SIGNAL</span>
+              <span>ENTRY ENGINE</span>
 
-              <strong>
-                {best.valid
-                  ? best.signal
-                  : "WAIT"}
-              </strong>
+              <div className="entryState">
+                <em>{best.valid ? "ENTRY READY" : touch.setup}</em>
+                <strong>{best.valid ? best.signal : "WAIT"}</strong>
+                <b>{best.confidence.toFixed(1)}%</b>
+              </div>
 
-              <b>
-                {best.confidence.toFixed(1)}%
-              </b>
+              <p className="entryReason">{touch.reason}</p>
 
               <div className="signalRows">
                 <p>
-                  <span>Mode</span>
-                  <b>{best.mode}</b>
+                  <span>Contract</span>
+                  <b>TOUCH / NO TOUCH</b>
                 </p>
 
                 <p>
@@ -1091,8 +1143,8 @@ export default function DerivAIAnalyzer() {
                 <p>
                   <span>Entry</span>
                   <b>
-                    {entry
-                      ? fmt(entry.price)
+                    {best.valid
+                      ? displayPrice
                       : "—"}
                   </b>
                 </p>
@@ -1100,7 +1152,7 @@ export default function DerivAIAnalyzer() {
             </section>
 
             <section className="terminalMiniCard">
-              <span>RISE / FALL</span>
+              <span>MARKET BIAS · RISE / FALL</span>
 
               <div className="terminalDecision">
                 <strong>
@@ -1162,9 +1214,14 @@ export default function DerivAIAnalyzer() {
                 </select>
               </div>
 
+              <div className="touchSetupLine">
+                <span>{touch.setup}</span>
+                <b>{touch.sampleCount}/{touch.minSamples} samples</b>
+              </div>
+
               <div className="touchBars">
                 <div>
-                  <span>TOUCH</span>
+                  <span>TOUCH EVIDENCE</span>
                   <i>
                     <b
                       style={{
@@ -1181,7 +1238,7 @@ export default function DerivAIAnalyzer() {
                 </div>
 
                 <div>
-                  <span>NO TOUCH</span>
+                  <span>NO TOUCH EVIDENCE</span>
                   <i>
                     <b
                       style={{
@@ -1215,6 +1272,14 @@ export default function DerivAIAnalyzer() {
                     )}
                   </b>
                 </p>
+                <p>
+                  <span>Expected travel</span>
+                  <b>{touch.travelRatio.toFixed(2)}× barrier</b>
+                </p>
+                <p>
+                  <span>Persistence</span>
+                  <b>{(touch.persistence * 100).toFixed(0)}%</b>
+                </p>
               </div>
             </section>
           </aside>
@@ -1224,15 +1289,15 @@ export default function DerivAIAnalyzer() {
           <div><span>MARKET STATUS</span><strong>{marketStatus}</strong><small>{connected ? "Ticks streaming" : status}</small></div>
           <div><span>VOLATILITY</span><strong>{volatilityLabel}</strong><small>Live movement estimate</small></div>
           <div><span>TICK SPEED</span><strong>{tickSpeed ? `${tickSpeed.toFixed(1)} / sec` : "—"}</strong><small>Observed feed speed</small></div>
-          <div><span>AI CONFIDENCE</span><strong>{best.confidence.toFixed(1)}%</strong><small>{signalQuality}</small></div>
-          <div><span>DECISION</span><strong>{best.valid ? best.signal : "WAIT"}</strong><small>Threshold {MASTER_THRESHOLD}%</small></div>
-          <div><span>SIGNALS LOGGED</span><strong>{markers.length}</strong><small>Current market session</small></div>
+          <div><span>SETUP STATE</span><strong>{touch.setup}</strong><small>{best.confidence.toFixed(1)}% evidence</small></div>
+          <div><span>ENTRY</span><strong>{best.valid ? best.signal : "WAIT"}</strong><small>Needs {MASTER_THRESHOLD}% + confirmation</small></div>
+          <div><span>ENTRIES LOGGED</span><strong>{markers.length}</strong><small>One entry per setup cycle</small></div>
         </section>
 
         <section className="terminalBottomGrid">
           <article className="terminalLogCard">
             <div className="terminalSectionHead">
-              <div><span>RECENT SIGNALS</span><h3>Signal history</h3></div>
+              <div><span>QUALIFIED ENTRIES</span><h3>Entry history</h3></div>
               <small>Current session</small>
             </div>
             <div className="terminalTableWrap">
@@ -1248,7 +1313,7 @@ export default function DerivAIAnalyzer() {
                       <td>{Number(item.confidence).toFixed(1)}%</td>
                     </tr>
                   )) : (
-                    <tr><td colSpan="5" className="terminalNoRows">No qualified signals yet. Analyzer is watching the live market.</td></tr>
+                    <tr><td colSpan="5" className="terminalNoRows">No qualified Touch / No Touch entry yet. The scanner is still analyzing.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1260,16 +1325,16 @@ export default function DerivAIAnalyzer() {
               <div><span>HOW TO READ THIS</span><h3>Decision guide</h3></div>
             </div>
             <div className="terminalGuide">
-              <p><i className="guideDot green" /><span><b>{MASTER_THRESHOLD}%+ confidence</b>Qualified signal. Confirm direction and duration before manual execution.</span></p>
-              <p><i className="guideDot amber" /><span><b>Below {MASTER_THRESHOLD}%</b>WAIT means the current evidence is not strong enough.</span></p>
-              <p><i className="guideDot blue" /><span><b>Touch / No Touch</b>Barrier probabilities are shown separately from Rise / Fall.</span></p>
-              <p><i className="guideDot gray" /><span><b>Chart markers</b>Show where qualified signals were detected; they are not guaranteed outcomes.</span></p>
+              <p><i className="guideDot green" /><span><b>ENTRY READY</b>Only appears when Touch or No Touch passes the evidence threshold and confirmation rules.</span></p>
+              <p><i className="guideDot amber" /><span><b>SETUP FORMING</b>Evidence is improving, but the tool deliberately waits instead of firing an early signal.</span></p>
+              <p><i className="guideDot blue" /><span><b>One entry per setup</b>The same market condition is not logged repeatedly. It must reset to WAIT before a new entry can appear.</span></p>
+              <p><i className="guideDot gray" /><span><b>Rise / Fall is context</b>It is shown as market bias and does not create the master entry by itself.</span></p>
             </div>
           </article>
         </section>
 
         <p className="terminalDisclaimer">
-          Analysis only · Deriv live market data · Manual execution · Signals are probabilistic and are not guaranteed outcomes.
+          Analysis only · Live Deriv market data · Manual execution · Entry labels are filtered estimates, not guaranteed outcomes.
         </p>
       </main>
     </div>

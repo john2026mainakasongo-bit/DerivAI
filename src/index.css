@@ -612,3 +612,138 @@ button {
   box-shadow: 0 0 16px rgba(45, 224, 180, .16);
 }
 
+
+/* EdgePilot V4 shell cleanup */
+.sidebar {
+  width: 184px;
+  padding: 14px 10px 12px;
+  background: linear-gradient(180deg, #061724 0%, #04111b 100%);
+  border-right: 1px solid rgba(111, 160, 187, .14);
+}
+
+.brand {
+  gap: 9px;
+  padding: 0 5px 15px;
+}
+
+.brandMark {
+  width: 35px;
+  height: 35px;
+  border-radius: 11px;
+}
+
+.brand strong {
+  font-size: 15px;
+}
+
+.brand small {
+  font-size: 9px;
+}
+
+.sidebarNav {
+  display: block !important;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-right: 2px;
+}
+
+.navGroup {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+
+.navGroupLabel {
+  padding: 0 8px 4px;
+  color: #506f81;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.navLink {
+  min-height: 34px;
+  padding: 0 8px;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 9px;
+}
+
+.navLink:hover {
+  color: #dcecf4;
+  background: rgba(20, 74, 103, .22);
+}
+
+.navLink.active {
+  background: linear-gradient(135deg, #0f76e8, #155ed0);
+  box-shadow: 0 8px 22px rgba(19, 104, 218, .2);
+}
+
+.navIcon {
+  width: 18px;
+  flex: 0 0 18px;
+  text-align: center;
+  color: #7fb8da;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.navLink.active .navIcon {
+  color: white;
+}
+
+.sidebarFooter {
+  padding: 9px 8px;
+  border-radius: 8px;
+  font-size: 8px;
+}
+
+.topbar {
+  min-height: 58px;
+  gap: 12px;
+}
+
+.topbar h1 {
+  font-size: 21px;
+  letter-spacing: -.02em;
+}
+
+.topbar p {
+  margin-top: 3px;
+  font-size: 9px;
+}
+
+.topbarActions {
+  gap: 7px;
+}
+
+.connection,
+.connectButton {
+  min-height: 34px;
+  border-radius: 9px;
+  font-size: 8px;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 66px;
+    padding-inline: 7px;
+  }
+
+  .brand > div:last-child,
+  .navGroupLabel,
+  .navText,
+  .sidebarFooter {
+    display: none;
+  }
+
+  .brand {
+    justify-content: center;
+  }
+
+  .navLink {
+    justify-content: center;
+    padding: 0;
+  }
+}

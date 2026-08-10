@@ -500,3 +500,108 @@
   .terminalLogCard,.terminalExplainCard{padding:8px}
   .terminalGuide p{padding:5px 6px}
 }
+
+/* V4 — focused Touch / No Touch workspace */
+.terminalChart {
+  height: clamp(340px, 46vh, 455px);
+}
+
+.terminalWorkspace {
+  grid-template-columns: minmax(0, 1fr) 238px;
+  gap: 10px;
+}
+
+.terminalChartCard,
+.terminalSignalCard,
+.terminalMiniCard,
+.terminalMetrics,
+.terminalLogCard,
+.terminalExplainCard {
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .12);
+}
+
+.entryState {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid rgba(52, 104, 130, .35);
+  border-radius: 9px;
+  background: rgba(3, 16, 25, .42);
+}
+
+.entryState em {
+  display: block;
+  margin-bottom: 5px;
+  color: #8099a8;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .09em;
+}
+
+.terminalSignalCard.valid .entryState em,
+.terminalSignalCard.valid .entryState b {
+  color: #22dda5;
+}
+
+.entryState strong {
+  display: block;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -.02em;
+}
+
+.entryState b {
+  display: block;
+  margin-top: 6px;
+  color: #dbeaf1;
+  font-size: 13px;
+}
+
+.entryReason {
+  margin: 8px 0 0;
+  color: #86a0af;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.touchSetupLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 2px;
+  padding: 6px 7px;
+  border-radius: 6px;
+  background: rgba(34, 221, 165, .055);
+  border: 1px solid rgba(34, 221, 165, .14);
+  font-size: 7px;
+}
+
+.touchSetupLine span {
+  color: #22dda5;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.touchSetupLine b {
+  color: #8ca5b4;
+  font-weight: 800;
+}
+
+.touchBars > div {
+  grid-template-columns: 82px 1fr 30px;
+}
+
+.terminalMetrics {
+  margin-top: 10px;
+}
+
+.terminalBottomGrid {
+  margin-top: 10px;
+}
+
+@media (max-width: 1180px) {
+  .terminalChart {
+    height: 390px;
+  }
+}
