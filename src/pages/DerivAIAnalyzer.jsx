@@ -311,20 +311,63 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
   const confidence = Math.max(touchScore, noTouchScore);
   const dominance = Math.abs(touchScore - noTouchScore);
 
+  // V20: strict multi-strategy quality gate. A high Touch/No-Touch
+  // probability alone is never enough to create an entry. The barrier setup
+  // must also have broad agreement across trend, momentum, price action,
+  // regime, persistence and live travel conditions. Strong contradictions
+  // force WAIT even when one individual score is high.
+  const touchVotes = [
+    confluence.score >= 64,
+    confluence.momentum >= 58,
+    confluence.trend >= 56,
+    confluence.multiWindow >= 58,
+    confluence.priceAction >= 54,
+    confluence.rejection >= 48,
+    confluence.choppiness <= 62,
+    confluence.regime >= 42,
+    travelRatio >= 0.95,
+    persistence >= 0.62,
+    expansion >= 0.78,
+    directionAlignment >= 0.10,
+  ];
+  const touchVoteCount = touchVotes.filter(Boolean).length;
+  const touchHardConflict =
+    confluence.trend < 38 ||
+    confluence.momentum < 36 ||
+    confluence.score < 56 ||
+    confluence.choppiness > 78 ||
+    directionAlignment < -0.35;
+
+  const noTouchVotes = [
+    confluence.score <= 58,
+    confluence.momentum <= 55,
+    confluence.trend <= 58,
+    confluence.multiWindow <= 58,
+    confluence.priceAction <= 62,
+    confluence.choppiness >= 38,
+    travelRatio <= 0.72,
+    persistence <= 0.68,
+    expansion <= 1.12,
+    Math.abs(directionAlignment) <= 0.55,
+  ];
+  const noTouchVoteCount = noTouchVotes.filter(Boolean).length;
+  const noTouchHardConflict =
+    travelRatio > 1.08 ||
+    persistence > 0.76 ||
+    expansion > 1.28 ||
+    Math.abs(directionAlignment) > 0.82;
+
   const touchQualified =
     touchScore >= MASTER_THRESHOLD &&
-    dominance >= 20 &&
-    travelRatio >= 0.95 &&
-    persistence >= 0.62 &&
-    confluence.score >= 62;
+    dominance >= 22 &&
+    touchVoteCount >= 9 &&
+    !touchHardConflict;
 
   const noTouchQualified =
     noTouchScore >= MASTER_THRESHOLD &&
-    dominance >= 20 &&
-    travelRatio <= 0.72 &&
-    persistence <= 0.68 &&
-    expansion <= 1.12 &&
-    confluence.score <= 58;
+    dominance >= 22 &&
+    noTouchVoteCount >= 8 &&
+    !noTouchHardConflict;
 
   let signal = "WAIT";
   if (touchQualified) signal = "TOUCH";
@@ -361,6 +404,9 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     expansion,
     directionAlignment,
     confluence,
+    strategyAgreement: signal === "TOUCH" ? touchVoteCount : signal === "NO TOUCH" ? noTouchVoteCount : Math.max(touchVoteCount, noTouchVoteCount),
+    strategyTotal: signal === "TOUCH" ? touchVotes.length : signal === "NO TOUCH" ? noTouchVotes.length : Math.max(touchVotes.length, noTouchVotes.length),
+    hardConflict: signal === "TOUCH" ? touchHardConflict : signal === "NO TOUCH" ? noTouchHardConflict : touchHardConflict || noTouchHardConflict,
     reason,
   };
 }
