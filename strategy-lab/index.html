@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Deriv Strategy Lab V1</title>
+  <link rel="stylesheet" href="strategy-lab.css">
+</head>
+<body>
+  <main class="lab">
+    <header class="header">
+      <div>
+        <div class="eyebrow">DERIV TRADING ASSISTANT</div>
+        <h1>Strategy Lab <span>V1</span></h1>
+        <p>Rule-based signal engine + historical backtest. No martingale.</p>
+      </div>
+      <div class="status"><i></i> LOCAL / SAFE TEST MODE</div>
+    </header>
+
+    <section class="controls card">
+      <div class="field">
+        <label>Market</label>
+        <select id="market">
+          <option>1HZ100V</option>
+          <option>1HZ50V</option>
+          <option>1HZ75V</option>
+          <option>1HZ25V</option>
+          <option>R_100</option>
+          <option>R_75</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Sample size</label>
+        <input id="sampleSize" type="number" min="100" max="50000" value="5000">
+      </div>
+      <div class="field">
+        <label>Risk / trade</label>
+        <input id="risk" type="number" min="0.1" max="5" step="0.1" value="1">
+      </div>
+      <div class="field">
+        <label>Reward : Risk</label>
+        <select id="rr">
+          <option value="1.5">1.5 : 1</option>
+          <option value="2" selected>2 : 1</option>
+          <option value="3">3 : 1</option>
+        </select>
+      </div>
+      <button id="run">RUN BACKTEST</button>
+    </section>
+
+    <section class="grid">
+      <article class="card hero">
+        <div class="section-title">CURRENT ENGINE</div>
+        <div class="signal" id="signal">WAIT</div>
+        <div class="signal-meta" id="signalMeta">Load data and run the engine.</div>
+        <div class="meter"><div id="meterFill"></div></div>
+        <div class="mini">
+          <div><span>SETUP</span><b id="setup">—</b></div>
+          <div><span>CONFIDENCE</span><b id="confidence">—</b></div>
+          <div><span>REGIME</span><b id="regime">—</b></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="section-title">BACKTEST RESULT</div>
+        <div class="metrics">
+          <div><span>Trades</span><b id="trades">—</b></div>
+          <div><span>Win rate</span><b id="winrate">—</b></div>
+          <div><span>Profit factor</span><b id="pf">—</b></div>
+          <div><span>Max drawdown</span><b id="dd">—</b></div>
+          <div><span>Net R</span><b id="netr">—</b></div>
+          <div><span>Longest loss streak</span><b id="streak">—</b></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="section-title">EQUITY CURVE</div>
+      <canvas id="chart" width="1100" height="300"></canvas>
+    </section>
+
+    <section class="card rules">
+      <div class="section-title">V1 RULES</div>
+      <ol>
+        <li>Uses the latest price sequence to determine short-term momentum and regime.</li>
+        <li>Only enters when momentum, trend alignment and volatility filters agree.</li>
+        <li>Risk is fixed per trade; no stake doubling after losses.</li>
+        <li>One position at a time; cooldown after a losing trade.</li>
+        <li>Signals below the confidence threshold remain <b>WAIT</b>.</li>
+      </ol>
+      <div class="warning">
+        This is a research/backtesting module, not a promise of profit. Before real-money use,
+        connect it to verified Deriv tick/history data and validate it on unseen data.
+      </div>
+    </section>
+  </main>
+  <script src="strategy-lab.js"></script>
+</body>
+</html>
