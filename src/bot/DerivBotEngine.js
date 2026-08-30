@@ -1507,7 +1507,7 @@ export default class DerivBotEngine {
       largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: DEFAULTS.stake,
-      activeSetup: "Ã¢â‚¬â€",
+      activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
@@ -1519,7 +1519,7 @@ export default class DerivBotEngine {
       signalConfirmations: 0,
       requiredConfirmations: DEFAULTS.confirmationCount,
       blockedSetupUntil: 0,
-      lastLossSetup: "Ã¢â‚¬â€",
+      lastLossSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       lossProtectionCount: 0,
       deepScore: 0,
       deepConsensus: 0,
@@ -1528,7 +1528,7 @@ export default class DerivBotEngine {
       fastLane: false,
       gate: null,
       executionPhase: "SCAN",
-      lockedCandidate: "Ã¢â‚¬â€",
+      lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       signalVersion: 0,
       lockedSignalVersion: 0,
       history: [],
@@ -1750,10 +1750,10 @@ export default class DerivBotEngine {
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       message: reason,
-      activeSetup: "Ã¢â‚¬â€",
+      activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       signalConfirmations: 0,
       executionPhase: "SCAN",
-      lockedCandidate: "Ã¢â‚¬â€",
+      lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       signalVersion: this.signalVersion,
       lockedSignalVersion: 0,
     });
@@ -2123,7 +2123,7 @@ export default class DerivBotEngine {
           ),
           accountExecutionPass: Boolean(selectedCanExecute),
           executionPhase: "SCAN",
-          lockedCandidate: selected?.setup || "Ã¢â‚¬â€",
+          lockedCandidate: selected?.setup || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
           signalVersion: this.signalVersion,
           lockedSignalVersion: 0,
         },
@@ -2149,7 +2149,7 @@ export default class DerivBotEngine {
             qualificationMode: "DEMO_DIGITS_ONLY",
             accountExecutionPass: false,
             executionPhase: "SCAN",
-            lockedCandidate: "Ã¢â‚¬â€",
+            lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
           },
         };
       }
@@ -2315,7 +2315,7 @@ export default class DerivBotEngine {
           qualificationMode: "DEMO_DIGITS_ONLY",
           accountExecutionPass: false,
           executionPhase: "SCAN",
-          lockedCandidate: "Ã¢â‚¬â€",
+          lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
         },
       };
     }
@@ -2428,7 +2428,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V49 keeps Demo digits-only, adds lower/upper row pressure, ranks OVER/UNDER barriers 1Ã¢â‚¬â€œ7, dynamically ranks DIFFERS digits, and enters after one fresh confirmation.",
+        "V49 keeps Demo digits-only, adds lower/upper row pressure, ranks OVER/UNDER barriers 1ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ7, dynamically ranks DIFFERS digits, and enters after one fresh confirmation.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2506,7 +2506,7 @@ export default class DerivBotEngine {
       largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
-      activeSetup: "Ã¢â‚¬â€",
+      activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
@@ -2518,7 +2518,7 @@ export default class DerivBotEngine {
       signalConfirmations: 0,
       requiredConfirmations: this.settings.confirmationCount,
       blockedSetupUntil: 0,
-      lastLossSetup: "Ã¢â‚¬â€",
+      lastLossSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       lossProtectionCount: 0,
       deepScore: 0,
       deepConsensus: 0,
@@ -2527,7 +2527,7 @@ export default class DerivBotEngine {
       fastLane: false,
       gate: null,
       executionPhase: "SCAN",
-      lockedCandidate: "Ã¢â‚¬â€",
+      lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       signalVersion: 0,
       lockedSignalVersion: 0,
       history: [],
@@ -2652,7 +2652,7 @@ export default class DerivBotEngine {
       consecutiveLosses: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
-      activeSetup: "Ã¢â‚¬â€",
+      activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       signalConfirmations: 0,
       lastBlockReason: "",
     });
@@ -2682,7 +2682,7 @@ export default class DerivBotEngine {
       console.debug("[V49] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
-        lockedCandidate: this.lockedCandidate?.setup || "Ã¢â‚¬â€",
+        lockedCandidate: this.lockedCandidate?.setup || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
         confirmations: check.confirmations || 0,
         requiredConfirmations: check.requiredConfirmations || 0,
         signalVersion: this.signalVersion,
@@ -2693,7 +2693,7 @@ export default class DerivBotEngine {
         this.patch({
           status: "WAITING",
           message: check.reason,
-          activeSetup: "Ã¢â‚¬â€",
+          activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
           scanElapsedSeconds: number(check.elapsedSeconds),
           scanTicks: this.scanTickCount,
           maxScanTicks: this.settings.maxScanTicks,
@@ -2714,7 +2714,7 @@ export default class DerivBotEngine {
           fastLane: Boolean(check.deepAssessment?.fastLane),
           gate: check.gate || null,
           executionPhase: check.gate?.executionPhase || this.executionPhase || "SCAN",
-          lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "Ã¢â‚¬â€",
+          lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
         });
 
         await sleep(1000);
@@ -2739,7 +2739,7 @@ export default class DerivBotEngine {
         this.addHistory({
           id: `error-${Date.now()}`,
           time: Date.now(),
-          setup: `${check.contract.label} Ã‚Â· ${message}`,
+          setup: `${check.contract.label} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${message}`,
           result: "ERROR",
           profit: 0,
           stake: this.state.currentStake,
@@ -2845,11 +2845,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} Ã‚Â· V49 fast digit-row entry confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· V49 fast digit-row entry confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} Ã‚Â· V49 FAST DIGIT ROW`,
+      activeSetup: `${check.contract.label} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· V49 FAST DIGIT ROW`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
@@ -3016,8 +3016,8 @@ export default class DerivBotEngine {
         check.decision.professionalScore ?? check.decision.confidence
       ),
       marketQuality: number(check.decision.marketQuality),
-      riskLevel: String(check.decision.riskLevel || "Ã¢â‚¬â€"),
-      entryStage: String(check.timing.state || "Ã¢â‚¬â€"),
+      riskLevel: String(check.decision.riskLevel || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"),
+      entryStage: String(check.timing.state || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"),
       votes: number(check.decision.passedCount),
       martingaleStep: this.state.martingaleStep,
       executionMode: check.mode || "V12_DEEP_CYCLE_AI",
@@ -3083,13 +3083,13 @@ export default class DerivBotEngine {
         this.settings.confirmationCount
       ),
       blockedSetupUntil,
-      lastLossSetup: this.lastLossSetup || "Ã¢â‚¬â€",
+      lastLossSetup: this.lastLossSetup || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       lossProtectionCount,
       lastBlockReason: won
         ? ""
         : `Loss protection: ${setup} blocked on ${this.symbol}.`,
       executionPhase: "SCAN",
-      lockedCandidate: "Ã¢â‚¬â€",
+      lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
       signalVersion: this.signalVersion,
       lockedSignalVersion: 0,
     });
