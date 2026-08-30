@@ -1,5 +1,6 @@
-import StrategyEngineV30 from "../components/StrategyEngineV30";
+import "../styles/StrategyEngineV31.css";
+import StrategyEngineV31 from "../components/StrategyEngineV31";
 
 export default function Dashboard() {
-  return <StrategyEngineV30 />;
+  return <StrategyEngineV31 />;
 }
