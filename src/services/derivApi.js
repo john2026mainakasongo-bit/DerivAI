@@ -1,4 +1,4 @@
-const PUBLIC_SOCKET_URLS = [
+﻿const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -135,6 +135,9 @@ class DerivTradingClient {
     this.manualClose = false;
     this.connectPromise = null;
     this.socketAuthenticated = false;
+    this.socketAuthKey = "";
+    this.transactionSubscriptionId = "";
+    this.transactionSubscribePromise = null;
     this.lastAuthConnectionError = "";
 
     this.auth = {
@@ -392,7 +395,10 @@ class DerivTradingClient {
     this.pending.clear();
     this.socket = null;
     this.socketAuthenticated = false;
+    this.socketAuthKey = "";
     this.subscriptionId = "";
+    this.transactionSubscriptionId = "";
+    this.transactionSubscribePromise = null;
     this.contractSubscriptionIds.clear();
   }
 
@@ -490,6 +496,9 @@ class DerivTradingClient {
           this.handleMessage(event);
 
         this.socketAuthenticated = Boolean(authenticatedSocket);
+        this.socketAuthKey = authenticatedSocket
+          ? `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`
+          : "";
 
         this.pingTimer = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
@@ -530,11 +539,22 @@ class DerivTradingClient {
   }
 
   async connect({ allowPublicFallback = true } = {}) {
+    const currentAuthKey = `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`;
+
     if (this.socket?.readyState === WebSocket.OPEN) {
-      return {
-        authenticated: this.socketAuthenticated,
-        fallback: !this.socketAuthenticated,
-      };
+      const staleAuthenticatedSocket =
+        this.socketAuthenticated && this.socketAuthKey !== currentAuthKey;
+
+      if (!staleAuthenticatedSocket) {
+        return {
+          authenticated: this.socketAuthenticated,
+          fallback: !this.socketAuthenticated,
+        };
+      }
+
+      // Account/token changed: never reuse the previous authenticated socket.
+      this.disconnect({ preserveAccount: true });
+      this.manualClose = false;
     }
 
     if (this.connectPromise) {
@@ -547,18 +567,6 @@ class DerivTradingClient {
     this.connectPromise = (async () => {
       let lastError = null;
       const candidates = [];
-
-      // Keep the live analysis feed independent from OAuth/trading auth.
-      // The public socket is faster and more reliable for ticks/history;
-      // authenticated sockets are established separately when trading is needed.
-      if (allowPublicFallback) {
-        PUBLIC_SOCKET_URLS.forEach((url) =>
-          candidates.push({
-            url,
-            authenticated: false,
-          })
-        );
-      }
 
       if (this.authenticated) {
         try {
@@ -574,6 +582,15 @@ class DerivTradingClient {
             throw error;
           }
         }
+      }
+
+      if (!this.authenticated || allowPublicFallback) {
+        PUBLIC_SOCKET_URLS.forEach((url) =>
+          candidates.push({
+            url,
+            authenticated: false,
+          })
+        );
       }
 
       for (const candidate of candidates) {
@@ -629,9 +646,11 @@ class DerivTradingClient {
       );
     }
 
+    const currentAuthKey = `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`;
     if (
       this.socket?.readyState === WebSocket.OPEN &&
-      this.socketAuthenticated
+      this.socketAuthenticated &&
+      this.socketAuthKey === currentAuthKey
     ) {
       return true;
     }
@@ -1052,10 +1071,46 @@ class DerivTradingClient {
   async subscribeTransactions() {
     this.ensureAuthenticated();
 
-    return this.request({
-      transaction: 1,
-      subscribe: 1,
-    });
+    if (this.transactionSubscriptionId) {
+      return {
+        subscription: { id: this.transactionSubscriptionId },
+        alreadySubscribed: true,
+      };
+    }
+
+    if (this.transactionSubscribePromise) {
+      return this.transactionSubscribePromise;
+    }
+
+    this.transactionSubscribePromise = (async () => {
+      try {
+        const response = await this.request({
+          transaction: 1,
+          subscribe: 1,
+        });
+
+        this.transactionSubscriptionId = String(
+          response?.subscription?.id ||
+            response?.data?.subscription?.id ||
+            ""
+        );
+
+        return response;
+      } catch (error) {
+        // Another component/hook may already own the subscription. Treat
+        // Deriv's duplicate-subscription response as an idempotent success.
+        if (/already subscribed|duplicate subscription/i.test(
+          error instanceof Error ? error.message : String(error || "")
+        )) {
+          return { alreadySubscribed: true };
+        }
+        throw error;
+      } finally {
+        this.transactionSubscribePromise = null;
+      }
+    })();
+
+    return this.transactionSubscribePromise;
   }
 
   async getPortfolio() {
