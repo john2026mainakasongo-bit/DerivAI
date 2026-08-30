@@ -747,3 +747,28 @@ button {
     padding: 0;
   }
 }
+
+/* Strategy-only workspace */
+.strategyOnlyApp .strategyOnlySidebar {
+  width: 210px;
+}
+
+.strategyOnlyMain {
+  min-width: 0;
+}
+
+.strategyToolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.strategyMarketInfo {
+  margin-left: auto;
+  padding: 9px 13px;
+  border: 1px solid rgba(100, 180, 255, 0.18);
+  border-radius: 10px;
+  color: #8fa9bb;
+  font-size: 12px;
+  background: rgba(3, 18, 30, 0.55);
+}
