@@ -1,0 +1,9 @@
+DERIV AI ANALYZER V21 - INDEPENDENT ENTRY CONFIDENCE
+
+- Touch / No Touch probability is now separate from entry confidence.
+- Final entry confidence is a weighted multi-strategy score.
+- Raw 88% Touch probability can remain WAIT when broader evidence is only medium.
+- Entry qualification requires probability, weighted confidence, vote count, dominance, and no hard conflict.
+- Auto barrier ranking now prefers the side with stronger weighted entry confidence.
+- Master decision and confirmed markers continue to require 3 fresh live confirmations.
+- Existing V20 analysis-only UI/colors/layout preserved.

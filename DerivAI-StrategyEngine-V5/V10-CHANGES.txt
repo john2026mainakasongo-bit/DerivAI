@@ -1,0 +1,11 @@
+Deriv AI Analyzer V10 - Confirmed Live Entries
+
+- Historical tick seed no longer creates chart entry markers.
+- Each Touch / No Touch setup must remain qualified for 3 consecutive fresh live ticks.
+- React re-renders cannot count as additional confirmations; one evaluation per market tick.
+- Entry Engine shows SETUP FORMING while confirmation is in progress.
+- ENTRY READY appears only after live 3/3 confirmation.
+- Chart marker is created only for a confirmed analyzed entry.
+- Recent Signals labels confirmed entries as ANALYZED.
+- Last Entry displays the last confirmed marker price, not a raw candidate price.
+- Existing V9 historical seed, compact design, Deriv connection, and manual trading are preserved.

@@ -1,0 +1,12 @@
+Deriv AI Analyzer V5 — Workflow + Manual Trading
+
+- Engine state is now explicit: COLLECTING → ANALYZING → SETUP FORMING → ENTRY READY → COOLDOWN.
+- Master analysis remains Touch / No Touch only; Rise / Fall is secondary market context.
+- One qualified signal per setup cycle remains enforced.
+- Added a compact Manual Entry card for direct Deriv execution.
+- Manual BUY TOUCH uses ONETOUCH; BUY NO TOUCH uses NOTOUCH.
+- Manual trades use the currently selected Demo or Real account from the top bar.
+- Stake and upper/lower barrier side are selectable.
+- Barrier price is derived from the live analyzer barrier, with a volatility fallback before full analysis is ready.
+- Manual buttons use the existing authenticated placeTrade pipeline and display Deriv errors/success inline.
+- Analyzer layout is more compact on laptop screens.

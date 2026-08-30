@@ -1,0 +1,56 @@
+
+/* V103 Rise/Fall real-account execution fix */
+
+.rfRealExecutionLock {
+  display: grid !important;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 9px;
+  min-width: 260px;
+  padding: 9px 11px !important;
+  border: 1px solid #e44b67;
+  border-radius: 9px;
+  background: rgba(228, 75, 103, 0.12);
+  font-weight: 900;
+}
+
+.rfRealExecutionLock.enabled {
+  border-color: #23d9ad;
+  background: rgba(35, 217, 173, 0.12);
+}
+
+.rfRealExecutionLock.disabled {
+  border-color: #24516a;
+  opacity: 0.72;
+}
+
+.rfRealExecutionLock small {
+  grid-column: 2;
+  color: #9bc3d2;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.rfExecutionError {
+  margin-top: 7px;
+  padding: 8px 10px;
+  border: 1px solid #e44b67;
+  border-radius: 8px;
+  background: rgba(228, 75, 103, 0.13);
+  color: #ff9eb0;
+  font-weight: 800;
+}
+
+.rfSideStartButton:disabled,
+.rfAutoPanelButtons button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 760px) {
+  .rfRealExecutionLock {
+    min-width: 0;
+    width: 100%;
+  }
+}

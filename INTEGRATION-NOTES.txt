@@ -1,0 +1,17 @@
+Deriv Strategy Lab V1 integration
+==================================
+
+Files:
+- src/components/StrategyLab.jsx
+- src/components/StrategyLab.css
+- src/pages/Dashboard.jsx
+
+Dashboard integration:
+- imports StrategyLab
+- renders StrategyLab using the existing `deriv` object from useDerivTicks()
+- StrategyLab uses the existing V71 calibrated signal engine and live digit history.
+- No automatic real-money trade execution is added.
+
+Validation:
+- Vite transformed the project successfully before the local Linux build hit a missing
+  platform-specific lightningcss native module from the uploaded Windows node_modules.

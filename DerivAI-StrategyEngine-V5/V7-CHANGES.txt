@@ -1,0 +1,9 @@
+Deriv AI Analyzer V7 - Stable Scale + Safe Barrier
+
+- Filters malformed/outlier ticks before charting or analysis.
+- Chart scale now uses clean market-price records only.
+- Manual barrier is derived only from robust recent tick movement and is capped.
+- Manual BUY has a barrier safety check before sending a Deriv order.
+- TOUCH / NO TOUCH markers now require a full reset and a 24-clean-tick cooldown.
+- Candidate setups stay inside the Entry Engine; only ENTRY READY is plotted.
+- Improved laptop readability and reduced chart height.

@@ -1,0 +1,10 @@
+Deriv AI Analyzer V15 — Master Analyzer
+
+- One master decision now drives Auto Barrier Scanner and Entry Engine.
+- Raw ABOVE/BELOW analysis is shown only as evidence / candidate probability.
+- Trade Decision remains WAIT until the same qualified setup is confirmed on 3 fresh live ticks.
+- Confirmed ENTRY READY remains visible briefly before COOLDOWN so the user can actually see the entry.
+- COOLDOWN returns the current Trade Decision to WAIT; Last Signal remains a clearly historical confirmed signal.
+- Barrier, duration, unit, fixed barrier or offset changes reset confirmation state so stale signals cannot leak into a new setup.
+- Analysis Summary now uses the same auto-selected barrier analysis as the master engine.
+- Footer shows Setup + Decision + Confidence from the same master state.

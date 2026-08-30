@@ -1,0 +1,8 @@
+Deriv AI Analyzer V18 Final One-Screen Polish
+
+- Increased critical laptop font sizes without reintroducing scroll.
+- Slightly enlarged Recent Confirmed Entries and Analysis Summary panels.
+- Confirmed chart markers now show a checkmark and remain limited to confirmed analyzed setups.
+- Reduced marker line clutter and improved label readability over candles/EMA.
+- Kept the one-screen analysis-only structure and strategy header.
+- No manual trading controls or unrelated bot/dashboard UI added.
