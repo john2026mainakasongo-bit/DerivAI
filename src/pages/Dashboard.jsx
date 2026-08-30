@@ -38,6 +38,7 @@ import BotDashboardCatalog from "../components/BotDashboardCatalog";
 import DashboardAIAnalyzerV6 from "../components/DashboardAIAnalyzerV6";
 import DashboardAIAnalyzer from "../components/DashboardAIAnalyzer";
 import DerivAIAnalyzerCard from "../components/DerivAIAnalyzerCard";
+import StrategyLab from "../components/StrategyLab";
 import { GeminiXDashboardPanel } from "./GeminiXEngine";
 
 function buildPath(
@@ -502,6 +503,8 @@ export default function Dashboard() {
         </section>
 
                 <DashboardAIAnalyzer data={deriv} />
+
+        <StrategyLab data={deriv} />
 
         <DashboardAIAnalyzerV6 data={deriv} />
 
