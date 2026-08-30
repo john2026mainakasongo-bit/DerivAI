@@ -1,4 +1,4 @@
-﻿const DIGITS = Array.from({ length: 10 }, (_, i) => i);
+const DIGITS = Array.from({ length: 10 }, (_, i) => i);
 
 function clamp(v, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Number(v) || 0));
@@ -288,26 +288,73 @@ export function analyzeRapidEntry(input = {}, timeframeSeconds = 30) {
   const minSamples = Number(timeframeSeconds) === 60 ? 28 : 18;
   const candidates = makeCandidates(digits, window);
   const best = candidates[0] || null;
+  // V38: keep the existing safety thresholds, but expose every gate
+  // so the UI/bot can distinguish a real candidate from a blocked signal.
+  const gate = {
+    hasCandidate: Boolean(best),
+    enoughSamples: digits.length >= minSamples,
+    edgeReady: Boolean(best && best.edge >= 2),
+    confidenceReady: Boolean(best && best.confidence >= 68),
+    votesReady: Boolean(best && best.passedVotes >= 2),
+    transitionsReady: Boolean(best && best.transitionCount >= 2),
+  };
+
   const executable = Boolean(
-    best &&
-    digits.length >= minSamples &&
-    best.edge >= 2 &&
-    best.confidence >= 68 &&
-    best.passedVotes >= 2 &&
-    best.transitionCount >= 2
+    gate.hasCandidate &&
+    gate.enoughSamples &&
+    gate.edgeReady &&
+    gate.confidenceReady &&
+    gate.votesReady &&
+    gate.transitionsReady
   );
+
+  const blockedReasons = [];
+  if (!gate.hasCandidate) blockedReasons.push("NO_CANDIDATE");
+  if (!gate.enoughSamples) {
+    blockedReasons.push(`SAMPLES_${digits.length}/${minSamples}`);
+  }
+  if (!gate.edgeReady) {
+    blockedReasons.push(
+      `EDGE_${best?.edge?.toFixed?.(1) ?? "0"}_NEED_2`
+    );
+  }
+  if (!gate.confidenceReady) {
+    blockedReasons.push(
+      `CONFIDENCE_${best?.confidence?.toFixed?.(1) ?? "0"}_NEED_68`
+    );
+  }
+  if (!gate.votesReady) {
+    blockedReasons.push(
+      `VOTES_${best?.passedVotes ?? 0}/${best?.requiredVotes ?? 2}`
+    );
+  }
+  if (!gate.transitionsReady) {
+    blockedReasons.push(
+      `TRANSITIONS_${best?.transitionCount ?? 0}_NEED_2`
+    );
+  }
+
+  const gateStatus = executable
+    ? "READY"
+    : blockedReasons.join(" | ");
 
   return {
     timeframeSeconds: Number(timeframeSeconds) === 60 ? 60 : 30,
     sampleSize: digits.length,
     minimumSamples: minSamples,
     candidates,
+    // Preserve the old `best` contract for executable entries,
+    // while exposing the top candidate for diagnostics/UI rendering.
     best: executable ? best : null,
+    candidate: best || null,
     executable,
     confidence: best?.confidence || 0,
     probability: best?.probability || 0,
     edge: best?.edge || 0,
     transitionCount: best?.transitionCount || 0,
+    gate,
+    gateStatus,
+    blockedReasons,
     momentum: {
       direction: directionScore(window).direction,
       strength: directionScore(window).strength,
@@ -319,10 +366,9 @@ export function analyzeRapidEntry(input = {}, timeframeSeconds = 30) {
     entropy: { percentage: entropyPercent(digits) },
     autocorrelation: { strength: autocorrelationScore(digits) },
     reason: executable
-      ? `Rapid ${Number(timeframeSeconds) === 60 ? "1-minute" : "30-second"} edge ready: ${best.setup} Â· ${best.confidence.toFixed(1)}% confidence Â· +${best.edge.toFixed(1)}pp edge.`
-      : `Scanning ${Number(timeframeSeconds) === 60 ? "1-minute" : "30-second"} window: ${digits.length}/${minSamples} samples, best edge +${(best?.edge || 0).toFixed(1)}pp.`,
+      ? `RAPID ENTRY READY: ${best?.setup || "CANDIDATE"} | confidence ${best?.confidence?.toFixed?.(1) ?? "0"}% | edge +${best?.edge?.toFixed?.(1) ?? "0"}pp | votes ${best?.passedVotes ?? 0}/${best?.requiredVotes ?? 2}`
+      : `RAPID WAIT: ${gateStatus}`,
   };
 }
 
 export default analyzeRapidEntry;
-
