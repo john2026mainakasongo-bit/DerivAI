@@ -42,6 +42,7 @@ function extractLastDigit(value, decimals = 3) {
 
 function chooseDefaultMarket(markets = []) {
   return (
+    markets.find((item) => String(item.id).toUpperCase() === "1HZ100V") ||
     markets.find((item) => /^Volatility 75 Index$/i.test(item.label)) ||
     markets.find(
       (item) =>
@@ -248,38 +249,10 @@ export default function useDerivTicks() {
       setConnected(true);
       setStatus("CONNECTED");
 
-      // V26 trading connection prewarm:
-      // authorize the selected account before an entry appears.
-      if (auth.authenticated && selectedAccountId) {
-        Promise.resolve(
-          derivPublicClient.ensureTradingConnection()
-        )
-          .then(() => {
-            if (mountedRef.current) {
-              setTradingReady(true);
-            }
-          })
-          .catch((error) => {
-            if (mountedRef.current) {
-              setTradingReady(false);
-              setStatusDetail(
-                error instanceof Error
-                  ? error.message
-                  : "Trading connection prewarm failed."
-              );
-            }
-          });
-      } else {
-        setTradingReady(false);
-      }
-
-      if (connection?.fallback && auth.authenticated) {
-        setStatusDetail(
-          derivPublicClient.lastAuthConnectionError
-            ? `Live analysis connected. Trading login failed: ${derivPublicClient.lastAuthConnectionError}`
-            : "Live analysis connected. Reconnect the account before trading."
-        );
-      }
+      // Keep the analysis socket alive. Trading authorization is opened only
+      // when an actual trade action is requested, so OAuth/OTP failures cannot
+      // disconnect the live tick stream or freeze the dashboard.
+      setTradingReady(false);
 
       return connection;
     } catch (error) {
@@ -420,44 +393,17 @@ export default function useDerivTicks() {
     selectedAccountId,
   ]);
 
-  // V26 instant authenticated auto-connect.
+  // V27 live analysis auto-connect: the public market feed must work even
+  // when OAuth/trading authorization is unavailable or expired.
   useEffect(() => {
-    if (
-      !auth.authenticated ||
-      !selectedAccountId ||
-      manuallyDisconnectedRef.current
-    ) {
-      return;
-    }
+    if (manuallyDisconnectedRef.current) return;
 
     if (!connected && status !== "CONNECTING") {
       void connect().catch(() => {});
       return;
     }
 
-    if (connected && !tradingReady) {
-      void Promise.resolve(
-        derivPublicClient.ensureTradingConnection()
-      )
-        .then(() => {
-          if (mountedRef.current) {
-            setTradingReady(true);
-          }
-        })
-        .catch(() => {
-          if (mountedRef.current) {
-            setTradingReady(false);
-          }
-        });
-    }
-  }, [
-    auth.authenticated,
-    selectedAccountId,
-    connected,
-    status,
-    tradingReady,
-    connect,
-  ]);
+  }, [connected, status, connect]);
   const disconnect = useCallback(() => {
     manuallyDisconnectedRef.current = true;
 

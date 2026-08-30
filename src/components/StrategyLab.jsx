@@ -1,236 +1,188 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { analyzeUnifiedSignals } from "../analysis/v71UnifiedSignalEngine";
+import analyzeUnifiedSignals from "../analysis/v71UnifiedSignalEngine";
 import "./StrategyLab.css";
 
-const EMPTY_RESULT = {
-  digit: {
-    best: null,
-    sampleSize: 0,
-    currentDigit: null,
-    reason: "Waiting for live Deriv ticks.",
-  },
-};
+const MIN_HISTORY = 100;
+const MAX_HISTORY = 500;
+const FORWARD_MAX_SAMPLES = 40;
 
-const EMPTY_TEST = {
-  trades: 0,
-  wins: 0,
-  losses: 0,
-  hitRate: 0,
-  netR: 0,
-  maxDD: 0,
-  maxLossStreak: 0,
-  curve: [0],
-};
-
-function evaluate(candidate, digit) {
-  if (!candidate || !Number.isInteger(digit)) return false;
-  if (candidate.mode === "OVER") return digit > Number(candidate.prediction);
-  if (candidate.mode === "UNDER") return digit < Number(candidate.prediction);
-  if (candidate.mode === "EVEN") return digit % 2 === 0;
-  if (candidate.mode === "ODD") return digit % 2 === 1;
-  if (candidate.mode === "DIFFERS") return digit !== Number(candidate.prediction);
-  return false;
+function clampHistory(values) {
+  return (Array.isArray(values) ? values : [])
+    .map(Number)
+    .filter((digit) => Number.isInteger(digit) && digit >= 0 && digit <= 9)
+    .slice(-MAX_HISTORY);
 }
 
-// Deliberately bounded: the previous V1 backtest ran the full calibrated engine
-// hundreds of times on every live tick, which could block the browser main thread.
-function runBoundedBacktest(digits, minimumConfidence = 88) {
-  const sample = Array.isArray(digits) ? digits.slice(-260) : [];
-  if (sample.length < 180) return EMPTY_TEST;
+function resultForCandidate(candidate, nextDigit) {
+  if (!candidate || !Number.isInteger(nextDigit)) return null;
+  if (candidate.mode === "OVER") return nextDigit > Number(candidate.prediction);
+  if (candidate.mode === "UNDER") return nextDigit < Number(candidate.prediction);
+  if (candidate.mode === "EVEN") return nextDigit % 2 === 0;
+  if (candidate.mode === "ODD") return nextDigit % 2 === 1;
+  if (candidate.mode === "DIFFERS") return nextDigit !== Number(candidate.prediction);
+  return null;
+}
 
+function formatPct(value) {
+  return `${Number(value || 0).toFixed(1)}%`;
+}
+
+function Metric({ label, value, tone = "" }) {
+  return (
+    <div className="strategyMetric">
+      <span>{label}</span>
+      <strong className={tone}>{value}</strong>
+    </div>
+  );
+}
+
+function buildForwardTest(digits) {
+  const sample = clampHistory(digits);
+  if (sample.length < MIN_HISTORY + 1) {
+    return { signals: 0, wins: 0, losses: 0, hitRate: 0, normalizedR: 0, maxDrawdown: 0, maxLossStreak: 0, equity: [] };
+  }
+
+  const start = Math.max(MIN_HISTORY, sample.length - FORWARD_MAX_SAMPLES - 1);
   let wins = 0;
   let losses = 0;
   let equity = 0;
   let peak = 0;
-  let maxDD = 0;
+  let maxDrawdown = 0;
   let lossStreak = 0;
   let maxLossStreak = 0;
-  const curve = [0];
+  const equityPoints = [0];
 
-  // 22 checkpoints max. Each checkpoint sees only data before its outcome.
-  const start = Math.max(160, sample.length - 220);
-  for (let i = start; i < sample.length; i += 4) {
-    const history = sample.slice(0, i);
-    const result = analyzeUnifiedSignals({
-      digitHistory: history,
-      minimumConfidence,
-    });
-    const candidate = result.digit.best;
+  for (let index = start; index < sample.length - 1; index += 1) {
+    const history = sample.slice(0, index);
+    const analysis = analyzeUnifiedSignals({ digitHistory: history, minimumConfidence: 88 });
+    const candidate = analysis?.digit?.best;
     if (!candidate) continue;
 
-    const won = evaluate(candidate, sample[i]);
-    const r = won ? 1 : -1;
-    equity += r;
-    peak = Math.max(peak, equity);
-    maxDD = Math.max(maxDD, peak - equity);
-    curve.push(equity);
+    const won = resultForCandidate(candidate, sample[index]);
+    if (won === null) continue;
 
     if (won) {
       wins += 1;
+      equity += 1;
       lossStreak = 0;
     } else {
       losses += 1;
+      equity -= 1;
       lossStreak += 1;
       maxLossStreak = Math.max(maxLossStreak, lossStreak);
     }
+
+    peak = Math.max(peak, equity);
+    maxDrawdown = Math.max(maxDrawdown, peak - equity);
+    equityPoints.push(equity);
   }
 
-  const trades = wins + losses;
+  const signals = wins + losses;
   return {
-    trades,
+    signals,
     wins,
     losses,
-    hitRate: trades ? (wins / trades) * 100 : 0,
-    netR: equity,
-    maxDD,
+    hitRate: signals ? (wins / signals) * 100 : 0,
+    normalizedR: equity,
+    maxDrawdown,
     maxLossStreak,
-    curve,
+    equity: equityPoints,
   };
 }
 
-function Sparkline({ values }) {
+function EquityCurve({ points }) {
+  if (!points?.length || points.length < 2) return null;
   const width = 900;
-  const height = 180;
-  if (!values?.length) return null;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const path = values
-    .map((value, index) => {
-      const x = (index / Math.max(1, values.length - 1)) * width;
-      const y = height - ((value - min) / range) * (height - 20) - 10;
-      return `${index ? "L" : "M"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(" ");
-
+  const height = 150;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = Math.max(1, max - min);
+  const d = points.map((point, index) => {
+    const x = (index / Math.max(1, points.length - 1)) * width;
+    const y = height - ((point - min) / range) * (height - 20) - 10;
+    return `${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(" ");
   return (
-    <svg className="strategyChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <path d={path} fill="none" stroke="currentColor" strokeWidth="3" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
-
-function Metric({ label, value }) {
-  return (
-    <div className="strategyMetric">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="strategyEquity">
+      <div className="strategySubhead"><span>FORWARD-TEST EQUITY</span><small>Normalized R</small></div>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        <path d={d} fill="none" stroke="currentColor" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+      </svg>
     </div>
   );
 }
 
 export default function StrategyLab({ data }) {
-  const rawDigits = data?.digitHistory || [];
-  const digits = useMemo(() => rawDigits.slice(-260), [rawDigits]);
-  const [result, setResult] = useState(EMPTY_RESULT);
-  const [test, setTest] = useState(EMPTY_TEST);
-  const analysisTimer = useRef(null);
-  const backtestTimer = useRef(null);
-  const mounted = useRef(true);
+  const digits = useMemo(() => clampHistory(data?.digitHistory), [data?.digitHistory]);
+  const [computed, setComputed] = useState(null);
+  const lastRun = useRef(0);
 
   useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      if (analysisTimer.current) window.clearTimeout(analysisTimer.current);
-      if (backtestTimer.current) window.clearTimeout(backtestTimer.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (analysisTimer.current) window.clearTimeout(analysisTimer.current);
-
-    analysisTimer.current = window.setTimeout(() => {
-      analysisTimer.current = null;
-      if (!mounted.current) return;
-
-      // Keep the live calculation bounded and off the render path.
-      const next = analyzeUnifiedSignals({
-        digitHistory: digits,
-        minimumConfidence: 88,
-      });
-      if (mounted.current) setResult(next);
-    }, 2200);
-
-    return () => {
-      if (analysisTimer.current) window.clearTimeout(analysisTimer.current);
-      analysisTimer.current = null;
-    };
+    const now = Date.now();
+    const wait = Math.max(0, 650 - (now - lastRun.current));
+    const timer = window.setTimeout(() => {
+      lastRun.current = Date.now();
+      const signal = analyzeUnifiedSignals({ digitHistory: digits, minimumConfidence: 88 });
+      const forward = buildForwardTest(digits);
+      setComputed({ signal, forward });
+    }, wait);
+    return () => window.clearTimeout(timer);
   }, [digits]);
 
-  useEffect(() => {
-    if (digits.length < 180) {
-      setTest(EMPTY_TEST);
-      return undefined;
-    }
-
-    if (backtestTimer.current) window.clearTimeout(backtestTimer.current);
-    backtestTimer.current = window.setTimeout(() => {
-      backtestTimer.current = null;
-      if (!mounted.current) return;
-      const next = runBoundedBacktest(digits, 88);
-      if (mounted.current) setTest(next);
-    }, 7000);
-
-    return () => {
-      if (backtestTimer.current) window.clearTimeout(backtestTimer.current);
-      backtestTimer.current = null;
-    };
-  }, [digits]);
-
-  const best = result.digit.best;
-  const signal = best?.setup || "WAIT";
-  const confidence = best?.confidence ?? 0;
-  const sampleSize = result.digit.sampleSize || digits.length;
+  const signal = computed?.signal;
+  const forward = computed?.forward;
+  const best = signal?.digit?.best || null;
+  const candidate = best || signal?.digit?.candidates?.[0] || null;
+  const ready = digits.length >= MIN_HISTORY;
+  const executable = Boolean(best?.executable);
 
   return (
     <section className="strategyLab panel">
-      <div className="strategyHeader">
+      <div className="strategyLabHeader">
         <div>
-          <small>CALIBRATED STRATEGY LAB V2</small>
+          <small>CALIBRATED STRATEGY LAB V3</small>
           <h2>Deriv Strategy Engine</h2>
-          <p>Live analysis is throttled to keep the dashboard responsive. No automatic trade is placed.</p>
+          <p>Live digit calibration, strict entry validation and forward testing. No automatic trade is placed.</p>
         </div>
-        <div className={`strategyBadge ${best ? "ready" : "wait"}`}>
-          <i /> {best ? "SETUP READY" : "WAIT"}
+        <div className={`strategyState ${executable ? "valid" : "wait"}`}>
+          <span /> {executable ? "ENTRY VALID" : "WAIT"}
         </div>
       </div>
 
-      <div className="strategyTopGrid">
-        <div className={`strategySignal ${best ? "ready" : ""}`}>
+      <div className="strategyPrimaryGrid">
+        <article className={`strategySignal ${executable ? "valid" : ""}`}>
           <span>BEST SETUP</span>
-          <strong>{signal}</strong>
-          <p>{best?.reason || result.digit.reason}</p>
-          <div className="confidenceBar"><div style={{ width: `${Math.min(100, confidence)}%` }} /></div>
-          <div className="confidenceRow"><span>Confidence</span><b>{confidence.toFixed(1)}%</b></div>
-        </div>
+          <strong>{ready ? (candidate?.setup || "WAIT") : "COLLECTING"}</strong>
+          <p>{signal?.digit?.reason || `Collecting calibrated history ${digits.length}/${MIN_HISTORY}.`}</p>
+          <div className="strategyConfidenceBar"><i style={{ width: `${Math.min(100, Number(candidate?.confidence || 0))}%` }} /></div>
+          <div className="strategyConfidenceLine"><span>CONFIDENCE</span><b>{formatPct(candidate?.confidence)}</b></div>
+        </article>
 
-        <div className="strategyMetrics">
-          <Metric label="Current digit" value={result.digit.currentDigit ?? "—"} />
-          <Metric label="History" value={sampleSize} />
-          <Metric label="Model" value={best?.source?.replaceAll("_", " ") || "SCANNING"} />
-          <Metric label="Risk mode" value="FIXED / NO MARTINGALE" />
-        </div>
+        <Metric label="CURRENT DIGIT" value={data?.lastDigit ?? "—"} />
+        <Metric label="HISTORY" value={`${digits.length}/${MIN_HISTORY}`} tone={ready ? "good" : ""} />
+        <Metric label="MODEL" value={ready ? (candidate?.source || "SCANNING") : "CALIBRATING"} />
+        <Metric label="RISK MODE" value="FIXED / NO MARTINGALE" />
       </div>
 
-      <div className="strategySectionTitle">BOUNDED WALK-FORWARD BACKTEST</div>
-      <div className="strategyMetrics backtestMetrics">
-        <Metric label="Signals" value={test.trades} />
-        <Metric label="Hit rate" value={`${test.hitRate.toFixed(1)}%`} />
-        <Metric label="Wins" value={test.wins} />
-        <Metric label="Losses" value={test.losses} />
-        <Metric label="Normalized R" value={`${test.netR >= 0 ? "+" : ""}${test.netR.toFixed(1)}R`} />
-        <Metric label="Max drawdown" value={`${test.maxDD.toFixed(1)}R`} />
-        <Metric label="Max loss streak" value={test.maxLossStreak || 0} />
+      <div className="strategySectionTitle">BOUNDED WALK-FORWARD TEST</div>
+      <div className="strategyMetricsGrid">
+        <Metric label="SIGNALS" value={forward?.signals ?? 0} />
+        <Metric label="HIT RATE" value={formatPct(forward?.hitRate)} tone={Number(forward?.hitRate) >= 55 ? "good" : ""} />
+        <Metric label="WINS" value={forward?.wins ?? 0} tone="good" />
+        <Metric label="LOSSES" value={forward?.losses ?? 0} tone={forward?.losses ? "bad" : ""} />
+        <Metric label="NORMALIZED R" value={`${forward?.normalizedR >= 0 ? "+" : ""}${forward?.normalizedR ?? 0}R`} />
+        <Metric label="MAX DRAWDOWN" value={`${forward?.maxDrawdown ?? 0}R`} />
+        <Metric label="MAX LOSS STREAK" value={forward?.maxLossStreak ?? 0} />
       </div>
 
-      <div className="strategyChartWrap">
-        {test.trades ? <Sparkline values={test.curve} /> : <div className="strategyEmpty">Collect at least 180 digits for the walk-forward test.</div>}
-      </div>
+      {ready ? (
+        <EquityCurve points={forward?.equity} />
+      ) : (
+        <div className="strategyEmpty">Collect at least {MIN_HISTORY} digits before the engine evaluates entries and forward-test results.</div>
+      )}
 
-      <div className="strategyNotice">
-        <b>Research mode:</b> normalized R treats a winning signal as +1R and a losing signal as -1R.
-        It does <b>not</b> represent actual Deriv payout, fees, or stake sizing.
+      <div className="strategyFooterNote">
+        <strong>Research mode:</strong> 1R is a normalized unit only. It does not represent Deriv payout, fees or stake sizing. Historical tests never use the future digit to choose the signal.
       </div>
     </section>
   );

@@ -1,4 +1,4 @@
-﻿const PUBLIC_SOCKET_URLS = [
+const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -548,6 +548,18 @@ class DerivTradingClient {
       let lastError = null;
       const candidates = [];
 
+      // Keep the live analysis feed independent from OAuth/trading auth.
+      // The public socket is faster and more reliable for ticks/history;
+      // authenticated sockets are established separately when trading is needed.
+      if (allowPublicFallback) {
+        PUBLIC_SOCKET_URLS.forEach((url) =>
+          candidates.push({
+            url,
+            authenticated: false,
+          })
+        );
+      }
+
       if (this.authenticated) {
         try {
           const authenticatedUrl = await this.getAuthenticatedSocketUrl();
@@ -562,15 +574,6 @@ class DerivTradingClient {
             throw error;
           }
         }
-      }
-
-      if (!this.authenticated || allowPublicFallback) {
-        PUBLIC_SOCKET_URLS.forEach((url) =>
-          candidates.push({
-            url,
-            authenticated: false,
-          })
-        );
       }
 
       for (const candidate of candidates) {
