@@ -38,7 +38,7 @@ const INITIAL_BOT_STATE = {
   consecutiveLosses: 0,
   martingaleStep: 0,
   currentStake: 1,
-  activeSetup: "—",
+  activeSetup: "â€”",
   activeContractId: "",
   history: [],
 };
@@ -81,7 +81,7 @@ function Stepper({ value, min, max, step = 1, onChange, disabled = false }) {
     <div className="v30Stepper">
       <input type="number" min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} />
       <div className="v30StepButtons">
-        <button type="button" disabled={disabled || safe <= min} onClick={() => change(-step)}>−</button>
+        <button type="button" disabled={disabled || safe <= min} onClick={() => change(-step)}>âˆ’</button>
         <button type="button" disabled={disabled || safe >= max} onClick={() => change(step)}>+</button>
       </div>
     </div>
@@ -198,9 +198,11 @@ export default function StrategyEngineV35() {
   const professionalDecision = useMemo(() => buildProfessionalDecision(snapshot, validatedSignals), [snapshot, validatedSignals]);
   const unified = useMemo(() => analyzeUnifiedSignals({ ...snapshot, minimumConfidence: settings.minConfidence }), [snapshot, settings.minConfidence]);
 
+  const displayBest = rapidEntry?.best || rapidEntry?.candidate || unified?.digit?.best || null;
   const best = rapidEntry?.best || unified?.digit?.best || null;
-  const signal = best?.setup || professionalDecision?.setup || "WAIT";
-  const confidence = Number(best?.confidence ?? best?.qualityScore ?? best?.probability ?? professionalDecision?.confidence ?? 0);
+  const signal = displayBest?.setup || professionalDecision?.setup || "WAIT";
+  const confidence = Number(displayBest?.confidence ?? displayBest?.qualityScore ?? displayBest?.probability ?? professionalDecision?.confidence ?? 0);
+  const rapidGateStatus = rapidEntry?.gateStatus || (rapidEntry?.executable ? "READY" : "WAITING");
 
   // Feed the live analysis into the execution engine on every fresh tick.
   // The previous V35 build could start the UI loop but never supplied a signal.
@@ -376,22 +378,22 @@ export default function StrategyEngineV35() {
   return (
     <div className="v30Shell">
       <aside className="v30Sidebar">
-        <div className="v30Brand"><div className="v30BrandMark">✦</div><div><strong>Deriv<span>AI</span></strong><small>Strategy Engine</small></div></div>
+        <div className="v30Brand"><div className="v30BrandMark">âœ¦</div><div><strong>Deriv<span>AI</span></strong><small>Strategy Engine</small></div></div>
         <div className="v30LivePill"><i /> DERIV LIVE</div>
         <nav className="v30Nav">
-          <a className="active" href="#engine">⌂ <span>Strategy Engine</span><b>LIVE</b></a>
-          <a href="#transactions">▣ <span>Bot Transactions</span></a>
-          <a href="#performance">◔ <span>Performance</span></a>
-          <a href="#settings">⚙ <span>Settings</span></a>
+          <a className="active" href="#engine">âŒ‚ <span>Strategy Engine</span><b>LIVE</b></a>
+          <a href="#transactions">â–£ <span>Bot Transactions</span></a>
+          <a href="#performance">â—” <span>Performance</span></a>
+          <a href="#settings">âš™ <span>Settings</span></a>
         </nav>
         <div className="v30BotCard">
           <div className="v30BotTop"><span>BOT STATUS</span><b className={running ? "on" : ""}><i />{running ? "ACTIVE" : "READY"}</b></div>
-          <div className="v30BotOrb">◉</div>
+          <div className="v30BotOrb">â—‰</div>
           <strong>DerivAI Bot</strong>
           <small>{running ? "Running smoothly" : "Ready to trade"}</small>
           <div className="v30BotMini"><span>Trades<strong>{botState.runs}</strong></span><span>Win rate<strong>{winRate.toFixed(0)}%</strong></span></div>
         </div>
-        <div className="v30Footer">© 2026 DerivAI<br />All rights reserved.</div>
+        <div className="v30Footer">Â© 2026 DerivAI<br />All rights reserved.</div>
       </aside>
 
       <main className="v30Main" id="engine">
@@ -412,13 +414,13 @@ export default function StrategyEngineV35() {
                 return <option key={`${value}-${index}`} value={value}>{label}</option>;
               })}
             </select>
-            <span className={`v30Connection ${connected ? "connected" : "error"}`}><i />{connected ? "CONNECTED" : (loadingMarket ? "CONNECTING…" : status || "DISCONNECTED")}</span>
+            <span className={`v30Connection ${connected ? "connected" : "error"}`}><i />{connected ? "CONNECTED" : (loadingMarket ? "CONNECTINGâ€¦" : status || "DISCONNECTED")}</span>
           </div>
           <div className="v30TopRight">
             <span className="v30Server">Server Time<strong>{new Date().toLocaleTimeString()}</strong></span>
-            <span className="v30Icon">⚙</span><span className="v30Icon">☾</span>
+            <span className="v30Icon">âš™</span><span className="v30Icon">â˜¾</span>
             <div className="v30Account">
-              <span>◉</span>
+              <span>â—‰</span>
               <select
                 aria-label="Deriv account"
                 value={selectedId}
@@ -427,11 +429,11 @@ export default function StrategyEngineV35() {
               >
                 {accountOptions.length ? accountOptions.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.type === "demo" || account.type === "virtual" ? "DEMO" : "REAL"} · {account.label} · {Number(account.balance || 0).toFixed(2)} {account.currency}
+                    {account.type === "demo" || account.type === "virtual" ? "DEMO" : "REAL"} Â· {account.label} Â· {Number(account.balance || 0).toFixed(2)} {account.currency}
                   </option>
-                )) : <option value="">{auth.authenticated ? "No Deriv accounts — Refresh" : "Connect Deriv Account"}</option>}
+                )) : <option value="">{auth.authenticated ? "No Deriv accounts â€” Refresh" : "Connect Deriv Account"}</option>}
               </select>
-              <small>{!auth.authenticated ? "Login required" : isDemo ? "Demo / VRTC · execution ready" : "REAL selected · bot locked"}</small>
+              <small>{!auth.authenticated ? "Login required" : isDemo ? "Demo / VRTC Â· execution ready" : "REAL selected Â· bot locked"}</small>
             </div>
             <button
               className="v30AccountRefresh"
@@ -442,7 +444,7 @@ export default function StrategyEngineV35() {
                 if (!auth.authenticated) auth.login();
                 else void refreshAccounts();
               }}
-            >↻</button>
+            >â†»</button>
             <button
               className="v30Logout"
               type="button"
@@ -451,14 +453,14 @@ export default function StrategyEngineV35() {
                 else disconnect();
               }}
               title={auth.authenticated ? "Disconnect market feed" : "Connect Deriv account"}
-            >{auth.authenticated ? "↪" : "↗"}</button>
+            >{auth.authenticated ? "â†ª" : "â†—"}</button>
           </div>
         </header>
 
         <section className="v30Hero">
-          <div><div className="v30Eyebrow">CALIBRATED STRATEGY ENGINE · V35</div><h1>Deriv Strategy Engine</h1><p>Live analysis · Smart signals · Real results</p></div>
+          <div><div className="v30Eyebrow">CALIBRATED STRATEGY ENGINE Â· V35</div><h1>Deriv Strategy Engine</h1><p>Live analysis Â· Smart signals Â· Real results</p></div>
           <div className={`v30Feed ${connected ? "on" : ""}`}>
-            <i />{connected ? `Live feed · ${effectiveSymbol}` : "Deriv feed offline"}
+            <i />{connected ? `Live feed Â· ${effectiveSymbol}` : "Deriv feed offline"}
             <button type="button" onClick={async () => {
               setConnectionError("");
               try {
@@ -472,11 +474,11 @@ export default function StrategyEngineV35() {
         </section>
 
         <section className="v30Summary">
-          <article className="v30Card signalHero"><div className="radar">◎</div><div><span>CURRENT SIGNAL</span><strong>{signal}</strong><small>Confidence <b>{confidence.toFixed(1)}%</b></small></div></article>
-          <article className="v30Card"><span>CURRENT DIGIT</span><div className="v30BigDigit">{lastDigit ?? "—"}</div><Sparkline values={(digitHistory || []).slice(-50)} /></article>
+          <article className="v30Card signalHero"><div className="radar">â—Ž</div><div><span>CURRENT SIGNAL</span><strong>{signal}</strong><small>Confidence <b>{confidence.toFixed(1)}%</b></small><small className="rapidGateText">RAPID GATE: <b>{rapidGateStatus}</b></small></div></article>
+          <article className="v30Card"><span>CURRENT DIGIT</span><div className="v30BigDigit">{lastDigit ?? "â€”"}</div><Sparkline values={(digitHistory || []).slice(-50)} /></article>
           <article className="v30Card"><span>HISTORY</span><strong className="v30MetricBig">{historySize}/500</strong><div className="v30Progress"><i style={{ width: `${historyProgress}%` }} /></div><small>Digits collected</small></article>
           <article className="v30Card"><span>MODEL</span><strong className="v30Model">{model}</strong><small>Live calibrated state</small></article>
-          <article className="v30Card riskCard"><span>RISK MODE</span><strong>FIXED / NO</strong><small>MARTINGALE</small><b>◈</b></article>
+          <article className="v30Card riskCard"><span>RISK MODE</span><strong>FIXED / NO</strong><small>MARTINGALE</small><b>â—ˆ</b></article>
         </section>
 
         {(statusDetail || connectionError) ? <div className="v29Notice">
@@ -487,7 +489,7 @@ export default function StrategyEngineV35() {
         <section className="v30Workspace">
           <div className="v30Center">
             <article className="v30Card v30ChartCard">
-              <div className="v30CardHead"><div><span>LIVE MARKET FEED <em>● LIVE</em></span><strong>{Number.isFinite(currentPrice) ? currentPrice.toFixed(market?.decimals ?? 2) : "—"}</strong></div><div className="lastDigitBadge"><b>{lastDigit ?? "—"}</b><small>Last Digit</small></div></div>
+              <div className="v30CardHead"><div><span>LIVE MARKET FEED <em>â— LIVE</em></span><strong>{Number.isFinite(currentPrice) ? currentPrice.toFixed(market?.decimals ?? 2) : "â€”"}</strong></div><div className="lastDigitBadge"><b>{lastDigit ?? "â€”"}</b><small>Last Digit</small></div></div>
               <div className="v30Chart">{chartPath ? <svg viewBox="0 0 720 250" preserveAspectRatio="none"><path className="area" d={`${chartPath} L 720 250 L 0 250 Z`} /><path className="line" d={chartPath} /></svg> : <div className="v30Empty">Connect Deriv and wait for live ticks.</div>}</div>
               <div className="v30Digits">{Array.from({ length: 10 }, (_, digit) => { const count = (digitHistory || []).filter((d) => Number(d) === digit).length; const pct = historySize ? (count / historySize) * 100 : 0; return <div key={digit} className={digit === lastDigit ? "active" : ""}><b>{digit}</b><span>{pct.toFixed(1)}%</span></div>; })}</div>
             </article>
@@ -500,18 +502,18 @@ export default function StrategyEngineV35() {
 
           <aside className="v30Right">
             <article className="v30Card tradeCard" id="settings">
-              <div className="v30PurpleHead"><span>◉ TRADE CONTROL</span><small>{isDemo ? "DEMO SAFE" : "LOCKED"}</small></div>
+              <div className="v30PurpleHead"><span>â—‰ TRADE CONTROL</span><small>{isDemo ? "DEMO SAFE" : "LOCKED"}</small></div>
               <label>Set Amount (USD)<Stepper value={settings.stake} min={0.35} max={100} step={0.5} disabled={busy} onChange={(v) => setNumber("stake", v)} /></label>
               <label>Stop Loss (R)<Stepper value={settings.stopLoss} min={0} max={100} step={1} disabled={busy} onChange={(v) => setNumber("stopLoss", v)} /></label>
               <label>Take Profit (R)<Stepper value={settings.takeProfit} min={0} max={100} step={1} disabled={busy} onChange={(v) => setNumber("takeProfit", v)} /></label>
-              <label>Entry Analysis<select value={settings.analysisTimeframe} disabled={busy} onChange={(e) => setNumber("analysisTimeframe", Number(e.target.value))}><option value="30">30 Seconds · RAPID</option><option value="60">1 Minute · DEEP</option></select></label><label>Contract Duration<select value={settings.duration} disabled={busy} onChange={(e) => setNumber("duration", Number(e.target.value))}><option value="1">1 Tick (1s)</option><option value="2">2 Ticks (2s)</option><option value="3">3 Ticks (3s)</option><option value="5">5 Ticks (5s)</option></select></label>
+              <label>Entry Analysis<select value={settings.analysisTimeframe} disabled={busy} onChange={(e) => setNumber("analysisTimeframe", Number(e.target.value))}><option value="30">30 Seconds Â· RAPID</option><option value="60">1 Minute Â· DEEP</option></select></label><label>Contract Duration<select value={settings.duration} disabled={busy} onChange={(e) => setNumber("duration", Number(e.target.value))}><option value="1">1 Tick (1s)</option><option value="2">2 Ticks (2s)</option><option value="3">3 Ticks (3s)</option><option value="5">5 Ticks (5s)</option></select></label>
               <button
                 className="v30Start"
                 type="button"
                 disabled={busy || !auth.authenticated || !selectedId || !isDemo || !connected || historySize < 18 || accountBusy}
                 onClick={startBot}
-              >▶ {busy ? "BOT RUNNING" : executionReady ? "START DEMO BOT" : "CONNECT & START DEMO"}</button>
-              <button className="v30Stop" type="button" disabled={!busy} onClick={stopBot}>■ STOP BOT</button>
+              >â–¶ {busy ? "BOT RUNNING" : executionReady ? "START DEMO BOT" : "CONNECT & START DEMO"}</button>
+              <button className="v30Stop" type="button" disabled={!busy} onClick={stopBot}>â–  STOP BOT</button>
               <div className={`v30BotReady ${connected && historySize >= 8 && isDemo && executionReady ? "ready" : ""}`}>
                 <i />{!auth.authenticated
                   ? "Connect your Deriv account to enable account selection and trading."
@@ -522,18 +524,18 @@ export default function StrategyEngineV35() {
                       : !connected
                         ? "Market feed is offline. Connect the Deriv feed."
                         : historySize < 18
-                          ? `Calibrating rapid entry… ${historySize}/18 ticks.`
+                          ? `Calibrating rapid entryâ€¦ ${historySize}/18 ticks.`
                           : !executionReady
-                            ? "Authenticated demo trading connection is being prepared…"
+                            ? "Authenticated demo trading connection is being preparedâ€¦"
                             : botState.message}
               </div>
             </article>
 
-            <article className="v30Card perfCard" id="performance"><div className="v30PurpleHead"><span>◉ PERFORMANCE SUMMARY</span></div><div className="v30PerfBody"><div className="v30Donut" style={{ "--p": `${Math.min(100, winRate)}%` }}><strong>{winRate.toFixed(0)}%</strong><small>Win Rate</small></div><div className="v30PerfStats"><span>Total Signals<b>{botState.runs}</b></span><span>Total Profit<b className="green">+{totalProfit.toFixed(2)} USD</b></span><span>Total Loss<b className="red">-{totalLoss.toFixed(2)} USD</b></span><span>Net Profit<b className={netProfit >= 0 ? "green" : "red"}>{netProfit >= 0 ? "+" : ""}{netProfit.toFixed(2)} USD</b></span></div></div><div className="v30Excellent">↗ Performance: {winRate >= 70 ? "EXCELLENT" : winRate >= 50 ? "STABLE" : "LEARNING"}</div></article>
+            <article className="v30Card perfCard" id="performance"><div className="v30PurpleHead"><span>â—‰ PERFORMANCE SUMMARY</span></div><div className="v30PerfBody"><div className="v30Donut" style={{ "--p": `${Math.min(100, winRate)}%` }}><strong>{winRate.toFixed(0)}%</strong><small>Win Rate</small></div><div className="v30PerfStats"><span>Total Signals<b>{botState.runs}</b></span><span>Total Profit<b className="green">+{totalProfit.toFixed(2)} USD</b></span><span>Total Loss<b className="red">-{totalLoss.toFixed(2)} USD</b></span><span>Net Profit<b className={netProfit >= 0 ? "green" : "red"}>{netProfit >= 0 ? "+" : ""}{netProfit.toFixed(2)} USD</b></span></div></div><div className="v30Excellent">â†— Performance: {winRate >= 70 ? "EXCELLENT" : winRate >= 50 ? "STABLE" : "LEARNING"}</div></article>
           </aside>
         </section>
 
-        <section className="v30Card transactions" id="transactions"><div className="v30TxHead"><div><span>▣ BOT TRANSACTION VIEW</span><small>Live execution ledger</small></div><select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="ALL">All Transactions</option><option value="WIN">Wins</option><option value="LOSS">Losses</option></select></div><div className="v30TableWrap"><table><thead><tr><th>ID</th><th>TIME</th><th>TYPE</th><th>DURATION</th><th>AMOUNT</th><th>ENTRY</th><th>EXIT</th><th>RESULT</th><th>PROFIT/LOSS</th><th>STATUS</th></tr></thead><tbody>{transactions.length ? transactions.slice(0, 8).map((item, index) => <tr key={`${item.id || index}-${item.time || index}`}><td>#{item.id || 1000 + index}</td><td>{item.time ? new Date(item.time).toLocaleTimeString() : "—"}</td><td><b className="txType">{item.setup || botState.activeSetup || "DIGIT"}</b></td><td>{settings.duration} Tick</td><td>{Number(item.stake ?? settings.stake).toFixed(2)}</td><td>{item.entrySpot ?? "—"}</td><td>{item.exitSpot ?? "—"}</td><td><b className={String(item.result).toLowerCase() === "win" ? "txWin" : "txLoss"}>{item.result || "—"}</b></td><td className={Number(item.profit) >= 0 ? "txWin" : "txLoss"}>{Number(item.profit) >= 0 ? "+" : ""}{Number(item.profit || 0).toFixed(2)}</td><td><span className="settled">Settled</span></td></tr>) : <tr><td colSpan="10" className="v30NoTx">No transactions yet — start the Demo Bot to populate this view.</td></tr>}</tbody></table></div><button className="v30AllTx" type="button">☷ View All Transactions</button></section>
+        <section className="v30Card transactions" id="transactions"><div className="v30TxHead"><div><span>â–£ BOT TRANSACTION VIEW</span><small>Live execution ledger</small></div><select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="ALL">All Transactions</option><option value="WIN">Wins</option><option value="LOSS">Losses</option></select></div><div className="v30TableWrap"><table><thead><tr><th>ID</th><th>TIME</th><th>TYPE</th><th>DURATION</th><th>AMOUNT</th><th>ENTRY</th><th>EXIT</th><th>RESULT</th><th>PROFIT/LOSS</th><th>STATUS</th></tr></thead><tbody>{transactions.length ? transactions.slice(0, 8).map((item, index) => <tr key={`${item.id || index}-${item.time || index}`}><td>#{item.id || 1000 + index}</td><td>{item.time ? new Date(item.time).toLocaleTimeString() : "â€”"}</td><td><b className="txType">{item.setup || botState.activeSetup || "DIGIT"}</b></td><td>{settings.duration} Tick</td><td>{Number(item.stake ?? settings.stake).toFixed(2)}</td><td>{item.entrySpot ?? "â€”"}</td><td>{item.exitSpot ?? "â€”"}</td><td><b className={String(item.result).toLowerCase() === "win" ? "txWin" : "txLoss"}>{item.result || "â€”"}</b></td><td className={Number(item.profit) >= 0 ? "txWin" : "txLoss"}>{Number(item.profit) >= 0 ? "+" : ""}{Number(item.profit || 0).toFixed(2)}</td><td><span className="settled">Settled</span></td></tr>) : <tr><td colSpan="10" className="v30NoTx">No transactions yet â€” start the Demo Bot to populate this view.</td></tr>}</tbody></table></div><button className="v30AllTx" type="button">â˜· View All Transactions</button></section>
       </main>
     </div>
   );
