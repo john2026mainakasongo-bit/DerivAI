@@ -1,18 +1,18 @@
-﻿import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
+import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
 import { evaluateSyntheticSetup } from "../analysis/syntheticIntelligenceEngine";
 
 const DEFAULTS = {
   maxRuns: 56,
-  maxScanTicks: 36,
-  minConfidence: 75,
-  minVotes: 1,
+  maxScanTicks: 60,
+  minConfidence: 68,
+  minVotes: 2,
   stake: 1,
   duration: 5,
-  delaySeconds: 5,
+  delaySeconds: 0,
   takeProfit: 20,
   stopLoss: 6,
   cooldownAfterLosses: 1,
-  cooldownSeconds: 45,
+  cooldownSeconds: 10,
   hardStopLossStreak: 3,
   martingaleEnabled: false,
   maxMartingaleSteps: 1,
@@ -21,15 +21,15 @@ const DEFAULTS = {
   contractMode: "AUTO",
   prediction: 2,
   durationUnit: "t",
-  confirmationCount: 3,
+  confirmationCount: 1,
   realConfirmationCount: 4,
-  minimumDigitSamples: 36,
+  minimumDigitSamples: 18,
   minimumRiseFallSamples: 30,
   realStakeCap: 0.35,
   confirmationSeconds: 1,
-  signalMaxAgeSeconds: 8,
-  lossSetupBlockSeconds: 90,
-  minimumTradeGapSeconds: 4,
+  signalMaxAgeSeconds: 4,
+  lossSetupBlockSeconds: 20,
+  minimumTradeGapSeconds: 1,
   deepMinimumScore: 70,
   deepOverrideScore: 90,
 };
@@ -222,7 +222,13 @@ function safeUpper(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function analysisSampleSize(signal = {}, analysis = {}) {
+function analysisSampleSize(signal = {}, analysis = {}, candidate = {}) {
+  // Rapid 30s/60s candidates must be scored on their actual timeframe
+  // sample, not inflated by the long 500-tick calibration buffer.
+  if (candidate?.rapidEntry && Number.isFinite(Number(candidate.samples))) {
+    return Number(candidate.samples);
+  }
+
   const candidates = [
     signal.sampleSize,
     signal.priceCount,
@@ -449,7 +455,7 @@ function buildConsensusVotes(candidate = {}, signal = {}, symbol = "", isReal = 
     )
   );
 
-  const samples = analysisSampleSize(signal, analysis);
+  const samples = analysisSampleSize(signal, analysis, candidate);
 
   const entropy = analysisMetric(
     analysis,
@@ -920,6 +926,9 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     realDigitQualityPass,
     directEvidencePass:
       demoDigitQualityPass || realDigitQualityPass,
+    rapidEntry: Boolean(candidate.rapidEntry),
+    fastEntry: Boolean(candidate.fastEntry),
+    timeframeSeconds: Number(candidate.timeframeSeconds || 0),
     qualificationMode:
       demoDigitQualityPass
         ? "DEMO_DIRECT_EVIDENCE"
@@ -971,7 +980,7 @@ function candidatePassesStrictChecks(candidate = {}, signal = {}, isReal = false
   const confidence = Number(candidate.confidence || 0);
   const probability = Number(candidate.probability || 0);
   const edge = Number(candidate.edge || 0);
-  const samples = analysisSampleSize(signal, analysis);
+  const samples = analysisSampleSize(signal, analysis, candidate);
   const entropy = Number(
     analysis.digitEntropy?.percentage ??
       analysis.entropy?.percentage ??
@@ -1404,10 +1413,20 @@ function v47CanExecute(candidate = {}, isDemo = false) {
   if (!candidate || !v48AllowedCandidate(candidate, isDemo)) return false;
 
   if (isDemo && v46IsStandardDigit(candidate)) {
+    if (candidate.rapidEntry) {
+      return (
+        Number(candidate.probability || 0) >= 58 &&
+        Number(candidate.confidence || 0) >= 68 &&
+        Number(candidate.samples || 0) >= (Number(candidate.timeframeSeconds || 30) === 60 ? 28 : 18) &&
+        Number(candidate.transitionCount || 0) >= 2 &&
+        Number(candidate.passedVotes || 0) >= 2 &&
+        Number(candidate.score || 0) >= 64
+      );
+    }
     return (
-      Number(candidate.probability || 0) >= 70 &&
-      Number(candidate.samples || 0) >= 50 &&
-      Number(candidate.transitionCount || 0) >= 4 &&
+      Number(candidate.probability || 0) >= 66 &&
+      Number(candidate.samples || 0) >= 30 &&
+      Number(candidate.transitionCount || 0) >= 3 &&
       Number(candidate.passedVotes || 0) >= 2
     );
   }
@@ -2144,7 +2163,9 @@ export default class DerivBotEngine {
         };
       }
 
-      const requiredConfirmations = this.isDemoAccount ? 1 : 2;
+      const requiredConfirmations = this.isDemoAccount
+        ? (selected.rapidEntry ? 0 : 1)
+        : 2;
 
       this.lockedCandidate = {
         setupKey,
@@ -2208,6 +2229,13 @@ export default class DerivBotEngine {
 
     const setup = this.lockedCandidate.setup;
     const requiredConfirmations = this.lockedCandidate.confirmations;
+
+    // Rapid 30s/60s candidates are already confirmed by the live multi-window
+    // scorer; do not add an artificial extra-tick delay before entry.
+    if (this.lockedCandidate.snapshot?.rapidEntry && requiredConfirmations === 0) {
+      this.strictConfirmations = 0;
+      this.executionPhase = "READY";
+    }
 
     // Confirm using fresh signal payloads after lock, not scanTickCount.
     const confirmationUpdates = Math.max(

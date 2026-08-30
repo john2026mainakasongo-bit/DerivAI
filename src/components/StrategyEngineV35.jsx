@@ -7,18 +7,20 @@ import { analyzeUnifiedSignals } from "../analysis/v71UnifiedSignalEngine";
 import { buildValidatedSignals } from "../analysis/backtestEngine";
 import { buildEntryTiming } from "../analysis/entryTimingEngine";
 import { buildProfessionalDecision } from "../analysis/professionalDecisionEngine";
+import { analyzeRapidEntry } from "../analysis/rapidEntryEngine";
 import "../styles/StrategyEngineV35.css";
 
 const INITIAL_SETTINGS = {
   maxRuns: 56,
   stake: 1,
   duration: 1,
-  minConfidence: 75,
-  minVotes: 3,
+  analysisTimeframe: 30,
+  minConfidence: 68,
+  minVotes: 2,
   takeProfit: 4,
   stopLoss: 2,
   maxConsecutiveLosses: 3,
-  delaySeconds: 3,
+  delaySeconds: 0,
   martingaleEnabled: false,
   martingaleMultiplier: 2,
   maxMartingaleSteps: 0,
@@ -190,14 +192,45 @@ export default function StrategyEngineV35() {
   }, [connected, loadingMarket, connect, effectiveSymbol]);
 
   const snapshot = useMemo(() => ({ prices, currentPrice, lastDigit, digitHistory }), [prices, currentPrice, lastDigit, digitHistory]);
+  const rapidEntry = useMemo(() => analyzeRapidEntry({ ...snapshot, decimals: market?.decimals ?? 3 }, settings.analysisTimeframe), [snapshot, settings.analysisTimeframe, market?.decimals]);
   const validatedSignals = useMemo(() => buildValidatedSignals(snapshot), [snapshot]);
   const entryTiming = useMemo(() => buildEntryTiming(validatedSignals, snapshot, { tradeTicks: settings.duration, validitySeconds: 15 }), [validatedSignals, snapshot, settings.duration]);
   const professionalDecision = useMemo(() => buildProfessionalDecision(snapshot, validatedSignals), [snapshot, validatedSignals]);
   const unified = useMemo(() => analyzeUnifiedSignals({ ...snapshot, minimumConfidence: settings.minConfidence }), [snapshot, settings.minConfidence]);
 
-  const best = unified?.digit?.best || null;
+  const best = rapidEntry?.best || unified?.digit?.best || null;
   const signal = best?.setup || professionalDecision?.setup || "WAIT";
-  const confidence = Number(best?.qualityScore ?? best?.probability ?? professionalDecision?.confidence ?? 0);
+  const confidence = Number(best?.confidence ?? best?.qualityScore ?? best?.probability ?? professionalDecision?.confidence ?? 0);
+
+  // Feed the live analysis into the execution engine on every fresh tick.
+  // The previous V35 build could start the UI loop but never supplied a signal.
+  useEffect(() => {
+    engineRef.current?.setAccountMode({ isDemo });
+    const latestTick = prices?.at?.(-1);
+    engineRef.current?.updateSignal({
+      symbol: effectiveSymbol,
+      updatedAt: Number(latestTick?.epoch ? latestTick.epoch * 1000 : Date.now()),
+      tickKey: String(latestTick?.epoch ?? `${effectiveSymbol}-${lastDigit}-${currentPrice}`),
+      quoteTime: latestTick?.epoch,
+      probability: rapidEntry?.probability ?? confidence,
+      confidence,
+      digitHistory,
+      recentDigits: digitHistory?.slice(-120),
+      analysis: {
+        ...rapidEntry,
+        probability: rapidEntry?.probability ?? confidence,
+        confidence,
+        selectedProbability: rapidEntry?.probability ?? confidence,
+        selectedEdge: rapidEntry?.edge ?? 0,
+        candidates: [
+          ...(rapidEntry?.candidates || []),
+          ...(unified?.digit?.candidates || []),
+        ],
+        digitHistory,
+        recentDigits: digitHistory?.slice(-120),
+      },
+    });
+  }, [isDemo, effectiveSymbol, prices, lastDigit, currentPrice, digitHistory, rapidEntry, unified, confidence]);
   const historySize = Array.isArray(digitHistory) ? digitHistory.length : 0;
   const historyProgress = Math.min(100, (historySize / 500) * 100);
   const chartPath = buildPath((prices || []).map((item) => Number(item?.quote ?? item?.price ?? item)));
@@ -252,12 +285,8 @@ export default function StrategyEngineV35() {
       setConnectionError("Waiting for the live Deriv feed. Collect at least 8 ticks before starting.");
       return;
     }
-    if (historySize < 8) {
-      setConnectionError("Collecting live history. The bot will unlock after the minimum calibration window.");
-      return;
-    }
-    if (signal === "WAIT" || confidence < settings.minConfidence) {
-      setConnectionError(`No qualified signal yet. Current confidence is ${confidence.toFixed(1)}%.`);
+    if (historySize < 18) {
+      setConnectionError(`Collecting rapid-entry history. ${historySize}/18 ticks loaded.`);
       return;
     }
 
@@ -475,11 +504,11 @@ export default function StrategyEngineV35() {
               <label>Set Amount (USD)<Stepper value={settings.stake} min={0.35} max={100} step={0.5} disabled={busy} onChange={(v) => setNumber("stake", v)} /></label>
               <label>Stop Loss (R)<Stepper value={settings.stopLoss} min={0} max={100} step={1} disabled={busy} onChange={(v) => setNumber("stopLoss", v)} /></label>
               <label>Take Profit (R)<Stepper value={settings.takeProfit} min={0} max={100} step={1} disabled={busy} onChange={(v) => setNumber("takeProfit", v)} /></label>
-              <label>Duration<select value={settings.duration} disabled={busy} onChange={(e) => setNumber("duration", Number(e.target.value))}><option value="1">1 Tick (1s)</option><option value="2">2 Ticks (2s)</option><option value="3">3 Ticks (3s)</option><option value="5">5 Ticks (5s)</option></select></label>
+              <label>Entry Analysis<select value={settings.analysisTimeframe} disabled={busy} onChange={(e) => setNumber("analysisTimeframe", Number(e.target.value))}><option value="30">30 Seconds · RAPID</option><option value="60">1 Minute · DEEP</option></select></label><label>Contract Duration<select value={settings.duration} disabled={busy} onChange={(e) => setNumber("duration", Number(e.target.value))}><option value="1">1 Tick (1s)</option><option value="2">2 Ticks (2s)</option><option value="3">3 Ticks (3s)</option><option value="5">5 Ticks (5s)</option></select></label>
               <button
                 className="v30Start"
                 type="button"
-                disabled={busy || !auth.authenticated || !selectedId || !isDemo || !connected || historySize < 8 || accountBusy}
+                disabled={busy || !auth.authenticated || !selectedId || !isDemo || !connected || historySize < 18 || accountBusy}
                 onClick={startBot}
               >▶ {busy ? "BOT RUNNING" : executionReady ? "START DEMO BOT" : "CONNECT & START DEMO"}</button>
               <button className="v30Stop" type="button" disabled={!busy} onClick={stopBot}>■ STOP BOT</button>
@@ -492,8 +521,8 @@ export default function StrategyEngineV35() {
                       ? "REAL account selected. Bot execution is locked; switch to DEMO/VRTC."
                       : !connected
                         ? "Market feed is offline. Connect the Deriv feed."
-                        : historySize < 8
-                          ? `Calibrating live feed… ${historySize}/8 ticks.`
+                        : historySize < 18
+                          ? `Calibrating rapid entry… ${historySize}/18 ticks.`
                           : !executionReady
                             ? "Authenticated demo trading connection is being prepared…"
                             : botState.message}
