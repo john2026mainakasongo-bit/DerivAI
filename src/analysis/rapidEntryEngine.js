@@ -1,4 +1,4 @@
-const DIGITS = Array.from({ length: 10 }, (_, i) => i);
+﻿const DIGITS = Array.from({ length: 10 }, (_, i) => i);
 
 function clamp(v, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Number(v) || 0));
@@ -243,6 +243,39 @@ function makeCandidates(digits, prices) {
 }
 
 export function analyzeRapidEntry(input = {}, timeframeSeconds = 30) {
+  const safeTimeframe = Number(timeframeSeconds) === 60 ? 60 : 30;
+  const rawDigits = Array.isArray(input?.digits)
+    ? input.digits
+    : Array.isArray(input?.history)
+      ? input.history
+      : [];
+  const digits = rawDigits
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value >= 0 && value <= 9);
+
+  if (digits.length < (safeTimeframe === 60 ? 28 : 18)) {
+    return {
+      ok: false,
+      executable: false,
+      reason: `Insufficient digit history for RAPID_${safeTimeframe === 60 ? "60S" : "30S"} analysis.`,
+      timeframeSeconds: safeTimeframe,
+      sampleSize: digits.length,
+      minimumSamples: safeTimeframe === 60 ? 28 : 18,
+      candidates: [],
+      best: null,
+      confidence: 0,
+      probability: 0,
+      edge: 0,
+      transitionCount: 0,
+      confirmations: 0,
+      requiredConfirmations: 2,
+    };
+  }
+
+  const normalizedInput = {
+    ...input,
+    digits,
+  };
   const prices = pricesFromInput(input);
   const window = windowForSeconds(prices, Number(timeframeSeconds) === 60 ? 60 : 30);
   // Timeframe means real elapsed time, not "last N digits". Deriv 1s indices
@@ -286,9 +319,10 @@ export function analyzeRapidEntry(input = {}, timeframeSeconds = 30) {
     entropy: { percentage: entropyPercent(digits) },
     autocorrelation: { strength: autocorrelationScore(digits) },
     reason: executable
-      ? `Rapid ${Number(timeframeSeconds) === 60 ? "1-minute" : "30-second"} edge ready: ${best.setup} · ${best.confidence.toFixed(1)}% confidence · +${best.edge.toFixed(1)}pp edge.`
+      ? `Rapid ${Number(timeframeSeconds) === 60 ? "1-minute" : "30-second"} edge ready: ${best.setup} Â· ${best.confidence.toFixed(1)}% confidence Â· +${best.edge.toFixed(1)}pp edge.`
       : `Scanning ${Number(timeframeSeconds) === 60 ? "1-minute" : "30-second"} window: ${digits.length}/${minSamples} samples, best edge +${(best?.edge || 0).toFixed(1)}pp.`,
   };
 }
 
 export default analyzeRapidEntry;
+
