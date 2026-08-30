@@ -1,4 +1,4 @@
-﻿import {
+import {
   useEffect,
   useMemo,
   useState,
@@ -38,8 +38,8 @@ import BotDashboardCatalog from "../components/BotDashboardCatalog";
 import DashboardAIAnalyzerV6 from "../components/DashboardAIAnalyzerV6";
 import DashboardAIAnalyzer from "../components/DashboardAIAnalyzer";
 import DerivAIAnalyzerCard from "../components/DerivAIAnalyzerCard";
-import StrategyLab from "../components/StrategyLab";
 import { GeminiXDashboardPanel } from "./GeminiXEngine";
+import StrategyLab from "../components/StrategyLab";
 
 function buildPath(
   prices,
@@ -504,9 +504,9 @@ export default function Dashboard() {
 
                 <DashboardAIAnalyzer data={deriv} />
 
-        <StrategyLab data={deriv} />
-
         <DashboardAIAnalyzerV6 data={deriv} />
+
+        <StrategyLab data={deriv} />
 
 <ProfessionalDecisionPanel
           decision={
