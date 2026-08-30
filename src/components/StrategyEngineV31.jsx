@@ -114,7 +114,14 @@ export default function StrategyEngineV31() {
 
   const effectiveSymbol = symbol || "1HZ100V";
   const selectedId = accountId(auth.selectedAccount);
-  const isDemo = auth.selectedAccountType === "demo";
+  const selectedAccount = auth.selectedAccount || {};
+  const selectedLoginId = accountId(selectedAccount);
+  const selectedAccountKind = String(
+    auth.selectedAccountType || selectedAccount.type || selectedAccount.account_type || selectedAccount.accountType || ""
+  ).toLowerCase();
+  // V32: Deriv virtual/demo accounts normally use the VRTC login-id prefix.
+  // Keep real-money accounts locked, but do not depend on one auth-provider field.
+  const isDemo = selectedAccountKind === "demo" || selectedAccountKind === "virtual" || selectedLoginId.toUpperCase().startsWith("VRTC");
   const running = ["RUNNING", "WAITING", "BUYING", "MONITORING", "COOLDOWN", "WON", "LOST"].includes(botState.status);
   const busy = running || botState.status === "PAUSED";
 
@@ -298,7 +305,7 @@ export default function StrategyEngineV31() {
         </header>
 
         <section className="v30Hero">
-          <div><div className="v30Eyebrow">CALIBRATED STRATEGY ENGINE · V30</div><h1>Deriv Strategy Engine</h1><p>Live analysis · Smart signals · Real results</p></div>
+          <div><div className="v30Eyebrow">CALIBRATED STRATEGY ENGINE · V32</div><h1>Deriv Strategy Engine</h1><p>Live analysis · Smart signals · Real results</p></div>
           <div className={`v30Feed ${connected ? "on" : ""}`}>
             <i />{connected ? `Live feed · ${effectiveSymbol}` : "Deriv feed offline"}
             <button type="button" onClick={async () => {
@@ -347,9 +354,9 @@ export default function StrategyEngineV31() {
               <label>Stop Loss (R)<Stepper value={settings.stopLoss} min={0} max={100} step={1} disabled={busy} onChange={(v) => setNumber("stopLoss", v)} /></label>
               <label>Take Profit (R)<Stepper value={settings.takeProfit} min={0} max={100} step={1} disabled={busy} onChange={(v) => setNumber("takeProfit", v)} /></label>
               <label>Duration<select value={settings.duration} disabled={busy} onChange={(e) => setNumber("duration", Number(e.target.value))}><option value="1">1 Tick (1s)</option><option value="2">2 Ticks (2s)</option><option value="3">3 Ticks (3s)</option><option value="5">5 Ticks (5s)</option></select></label>
-              <button className="v30Start" type="button" disabled={busy || !isDemo || !connected || historySize < 8} onClick={startBot}>▶ START BOT</button>
+              <button className="v30Start" type="button" disabled={busy || !isDemo || !connected || historySize < 8} onClick={startBot}>▶ {busy ? "BOT RUNNING" : "START DEMO BOT"}</button>
               <button className="v30Stop" type="button" disabled={!busy} onClick={stopBot}>■ STOP BOT</button>
-              <div className={`v30BotReady ${connected && historySize >= 8 && signal !== "WAIT" ? "ready" : ""}`}><i />{!isDemo ? "Demo account required for bot execution." : botState.message}</div>
+              <div className={`v30BotReady ${connected && historySize >= 8 && isDemo ? "ready" : ""}`}><i />{!isDemo ? "Select a Deriv DEMO/VRTC account to execute." : botState.message}</div>
             </article>
 
             <article className="v30Card perfCard" id="performance"><div className="v30PurpleHead"><span>◉ PERFORMANCE SUMMARY</span></div><div className="v30PerfBody"><div className="v30Donut" style={{ "--p": `${Math.min(100, winRate)}%` }}><strong>{winRate.toFixed(0)}%</strong><small>Win Rate</small></div><div className="v30PerfStats"><span>Total Signals<b>{botState.runs}</b></span><span>Total Profit<b className="green">+{totalProfit.toFixed(2)} USD</b></span><span>Total Loss<b className="red">-{totalLoss.toFixed(2)} USD</b></span><span>Net Profit<b className={netProfit >= 0 ? "green" : "red"}>{netProfit >= 0 ? "+" : ""}{netProfit.toFixed(2)} USD</b></span></div></div><div className="v30Excellent">↗ Performance: {winRate >= 70 ? "EXCELLENT" : winRate >= 50 ? "STABLE" : "LEARNING"}</div></article>
