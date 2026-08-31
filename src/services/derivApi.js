@@ -732,46 +732,20 @@ class DerivTradingClient {
 
   async getHistory(symbol, count = 100) {
     const message = await this.request({
-      ticks_history: symbol,
-      count,
-      end: "latest",
-      style: "ticks",
+        ticks_history: symbol,
+        count,
+        end: "latest",
+        style: "ticks",
+        adjust_start_time: 1,
     });
 
     const history =
-      message.history ||
-      message.data?.history ||
-      message.result ||
-      {};
+        message.history ||
+        message.data?.history ||
+        [];
 
-    const prices =
-      history.prices ||
-      history.quotes ||
-      history.values ||
-      [];
-
-    const times =
-      history.times ||
-      history.epochs ||
-      history.timestamps ||
-      [];
-
-    if (!Array.isArray(prices)) {
-      return [];
-    }
-
-    return prices
-      .map((price, index) => ({
-        quote: Number(price),
-        epoch: Number(
-          times[index] ||
-            Date.now() / 1000 - prices.length + index
-        ),
-      }))
-      .filter((item) =>
-        Number.isFinite(item.quote)
-      );
-  }
+    return history;
+}
 
   async subscribeTicks(symbol) {
     await this.forgetCurrentSubscription();
@@ -786,8 +760,27 @@ class DerivTradingClient {
     this.subscriptionId = String(
       response.subscription?.id ||
         response.data?.subscription?.id ||
+        response.subscription_id ||
         ""
     );
+
+    const initialTick =
+      response.tick ||
+      response.data?.tick ||
+      null;
+
+    if (
+      initialTick &&
+      !Number.isFinite(
+        Number(
+          initialTick.quote ??
+            initialTick.price ??
+            initialTick.value
+        )
+      )
+    ) {
+      throw new Error("Deriv returned an invalid initial tick.");
+    }
 
     const firstTick =
       response.tick ||
@@ -1171,4 +1164,6 @@ export const derivPublicClient =
   new DerivTradingClient();
 
 export default derivPublicClient;
+
+
 

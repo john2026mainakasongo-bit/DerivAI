@@ -108,3 +108,9 @@ GEMINIX-V6-3-FULL-RISK-MANAGER-BACKUP-*/
 GEMINIX-V6-4-EXPANDABLE-MARKETS-BACKUP-*/
 
 GEMINIX-V6-5-SMOOTH-SAFETY-BACKUP-*/
+# Local backup/recovery files
+project-backups/
+backup-sure-entry-feed-*/
+*.bak
+*.before-*
+DERIVAI-SURE-ENTRY-FEED-FIX-V*.ps1
