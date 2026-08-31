@@ -1,0 +1,5 @@
+V36 chart visibility fix
+- Removed the filled SVG area from the Strategy Engine chart.
+- Kept only the live price line.
+- Scoped dark chart/background rules to the Strategy Engine shell.
+- Prevented global SVG/path styles from turning the chart into a solid black block.

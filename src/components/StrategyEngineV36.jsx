@@ -459,7 +459,7 @@ export default function StrategyEngineV36() {
           <div className="v30Center">
             <article className="v30Card v30ChartCard">
               <div className="v30CardHead"><div><span>LIVE MARKET FEED <em>● LIVE</em></span><strong>{Number.isFinite(currentPrice) ? currentPrice.toFixed(market?.decimals ?? 2) : "—"}</strong></div><div className="lastDigitBadge"><b>{lastDigit ?? "—"}</b><small>Last Digit</small></div></div>
-              <div className="v30Chart">{chartPath ? <svg viewBox="0 0 720 250" preserveAspectRatio="none"><path className="area" d={`${chartPath} L 720 250 L 0 250 Z`} /><path className="line" d={chartPath} /></svg> : <div className="v30Empty">Connect Deriv and wait for live ticks.</div>}</div>
+              <div className="v30Chart">{chartPath ? <svg viewBox="0 0 720 250" preserveAspectRatio="none" aria-label="Live market chart"><path className="line" d={chartPath} /></svg> : <div className="v30Empty">Connect Deriv and wait for live ticks.</div>}</div>
               <div className="v30Digits">{Array.from({ length: 10 }, (_, digit) => { const count = (digitHistory || []).filter((d) => Number(d) === digit).length; const pct = historySize ? (count / historySize) * 100 : 0; return <div key={digit} className={digit === lastDigit ? "active" : ""}><b>{digit}</b><span>{pct.toFixed(1)}%</span></div>; })}</div>
             </article>
 
