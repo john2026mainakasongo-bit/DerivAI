@@ -209,7 +209,7 @@ export default function StrategyEngineV36() {
   const totalLoss = botState.history.filter((x) => Number(x.profit) < 0).reduce((s, x) => s + Math.abs(Number(x.profit || 0)), 0);
   const totalProfit = botState.history.filter((x) => Number(x.profit) >= 0).reduce((s, x) => s + Number(x.profit || 0), 0);
   const netProfit = Number(botState.profit || 0);
-  const transactions = (botState.history || []).slice().reverse().filter((item) => filter === "ALL" || String(item.result).toUpperCase() === filter);
+  const transactionHistory = (botState.history || []).slice().reverse().filter((item) => filter === "ALL" || String(item.result).toUpperCase() === filter);
   const equity = (botState.history || []).slice().reverse().reduce((acc, item) => {
     const next = (acc.at(-1) || 0) + Number(item.profit || 0);
     acc.push(next);
