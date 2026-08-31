@@ -6,6 +6,7 @@ import {
 } from "react-router-dom";
 
 import Dashboard from "./pages/Dashboard";
+import TradingCommandCenter from "./pages/TradingCommandCenter";
 import Login from "./pages/Login";
 import "./index.css";
 
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/command-center" element={<TradingCommandCenter />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
