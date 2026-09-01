@@ -19,7 +19,7 @@ const INITIAL = {
 };
 
 function fmt(v, d = 5) {
-  return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : "Ã¢â‚¬â€";
+  return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
 }
 function accountId(a) {
   return String(a?.id || a?.account_id || a?.loginid || a?.login_id || "");
@@ -177,7 +177,7 @@ export default function RiseFallTouchAnalysis() {
         barrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(2)}`;
       }
 
-      log(`SETUP SPOTTED Ã¢â€ â€™ ${setup} Ã‚Â· confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
+      log(`SETUP SPOTTED ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${setup} Ãƒâ€šÃ‚Â· confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
       setBotStatus(`BUYING ${setup}`);
 
       const bought = await feed.placeTrade({
@@ -202,7 +202,7 @@ export default function RiseFallTouchAnalysis() {
       setTradeCount(x => x + 1);
       lastTradeRef.current = Date.now();
       setBotStatus(`MONITORING ${setup}`);
-      log(`TRADE OPEN Ã¢â€ â€™ ${contractId}`, "trade");
+      log(`TRADE OPEN ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${contractId}`, "trade");
     } catch (error) {
       log(error?.message || "Trade failed.", "error");
       setBotStatus("SCAN");
@@ -233,20 +233,6 @@ export default function RiseFallTouchAnalysis() {
       const pnl = Number(pnlRef.current || 0);
       const takeProfit = Number(settings.takeProfit);
       const stopLoss = Math.abs(Number(settings.stopLoss));
-
-      if (Number.isFinite(takeProfit) && pnl >= takeProfit) {
-        setBotRunning(false);
-        setBotStatus("TAKE PROFIT");
-        log(`SESSION TAKE PROFIT HIT Ã¢â€ â€™ +${pnl.toFixed(2)}`, "win");
-        return;
-      }
-
-      if (Number.isFinite(stopLoss) && pnl <= -stopLoss) {
-        setBotRunning(false);
-        setBotStatus("STOP LOSS");
-        log(`SESSION STOP LOSS HIT Ã¢â€ â€™ ${pnl.toFixed(2)}`, "loss");
-        return;
-      }
 
       const signal = selectedSignal();
 
@@ -338,10 +324,10 @@ export default function RiseFallTouchAnalysis() {
 
           if (pnl >= 0) {
             setWins(x => x + 1);
-            log(`RESULT WON Ã¢â€ â€™ +${pnl.toFixed(2)}`, "win");
+            log(`RESULT WON ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ +${pnl.toFixed(2)}`, "win");
           } else {
             setLosses(x => x + 1);
-            log(`RESULT LOST Ã¢â€ â€™ ${pnl.toFixed(2)}`, "loss");
+            log(`RESULT LOST ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${pnl.toFixed(2)}`, "loss");
           }
 
           // Ref is now clear, so the continuous scanner can find
@@ -392,7 +378,7 @@ export default function RiseFallTouchAnalysis() {
     }
     setBotRunning(true);
     setBotStatus("SCANNING");
-    log("BOT STARTED Ã¢â€ â€™ continuous scan until signal / TP / SL.", "system");
+    log("BOT STARTED → continuous scan until manually stopped.", "system");
   }
 
   function stopBot() {
@@ -410,7 +396,7 @@ export default function RiseFallTouchAnalysis() {
     <div className="rftPage">
       <Topbar
         title="Rise/Fall and Touch/No Touch Analysis Tool"
-        subtitle="Live market analysis Ã‚Â· signal engine Ã‚Â· continuous Demo/Real bot"
+        subtitle="Live market analysis Ãƒâ€šÃ‚Â· signal engine Ãƒâ€šÃ‚Â· continuous Demo/Real bot"
         connected={feed.connected}
         connecting={feed.status === "CONNECTING"}
         onConnect={() => {
@@ -476,8 +462,8 @@ export default function RiseFallTouchAnalysis() {
             ))}
             <article className="rftCard">
               <div className="rftCardTitle"><span>MARKET METRICS</span><b>{analysis.ready ? "READY" : "CALIBRATING"}</b></div>
-              <p>RSI {fmt(analysis.metrics?.rsi, 1)} Ã‚Â· Vol {fmt(analysis.metrics?.volatility, 5)} Ã‚Â· Z {fmt(analysis.metrics?.zScore, 2)}</p>
-              <p>Samples {analysis.metrics?.samples || 0} Ã‚Â· Current {fmt(analysis.metrics?.current)}</p>
+              <p>RSI {fmt(analysis.metrics?.rsi, 1)} Ãƒâ€šÃ‚Â· Vol {fmt(analysis.metrics?.volatility, 5)} Ãƒâ€šÃ‚Â· Z {fmt(analysis.metrics?.zScore, 2)}</p>
+              <p>Samples {analysis.metrics?.samples || 0} Ãƒâ€šÃ‚Â· Current {fmt(analysis.metrics?.current)}</p>
             </article>
           </div>
         </main>
@@ -528,7 +514,7 @@ export default function RiseFallTouchAnalysis() {
                         "CONTRACT"
                       ).toUpperCase()}
                     </strong>
-                    <span>{trade.contract_id || trade.id || "—"}</span>
+                    <span>{trade.contract_id || trade.id || "â€”"}</span>
                     <em>{String(trade.status || "OPEN").toUpperCase()}</em>
                   </div>
                 ))
@@ -541,7 +527,7 @@ export default function RiseFallTouchAnalysis() {
               <div className="rftLivePanelHead">
                 <div>
                   <span>TRANSACTIONS</span>
-                  <small>5 latest trades · click to expand</small>
+                  <small>5 latest trades Â· click to expand</small>
                 </div>
                 <b>{transactionRows.length}/5</b>
               </div>
@@ -605,7 +591,7 @@ export default function RiseFallTouchAnalysis() {
                           <span className={`rftTxStatus ${status.includes("LOST") ? "negative" : status.includes("WON") ? "positive" : ""}`}>
                             {status}
                           </span>
-                          <span className="rftTxArrow">{isOpen ? "▲" : "▼"}</span>
+                          <span className="rftTxArrow">{isOpen ? "â–²" : "â–¼"}</span>
                         </button>
 
                         {isOpen && (
@@ -642,8 +628,8 @@ export default function RiseFallTouchAnalysis() {
                           <strong>WAITING</strong>
                           <small>No completed trade yet</small>
                         </span>
-                        <span className="rftTxStatus">—</span>
-                        <span className="rftTxArrow">•</span>
+                        <span className="rftTxStatus">â€”</span>
+                        <span className="rftTxArrow">â€¢</span>
                       </div>
                     </div>
                   ))}
@@ -655,8 +641,8 @@ export default function RiseFallTouchAnalysis() {
                       <div className="rftTxMain">
                         <span className="rftTxNumber">{i + 1}</span>
                         <span className="rftTxTrade"><strong>WAITING</strong><small>No transaction yet</small></span>
-                        <span className="rftTxStatus">—</span>
-                        <span className="rftTxArrow">•</span>
+                        <span className="rftTxStatus">â€”</span>
+                        <span className="rftTxArrow">â€¢</span>
                       </div>
                     </div>
                   ))}
@@ -676,7 +662,7 @@ export default function RiseFallTouchAnalysis() {
                     <span>{item.message}</span>
                   </div>
                 ))
-              : <div className="rftChatEmpty">Deriv bot chat will appear hereÃ¢â‚¬Â¦</div>}
+              : <div className="rftChatEmpty">Deriv bot chat will appear hereÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦</div>}
           </div>
 
 
