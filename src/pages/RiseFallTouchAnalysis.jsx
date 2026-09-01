@@ -19,7 +19,7 @@ const INITIAL = {
 };
 
 function fmt(v, d = 5) {
-  return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : "â€”";
+  return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : "Ã¢â‚¬â€";
 }
 function accountId(a) {
   return String(a?.id || a?.account_id || a?.loginid || a?.login_id || "");
@@ -53,7 +53,7 @@ export default function RiseFallTouchAnalysis() {
   const [tradeCount, setTradeCount] = useState(0);
   const [logs, setLogs] = useState([]);
   const [scanPulse, setScanPulse] = useState(0);
-  const [expandedTx, setExpandedTx] = useState(null);
+  const [expandedTxs, setExpandedTxs] = useState(() => new Set());
   const activeRef = useRef(null);
   const busyRef = useRef(false);
   const lastTradeRef = useRef(0);
@@ -84,12 +84,7 @@ export default function RiseFallTouchAnalysis() {
         tx?.transaction_id ||
         `tx-${index}`
       );
-
-      const prev = grouped.get(contractId) || {
-        contract_id: contractId,
-        events: []
-      };
-
+      const prev = grouped.get(contractId) || { contract_id: contractId, events: [] };
       prev.events.push(tx);
       grouped.set(contractId, {
         ...prev,
@@ -99,14 +94,23 @@ export default function RiseFallTouchAnalysis() {
       });
     });
 
+    (Array.isArray(openTrades) ? openTrades : []).forEach((trade, index) => {
+      const contractId = String(
+        trade?.contract_id || trade?.contractId || trade?.id || `open-${index}`
+      );
+      if (!grouped.has(contractId)) {
+        grouped.set(contractId, { ...trade, contract_id: contractId, events: [] });
+      }
+    });
+
     return Array.from(grouped.values())
       .sort((a, b) => {
-        const at = Number(a?.timestamp || a?.time || a?.epoch || 0);
-        const bt = Number(b?.timestamp || b?.time || b?.epoch || 0);
+        const at = Number(a?.timestamp || a?.time || a?.epoch || a?.purchase_time || 0);
+        const bt = Number(b?.timestamp || b?.time || b?.epoch || b?.purchase_time || 0);
         return bt - at;
       })
       .slice(0, 5);
-  }, [transactions]);
+  }, [transactions, openTrades]);
 
   function log(message, type = "info") {
     setLogs(current => [
@@ -173,7 +177,7 @@ export default function RiseFallTouchAnalysis() {
         barrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(2)}`;
       }
 
-      log(`SETUP SPOTTED â†’ ${setup} Â· confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
+      log(`SETUP SPOTTED Ã¢â€ â€™ ${setup} Ã‚Â· confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
       setBotStatus(`BUYING ${setup}`);
 
       const bought = await feed.placeTrade({
@@ -198,7 +202,7 @@ export default function RiseFallTouchAnalysis() {
       setTradeCount(x => x + 1);
       lastTradeRef.current = Date.now();
       setBotStatus(`MONITORING ${setup}`);
-      log(`TRADE OPEN â†’ ${contractId}`, "trade");
+      log(`TRADE OPEN Ã¢â€ â€™ ${contractId}`, "trade");
     } catch (error) {
       log(error?.message || "Trade failed.", "error");
       setBotStatus("SCAN");
@@ -233,14 +237,14 @@ export default function RiseFallTouchAnalysis() {
       if (Number.isFinite(takeProfit) && pnl >= takeProfit) {
         setBotRunning(false);
         setBotStatus("TAKE PROFIT");
-        log(`SESSION TAKE PROFIT HIT â†’ +${pnl.toFixed(2)}`, "win");
+        log(`SESSION TAKE PROFIT HIT Ã¢â€ â€™ +${pnl.toFixed(2)}`, "win");
         return;
       }
 
       if (Number.isFinite(stopLoss) && pnl <= -stopLoss) {
         setBotRunning(false);
         setBotStatus("STOP LOSS");
-        log(`SESSION STOP LOSS HIT â†’ ${pnl.toFixed(2)}`, "loss");
+        log(`SESSION STOP LOSS HIT Ã¢â€ â€™ ${pnl.toFixed(2)}`, "loss");
         return;
       }
 
@@ -334,10 +338,10 @@ export default function RiseFallTouchAnalysis() {
 
           if (pnl >= 0) {
             setWins(x => x + 1);
-            log(`RESULT WON â†’ +${pnl.toFixed(2)}`, "win");
+            log(`RESULT WON Ã¢â€ â€™ +${pnl.toFixed(2)}`, "win");
           } else {
             setLosses(x => x + 1);
-            log(`RESULT LOST â†’ ${pnl.toFixed(2)}`, "loss");
+            log(`RESULT LOST Ã¢â€ â€™ ${pnl.toFixed(2)}`, "loss");
           }
 
           // Ref is now clear, so the continuous scanner can find
@@ -388,7 +392,7 @@ export default function RiseFallTouchAnalysis() {
     }
     setBotRunning(true);
     setBotStatus("SCANNING");
-    log("BOT STARTED â†’ continuous scan until signal / TP / SL.", "system");
+    log("BOT STARTED Ã¢â€ â€™ continuous scan until signal / TP / SL.", "system");
   }
 
   function stopBot() {
@@ -406,7 +410,7 @@ export default function RiseFallTouchAnalysis() {
     <div className="rftPage">
       <Topbar
         title="Rise/Fall and Touch/No Touch Analysis Tool"
-        subtitle="Live market analysis Â· signal engine Â· continuous Demo/Real bot"
+        subtitle="Live market analysis Ã‚Â· signal engine Ã‚Â· continuous Demo/Real bot"
         connected={feed.connected}
         connecting={feed.status === "CONNECTING"}
         onConnect={() => {
@@ -472,8 +476,8 @@ export default function RiseFallTouchAnalysis() {
             ))}
             <article className="rftCard">
               <div className="rftCardTitle"><span>MARKET METRICS</span><b>{analysis.ready ? "READY" : "CALIBRATING"}</b></div>
-              <p>RSI {fmt(analysis.metrics?.rsi, 1)} Â· Vol {fmt(analysis.metrics?.volatility, 5)} Â· Z {fmt(analysis.metrics?.zScore, 2)}</p>
-              <p>Samples {analysis.metrics?.samples || 0} Â· Current {fmt(analysis.metrics?.current)}</p>
+              <p>RSI {fmt(analysis.metrics?.rsi, 1)} Ã‚Â· Vol {fmt(analysis.metrics?.volatility, 5)} Ã‚Â· Z {fmt(analysis.metrics?.zScore, 2)}</p>
+              <p>Samples {analysis.metrics?.samples || 0} Ã‚Â· Current {fmt(analysis.metrics?.current)}</p>
             </article>
           </div>
         </main>
@@ -546,7 +550,7 @@ export default function RiseFallTouchAnalysis() {
                 <div className="rftTxTable">
                   {transactionRows.map((tx, i) => {
                     const id = String(tx.contract_id || tx.id || `tx-${i}`);
-                    const isOpen = expandedTx === id;
+                    const isOpen = expandedTxs.has(id);
                     const type = String(
                       tx.action ||
                       tx.contract_type ||
@@ -586,7 +590,11 @@ export default function RiseFallTouchAnalysis() {
                         <button
                           type="button"
                           className="rftTxMain"
-                          onClick={() => setExpandedTx(isOpen ? null : id)}
+                          onClick={() => setExpandedTxs(prev => {
+                            const next = new Set(prev);
+                            if (next.has(id)) next.delete(id); else next.add(id);
+                            return next;
+                          })}
                           aria-expanded={isOpen}
                         >
                           <span className="rftTxNumber">{i + 1}</span>
@@ -625,9 +633,34 @@ export default function RiseFallTouchAnalysis() {
                       </div>
                     );
                   })}
+
+                  {Array.from({ length: Math.max(0, 5 - transactionRows.length) }).map((_, i) => (
+                    <div className="rftTxRow rftTxPlaceholder" key={`empty-${i}`} aria-hidden="true">
+                      <div className="rftTxMain">
+                        <span className="rftTxNumber">{transactionRows.length + i + 1}</span>
+                        <span className="rftTxTrade">
+                          <strong>WAITING</strong>
+                          <small>No completed trade yet</small>
+                        </span>
+                        <span className="rftTxStatus">—</span>
+                        <span className="rftTxArrow">•</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <div className="rftPanelEmpty">No transactions yet</div>
+                <div className="rftTxTable">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div className="rftTxRow rftTxPlaceholder" key={`empty-${i}`} aria-hidden="true">
+                      <div className="rftTxMain">
+                        <span className="rftTxNumber">{i + 1}</span>
+                        <span className="rftTxTrade"><strong>WAITING</strong><small>No transaction yet</small></span>
+                        <span className="rftTxStatus">—</span>
+                        <span className="rftTxArrow">•</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -643,7 +676,7 @@ export default function RiseFallTouchAnalysis() {
                     <span>{item.message}</span>
                   </div>
                 ))
-              : <div className="rftChatEmpty">Deriv bot chat will appear hereâ€¦</div>}
+              : <div className="rftChatEmpty">Deriv bot chat will appear hereÃ¢â‚¬Â¦</div>}
           </div>
 
 

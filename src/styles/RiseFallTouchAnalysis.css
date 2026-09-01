@@ -460,7 +460,7 @@
     grid-template-columns:1fr;
   }
 }
-/* RFT V4 — five-row expandable transaction history */
+/* RFT V4 â€” five-row expandable transaction history */
 .rftTransactionsPanel{
   min-width:0;
 }
@@ -577,6 +577,147 @@
 }
 .rftTxDetails .positive{color:#5ff0aa}
 .rftTxDetails .negative{color:#ff6878}
+
+@media (max-width:900px){
+  .rftTxMain{
+    grid-template-columns:20px minmax(0,1fr) 48px 16px;
+    gap:5px;
+    padding:7px;
+  }
+  .rftTxDetails{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}/* RFT V5 — five-row multi-expand transaction history */
+.rftTransactionsPanel{
+  min-width:0;
+}
+.rftTransactionsPanel .rftLivePanelHead{
+  align-items:flex-start;
+}
+.rftTransactionsPanel .rftLivePanelHead>div{
+  min-width:0;
+}
+.rftTransactionsPanel .rftLivePanelHead small{
+  display:block;
+  margin-top:3px;
+  color:#66738a;
+  font-size:7px;
+  font-weight:800;
+}
+.rftTxTable{
+  display:flex;
+  flex-direction:column;
+  width:100%;
+}
+.rftTxRow{
+  border-top:1px solid rgba(130,145,180,.07);
+}
+.rftTxMain{
+  width:100%;
+  min-height:38px;
+  display:grid;
+  grid-template-columns:22px minmax(0,1fr) 58px 18px;
+  align-items:center;
+  gap:7px;
+  padding:7px 9px;
+  border:0;
+  text-align:left;
+  color:#dfe7f5;
+  background:transparent;
+  cursor:pointer;
+  font:inherit;
+}
+.rftTxMain:hover,
+.rftTxRow.expanded .rftTxMain{
+  background:rgba(90,130,190,.07);
+}
+.rftTxNumber{
+  font-size:8px;
+  color:#66738a;
+  text-align:center;
+}
+.rftTxTrade{
+  min-width:0;
+}
+.rftTxTrade strong{
+  display:block;
+  font-size:8px;
+  font-weight:900;
+  color:#dfe7f5;
+}
+.rftTxTrade small{
+  display:block;
+  margin-top:2px;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:7px;
+  color:#66738a;
+}
+.rftTxStatus{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:7px;
+  font-weight:900;
+  color:#f2c45b;
+  text-align:right;
+}
+.rftTxStatus.positive{color:#5ff0aa}
+.rftTxStatus.negative{color:#ff6878}
+.rftTxArrow{
+  color:#7f91ab;
+  font-size:8px;
+  text-align:center;
+}
+.rftTxDetails{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:6px;
+  padding:7px 9px 9px;
+  border-top:1px solid rgba(130,145,180,.07);
+  background:rgba(255,255,255,.018);
+}
+.rftTxDetails>div{
+  min-width:0;
+  padding:5px 6px;
+  border:1px solid rgba(130,145,180,.09);
+  border-radius:6px;
+  background:rgba(4,8,14,.65);
+}
+.rftTxDetails span{
+  display:block;
+  font-size:6px;
+  color:#66738a;
+  font-weight:900;
+  letter-spacing:.05em;
+}
+.rftTxDetails strong{
+  display:block;
+  margin-top:2px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:8px;
+  color:#dfe7f5;
+}
+.rftTxDetails .positive{color:#5ff0aa}
+.rftTxDetails .negative{color:#ff6878}
+
+
+.rftTxPlaceholder{
+  opacity:.48;
+}
+.rftTxPlaceholder .rftTxMain{
+  cursor:default;
+}
+.rftTxPlaceholder .rftTxTrade strong{
+  color:#77859a;
+}
+.rftTxPlaceholder .rftTxArrow{
+  color:#4e5b6d;
+}
 
 @media (max-width:900px){
   .rftTxMain{
