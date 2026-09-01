@@ -13,3 +13,69 @@
 .rftBotActions{padding:10px}.rftBotActions button{width:100%;border:0;border-radius:9px;padding:11px;font-weight:800;cursor:pointer}.rftBotActions .primary{background:#dfe7f5;color:#070a10}.rftBotActions .danger{background:#3a1518;color:#ff9a9a;border:1px solid rgba(255,100,100,.25)}.rftSafety{padding:0 10px 12px;color:#68748a;font-size:9px}.rftSafety b{color:#6fe9ad}
 @media(max-width:1050px){.rftGrid{grid-template-columns:1fr}.rftBot{min-height:520px}.rftEngineGrid{grid-template-columns:1fr 1fr}}@media(max-width:650px){.rftHeader{flex-direction:column}.rftSignalRow{grid-template-columns:1fr 1fr}.rftEngineGrid{grid-template-columns:1fr}.rftShell{padding:12px}.rftToolbar{flex-wrap:wrap}}
 
+
+.rftCompactStatus{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin:6px 2px 8px;
+}
+.rftLivePanels{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:6px;
+  padding:6px 8px;
+  border-top:1px solid rgba(130,145,180,.10);
+  border-bottom:1px solid rgba(130,145,180,.10);
+  background:#060910;
+}
+.rftLivePanel{
+  border:1px solid rgba(130,145,180,.12);
+  border-radius:8px;
+  background:#080c13;
+  overflow:hidden;
+}
+.rftLivePanelHead{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:5px 7px;
+  font-size:8px;
+  color:#7f8aa0;
+  border-bottom:1px solid rgba(130,145,180,.08);
+}
+.rftLivePanelHead b{
+  color:#dfe7f5;
+  font-size:9px;
+}
+.rftLiveRow{
+  display:grid;
+  grid-template-columns:72px 1fr auto;
+  gap:6px;
+  align-items:center;
+  padding:5px 7px;
+  font-size:8px;
+  border-bottom:1px solid rgba(130,145,180,.06);
+}
+.rftLiveRow:last-child{border-bottom:0}
+.rftLiveRow strong{
+  color:#dfe7f5;
+  font-size:8px;
+}
+.rftLiveRow span{
+  color:#66738a;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.rftLiveRow em{
+  color:#5ff0aa;
+  font-style:normal;
+  font-size:7px;
+}
+.rftPanelEmpty{
+  padding:7px;
+  text-align:center;
+  color:#58647a;
+  font-size:8px;
+}

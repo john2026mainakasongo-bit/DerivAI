@@ -52,6 +52,7 @@ export default function RiseFallTouchAnalysis() {
   const [losses, setLosses] = useState(0);
   const [tradeCount, setTradeCount] = useState(0);
   const [logs, setLogs] = useState([]);
+  const [scanPulse, setScanPulse] = useState(0);
   const activeRef = useRef(null);
   const busyRef = useRef(false);
   const lastTradeRef = useRef(0);
@@ -67,6 +68,8 @@ export default function RiseFallTouchAnalysis() {
   const path = buildPath(prices.map(Number));
   const demo = isDemo(auth.selectedAccount);
   const active = analysis.engines?.[0];
+  const openTrades = feed.openContracts || [];
+  const transactions = feed.transactions || [];
 
   function log(message, type = "info") {
     setLogs(current => [
@@ -169,6 +172,16 @@ export default function RiseFallTouchAnalysis() {
 
   useEffect(() => {
     if (!botRunning) return;
+
+    const timer = window.setInterval(() => {
+      setScanPulse(value => value + 1);
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [botRunning]);
+
+  useEffect(() => {
+    if (!botRunning) return;
     if (sessionPnl >= Number(settings.takeProfit)) {
       setBotRunning(false);
       setBotStatus("TAKE PROFIT");
@@ -188,7 +201,7 @@ export default function RiseFallTouchAnalysis() {
       return;
     }
     if (Number(signal.confidence || 0) < Number(settings.minConfidence)) {
-      setBotStatus(`WAITING ${Number(signal.confidence || 0).toFixed(1)}%`);
+      setBotStatus(`SCANNING ${Number(signal.confidence || 0).toFixed(1)}%`);
       return;
     }
     if (!activeRef.current) void execute(signal);
@@ -313,16 +326,12 @@ export default function RiseFallTouchAnalysis() {
       />
 
       <section className="rftShell" id="rise-fall-touch-tool">
-      <header className="rftHeader">
-        <div>
-          <div className="rftEyebrow">DERIV LIVE ANALYSIS</div>
-          <h2>Rise/Fall and Touch/No Touch Analysis Tool</h2>
-          <p>Dedicated market-reading engine with live signals, chart overlays and continuous Demo/Real bot execution.</p>
-        </div>
-        <div className={`rftConnection ${feed.connected ? "online" : ""}`}>
+      <div className="rftCompactStatus">
+        <span className="rftEyebrow">DERIV LIVE ANALYSIS</span>
+        <span className={`rftConnection ${feed.connected ? "online" : ""}`}>
           <i /> {feed.connected ? "LIVE" : "CONNECTING"}
-        </div>
-      </header>
+        </span>
+      </div>
 
       <div className="rftGrid">
         <main className="rftMain">
@@ -401,8 +410,85 @@ export default function RiseFallTouchAnalysis() {
             <label>Stop loss<input type="number" min="0.1" step="0.1" value={settings.stopLoss} disabled={botRunning} onChange={e => update("stopLoss", e.target.value)} /></label>
           </div>
 
+          <div className="rftLivePanels">
+            <div className="rftLivePanel">
+              <div className="rftLivePanelHead">
+                <span>OPEN TRADE</span>
+                <b>{openTrades.length}</b>
+              </div>
+
+              {openTrades.length ? (
+                openTrades.slice(0, 2).map((trade, i) => (
+                  <div className="rftLiveRow" key={`${trade.contract_id || trade.id || i}`}>
+                    <strong>
+                      {String(
+                        trade.contract_type ||
+                        trade.contractType ||
+                        trade.setup ||
+                        "CONTRACT"
+                      ).toUpperCase()}
+                    </strong>
+                    <span>
+                      {trade.contract_id || trade.id || "—"}
+                    </span>
+                    <em>
+                      {String(trade.status || "OPEN").toUpperCase()}
+                    </em>
+                  </div>
+                ))
+              ) : (
+                <div className="rftPanelEmpty">No open trade</div>
+              )}
+            </div>
+
+            <div className="rftLivePanel">
+              <div className="rftLivePanelHead">
+                <span>TRANSACTIONS</span>
+                <b>{transactions.length}</b>
+              </div>
+
+              {transactions.length ? (
+                transactions.slice(0, 3).map((tx, i) => (
+                  <div className="rftLiveRow" key={`${tx.id || tx.transaction_id || i}`}>
+                    <strong>
+                      {String(
+                        tx.action ||
+                        tx.transaction_type ||
+                        tx.contract_type ||
+                        "TRADE"
+                      ).toUpperCase()}
+                    </strong>
+                    <span>
+                      {tx.contract_id || tx.id || "—"}
+                    </span>
+                    <em>
+                      {Number(
+                        tx.amount ??
+                        tx.buy_price ??
+                        tx.sell_price ??
+                        0
+                      ).toFixed(2)}
+                    </em>
+                  </div>
+                ))
+              ) : (
+                <div className="rftPanelEmpty">No transactions yet</div>
+              )}
+            </div>
+          </div>
+
           <div className="rftChat">
-            {logs.length ? logs.map((item, i) => <div key={`${item.time}-${i}`} className={`rftChatLine ${item.type}`}><time>{item.time}</time><span>{item.message}</span></div>) : <div className="rftChatEmpty">Deriv bot chat will appear here…</div>}
+            {logs.length
+              ? logs.slice(0, 14).map((item, i) => (
+                  <div
+                    key={`${item.time}-${i}`}
+                    className={`rftChatLine ${item.type}`}
+                  >
+                    <time>{item.time}</time>
+                    <span>{item.message}</span>
+                  </div>
+                ))
+              : <div className="rftChatEmpty">Deriv bot chat will appear here…</div>}
           </div>
 
           <div className="rftBotActions">
@@ -460,6 +546,7 @@ export default function RiseFallTouchAnalysis() {
     </div>
   );
 }
+
 
 
 
