@@ -45,6 +45,7 @@ export default function RiseFallTouchAnalysis() {
   const feed = useDerivTicks();
   const [settings, setSettings] = useState(INITIAL);
   const [botRunning, setBotRunning] = useState(false);
+  const [realTradingUnlocked, setRealTradingUnlocked] = useState(false);
   const [botStatus, setBotStatus] = useState("READY");
   const [sessionPnl, setSessionPnl] = useState(0);
   const [wins, setWins] = useState(0);
@@ -86,10 +87,24 @@ export default function RiseFallTouchAnalysis() {
   }
 
   async function execute(signal) {
-    if (busyRef.current || activeRef.current || !signal) return;
-    if (!demo) {
-      setBotStatus("DEMO ONLY");
-      log("Trading lane is locked: select a DEMO/VRTC account.", "error");
+    if (busyRef.current || activeRef.current || !signal) return;    const selectedType = String(
+      auth.selectedAccountType ||
+      auth.selectedAccount?.type ||
+      auth.selectedAccount?.account_type ||
+      ""
+    ).toLowerCase();
+
+    const isReal = selectedType === "real" && !demo;
+
+    if (!auth.authenticated || !auth.selectedAccount || !feed.selectedAccountId) {
+      setBotStatus("ACCOUNT REQUIRED");
+      log("Connect Deriv and select an account first.", "error");
+      return;
+    }
+
+    if (isReal && !realTradingUnlocked) {
+      setBotStatus("REAL LOCKED");
+      log("Real trading is locked. Enable Real Trading first.", "error");
       return;
     }
     if (Date.now() - lastTradeRef.current < settings.cooldown * 1000) return;
@@ -229,9 +244,24 @@ export default function RiseFallTouchAnalysis() {
     if (!feed.connected) {
       log("Connect the Deriv feed first.", "error");
       return;
+    }    const selectedType = String(
+      auth.selectedAccountType ||
+      auth.selectedAccount?.type ||
+      auth.selectedAccount?.account_type ||
+      ""
+    ).toLowerCase();
+
+    const isReal = selectedType === "real" && !demo;
+
+    if (!auth.authenticated || !auth.selectedAccount) {
+      log("Connect Deriv and select an account first.", "error");
+      setBotStatus("ACCOUNT REQUIRED");
+      return;
     }
-    if (!demo) {
-      log("Select a DEMO/VRTC account. Real-money execution is locked.", "error");
+
+    if (isReal && !realTradingUnlocked) {
+      log("Enable Real Trading before starting the bot.", "error");
+      setBotStatus("REAL LOCKED");
       return;
     }
     if (sessionPnl >= Number(settings.takeProfit) || sessionPnl <= -Math.abs(Number(settings.stopLoss))) {
@@ -263,7 +293,7 @@ export default function RiseFallTouchAnalysis() {
         <div>
           <div className="rftEyebrow">DERIV LIVE ANALYSIS</div>
           <h2>Rise/Fall and Touch/No Touch Analysis Tool</h2>
-          <p>Dedicated market-reading engine with live signals, chart overlays and continuous DEMO bot execution.</p>
+          <p>Dedicated market-reading engine with live signals, chart overlays and continuous Demo/Real bot execution.</p>
         </div>
         <div className={`rftConnection ${feed.connected ? "online" : ""}`}>
           <i /> {feed.connected ? "LIVE" : "CONNECTING"}
@@ -356,12 +386,56 @@ export default function RiseFallTouchAnalysis() {
               ? <button type="button" className="primary" onClick={startBot}>START CONTINUOUS BOT</button>
               : <button type="button" className="danger" onClick={stopBot}>STOP BOT</button>}
           </div>
-          <div className="rftSafety">Execution lane: <b>DEMO / VRTC</b>. Real account execution is locked.</div>
+          <div className="rftRealControl">
+  <div className="rftAccountMode">
+    <span>EXECUTION ACCOUNT</span>
+    <b>
+      {String(
+        auth.selectedAccountType ||
+        auth.selectedAccount?.type ||
+        "NONE"
+      ).toUpperCase()}
+    </b>
+  </div>
+
+  {String(
+    auth.selectedAccountType ||
+    auth.selectedAccount?.type ||
+    ""
+  ).toLowerCase() === "real" ? (
+    <label className="rftRealUnlock">
+      <input
+        type="checkbox"
+        checked={realTradingUnlocked}
+        onChange={(event) => {
+          const enabled = event.target.checked;
+          setRealTradingUnlocked(enabled);
+
+          if (!enabled && botRunning) {
+            setBotRunning(false);
+            setBotStatus("REAL LOCKED");
+            log("Real trading disabled. Bot stopped.", "system");
+          }
+        }}
+      />
+      <span>I understand this enables REAL-MONEY trading</span>
+    </label>
+  ) : (
+    <div className="rftDemoNotice">
+      Demo/VRTC execution is enabled.
+    </div>
+  )}
+
+  <div className="rftExecutionNote">
+    Real trading requires explicit unlock.
+  </div>
+</div>
         </aside>
       </div>
     </section>
   );
 }
+
 
 
 
