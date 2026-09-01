@@ -1,35 +1,35 @@
-import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
+﻿import { evaluateAnalysisAssistedSignal } from "../analysis/analysisAssistedGate";
 import { evaluateSyntheticSetup } from "../analysis/syntheticIntelligenceEngine";
 
 const DEFAULTS = {
   maxRuns: 56,
-  maxScanTicks: 60,
-  minConfidence: 68,
-  minVotes: 2,
+  maxScanTicks: 36,
+  minConfidence: 75,
+  minVotes: 1,
   stake: 1,
   duration: 5,
-  delaySeconds: 0,
+  delaySeconds: 5,
   takeProfit: 20,
   stopLoss: 6,
   cooldownAfterLosses: 1,
-  cooldownSeconds: 10,
+  cooldownSeconds: 45,
   hardStopLossStreak: 3,
-  martingaleEnabled: true,
+  martingaleEnabled: false,
   maxMartingaleSteps: 1,
-  recoveryMultipliers: [2],
+  recoveryMultipliers: [1.35],
   analysisAssisted: true,
   contractMode: "AUTO",
   prediction: 2,
   durationUnit: "t",
-  confirmationCount: 1,
+  confirmationCount: 3,
   realConfirmationCount: 4,
-  minimumDigitSamples: 18,
+  minimumDigitSamples: 36,
   minimumRiseFallSamples: 30,
   realStakeCap: 0.35,
   confirmationSeconds: 1,
-  signalMaxAgeSeconds: 4,
-  lossSetupBlockSeconds: 20,
-  minimumTradeGapSeconds: 1,
+  signalMaxAgeSeconds: 8,
+  lossSetupBlockSeconds: 90,
+  minimumTradeGapSeconds: 4,
   deepMinimumScore: 70,
   deepOverrideScore: 90,
 };
@@ -222,13 +222,7 @@ function safeUpper(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function analysisSampleSize(signal = {}, analysis = {}, candidate = {}) {
-  // Rapid 30s/60s candidates must be scored on their actual timeframe
-  // sample, not inflated by the long 500-tick calibration buffer.
-  if (candidate?.rapidEntry && Number.isFinite(Number(candidate.samples))) {
-    return Number(candidate.samples);
-  }
-
+function analysisSampleSize(signal = {}, analysis = {}) {
   const candidates = [
     signal.sampleSize,
     signal.priceCount,
@@ -455,7 +449,7 @@ function buildConsensusVotes(candidate = {}, signal = {}, symbol = "", isReal = 
     )
   );
 
-  const samples = analysisSampleSize(signal, analysis, candidate);
+  const samples = analysisSampleSize(signal, analysis);
 
   const entropy = analysisMetric(
     analysis,
@@ -926,9 +920,6 @@ function scoreCandidate(candidate = {}, signal = {}, symbol = "", isReal = false
     realDigitQualityPass,
     directEvidencePass:
       demoDigitQualityPass || realDigitQualityPass,
-    rapidEntry: Boolean(candidate.rapidEntry),
-    fastEntry: Boolean(candidate.fastEntry),
-    timeframeSeconds: Number(candidate.timeframeSeconds || 0),
     qualificationMode:
       demoDigitQualityPass
         ? "DEMO_DIRECT_EVIDENCE"
@@ -980,7 +971,7 @@ function candidatePassesStrictChecks(candidate = {}, signal = {}, isReal = false
   const confidence = Number(candidate.confidence || 0);
   const probability = Number(candidate.probability || 0);
   const edge = Number(candidate.edge || 0);
-  const samples = analysisSampleSize(signal, analysis, candidate);
+  const samples = analysisSampleSize(signal, analysis);
   const entropy = Number(
     analysis.digitEntropy?.percentage ??
       analysis.entropy?.percentage ??
@@ -1409,31 +1400,14 @@ function v48AllowedCandidate(candidate = {}, isDemo = false) {
   return true;
 }
 
-function v47CanExecute(candidate = {}, isDemo = false, signal = null) {
+function v47CanExecute(candidate = {}, isDemo = false) {
   if (!candidate || !v48AllowedCandidate(candidate, isDemo)) return false;
 
-  // V39: rapid candidates must come from a live rapid-engine gate that is
-  // actually executable. This prevents a fallback scorer from bypassing the
-  // rapid-entry safety gate. No probability/confidence/edge threshold changed.
-  if (candidate.rapidEntry && signal?.analysis?.executable !== true) {
-    return false;
-  }
-
   if (isDemo && v46IsStandardDigit(candidate)) {
-    if (candidate.rapidEntry) {
-      return (
-        Number(candidate.probability || 0) >= 58 &&
-        Number(candidate.confidence || 0) >= 68 &&
-        Number(candidate.samples || 0) >= (Number(candidate.timeframeSeconds || 30) === 60 ? 28 : 18) &&
-        Number(candidate.transitionCount || 0) >= 2 &&
-        Number(candidate.passedVotes || 0) >= 2 &&
-        Number(candidate.score || 0) >= 64
-      );
-    }
     return (
-      Number(candidate.probability || 0) >= 66 &&
-      Number(candidate.samples || 0) >= 30 &&
-      Number(candidate.transitionCount || 0) >= 3 &&
+      Number(candidate.probability || 0) >= 70 &&
+      Number(candidate.samples || 0) >= 50 &&
+      Number(candidate.transitionCount || 0) >= 4 &&
       Number(candidate.passedVotes || 0) >= 2
     );
   }
@@ -1443,7 +1417,7 @@ function v47CanExecute(candidate = {}, isDemo = false, signal = null) {
 }
 
 function v47Qualification(candidate = {}, isDemo = false) {
-  if (isDemo && v47CanExecute(candidate, true, signal)) {
+  if (isDemo && v47CanExecute(candidate, true)) {
     return "DEMO_BLOCKER_REMOVED";
   }
 
@@ -1507,7 +1481,7 @@ export default class DerivBotEngine {
       largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: DEFAULTS.stake,
-      activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      activeSetup: "â€”",
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
@@ -1519,7 +1493,7 @@ export default class DerivBotEngine {
       signalConfirmations: 0,
       requiredConfirmations: DEFAULTS.confirmationCount,
       blockedSetupUntil: 0,
-      lastLossSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      lastLossSetup: "â€”",
       lossProtectionCount: 0,
       deepScore: 0,
       deepConsensus: 0,
@@ -1528,7 +1502,7 @@ export default class DerivBotEngine {
       fastLane: false,
       gate: null,
       executionPhase: "SCAN",
-      lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      lockedCandidate: "â€”",
       signalVersion: 0,
       lockedSignalVersion: 0,
       history: [],
@@ -1604,7 +1578,7 @@ export default class DerivBotEngine {
         0,
         Math.min(3, number(input.maxMartingaleSteps, DEFAULTS.maxMartingaleSteps))
       ),
-      recoveryMultipliers: [2],
+      recoveryMultipliers: DEFAULTS.recoveryMultipliers,
       confirmationCount: Math.max(
         1,
         Math.min(6, number(input.confirmationCount, DEFAULTS.confirmationCount))
@@ -1750,10 +1724,10 @@ export default class DerivBotEngine {
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       message: reason,
-      activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      activeSetup: "â€”",
       signalConfirmations: 0,
       executionPhase: "SCAN",
-      lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      lockedCandidate: "â€”",
       signalVersion: this.signalVersion,
       lockedSignalVersion: 0,
     });
@@ -2040,7 +2014,7 @@ export default class DerivBotEngine {
         this.isDemoAccount
           ? ranked
               .filter((candidate) => v46IsStandardDigit(candidate))
-              .filter((candidate) => v47CanExecute(candidate, true, signal))
+              .filter((candidate) => v47CanExecute(candidate, true))
               .sort((left, right) => {
                 const normalizedProbability = (candidate) => {
                   const setup = candidateAction(candidate);
@@ -2068,7 +2042,7 @@ export default class DerivBotEngine {
       selected =
         executableDemoDigit ||
         ranked.find((candidate) =>
-          v47CanExecute(candidate, this.isDemoAccount, signal)
+          v47CanExecute(candidate, this.isDemoAccount)
         ) ||
         ranked.find((candidate) => candidate.ok) ||
         ranked[0];
@@ -2076,7 +2050,7 @@ export default class DerivBotEngine {
 
     const selectedCanExecute =
       selected &&
-      v47CanExecute(selected, this.isDemoAccount, signal);
+      v47CanExecute(selected, this.isDemoAccount);
 
     if (!selected || !selectedCanExecute) {
       this.strictSetupKey = "";
@@ -2104,7 +2078,10 @@ export default class DerivBotEngine {
           ...gate,
           scoredCandidates: ranked.map((candidate) => ({
             ...candidate,
-            accountExecutionPass: v47CanExecute(candidate, this.isDemoAccount, signal),
+            accountExecutionPass: v47CanExecute(
+              candidate,
+              this.isDemoAccount
+            ),
           })),
           executionScore: selected?.score || 0,
           executionThreshold: selected?.threshold || 0,
@@ -2123,7 +2100,7 @@ export default class DerivBotEngine {
           ),
           accountExecutionPass: Boolean(selectedCanExecute),
           executionPhase: "SCAN",
-          lockedCandidate: selected?.setup || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+          lockedCandidate: selected?.setup || "â€”",
           signalVersion: this.signalVersion,
           lockedSignalVersion: 0,
         },
@@ -2132,47 +2109,6 @@ export default class DerivBotEngine {
 
     if (!this.lockedCandidate) {
       const setup = selected.setup;
-
-      // Recovery is deliberately stricter than the normal entry gate.
-      // A 2× stake is only armed after a fresh setup clears a stronger
-      // consensus threshold and is different from the losing setup.
-      if (
-        this.isDemoAccount &&
-        this.settings.martingaleEnabled &&
-        this.state.martingaleStep > 0
-      ) {
-        const recoveryScore = Number(selected.score || 0);
-        const recoveryThreshold = Math.max(Number(selected.threshold || 0) + 5, 90);
-        const recoveryVotes = Number(selected.passedVotes || 0);
-        const requiredRecoveryVotes = Math.max(Number(selected.requiredVotes || 0), 4);
-        const freshSetup = normalizeSetup(setup) !== normalizeSetup(this.state.lastLossSetup);
-
-        if (
-          !freshSetup ||
-          recoveryScore < recoveryThreshold ||
-          recoveryVotes < requiredRecoveryVotes ||
-          Number(selected.samples || 0) < 50
-        ) {
-          this.strictSetupKey = "";
-          this.strictConfirmations = 0;
-          this.executionPhase = "RECOVERY_WAIT";
-          return {
-            ok: false,
-            reason: `Recovery 2× is armed, but the fresh setup is not strong enough (${recoveryScore.toFixed(1)}/${recoveryThreshold.toFixed(1)}, votes ${recoveryVotes}/${requiredRecoveryVotes}, samples ${Number(selected.samples || 0)}/50). No forced recovery trade.`,
-            elapsedSeconds,
-            confirmations: 0,
-            requiredConfirmations: 2,
-            gate: {
-              ...gate,
-              executionPhase: "RECOVERY_WAIT",
-              recoveryReady: false,
-              recoveryScore,
-              recoveryThreshold,
-              lockedCandidate: setup,
-            },
-          };
-        }
-      }
 
       if (
         this.isDemoAccount &&
@@ -2190,7 +2126,7 @@ export default class DerivBotEngine {
             qualificationMode: "DEMO_DIGITS_ONLY",
             accountExecutionPass: false,
             executionPhase: "SCAN",
-            lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+            lockedCandidate: "â€”",
           },
         };
       }
@@ -2208,9 +2144,7 @@ export default class DerivBotEngine {
         };
       }
 
-      const requiredConfirmations = this.isDemoAccount
-        ? (selected.rapidEntry ? 0 : 1)
-        : 2;
+      const requiredConfirmations = this.isDemoAccount ? 1 : 2;
 
       this.lockedCandidate = {
         setupKey,
@@ -2274,13 +2208,6 @@ export default class DerivBotEngine {
 
     const setup = this.lockedCandidate.setup;
     const requiredConfirmations = this.lockedCandidate.confirmations;
-
-    // Rapid 30s/60s candidates are already confirmed by the live multi-window
-    // scorer; do not add an artificial extra-tick delay before entry.
-    if (this.lockedCandidate.snapshot?.rapidEntry && requiredConfirmations === 0) {
-      this.strictConfirmations = 0;
-      this.executionPhase = "READY";
-    }
 
     // Confirm using fresh signal payloads after lock, not scanTickCount.
     const confirmationUpdates = Math.max(
@@ -2356,7 +2283,7 @@ export default class DerivBotEngine {
           qualificationMode: "DEMO_DIGITS_ONLY",
           accountExecutionPass: false,
           executionPhase: "SCAN",
-          lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+          lockedCandidate: "â€”",
         },
       };
     }
@@ -2390,7 +2317,7 @@ export default class DerivBotEngine {
           ? "REAL CONSERVATIVE"
           : "DEMO CONSERVATIVE",
         passedCount: ranked.filter((item) =>
-          v47CanExecute(item, this.isDemoAccount, signal)
+          v47CanExecute(item, this.isDemoAccount)
         ).length,
         validated: true,
         gateReason:
@@ -2469,7 +2396,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V49 keeps Demo digits-only, adds lower/upper row pressure, ranks OVER/UNDER barriers 1ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ7, dynamically ranks DIFFERS digits, and enters after one fresh confirmation.",
+        "V49 keeps Demo digits-only, adds lower/upper row pressure, ranks OVER/UNDER barriers 1â€“7, dynamically ranks DIFFERS digits, and enters after one fresh confirmation.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2547,7 +2474,7 @@ export default class DerivBotEngine {
       largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
-      activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      activeSetup: "â€”",
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
@@ -2559,7 +2486,7 @@ export default class DerivBotEngine {
       signalConfirmations: 0,
       requiredConfirmations: this.settings.confirmationCount,
       blockedSetupUntil: 0,
-      lastLossSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      lastLossSetup: "â€”",
       lossProtectionCount: 0,
       deepScore: 0,
       deepConsensus: 0,
@@ -2568,7 +2495,7 @@ export default class DerivBotEngine {
       fastLane: false,
       gate: null,
       executionPhase: "SCAN",
-      lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      lockedCandidate: "â€”",
       signalVersion: 0,
       lockedSignalVersion: 0,
       history: [],
@@ -2685,25 +2612,17 @@ export default class DerivBotEngine {
       return;
     }
 
-    const recoveryPending =
-      this.isDemoAccount &&
-      this.settings.martingaleEnabled &&
-      this.state.martingaleStep > 0 &&
-      this.state.martingaleStep <= this.settings.maxMartingaleSteps;
-
     this.patch({
       status: "RUNNING",
-      message: recoveryPending
-        ? "Recovery armed. Waiting for a fresh, stronger setup before the one-time 2× attempt."
-        : "Risk cooldown completed. Waiting for a new validated setup.",
+      message: "Risk cooldown completed. Waiting for a new validated setup.",
       cooldownUntil: 0,
       cooldownCount: this.state.cooldownCount + 1,
       consecutiveLosses: 0,
-      martingaleStep: recoveryPending ? this.state.martingaleStep : 0,
-      currentStake: recoveryPending ? this.state.currentStake : this.settings.stake,
-      activeSetup: "—",
+      martingaleStep: 0,
+      currentStake: this.settings.stake,
+      activeSetup: "â€”",
       signalConfirmations: 0,
-      lastBlockReason: recoveryPending ? "Recovery gate armed; fresh setup required." : "",
+      lastBlockReason: "",
     });
   }
 
@@ -2731,7 +2650,7 @@ export default class DerivBotEngine {
       console.debug("[V49] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
-        lockedCandidate: this.lockedCandidate?.setup || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+        lockedCandidate: this.lockedCandidate?.setup || "â€”",
         confirmations: check.confirmations || 0,
         requiredConfirmations: check.requiredConfirmations || 0,
         signalVersion: this.signalVersion,
@@ -2742,7 +2661,7 @@ export default class DerivBotEngine {
         this.patch({
           status: "WAITING",
           message: check.reason,
-          activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+          activeSetup: "â€”",
           scanElapsedSeconds: number(check.elapsedSeconds),
           scanTicks: this.scanTickCount,
           maxScanTicks: this.settings.maxScanTicks,
@@ -2763,7 +2682,7 @@ export default class DerivBotEngine {
           fastLane: Boolean(check.deepAssessment?.fastLane),
           gate: check.gate || null,
           executionPhase: check.gate?.executionPhase || this.executionPhase || "SCAN",
-          lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+          lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "â€”",
         });
 
         await sleep(1000);
@@ -2788,7 +2707,7 @@ export default class DerivBotEngine {
         this.addHistory({
           id: `error-${Date.now()}`,
           time: Date.now(),
-          setup: `${check.contract.label} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${message}`,
+          setup: `${check.contract.label} Â· ${message}`,
           result: "ERROR",
           profit: 0,
           stake: this.state.currentStake,
@@ -2894,11 +2813,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· V49 fast digit-row entry confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} Â· V49 fast digit-row entry confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· V49 FAST DIGIT ROW`,
+      activeSetup: `${check.contract.label} Â· V49 FAST DIGIT ROW`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
@@ -3065,8 +2984,8 @@ export default class DerivBotEngine {
         check.decision.professionalScore ?? check.decision.confidence
       ),
       marketQuality: number(check.decision.marketQuality),
-      riskLevel: String(check.decision.riskLevel || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"),
-      entryStage: String(check.timing.state || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â"),
+      riskLevel: String(check.decision.riskLevel || "â€”"),
+      entryStage: String(check.timing.state || "â€”"),
       votes: number(check.decision.passedCount),
       martingaleStep: this.state.martingaleStep,
       executionMode: check.mode || "V12_DEEP_CYCLE_AI",
@@ -3132,13 +3051,13 @@ export default class DerivBotEngine {
         this.settings.confirmationCount
       ),
       blockedSetupUntil,
-      lastLossSetup: this.lastLossSetup || "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      lastLossSetup: this.lastLossSetup || "â€”",
       lossProtectionCount,
       lastBlockReason: won
         ? ""
         : `Loss protection: ${setup} blocked on ${this.symbol}.`,
       executionPhase: "SCAN",
-      lockedCandidate: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      lockedCandidate: "â€”",
       signalVersion: this.signalVersion,
       lockedSignalVersion: 0,
     });
@@ -3214,3 +3133,5 @@ export default class DerivBotEngine {
     waiter.resolve(contract);
   }
 }
+
+

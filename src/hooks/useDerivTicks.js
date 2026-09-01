@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -42,7 +42,6 @@ function extractLastDigit(value, decimals = 3) {
 
 function chooseDefaultMarket(markets = []) {
   return (
-    markets.find((item) => String(item.id).toUpperCase() === "1HZ100V") ||
     markets.find((item) => /^Volatility 75 Index$/i.test(item.label)) ||
     markets.find(
       (item) =>
@@ -145,7 +144,7 @@ export default function useDerivTicks() {
           quote: Number(tick.quote),
           epoch: Number(tick.epoch),
         },
-      ].slice(-6500)
+      ].slice(-400)
     );
 
     setLiveTickCount((current) =>
@@ -167,20 +166,10 @@ export default function useDerivTicks() {
     setLiveTickCount(0);
 
     try {
-      let history = [];
-      try {
-        // Load enough native Deriv history for stable 5s/15s/30s/1m candles.
-        // Volatility (1s) indices produce roughly one tick per second, so 5,000
-        // ticks gives ~83 one-minute candles before the live stream continues.
-        history = await derivPublicClient.getHistory(nextSymbol, 5000);
-      } catch (historyError) {
-        // Keep the analyzer usable if a connection/API limit temporarily rejects
-        // the large request. The live stream will continue filling the buffer.
-        history = await derivPublicClient.getHistory(nextSymbol, 1000);
-      }
+      const history = await derivPublicClient.getHistory(nextSymbol, 60);
       if (!mountedRef.current) return;
 
-      setTicks(history.slice(-6500));
+      setTicks(history.slice(-60));
 
       try {
         await derivPublicClient.subscribeTicks(nextSymbol);
@@ -249,10 +238,38 @@ export default function useDerivTicks() {
       setConnected(true);
       setStatus("CONNECTED");
 
-      // Keep the analysis socket alive. Trading authorization is opened only
-      // when an actual trade action is requested, so OAuth/OTP failures cannot
-      // disconnect the live tick stream or freeze the dashboard.
-      setTradingReady(false);
+      // V26 trading connection prewarm:
+      // authorize the selected account before an entry appears.
+      if (auth.authenticated && selectedAccountId) {
+        Promise.resolve(
+          derivPublicClient.ensureTradingConnection()
+        )
+          .then(() => {
+            if (mountedRef.current) {
+              setTradingReady(true);
+            }
+          })
+          .catch((error) => {
+            if (mountedRef.current) {
+              setTradingReady(false);
+              setStatusDetail(
+                error instanceof Error
+                  ? error.message
+                  : "Trading connection prewarm failed."
+              );
+            }
+          });
+      } else {
+        setTradingReady(false);
+      }
+
+      if (connection?.fallback && auth.authenticated) {
+        setStatusDetail(
+          derivPublicClient.lastAuthConnectionError
+            ? `Live analysis connected. Trading login failed: ${derivPublicClient.lastAuthConnectionError}`
+            : "Live analysis connected. Reconnect the account before trading."
+        );
+      }
 
       return connection;
     } catch (error) {
@@ -393,17 +410,44 @@ export default function useDerivTicks() {
     selectedAccountId,
   ]);
 
-  // V27 live analysis auto-connect: the public market feed must work even
-  // when OAuth/trading authorization is unavailable or expired.
+  // V26 instant authenticated auto-connect.
   useEffect(() => {
-    if (manuallyDisconnectedRef.current) return;
+    if (
+      !auth.authenticated ||
+      !selectedAccountId ||
+      manuallyDisconnectedRef.current
+    ) {
+      return;
+    }
 
     if (!connected && status !== "CONNECTING") {
       void connect().catch(() => {});
       return;
     }
 
-  }, [connected, status, connect]);
+    if (connected && !tradingReady) {
+      void Promise.resolve(
+        derivPublicClient.ensureTradingConnection()
+      )
+        .then(() => {
+          if (mountedRef.current) {
+            setTradingReady(true);
+          }
+        })
+        .catch(() => {
+          if (mountedRef.current) {
+            setTradingReady(false);
+          }
+        });
+    }
+  }, [
+    auth.authenticated,
+    selectedAccountId,
+    connected,
+    status,
+    tradingReady,
+    connect,
+  ]);
   const disconnect = useCallback(() => {
     manuallyDisconnectedRef.current = true;
 

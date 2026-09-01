@@ -1,4 +1,4 @@
-const PUBLIC_SOCKET_URLS = [
+﻿const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -135,9 +135,6 @@ class DerivTradingClient {
     this.manualClose = false;
     this.connectPromise = null;
     this.socketAuthenticated = false;
-    this.socketAuthKey = "";
-    this.transactionSubscriptionId = "";
-    this.transactionSubscribePromise = null;
     this.lastAuthConnectionError = "";
 
     this.auth = {
@@ -395,10 +392,7 @@ class DerivTradingClient {
     this.pending.clear();
     this.socket = null;
     this.socketAuthenticated = false;
-    this.socketAuthKey = "";
     this.subscriptionId = "";
-    this.transactionSubscriptionId = "";
-    this.transactionSubscribePromise = null;
     this.contractSubscriptionIds.clear();
   }
 
@@ -496,9 +490,6 @@ class DerivTradingClient {
           this.handleMessage(event);
 
         this.socketAuthenticated = Boolean(authenticatedSocket);
-        this.socketAuthKey = authenticatedSocket
-          ? `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`
-          : "";
 
         this.pingTimer = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
@@ -539,22 +530,11 @@ class DerivTradingClient {
   }
 
   async connect({ allowPublicFallback = true } = {}) {
-    const currentAuthKey = `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`;
-
     if (this.socket?.readyState === WebSocket.OPEN) {
-      const staleAuthenticatedSocket =
-        this.socketAuthenticated && this.socketAuthKey !== currentAuthKey;
-
-      if (!staleAuthenticatedSocket) {
-        return {
-          authenticated: this.socketAuthenticated,
-          fallback: !this.socketAuthenticated,
-        };
-      }
-
-      // Account/token changed: never reuse the previous authenticated socket.
-      this.disconnect({ preserveAccount: true });
-      this.manualClose = false;
+      return {
+        authenticated: this.socketAuthenticated,
+        fallback: !this.socketAuthenticated,
+      };
     }
 
     if (this.connectPromise) {
@@ -646,11 +626,9 @@ class DerivTradingClient {
       );
     }
 
-    const currentAuthKey = `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`;
     if (
       this.socket?.readyState === WebSocket.OPEN &&
-      this.socketAuthenticated &&
-      this.socketAuthKey === currentAuthKey
+      this.socketAuthenticated
     ) {
       return true;
     }
@@ -736,38 +714,40 @@ class DerivTradingClient {
       count,
       end: "latest",
       style: "ticks",
-      adjust_start_time: 1,
     });
 
     const history =
       message.history ||
       message.data?.history ||
+      message.result ||
+      {};
+
+    const prices =
+      history.prices ||
+      history.quotes ||
+      history.values ||
       [];
 
-    // Deriv returns history as:
-    // { prices: [...], times: [...] }
-    // The rest of the app expects an array of tick objects.
-    if (Array.isArray(history)) {
-      return history;
+    const times =
+      history.times ||
+      history.epochs ||
+      history.timestamps ||
+      [];
+
+    if (!Array.isArray(prices)) {
+      return [];
     }
-
-    const prices = Array.isArray(history?.prices)
-      ? history.prices
-      : [];
-
-    const times = Array.isArray(history?.times)
-      ? history.times
-      : [];
 
     return prices
       .map((price, index) => ({
         quote: Number(price),
-        epoch: Number(times[index] ?? 0),
+        epoch: Number(
+          times[index] ||
+            Date.now() / 1000 - prices.length + index
+        ),
       }))
-      .filter(
-        (item) =>
-          Number.isFinite(item.quote) &&
-          Number.isFinite(item.epoch)
+      .filter((item) =>
+        Number.isFinite(item.quote)
       );
   }
 
@@ -784,27 +764,8 @@ class DerivTradingClient {
     this.subscriptionId = String(
       response.subscription?.id ||
         response.data?.subscription?.id ||
-        response.subscription_id ||
         ""
     );
-
-    const initialTick =
-      response.tick ||
-      response.data?.tick ||
-      null;
-
-    if (
-      initialTick &&
-      !Number.isFinite(
-        Number(
-          initialTick.quote ??
-            initialTick.price ??
-            initialTick.value
-        )
-      )
-    ) {
-      throw new Error("Deriv returned an invalid initial tick.");
-    }
 
     const firstTick =
       response.tick ||
@@ -1088,46 +1049,10 @@ class DerivTradingClient {
   async subscribeTransactions() {
     this.ensureAuthenticated();
 
-    if (this.transactionSubscriptionId) {
-      return {
-        subscription: { id: this.transactionSubscriptionId },
-        alreadySubscribed: true,
-      };
-    }
-
-    if (this.transactionSubscribePromise) {
-      return this.transactionSubscribePromise;
-    }
-
-    this.transactionSubscribePromise = (async () => {
-      try {
-        const response = await this.request({
-          transaction: 1,
-          subscribe: 1,
-        });
-
-        this.transactionSubscriptionId = String(
-          response?.subscription?.id ||
-            response?.data?.subscription?.id ||
-            ""
-        );
-
-        return response;
-      } catch (error) {
-        // Another component/hook may already own the subscription. Treat
-        // Deriv's duplicate-subscription response as an idempotent success.
-        if (/already subscribed|duplicate subscription/i.test(
-          error instanceof Error ? error.message : String(error || "")
-        )) {
-          return { alreadySubscribed: true };
-        }
-        throw error;
-      } finally {
-        this.transactionSubscribePromise = null;
-      }
-    })();
-
-    return this.transactionSubscribePromise;
+    return this.request({
+      transaction: 1,
+      subscribe: 1,
+    });
   }
 
   async getPortfolio() {
@@ -1188,6 +1113,4 @@ export const derivPublicClient =
   new DerivTradingClient();
 
 export default derivPublicClient;
-
-
 

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import Sidebar from "../components/Sidebar";
+import Topbar from "../components/Topbar";
 import useDerivTicks from "../hooks/useDerivTicks";
 import "./DerivAIAnalyzer.css";
 
 const clamp = (n, min = 0, max = 100) =>
   Math.max(min, Math.min(max, Number(n) || 0));
 
-const MASTER_THRESHOLD = 78;
-const STANDARD_CONFIRMATIONS = 2;
+const MASTER_THRESHOLD = 76;
 
 function derivMarketName(symbol, fallback = "") {
   const exact = {
@@ -147,74 +148,6 @@ function analyzeRiseFall(prices = []) {
 }
 
 
-
-function advancedConfluence(prices = [], barrierGap = 0.15, barrierDirection = "above") {
-  const p = prices.map(Number).filter(Number.isFinite);
-  if (p.length < 24) {
-    return {
-      score: 50, momentum: 50, trend: 50, multiWindow: 50,
-      priceAction: 50, rejection: 50, choppiness: 50, regime: 50,
-      label: "COLLECTING"
-    };
-  }
-
-  const current = p.at(-1);
-  const gap = Math.max(Math.abs(Number(barrierGap) || 0), Math.abs(current) * 0.000001);
-  const dir = barrierDirection === "below" ? -1 : 1;
-  const windows = [6, 12, 24, 48].map((n) => p.slice(-Math.min(n, p.length)));
-  const moves = windows.map((w) => (w.at(-1) - w[0]) * dir);
-  const moveScores = moves.map((m, i) => clamp(50 + (m / gap) * (18 - i * 2), 0, 100));
-  const multiWindow = mean(moveScores);
-
-  const diffs = p.slice(-40).slice(1).map((x, i, arr) => {
-    const src = p.slice(-40);
-    return x - src[i];
-  });
-  const signed = diffs.map((d) => Math.sign(d)).filter(Boolean);
-  let flips = 0;
-  for (let i = 1; i < signed.length; i++) if (signed[i] !== signed[i-1]) flips += 1;
-  const flipRate = signed.length > 1 ? flips / (signed.length - 1) : 0.5;
-  const choppiness = clamp(flipRate * 100, 0, 100);
-
-  const recent = p.slice(-32);
-  const high = Math.max(...recent);
-  const low = Math.min(...recent);
-  const range = Math.max(high - low, gap);
-  const position = clamp((current - low) / range, 0, 1);
-  const priceAction = barrierDirection === "below" ? (1 - position) * 100 : position * 100;
-
-  const shortMove = (p.at(-1) - p.at(-8)) * dir;
-  const momentum = clamp(50 + (shortMove / gap) * 22, 0, 100);
-
-  const fast = ema(p.slice(-40), 9).at(-1);
-  const slow = ema(p.slice(-40), 21).at(-1);
-  const emaDelta = Number(fast) - Number(slow);
-  const trend = clamp(50 + ((emaDelta * dir) / gap) * 28, 0, 100);
-
-  const longSigma = Math.max(std(diffs), Math.abs(current) * 0.000002);
-  const shortDiffs = diffs.slice(-10);
-  const shortSigma = Math.max(std(shortDiffs), longSigma * 0.1);
-  const regimeRatio = longSigma > 0 ? shortSigma / longSigma : 1;
-  const regime = clamp(70 - Math.abs(regimeRatio - 1) * 35, 15, 95);
-
-  const prev = p.slice(-12, -1);
-  const prevHigh = Math.max(...prev);
-  const prevLow = Math.min(...prev);
-  const breakout = barrierDirection === "below" ? prevLow - current : current - prevHigh;
-  const rejection = clamp(50 + (breakout / gap) * 30, 0, 100);
-
-  const score = clamp(
-    multiWindow * 0.24 + momentum * 0.18 + trend * 0.18 +
-    priceAction * 0.14 + rejection * 0.10 + regime * 0.08 +
-    (100 - choppiness) * 0.08
-  );
-
-  return {
-    score, momentum, trend, multiWindow, priceAction, rejection,
-    choppiness, regime, label: score >= 70 ? "ALIGNED" : score >= 58 ? "MIXED+" : score <= 42 ? "OPPOSED" : "MIXED"
-  };
-}
-
 function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirection = "above") {
   const p = prices.map(Number).filter(Number.isFinite);
   const minSamples = Math.max(18, Math.min(40, Number(horizon) + 8));
@@ -286,11 +219,8 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     100
   ) / 100;
 
-  const confluence = advancedConfluence(p, barrier, barrierDirection);
-
   const touchRaw =
     44 +
-    clamp((confluence.score - 50) * 0.20, -10, 10) +
     clamp((travelRatio - 0.65) * 30, -12, 25) +
     clamp((persistence - 0.5) * 32, -7, 14) +
     clamp((expansion - 0.9) * 13, -6, 10) +
@@ -299,8 +229,6 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
 
   const noTouchRaw =
     44 +
-    clamp((50 - confluence.score) * 0.12, -7, 7) +
-    clamp((confluence.choppiness - 50) * 0.08, -4, 4) +
     clamp((0.9 - travelRatio) * 34, -12, 25) +
     clamp((0.62 - persistence) * 24, -6, 11) +
     clamp((1.0 - expansion) * 13, -5, 8) +
@@ -309,164 +237,30 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
   const delta = touchRaw - noTouchRaw;
   const touchScore = clamp(50 + delta * 1.25, 12, 88);
   const noTouchScore = clamp(100 - touchScore, 12, 88);
-  const probabilityConfidence = Math.max(touchScore, noTouchScore);
+  const confidence = Math.max(touchScore, noTouchScore);
   const dominance = Math.abs(touchScore - noTouchScore);
 
-  // V21: probability and entry confidence are separate concepts.
-  // Touch/No-Touch probability estimates barrier interaction only.
-  // Entry confidence is a weighted agreement score across the full strategy stack.
-  const travelQualityTouch = clamp((travelRatio / 1.15) * 100, 0, 100);
-  const persistenceQualityTouch = clamp(((persistence - 0.45) / 0.40) * 100, 0, 100);
-  const expansionQualityTouch = clamp(((expansion - 0.60) / 0.80) * 100, 0, 100);
-  const directionQualityTouch = clamp(50 + directionAlignment * 50, 0, 100);
-
-  const touchEntryConfidence = clamp(
-    touchScore * 0.18 +
-    confluence.score * 0.18 +
-    confluence.multiWindow * 0.10 +
-    confluence.momentum * 0.10 +
-    confluence.trend * 0.10 +
-    confluence.priceAction * 0.08 +
-    confluence.rejection * 0.06 +
-    confluence.regime * 0.05 +
-    (100 - confluence.choppiness) * 0.05 +
-    travelQualityTouch * 0.04 +
-    persistenceQualityTouch * 0.03 +
-    expansionQualityTouch * 0.015 +
-    directionQualityTouch * 0.015
-  );
-
-  const travelQualityNoTouch = clamp((1.0 - Math.min(travelRatio, 1.4) / 1.4) * 100, 0, 100);
-  const persistenceQualityNoTouch = clamp((1.0 - Math.max(0, persistence - 0.45) / 0.45) * 100, 0, 100);
-  const expansionQualityNoTouch = clamp((1.25 - Math.min(expansion, 1.25)) / 0.75 * 100, 0, 100);
-  const directionQualityNoTouch = clamp((1 - Math.min(1, Math.abs(directionAlignment))) * 100, 0, 100);
-
-  const noTouchEntryConfidence = clamp(
-    noTouchScore * 0.22 +
-    (100 - confluence.score) * 0.10 +
-    (100 - confluence.multiWindow) * 0.07 +
-    (100 - confluence.momentum) * 0.07 +
-    (100 - confluence.trend) * 0.07 +
-    (100 - confluence.priceAction) * 0.06 +
-    confluence.choppiness * 0.08 +
-    confluence.regime * 0.07 +
-    travelQualityNoTouch * 0.10 +
-    persistenceQualityNoTouch * 0.07 +
-    expansionQualityNoTouch * 0.05 +
-    directionQualityNoTouch * 0.04
-  );
-
-  // V20: strict multi-strategy quality gate. A high Touch/No-Touch
-  // probability alone is never enough to create an entry. The barrier setup
-  // must also have broad agreement across trend, momentum, price action,
-  // regime, persistence and live travel conditions. Strong contradictions
-  // force WAIT even when one individual score is high.
-  const touchVotes = [
-    confluence.score >= 64,
-    confluence.momentum >= 58,
-    confluence.trend >= 56,
-    confluence.multiWindow >= 58,
-    confluence.priceAction >= 54,
-    confluence.rejection >= 48,
-    confluence.choppiness <= 62,
-    confluence.regime >= 42,
-    travelRatio >= 0.95,
-    persistence >= 0.62,
-    expansion >= 0.78,
-    directionAlignment >= 0.10,
-  ];
-  const touchVoteCount = touchVotes.filter(Boolean).length;
-  const touchHardConflict =
-    confluence.trend < 38 ||
-    confluence.momentum < 36 ||
-    confluence.score < 56 ||
-    confluence.choppiness > 78 ||
-    directionAlignment < -0.35;
-
-  const noTouchVotes = [
-    confluence.score <= 58,
-    confluence.momentum <= 55,
-    confluence.trend <= 58,
-    confluence.multiWindow <= 58,
-    confluence.priceAction <= 62,
-    confluence.choppiness >= 38,
-    travelRatio <= 0.72,
-    persistence <= 0.68,
-    expansion <= 1.12,
-    Math.abs(directionAlignment) <= 0.55,
-  ];
-  const noTouchVoteCount = noTouchVotes.filter(Boolean).length;
-  const noTouchHardConflict =
-    travelRatio > 1.08 ||
-    persistence > 0.76 ||
-    expansion > 1.28 ||
-    Math.abs(directionAlignment) > 0.82;
-
   const touchQualified =
-    touchScore >= 72 &&
-    touchEntryConfidence >= MASTER_THRESHOLD &&
-    dominance >= 18 &&
-    touchVoteCount >= 9 &&
-    !touchHardConflict;
+    touchScore >= MASTER_THRESHOLD &&
+    dominance >= 20 &&
+    travelRatio >= 0.95 &&
+    persistence >= 0.62;
 
   const noTouchQualified =
-    noTouchScore >= 72 &&
-    noTouchEntryConfidence >= MASTER_THRESHOLD &&
-    dominance >= 18 &&
-    noTouchVoteCount >= 8 &&
-    !noTouchHardConflict;
+    noTouchScore >= MASTER_THRESHOLD &&
+    dominance >= 20 &&
+    travelRatio <= 0.72 &&
+    persistence <= 0.68 &&
+    expansion <= 1.12;
 
   let signal = "WAIT";
   if (touchQualified) signal = "TOUCH";
   if (noTouchQualified) signal = "NO TOUCH";
 
-  const preferredSignal = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
-  const entryConfidence = preferredSignal === "TOUCH" ? touchEntryConfidence : noTouchEntryConfidence;
-
-  // V24 Sharp Entry: a fast-entry score that is intentionally stricter than
-  // the ordinary setup score. It rewards clean directional efficiency,
-  // barrier approach, breakout/rejection quality and low chop. Fast entry is
-  // allowed only when the broader strategy stack is already qualified.
-  const micro = p.slice(-Math.min(10, p.length));
-  const microDiffs = micro.slice(1).map((x, i) => x - micro[i]);
-  const directedMicro = microDiffs.map((d) => d * (barrierDirection === "below" ? -1 : 1));
-  const directedPositive = directedMicro.filter((d) => d > 0).length;
-  const microEfficiency = directedMicro.length
-    ? (directedPositive / directedMicro.length) * 100
-    : 50;
-  const acceleration = microDiffs.length >= 4
-    ? Math.abs(mean(microDiffs.slice(-3))) / Math.max(longSigma, Math.abs(current) * 0.000001)
-    : 0;
-  const accelerationScore = clamp(acceleration * 32, 0, 100);
-
-  const sharpTouchScore = clamp(
-    touchEntryConfidence * 0.34 +
-    confluence.score * 0.16 +
-    confluence.momentum * 0.12 +
-    confluence.rejection * 0.10 +
-    microEfficiency * 0.12 +
-    accelerationScore * 0.06 +
-    travelQualityTouch * 0.06 +
-    (100 - confluence.choppiness) * 0.04
-  );
-
-  const sharpNoTouchScore = clamp(
-    noTouchEntryConfidence * 0.36 +
-    confluence.regime * 0.12 +
-    confluence.choppiness * 0.12 +
-    travelQualityNoTouch * 0.14 +
-    persistenceQualityNoTouch * 0.10 +
-    expansionQualityNoTouch * 0.08 +
-    (100 - accelerationScore) * 0.08
-  );
-
-  const sharpScore = preferredSignal === "TOUCH" ? sharpTouchScore : sharpNoTouchScore;
-  const confidence = entryConfidence;
-
   const setup =
     signal !== "WAIT"
       ? "ENTRY READY"
-      : entryConfidence >= 68 || probabilityConfidence >= 76
+      : confidence >= 68
         ? "SETUP FORMING"
         : "SCANNING";
 
@@ -482,10 +276,6 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
   return {
     signal,
     confidence,
-    entryConfidence,
-    touchEntryConfidence,
-    noTouchEntryConfidence,
-    probabilityConfidence,
     touchScore,
     noTouchScore,
     upperBarrier,
@@ -497,108 +287,7 @@ function analyzeTouch(prices = [], barrierGap = 0.15, horizon = 10, barrierDirec
     persistence,
     expansion,
     directionAlignment,
-    confluence,
-    strategyAgreement: signal === "TOUCH" ? touchVoteCount : signal === "NO TOUCH" ? noTouchVoteCount : Math.max(touchVoteCount, noTouchVoteCount),
-    strategyTotal: signal === "TOUCH" ? touchVotes.length : signal === "NO TOUCH" ? noTouchVotes.length : Math.max(touchVotes.length, noTouchVotes.length),
-    hardConflict: signal === "TOUCH" ? touchHardConflict : signal === "NO TOUCH" ? noTouchHardConflict : touchHardConflict || noTouchHardConflict,
-    sharpScore,
-    sharpTouchScore,
-    sharpNoTouchScore,
-    microEfficiency,
-    accelerationScore,
     reason,
-  };
-}
-
-
-function structuralBarrierSignal(prices = [], barrierGap = 0.15, direction = "above", horizon = 10) {
-  const p = prices.map(Number).filter(Number.isFinite);
-  if (p.length < 32) {
-    return {
-      signal: "WAIT", timing: "WARMING UP", structure: "COLLECTING",
-      trigger: "Need more market history", reachable: false, late: false,
-      reason: "Waiting for enough price structure"
-    };
-  }
-
-  const current = p.at(-1);
-  const gap = Math.max(Math.abs(Number(barrierGap) || 0), Math.abs(current) * 0.000001);
-  const dir = direction === "below" ? -1 : 1;
-  const fastSeries = ema(p.slice(-80), 9);
-  const slowSeries = ema(p.slice(-80), 21);
-  const fast = Number(fastSeries.at(-1));
-  const slow = Number(slowSeries.at(-1));
-  const previous = p.at(-2);
-  const lastMove = (current - previous) * dir;
-  const micro = p.slice(-8);
-  const microMoves = micro.slice(1).map((x, i) => (x - micro[i]) * dir);
-  const recent = p.slice(-28);
-  const prior = p.slice(-14, -1);
-  const priorEdge = direction === "below" ? Math.min(...prior) : Math.max(...prior);
-  const breakoutDistance = direction === "below" ? priorEdge - current : current - priorEdge;
-  const emaAligned = direction === "below" ? fast < slow : fast > slow;
-  const priceOnTrendSide = direction === "below" ? current <= fast : current >= fast;
-  const microPositive = microMoves.filter((x) => x > 0).length;
-  const continuation = microPositive >= 4 && lastMove > 0;
-  const breakout = breakoutDistance > Math.max(gap * 0.08, Math.abs(current) * 0.000002);
-  const nearFast = Math.abs(current - fast) <= gap * 0.85;
-  const retest = emaAligned && nearFast && priceOnTrendSide && lastMove > 0;
-
-  const diffs = recent.slice(1).map((x, i) => x - recent[i]);
-  const sigma = Math.max(std(diffs), Math.abs(current) * 0.000002);
-  const short = p.slice(-12);
-  const drift = Math.abs(short.at(-1) - short[0]) / Math.max(1, short.length - 1);
-  const expectedTravel = sigma * Math.sqrt(Math.max(3, Number(horizon) || 10)) + drift * Math.max(3, Number(horizon) || 10) * 0.45;
-  const reachable = expectedTravel >= gap * 0.72;
-
-  const extension = Math.abs(current - fast) / gap;
-  const run = p.slice(-7);
-  const runMoves = run.slice(1).map((x, i) => (x - run[i]) * dir);
-  const sameDirectionRun = runMoves.filter((x) => x > 0).length;
-  const firstHalf = mean(runMoves.slice(0, 3).map(Math.abs));
-  const lastHalf = mean(runMoves.slice(-3).map(Math.abs));
-  const exhausting = sameDirectionRun >= 5 && lastHalf < firstHalf * 0.72;
-  const late = extension > 1.45 || (sameDirectionRun >= 5 && !nearFast) || exhausting;
-
-  let timing = "WATCH";
-  let structure = "SCANNING";
-  let signal = "WAIT";
-  let trigger = "Wait for breakout or retest";
-
-  if (late) {
-    timing = "LATE · NO CHASE";
-    structure = exhausting ? "EXHAUSTION" : "EXTENDED MOVE";
-    trigger = "Wait for a fresh pullback/retest";
-  } else if (retest && reachable) {
-    timing = "IDEAL";
-    structure = "PULLBACK / RETEST";
-    signal = "TOUCH";
-    trigger = "Confirm continuation on fresh ticks";
-  } else if (breakout && continuation && emaAligned && reachable) {
-    timing = "EARLY";
-    structure = "BREAKOUT CONTINUATION";
-    signal = "TOUCH";
-    trigger = "Confirm breakout holds";
-  } else if (emaAligned && continuation && reachable && extension <= 0.95) {
-    timing = "EARLY";
-    structure = "TREND CONTINUATION";
-    signal = "TOUCH";
-    trigger = "Confirm continuation on fresh ticks";
-  } else if (!reachable && !continuation && !breakout) {
-    timing = "IDEAL";
-    structure = "BARRIER UNREACHABLE";
-    signal = "NO TOUCH";
-    trigger = "Confirm price remains contained";
-  } else if (emaAligned && reachable) {
-    timing = "WAIT RETEST";
-    structure = "TREND ACTIVE";
-    trigger = "Need pullback/retest before entry";
-  }
-
-  return {
-    signal, timing, structure, trigger, reachable, late, exhausting,
-    breakout, retest, continuation, emaAligned, expectedTravel, extension,
-    reason: signal !== "WAIT" ? `${timing} ${structure}` : `${timing} · ${trigger}`
   };
 }
 
@@ -622,39 +311,6 @@ function buildCandles(records = [], size = 2) {
   }
 
   return candles;
-}
-
-function buildTimedCandles(records = [], intervalMs = 5000) {
-  const buckets = new Map();
-  for (const r of records) {
-    const ts = Number(r?.ts);
-    const price = Number(r?.price);
-    if (!Number.isFinite(ts) || !Number.isFinite(price)) continue;
-    const key = Math.floor(ts / intervalMs) * intervalMs;
-    const prev = buckets.get(key);
-    if (!prev) {
-      buckets.set(key, { ts: key, endTs: ts, open: price, high: price, low: price, close: price });
-    } else {
-      prev.endTs = ts;
-      prev.high = Math.max(prev.high, price);
-      prev.low = Math.min(prev.low, price);
-      prev.close = price;
-    }
-  }
-  return [...buckets.values()].sort((a,b) => a.ts - b.ts);
-}
-
-function ema(values = [], period = 9) {
-  const out = [];
-  const k = 2 / (period + 1);
-  let prev = null;
-  for (const value of values) {
-    const v = Number(value);
-    if (!Number.isFinite(v)) { out.push(null); continue; }
-    prev = prev == null ? v : v * k + prev * (1-k);
-    out.push(prev);
-  }
-  return out;
 }
 
 function makeScale(values, height, top = 16, bottom = 24) {
@@ -712,12 +368,8 @@ export default function DerivAIAnalyzer() {
   const [barrierOffset, setBarrierOffset] = useState(0.15);
   const [fixedBarrier, setFixedBarrier] = useState("");
   const [stake, setStake] = useState(0.35);
-  const [barrierOpen, setBarrierOpen] = useState(false);
   const [manualTradeStatus, setManualTradeStatus] = useState(null);
   const [proposalPreview, setProposalPreview] = useState({ touch: null, noTouch: null, loading: false, error: "" });
-  const [chartInterval, setChartInterval] = useState("tick");
-  const [chartType, setChartType] = useState("candles");
-  const [showEma, setShowEma] = useState(true);
 
   const [records, setRecords] = useState([]);
   const [markers, setMarkers] = useState([]);
@@ -745,7 +397,7 @@ export default function DerivAIAnalyzer() {
         ts: Number(tick?.epoch) > 0 ? Number(tick.epoch) * 1000 : Date.now(),
       }))
       .filter((r) => Number.isFinite(r.price) && r.price > 0)
-      .slice(-6500);
+      .slice(-500);
 
     if (!mapped.length) return;
 
@@ -765,20 +417,6 @@ export default function DerivAIAnalyzer() {
     signalCycle.current = { locked: false, waitTicks: 0 };
     candidateConfirmation.current = { signal: "WAIT", count: 0, lastTs: 0 };
   }, [symbol]);
-
-  // Any contract/barrier change starts a brand-new analysis cycle.
-  // This prevents a qualified signal from a previous setup leaking into the
-  // current barrier, duration or contract configuration.
-  useEffect(() => {
-    setMarkers([]);
-    lastSignal.current = null;
-    signalCycle.current = { locked: false, waitTicks: 0 };
-    candidateConfirmation.current = {
-      signal: "WAIT",
-      count: 0,
-      lastTs: cleanPriceRecords(records).at(-1)?.ts || 0,
-    };
-  }, [unit, duration, barrierMode, barrierOffset, fixedBarrier]);
 
   // Analysis history must be independent from contract duration.
   // Previously a 10-tick contract only supplied 10 samples while the
@@ -834,123 +472,24 @@ export default function DerivAIAnalyzer() {
     [analysisPrices, selectedBarrierGap, duration, selectedBarrierDirection]
   );
 
-  const touchAboveRaw = useMemo(
-    () => analyzeTouch(analysisPrices, selectedBarrierGap, duration, "above"),
-    [analysisPrices, selectedBarrierGap, duration]
-  );
-  const touchBelowRaw = useMemo(
-    () => analyzeTouch(analysisPrices, selectedBarrierGap, duration, "below"),
-    [analysisPrices, selectedBarrierGap, duration]
-  );
+  const riseValid =
+    connected &&
+    riseFall.signal !== "WAIT" &&
+    riseFall.confidence >= MASTER_THRESHOLD;
 
-  // V23: every chart timeframe must have its own completed history before it can
-  // influence an entry. This prevents a 1m chart with only a handful of candles
-  // from publishing an apparently high-confidence signal.
-  const timeframeContext = useMemo(() => {
-    if (chartInterval === "tick") {
-      const prices = cleanRecords.slice(-320).map((r) => r.price);
-      return { prices, count: prices.length, required: 120, label: "ticks" };
-    }
-    const intervalMap = { "5s": 5000, "15s": 15000, "30s": 30000, "1m": 60000 };
-    const all = buildTimedCandles(cleanRecords, intervalMap[chartInterval] || 5000);
-    const completed = all.length > 1 ? all.slice(0, -1) : [];
-    return {
-      prices: completed.slice(-120).map((c) => c.close),
-      count: completed.length,
-      required: chartInterval === "1m" ? 30 : 36,
-      label: "candles",
-    };
-  }, [cleanRecords, chartInterval]);
-
-  const timeframeReady = timeframeContext.count >= timeframeContext.required;
-  const contextAbove = useMemo(
-    () => advancedConfluence(timeframeContext.prices, selectedBarrierGap, "above"),
-    [timeframeContext.prices, selectedBarrierGap]
-  );
-  const contextBelow = useMemo(
-    () => advancedConfluence(timeframeContext.prices, selectedBarrierGap, "below"),
-    [timeframeContext.prices, selectedBarrierGap]
-  );
-
-  const makeSideAnalysis = (raw, context) => {
-    const blendedConfidence = clamp(
-      Number(raw?.confidence || 0) * 0.68 + Number(context?.score || 50) * 0.32
-    );
-    const contextConflict = Number(context?.score || 50) < 48;
-    const readySignal = timeframeReady && !contextConflict ? raw.signal : "WAIT";
-    return {
-      ...raw,
-      confidence: blendedConfidence,
-      rawConfidence: Number(raw?.confidence || 0),
-      contextScore: Number(context?.score || 50),
-      signal: readySignal,
-      setup: !timeframeReady ? "WARMING UP" : contextConflict ? "CONTEXT CONFLICT" : raw.setup,
-      reason: !timeframeReady
-        ? `Warming up ${timeframeContext.count}/${timeframeContext.required} ${timeframeContext.label}`
-        : contextConflict
-          ? "Higher-timeframe context conflicts with this barrier side"
-          : raw.reason,
-    };
-  };
-
-  const touchAbove = useMemo(
-    () => makeSideAnalysis(touchAboveRaw, contextAbove),
-    [touchAboveRaw, contextAbove, timeframeReady, timeframeContext.count, timeframeContext.required, timeframeContext.label]
-  );
-  const touchBelow = useMemo(
-    () => makeSideAnalysis(touchBelowRaw, contextBelow),
-    [touchBelowRaw, contextBelow, timeframeReady, timeframeContext.count, timeframeContext.required, timeframeContext.label]
-  );
-
-  const autoBarrierScan = useMemo(() => {
-    const options = [
-      { direction: "above", label: "ABOVE SPOT", analysis: touchAbove },
-      { direction: "below", label: "BELOW SPOT", analysis: touchBelow },
-    ];
-    options.sort((a,b) => Number(b.analysis?.confidence || 0) - Number(a.analysis?.confidence || 0));
-    return options[0];
-  }, [touchAbove, touchBelow]);
-
-  const structuralAbove = useMemo(
-    () => structuralBarrierSignal(analysisPrices, selectedBarrierGap, "above", duration),
-    [analysisPrices, selectedBarrierGap, duration]
-  );
-  const structuralBelow = useMemo(
-    () => structuralBarrierSignal(analysisPrices, selectedBarrierGap, "below", duration),
-    [analysisPrices, selectedBarrierGap, duration]
-  );
-
-  const sideCandidates = [
-    { direction: "above", analysis: touchAbove, structure: structuralAbove },
-    { direction: "below", analysis: touchBelow, structure: structuralBelow },
-  ];
-  const readyCandidates = sideCandidates.filter((x) =>
-    connected && timeframeReady && x.structure.signal !== "WAIT" && !x.structure.late
-  );
-  const preferred = readyCandidates.find((x) => x.structure.timing === "IDEAL") ||
-    readyCandidates.find((x) => x.structure.timing === "EARLY") ||
-    readyCandidates[0] ||
-    sideCandidates.find((x) => x.direction === autoBarrierScan?.direction) ||
-    sideCandidates[0];
-
-  const scannerTouch = preferred?.analysis || touch;
-  const scannerStructure = preferred?.structure || structuralAbove;
-  const scannerDirection = preferred?.direction || selectedBarrierDirection;
-  const touchValid = Boolean(
-    connected && timeframeReady && scannerStructure.signal !== "WAIT" && !scannerStructure.late
-  );
+  // The master entry engine is intentionally Touch / No Touch only.
+  // Rise/Fall remains a secondary market-bias confirmation.
+  const touchValid =
+    connected &&
+    touch.signal !== "WAIT" &&
+    touch.confidence >= MASTER_THRESHOLD;
 
   const best = {
-    mode: `TOUCH/NO TOUCH · ${String(scannerDirection).toUpperCase()}`,
-    signal: touchValid ? scannerStructure.signal : "WAIT",
-    confidence: Number(scannerTouch.entryConfidence || scannerTouch.confidence || 0),
-    requiredConfirmations: STANDARD_CONFIRMATIONS,
+    mode: "TOUCH/NO TOUCH",
+    signal: touchValid ? touch.signal : "WAIT",
+    confidence: touch.confidence,
     valid: touchValid,
-    setup: scannerStructure.timing,
-    direction: scannerDirection,
-    structure: scannerStructure.structure,
-    trigger: scannerStructure.trigger,
-    timing: scannerStructure.timing,
+    setup: touch.setup,
   };
 
   useEffect(() => {
@@ -987,10 +526,9 @@ export default function DerivAIAnalyzer() {
     const nextCount = previous.signal === best.signal ? previous.count + 1 : 1;
     candidateConfirmation.current = { signal: best.signal, count: nextCount, lastTs: last.ts };
 
-    // A sharp setup may publish after 2 consecutive fresh ticks, but only when
-    // its stricter fast-entry score and strategy agreement are already strong.
-    // Ordinary setups still require 3 fresh confirmations.
-    if (nextCount < best.requiredConfirmations) return;
+    // A chart entry is not a raw analyzer candidate. Require the same qualified
+    // Touch/No Touch decision on 3 consecutive fresh ticks before publishing it.
+    if (nextCount < 3) return;
 
     const previousMarker = markers.at(-1);
     if (previousMarker && cleanRecords.length - Number(previousMarker.recordCount || 0) < 24) return;
@@ -1001,15 +539,11 @@ export default function DerivAIAnalyzer() {
       signal: best.signal,
       mode: best.mode,
       confidence: best.confidence,
-      upperBarrier: scannerTouch.upperBarrier,
-      lowerBarrier: scannerTouch.lowerBarrier,
-      reason: scannerTouch.reason,
-      barrierDirection: scannerDirection,
+      upperBarrier: touch.upperBarrier,
+      lowerBarrier: touch.lowerBarrier,
+      reason: touch.reason,
       recordCount: cleanRecords.length,
       confirmations: nextCount,
-      entryType: "STRUCTURAL",
-      timing: best.timing,
-      structure: best.structure,
       analyzed: true,
     };
 
@@ -1022,28 +556,14 @@ export default function DerivAIAnalyzer() {
     best.signal,
     best.mode,
     best.confidence,
-    best.requiredConfirmations,
     cleanRecords,
     markers,
-    scannerTouch.upperBarrier,
-    scannerTouch.lowerBarrier,
-    scannerTouch.reason,
-    scannerDirection,
+    touch.upperBarrier,
+    touch.lowerBarrier,
+    touch.reason,
   ]);
 
-  // Give timed candles enough history to look like Deriv/TradingView instead of
-  // compressing a whole interval into only a handful of oversized candles.
-  const intervalRecordTargets = {
-    tick: 320,
-    "5s": 900,
-    "15s": 1800,
-    "30s": 3000,
-    "1m": 5000,
-  };
-  const baseVisibleCount = intervalRecordTargets[chartInterval] || 180;
-  const visibleCount = Math.round(
-    clamp(baseVisibleCount / zoom, 70, Math.min(5200, cleanRecords.length || 5200))
-  );
+  const visibleCount = Math.round(clamp(160 / zoom, 45, 220));
   const safePan = Math.max(
     0,
     Math.min(
@@ -1061,15 +581,15 @@ export default function DerivAIAnalyzer() {
     Math.round(3 / zoom)
   );
 
-  const candles = useMemo(() => {
-    if (chartInterval === "tick") return buildCandles(chartRecords, candleSize);
-    const intervalMap = { "5s": 5000, "15s": 15000, "30s": 30000, "1m": 60000 };
-    return buildTimedCandles(chartRecords, intervalMap[chartInterval] || 5000);
-  }, [chartRecords, candleSize, chartInterval]);
+  const candles = useMemo(
+    () => buildCandles(chartRecords, candleSize),
+    [chartRecords, candleSize]
+  );
 
-  const chartValues = candles.flatMap((c) => [c.high, c.low]);
-  const ema9 = useMemo(() => ema(candles.map(c => c.close), 9), [candles]);
-  const ema21 = useMemo(() => ema(candles.map(c => c.close), 21), [candles]);
+  const chartValues = candles.flatMap((c) => [
+    c.high,
+    c.low,
+  ]);
 
   const scale = chartValues.length
     ? makeScale(chartValues, 420)
@@ -1097,47 +617,25 @@ export default function DerivAIAnalyzer() {
 
   const entry = markers.at(-1) || null;
 
+  const signalQuality = best.valid
+    ? best.confidence >= 84
+      ? "HIGH CONVICTION"
+      : "QUALIFIED"
+    : touch.setup;
+
   const confirmationCount = candidateConfirmation.current.signal === best.signal
     ? candidateConfirmation.current.count
     : 0;
 
   const engineStage = signalCycle.current.locked
-    ? signalCycle.current.waitTicks < 3 ? "ENTRY READY" : "COOLDOWN"
-    : !timeframeReady
-      ? "WARMING UP"
-      : scannerTouch.sampleCount < scannerTouch.minSamples
-        ? "COLLECTING"
-      : best.valid && confirmationCount >= best.requiredConfirmations
+    ? "COOLDOWN"
+    : touch.sampleCount < touch.minSamples
+      ? "COLLECTING"
+      : best.valid && confirmationCount >= 3
         ? "ENTRY READY"
-        : best.valid || scannerStructure.timing === "WAIT RETEST" || scannerStructure.timing === "EARLY"
+        : best.valid || touch.confidence >= 64
           ? "SETUP FORMING"
           : "ANALYZING";
-
-  // One master decision drives every decision surface on this page.
-  // Candidate analysis can recommend a barrier side and show probability, but
-  // it is NOT a trade signal until three fresh live ticks confirm the same
-  // qualified setup. During cooldown we continue to display only the last
-  // confirmed entry, never a new unconfirmed candidate.
-  const masterEntry = markers.at(-1) || null;
-  const masterSignal = engineStage === "ENTRY READY" && masterEntry
-    ? masterEntry.signal
-    : "WAIT";
-  const masterConfidence = masterSignal === "WAIT"
-    ? Math.min(Number(scannerTouch.confidence || 0), MASTER_THRESHOLD - 1)
-    : Number(masterEntry?.confidence ?? 0);
-  const masterReady = masterSignal !== "WAIT";
-  const signalQuality = masterReady
-    ? masterConfidence >= 84
-      ? "HIGH CONVICTION"
-      : "CONFIRMED"
-    : engineStage === "SETUP FORMING"
-      ? "CONFIRMING"
-      : engineStage;
-  const masterReason = masterReady
-    ? masterEntry?.reason || scannerTouch.reason
-    : best.valid
-      ? `${best.timing} ${best.signal} ${String(best.direction).toUpperCase()} · ${Math.min(confirmationCount, best.requiredConfirmations)}/${best.requiredConfirmations} fresh confirmations`
-      : scannerStructure.reason;
 
 
   // Never present an extreme Rise/Fall bias before there is enough history.
@@ -1333,7 +831,6 @@ export default function DerivAIAnalyzer() {
   };
 
   const markerData = markers
-    .slice(-3)
     .map((marker) => {
       if (!scale) return null;
 
@@ -1371,46 +868,21 @@ export default function DerivAIAnalyzer() {
 
   const recentSignals = [...markers].reverse().slice(0, 6);
 
-  const strategyNames = [
-    "EMA 9/21 Trend",
-    "Multi-Window Momentum",
-    "Price Action",
-    "Barrier Distance",
-    "Expected Travel",
-    "Volatility Regime",
-    "Persistence",
-    "Range Position",
-    "Breakout / Rejection",
-    "Choppiness Filter",
-    "Rise/Fall Bias",
-    "3-Tick Live Confirmation"
-  ];
-
   return (
-    <div className="analysisOnlyPage">
-      <main className="analysisOnlyMain">
-        <header className="analysisOnlyHeader">
-          <div className="analysisOnlyTitle">
-            <h1>Deriv <span>AI</span> Analyzer</h1>
-            <p>Advanced Touch / No Touch Analysis</p>
-          </div>
-          <div className="analysisOnlyLive"><i />{connected ? "LIVE" : status}</div>
-          <div className="analysisOnlyStats">
-            <div><span>Current spot</span><strong>{displayPrice}</strong></div>
-            <div><span>Live ticks</span><strong>{cleanRecords.length}</strong></div>
-            <div><span>Analysis engine</span><strong className={connected ? "ok" : ""}>{connected ? "LIVE" : "OFFLINE"}</strong></div>
-          </div>
-        </header>
+    <div className="terminalShell">
+      <Sidebar />
 
-        <section className="analysisStrategyBar">
-          <div className="analysisStrategyTitle">
-            <span>ACTIVE ANALYSIS STRATEGIES</span>
-            <b>{scannerTouch?.confluence?.label || "SCANNING"}</b>
-          </div>
-          <div className="analysisStrategyChips">
-            {strategyNames.map((name) => <span key={name}>{name}</span>)}
-          </div>
-        </section>
+      <main className="terminalMain">
+        <Topbar
+          title="Deriv AI Analyzer"
+          subtitle="Touch / No Touch setup scanner · entries only after confirmation"
+          connected={connected}
+          connecting={
+            status === "CONNECTING" || loadingMarket
+          }
+          onConnect={connect}
+          onDisconnect={disconnect}
+        />
 
         {statusDetail ? (
           <div className="terminalError">
@@ -1511,28 +983,6 @@ export default function DerivAIAnalyzer() {
               </div>
             </div>
 
-            <div className="derivChartToolbar">
-              <div className="derivIntervalGroup">
-                {["tick","5s","15s","30s","1m"].map((v) => (
-                  <button key={v} type="button" className={chartInterval === v ? "active" : ""} onClick={() => setChartInterval(v)}>
-                    {v === "tick" ? "Ticks" : v}
-                  </button>
-                ))}
-              </div>
-              <div className="derivChartActions">
-                <button type="button" className={chartType === "candles" ? "active" : ""} onClick={() => setChartType("candles")}>Candles</button>
-                <button type="button" className={chartType === "line" ? "active" : ""} onClick={() => setChartType("line")}>Line</button>
-                <button type="button" className={showEma ? "active" : ""} onClick={() => setShowEma(v => !v)}>EMA 9/21</button>
-              </div>
-            </div>
-
-            <div className="analysisChartStatus">
-              <span>BEST SIDE <b>{String(scannerDirection).toUpperCase()}</b></span>
-              <span>DECISION <b className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal}</b></span>
-              <span>TIMING <b>{best.timing}</b></span>
-              <span>STRUCTURE <b>{best.structure}</b></span>
-            </div>
-
             <div
               className="terminalChart"
               onWheel={handleWheel}
@@ -1552,54 +1002,73 @@ export default function DerivAIAnalyzer() {
                   viewBox="0 0 1080 420"
                   preserveAspectRatio="none"
                 >
-                  {chartType === "candles" ? candles.map((c, i) => {
-                    const count = Math.max(1, candles.length);
-                    const x = 16 + (i / Math.max(1, count - 1)) * 930;
-                    const candleW = Math.max(4, Math.min(13, (900 / count) * 0.64));
+                  {candles.map((c, i) => {
+                    const count = Math.max(
+                      1,
+                      candles.length
+                    );
+
+                    const x =
+                      16 +
+                      (i /
+                        Math.max(1, count - 1)) *
+                        930;
+
+                    const candleW = Math.max(
+                      4,
+                      Math.min(
+                        13,
+                        (900 / count) * 0.64
+                      )
+                    );
+
                     const openY = scale.y(c.open);
                     const closeY = scale.y(c.close);
                     const highY = scale.y(c.high);
                     const lowY = scale.y(c.low);
-                    const bullish = c.close >= c.open;
-                    const top = Math.min(openY, closeY);
-                    const bodyH = Math.max(2, Math.abs(closeY - openY));
+
+                    const bullish =
+                      c.close >= c.open;
+
+                    const top = Math.min(
+                      openY,
+                      closeY
+                    );
+
+                    const bodyH = Math.max(
+                      2,
+                      Math.abs(
+                        closeY - openY
+                      )
+                    );
+
                     return (
-                      <g key={`${c.ts}-${i}`} className={bullish ? "terminalCandleUp" : "terminalCandleDown"}>
-                        <line x1={x} x2={x} y1={highY} y2={lowY} className="wick" />
-                        <rect x={x - candleW / 2} y={top} width={candleW} height={bodyH} rx="1" className="body" />
+                      <g
+                        key={`${c.ts}-${i}`}
+                        className={
+                          bullish
+                            ? "terminalCandleUp"
+                            : "terminalCandleDown"
+                        }
+                      >
+                        <line
+                          x1={x}
+                          x2={x}
+                          y1={highY}
+                          y2={lowY}
+                          className="wick"
+                        />
+                        <rect
+                          x={x - candleW / 2}
+                          y={top}
+                          width={candleW}
+                          height={bodyH}
+                          rx="1"
+                          className="body"
+                        />
                       </g>
                     );
-                  }) : (
-                    <polyline className="derivPriceLine" fill="none" points={candles.map((c,i) => `${16 + (i / Math.max(1, candles.length - 1)) * 930},${scale.y(c.close)}`).join(" ")} />
-                  )}
-
-                  {showEma && candles.length > 2 && (
-                    <>
-                      <polyline className="derivEma9" fill="none" points={ema9.map((v,i) => `${16 + (i / Math.max(1, candles.length - 1)) * 930},${scale.y(v)}`).join(" ")} />
-                      <polyline className="derivEma21" fill="none" points={ema21.map((v,i) => `${16 + (i / Math.max(1, candles.length - 1)) * 930},${scale.y(v)}`).join(" ")} />
-                    </>
-                  )}
-
-                  {scale && Number.isFinite(Number(selectedBarrierTarget)) && (
-                    <g className="derivChartBarrier">
-                      <line x1="0" x2="950" y1={scale.y(Number(selectedBarrierTarget))} y2={scale.y(Number(selectedBarrierTarget))} />
-                      <text x="805" y={scale.y(Number(selectedBarrierTarget)) - 8}>
-                        {barrierMode === "below" ? "−" : barrierMode === "fixed" ? "=" : "+"}{barrierMode === "fixed" ? fmt(selectedBarrierTarget) : Number(barrierOffset).toFixed(2)}
-                      </text>
-                    </g>
-                  )}
-
-                  {scale && Number.isFinite(Number(currentPrice)) && scannerDirection && (
-                    <g className="scannerBarrierLine">
-                      {(() => {
-                        const target = Number(currentPrice) + (scannerDirection === "below" ? -selectedBarrierGap : selectedBarrierGap);
-                        return <>
-                          <line x1="0" x2="950" y1={scale.y(target)} y2={scale.y(target)} />
-
-                        </>;
-                      })()}
-                    </g>
-                  )}
+                  })}
 
                   {scale &&
                     Number.isFinite(
@@ -1718,7 +1187,7 @@ export default function DerivAIAnalyzer() {
                               y={m.y - 10}
                               className="signalLabel"
                             >
-                              {`✓ ${m.signal}`}
+                              {m.signal}
                             </text>
                           </>
                         )}
@@ -1872,7 +1341,8 @@ export default function DerivAIAnalyzer() {
                 Drag: <b>History</b>
               </span>
               <span>
-                Chart data: <b>{chartInterval === "tick" ? `${chartRecords.length} ticks` : `${candles.length} candles`} · {timeframeReady ? "READY" : `WARMING ${timeframeContext.count}/${timeframeContext.required}`}</b>
+                Visible ticks:{" "}
+                <b>{chartRecords.length}</b>
               </span>
               <span>
                 Zoom: <b>{zoom.toFixed(2)}x</b>
@@ -1881,49 +1351,12 @@ export default function DerivAIAnalyzer() {
           </article>
 
           <aside className="terminalSide v8Side">
-            <section className="terminalMiniCard autoBarrierScannerCard fixedSideScanner">
-              <div className="v8CardTitle"><span>ABOVE / BELOW ENTRY MAP</span><small>Structure first · no chase</small></div>
-
-              <div className="fixedSideGrid">
-                {[
-                  { direction: "above", label: "ABOVE SPOT", prefix: "+", analysis: touchAbove, structure: structuralAbove },
-                  { direction: "below", label: "BELOW SPOT", prefix: "-", analysis: touchBelow, structure: structuralBelow },
-                ].map((side) => (
-                  <div className={`fixedSideCard ${side.direction} ${scannerDirection === side.direction ? "preferred" : ""}`} key={side.direction}>
-                    <header>
-                      <div>
-                        <em>{side.label}</em>
-                        <strong>{side.prefix}{selectedBarrierGap.toFixed(Math.max(2, market?.decimals ?? 2))}</strong>
-                      </div>
-                      <b>{side.structure.timing === "IDEAL" ? "READY" : side.structure.timing === "EARLY" ? "EARLY" : side.structure.late ? "NO CHASE" : "WATCH"}</b>
-                    </header>
-                    <div className="fixedSideDecision">
-                      <strong>{timeframeReady ? side.structure.signal : "WARMING UP"}</strong>
-                      <span>{timeframeReady ? side.structure.timing : `${timeframeContext.count}/${timeframeContext.required} ${timeframeContext.label}`}</span>
-                    </div>
-                    <div className="fixedSideMetrics structuralMetrics">
-                      <p><span>STRUCTURE</span><b>{side.structure.structure}</b></p>
-                      <p><span>BARRIER</span><b>{side.structure.reachable ? "REACHABLE" : "FAR"}</b></p>
-                      <p><span>TRIGGER</span><b>{side.structure.trigger}</b></p>
-                      <p><span>STATUS</span><b>{side.structure.late ? "WAIT" : side.structure.signal !== "WAIT" ? "SIGNAL" : "SCANNING"}</b></p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="fixedSideMaster">
-                <span>MASTER ENTRY</span>
-                <strong className={masterSignal === "WAIT" ? "wait" : "ready"}>{masterSignal === "WAIT" ? "WAIT" : `${masterSignal} ${String(best.direction).toUpperCase()}`}</strong>
-                <b>{best.timing}</b>
-              </div>
-            </section>
-
-            <section className={`terminalSignalCard v8EntryCard ${masterReady ? "valid" : ""}`}>
+            <section className={`terminalSignalCard v8EntryCard ${best.valid ? "valid" : ""}`}>
               <div className="v8CardTitle"><span>ENTRY ENGINE</span><small>{durationLabel}</small></div>
 
               <div className="v8StageTrack" aria-label="Entry analysis stages">
-                {["WARMING UP", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"].map((stage, i) => {
-                  const stages = ["WARMING UP", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"];
+                {["COLLECTING", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"].map((stage, i) => {
+                  const stages = ["COLLECTING", "ANALYZING", "SETUP FORMING", "ENTRY READY", "COOLDOWN"];
                   const activeIndex = Math.max(0, stages.indexOf(engineStage));
                   const done = i < activeIndex;
                   const active = i === activeIndex;
@@ -1939,23 +1372,20 @@ export default function DerivAIAnalyzer() {
               <div className="v8EntryHero">
                 <div>
                   <em>{engineStage}</em>
-                  <strong>{masterSignal}</strong>
-                  <p>{masterReason}</p>
+                  <strong>{engineStage === "ENTRY READY" ? best.signal : "WAIT"}</strong>
+                  <p>{best.valid && engineStage !== "ENTRY READY" ? `Confirming ${best.signal} setup ${Math.min(confirmationCount, 3)}/3 live ticks` : touch.reason}</p>
                 </div>
-                <b>{best.timing}</b>
+                <b>{best.confidence.toFixed(0)}%</b>
               </div>
 
               <div className="v8DataRows">
                 <p><span>Contract</span><b>TOUCH / NO TOUCH</b></p>
-                <p><span>Barrier side</span><b>{String(best.direction || "—").toUpperCase()}</b></p>
                 <p><span>Quality</span><b>{signalQuality}</b></p>
-                <p><span>Structure</span><b>{best.structure || "SCANNING"}</b></p>
-                <p><span>Timing</span><b>{best.timing || "WATCH"}</b></p>
-                <p><span>Live confirmation</span><b>{best.valid ? `${Math.min(confirmationCount, best.requiredConfirmations)}/${best.requiredConfirmations}` : "—"}</b></p>
+                <p><span>Live confirmation</span><b>{best.valid ? `${Math.min(confirmationCount, 3)}/3` : "—"}</b></p>
                 <p><span>Trend</span><b>{riseFall.trend}</b></p>
                 <p><span>Volatility</span><b>{volatilityLabel}</b></p>
                 <p><span>Duration</span><b>{durationLabel}</b></p>
-                <p><span>Last confirmed</span><b>{entry ? fmt(entry.price) : "—"}</b></p>
+                <p><span>Last entry</span><b>{entry ? fmt(entry.price) : "—"}</b></p>
               </div>
             </section>
 
@@ -1970,25 +1400,83 @@ export default function DerivAIAnalyzer() {
             <section className="terminalMiniCard v8LastSignalCard">
               <div className="v8CardTitle"><span>LAST SIGNAL</span><small>Qualified setup</small></div>
               <div className="v8LastSignal">
-                <div><strong>{entry?.signal || "WAIT"}</strong><span>{entry ? `${entry.timing || "CONFIRMED"} · ${entry.structure || "STRUCTURAL"}` : "Waiting for structure…"}</span></div>
+                <div><strong>{entry?.signal || "WAIT"}</strong><span>{entry ? `${entry.confidence.toFixed(0)}% confidence` : "Waiting for strong setup…"}</span></div>
                 <i>◷</i>
               </div>
             </section>
 
+            <section className="terminalMiniCard manualTradeCard v8ManualCard">
+              <div className="manualTradeHead">
+                <div><span>MANUAL ENTRY</span><strong>Direct Deriv trade</strong></div>
+                <b className={`accountMode ${String(selectedAccountType || "").toLowerCase()}`}>
+                  {selectedAccountId ? String(selectedAccountType || "ACCOUNT").toUpperCase() : "NO ACCOUNT"}
+                </b>
+              </div>
 
+              <div className="v8ContractRow">
+                <label><span>CONTRACT</span><select disabled value="touch"><option value="touch">Touch / No Touch</option></select></label>
+              </div>
+
+              <div className="derivBarrierBox">
+                <div className="derivBarrierTitle"><strong>Barrier</strong><span title="Barrier target used for both analysis and order">ⓘ</span></div>
+                <div className="derivBarrierTabs">
+                  <button type="button" className={barrierMode === "above" ? "active" : ""} onClick={() => setBarrierMode("above")}>Above spot</button>
+                  <button type="button" className={barrierMode === "below" ? "active" : ""} onClick={() => setBarrierMode("below")}>Below spot</button>
+                  <button type="button" className={barrierMode === "fixed" ? "active" : ""} onClick={() => setBarrierMode("fixed")}>Fixed barrier</button>
+                </div>
+
+                {barrierMode === "fixed" ? (
+                  <div className="derivBarrierInput">
+                    <span>=</span>
+                    <input type="number" step="0.01" value={fixedBarrier} placeholder={displayPrice} onChange={(e) => setFixedBarrier(e.target.value)} />
+                  </div>
+                ) : (
+                  <div className="derivBarrierInput">
+                    <span>{barrierMode === "below" ? "−" : "+"}</span>
+                    <button type="button" onClick={() => setBarrierOffset((v) => Math.max(0.01, Number(v || 0) - 0.01))}>−</button>
+                    <input type="number" min="0.01" step="0.01" value={barrierOffset} onChange={(e) => setBarrierOffset(Math.max(0.01, Number(e.target.value) || 0.01))} />
+                    <button type="button" onClick={() => setBarrierOffset((v) => Number((Number(v || 0) + 0.01).toFixed(4)))}>+</button>
+                  </div>
+                )}
+
+                <div className="derivSpotRow"><span>Current spot</span><strong>{displayPrice}</strong></div>
+                <div className="derivSpotRow"><span>Barrier price</span><strong>{manualBarrierText}</strong></div>
+                <div className="derivSpotRow"><span>Order barrier</span><strong>{manualOrderBarrier || "—"}</strong></div>
+              </div>
+
+              <div className="manualTradeGrid v8ManualGrid derivStakeRow">
+                <label><span>STAKE (USD)</span><input type="number" min="0.01" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
+                <div className="derivDurationEcho"><span>DURATION</span><strong>{durationLabel}</strong></div>
+              </div>
+
+              <div className="derivProposalGrid">
+                <div><span>TOUCH PAYOUT</span><strong>{proposalPreview.loading ? "…" : touchPayout > 0 ? `${touchPayout.toFixed(2)} USD` : "—"}</strong><small>{touchAsk > 0 ? `Price ${touchAsk.toFixed(2)}` : "Live proposal"}</small></div>
+                <div><span>NO TOUCH PAYOUT</span><strong>{proposalPreview.loading ? "…" : noTouchPayout > 0 ? `${noTouchPayout.toFixed(2)} USD` : "—"}</strong><small>{noTouchAsk > 0 ? `Price ${noTouchAsk.toFixed(2)}` : "Live proposal"}</small></div>
+              </div>
+
+              <div className="manualTradeButtons">
+                <button type="button" className="manualTouchButton" disabled={tradeBusy || !connected || !selectedAccountId || !manualOrderBarrier} onClick={() => placeManualTrade("TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY TOUCH"}</button>
+                <button type="button" className="manualNoTouchButton" disabled={tradeBusy || !connected || !selectedAccountId || !manualOrderBarrier} onClick={() => placeManualTrade("NO TOUCH")}>{tradeBusy ? "PROCESSING…" : "BUY NO TOUCH"}</button>
+              </div>
+              {proposalPreview.error ? <div className="manualTradeStatus warning">{proposalPreview.error}</div> : null}
+
+              <p className="manualTradeHint">Manual orders use the Demo/Real account selected in the top bar. Analyzer signals are guidance; only press buy when you choose to enter.</p>
+              {(manualTradeStatus || tradeError) ? <div className={`manualTradeStatus ${(manualTradeStatus?.type || "error")}`}>{manualTradeStatus?.text || tradeError}</div> : null}
+              {!authenticatedFeed && selectedAccountId ? <div className="manualTradeStatus warning">Trading connection authenticates when an order is submitted.</div> : null}
+            </section>
           </aside>
         </section>
 
         <section className="v8LowerGrid">
           <article className="v8RecentPanel">
-            <div className="v8SectionTitle"><div><span>RECENT SIGNALS</span><h3>Confirmed analyzed entries</h3></div><small>{markers.length} this session</small></div>
+            <div className="v8SectionTitle"><div><span>RECENT SIGNALS</span><h3>Qualified setups only</h3></div><small>{markers.length} this session</small></div>
             <div className="v8SignalCards">
               {recentSignals.length ? recentSignals.slice(0,5).map((item) => (
                 <div className={`v8SignalMini ${item.signal === "TOUCH" ? "touch" : "notouch"}`} key={item.ts}>
                   <span>{item.signal} · ANALYZED</span>
                   <strong>{fmt(item.price)}</strong>
                   <small>{new Date(item.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</small>
-                  <b>{item.timing || "CONFIRMED"}</b>
+                  <b>{item.confidence.toFixed(0)}%</b>
                 </div>
               )) : <div className="v8EmptySignal">No qualified entry yet. The engine is scanning.</div>}
             </div>
@@ -1997,26 +1485,23 @@ export default function DerivAIAnalyzer() {
           <article className="v8SummaryPanel">
             <div className="v8SectionTitle"><div><span>ANALYSIS SUMMARY</span><h3>Current market evidence</h3></div><small>Live</small></div>
             <div className="v8SummaryGrid">
-              <div><span>Confluence</span><strong>{scannerTouch?.confluence?.label || "SCANNING"}</strong><small>Strategy agreement</small></div>
-              <div><span>Momentum</span><strong>{riseFall.momentum}</strong><small>{scannerStructure.continuation ? "CONTINUING" : "MIXED"}</small></div>
-              <div><span>Price Action</span><strong>{scannerStructure.structure}</strong><small>{scannerStructure.timing}</small></div>
-              <div><span>Barrier Travel</span><strong>{scannerStructure.reachable ? "REACHABLE" : "TOO FAR"}</strong><small>{scannerStructure.late ? "NO CHASE" : "LIVE"}</small></div>
-              <div><span>Entry Trigger</span><strong>{best.signal}</strong><small>{best.valid ? "CONFIRMING" : "WAITING"}</small></div>
-              <div><span>Entry Timing</span><strong>{best.timing}</strong><small>{masterSignal === "WAIT" ? "SCANNING" : "CONFIRMED"}</small></div>
+              <div><span>Volatility</span><strong>{clamp(riseFall.volatility * 100,0,100).toFixed(0)}%</strong><small>{volatilityLabel}</small></div>
+              <div><span>Momentum</span><strong>{riseFall.confidence.toFixed(0)}%</strong><small>{riseFall.momentum}</small></div>
+              <div><span>Consistency</span><strong>{riseFall.consistency.toFixed(0)}%</strong><small>{riseFall.consistency >= 65 ? "Strong" : "Mixed"}</small></div>
+              <div><span>Barrier Test</span><strong>{clamp(touch.travelRatio * 60,0,100).toFixed(0)}%</strong><small>{touch.travelRatio >= .9 ? "Active" : "Stable"}</small></div>
+              <div><span>Touch Prob.</span><strong>{touch.touchScore.toFixed(0)}%</strong><small>{touch.touchScore >= MASTER_THRESHOLD ? "Qualified" : "Watching"}</small></div>
+              <div><span>No Touch Prob.</span><strong>{touch.noTouchScore.toFixed(0)}%</strong><small>{touch.noTouchScore >= MASTER_THRESHOLD ? "Qualified" : "Watching"}</small></div>
             </div>
           </article>
         </section>
-
-
 
         <footer className="v8MarketFooter">
           <div><span>Market</span><b>{derivMarketName(symbol, market?.label)}</b></div>
           <div><span>Spot</span><b>{displayPrice}</b></div>
           <div><span>Ticks</span><b>{cleanRecords.length}</b></div>
           <div><span>Setup</span><b>{engineStage}</b></div>
-          <div><span>Decision</span><b>{masterSignal}</b></div>
-          <div><span>Timing</span><b>{best.timing}</b></div>
-          <div><span>Deriv feed</span><b className={connected ? "ok" : ""}>{connected ? "● Live" : "○ Offline"}</b></div>
+          <div><span>Confidence</span><b>{best.confidence.toFixed(0)}%</b></div>
+          <div><span>Deriv API</span><b className={connected ? "ok" : ""}>{connected ? "● Connected" : "○ Offline"}</b></div>
         </footer>
       </main>
     </div>
