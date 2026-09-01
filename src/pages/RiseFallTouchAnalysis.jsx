@@ -288,7 +288,21 @@ export default function RiseFallTouchAnalysis() {
   }, [prices.length]);
 
   return (
-    <section className="rftShell" id="rise-fall-touch-tool">
+    <div className="rftPage">
+      <Topbar
+        title="Rise/Fall and Touch/No Touch Analysis Tool"
+        subtitle="Live market analysis · signal engine · continuous Demo/Real bot"
+        connected={feed.connected}
+        connecting={feed.status === "CONNECTING"}
+        onConnect={() => {
+          void feed.connect().catch(() => {});
+        }}
+        onDisconnect={() => {
+          feed.disconnect();
+        }}
+      />
+
+      <section className="rftShell" id="rise-fall-touch-tool">
       <header className="rftHeader">
         <div>
           <div className="rftEyebrow">DERIV LIVE ANALYSIS</div>
@@ -432,9 +446,11 @@ export default function RiseFallTouchAnalysis() {
 </div>
         </aside>
       </div>
-    </section>
+      </section>
+    </div>
   );
 }
+
 
 
 
