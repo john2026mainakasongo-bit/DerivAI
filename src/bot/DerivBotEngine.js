@@ -14,9 +14,9 @@ const DEFAULTS = {
   cooldownAfterLosses: 1,
   cooldownSeconds: 10,
   hardStopLossStreak: 3,
-  martingaleEnabled: false,
+  martingaleEnabled: true,
   maxMartingaleSteps: 1,
-  recoveryMultipliers: [1.35],
+  recoveryMultipliers: [2],
   analysisAssisted: true,
   contractMode: "AUTO",
   prediction: 2,
@@ -1604,7 +1604,7 @@ export default class DerivBotEngine {
         0,
         Math.min(3, number(input.maxMartingaleSteps, DEFAULTS.maxMartingaleSteps))
       ),
-      recoveryMultipliers: DEFAULTS.recoveryMultipliers,
+      recoveryMultipliers: [2],
       confirmationCount: Math.max(
         1,
         Math.min(6, number(input.confirmationCount, DEFAULTS.confirmationCount))
@@ -2133,6 +2133,47 @@ export default class DerivBotEngine {
     if (!this.lockedCandidate) {
       const setup = selected.setup;
 
+      // Recovery is deliberately stricter than the normal entry gate.
+      // A 2× stake is only armed after a fresh setup clears a stronger
+      // consensus threshold and is different from the losing setup.
+      if (
+        this.isDemoAccount &&
+        this.settings.martingaleEnabled &&
+        this.state.martingaleStep > 0
+      ) {
+        const recoveryScore = Number(selected.score || 0);
+        const recoveryThreshold = Math.max(Number(selected.threshold || 0) + 5, 90);
+        const recoveryVotes = Number(selected.passedVotes || 0);
+        const requiredRecoveryVotes = Math.max(Number(selected.requiredVotes || 0), 4);
+        const freshSetup = normalizeSetup(setup) !== normalizeSetup(this.state.lastLossSetup);
+
+        if (
+          !freshSetup ||
+          recoveryScore < recoveryThreshold ||
+          recoveryVotes < requiredRecoveryVotes ||
+          Number(selected.samples || 0) < 50
+        ) {
+          this.strictSetupKey = "";
+          this.strictConfirmations = 0;
+          this.executionPhase = "RECOVERY_WAIT";
+          return {
+            ok: false,
+            reason: `Recovery 2× is armed, but the fresh setup is not strong enough (${recoveryScore.toFixed(1)}/${recoveryThreshold.toFixed(1)}, votes ${recoveryVotes}/${requiredRecoveryVotes}, samples ${Number(selected.samples || 0)}/50). No forced recovery trade.`,
+            elapsedSeconds,
+            confirmations: 0,
+            requiredConfirmations: 2,
+            gate: {
+              ...gate,
+              executionPhase: "RECOVERY_WAIT",
+              recoveryReady: false,
+              recoveryScore,
+              recoveryThreshold,
+              lockedCandidate: setup,
+            },
+          };
+        }
+      }
+
       if (
         this.isDemoAccount &&
         (setup === "RISE" || setup === "FALL")
@@ -2644,17 +2685,25 @@ export default class DerivBotEngine {
       return;
     }
 
+    const recoveryPending =
+      this.isDemoAccount &&
+      this.settings.martingaleEnabled &&
+      this.state.martingaleStep > 0 &&
+      this.state.martingaleStep <= this.settings.maxMartingaleSteps;
+
     this.patch({
       status: "RUNNING",
-      message: "Risk cooldown completed. Waiting for a new validated setup.",
+      message: recoveryPending
+        ? "Recovery armed. Waiting for a fresh, stronger setup before the one-time 2× attempt."
+        : "Risk cooldown completed. Waiting for a new validated setup.",
       cooldownUntil: 0,
       cooldownCount: this.state.cooldownCount + 1,
       consecutiveLosses: 0,
-      martingaleStep: 0,
-      currentStake: this.settings.stake,
-      activeSetup: "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+      martingaleStep: recoveryPending ? this.state.martingaleStep : 0,
+      currentStake: recoveryPending ? this.state.currentStake : this.settings.stake,
+      activeSetup: "—",
       signalConfirmations: 0,
-      lastBlockReason: "",
+      lastBlockReason: recoveryPending ? "Recovery gate armed; fresh setup required." : "",
     });
   }
 
