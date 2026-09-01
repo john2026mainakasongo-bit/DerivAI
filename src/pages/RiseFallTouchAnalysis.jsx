@@ -15,11 +15,15 @@ const INITIAL = {
   minConfidence: 78,
   takeProfit: 5,
   stopLoss: 3,
-  cooldown: 3
+  cooldown: 3,
+  recoveryEnabled: true,
+  recoveryMultiplier: 2,
+  recoveryMinConfidence: 88,
+  recoveryMinAgreement: 10
 };
 
 function fmt(v, d = 5) {
-  return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
+  return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â";
 }
 function accountId(a) {
   return String(a?.id || a?.account_id || a?.loginid || a?.login_id || "");
@@ -58,6 +62,8 @@ export default function RiseFallTouchAnalysis() {
   const busyRef = useRef(false);
   const lastTradeRef = useRef(0);
   const pnlRef = useRef(0);
+  const recoveryPendingRef = useRef(false);
+  const recoveryUsedRef = useRef(false);
   const chartRef = useRef(null);
 
   const analysis = useMemo(
@@ -156,8 +162,33 @@ export default function RiseFallTouchAnalysis() {
     busyRef.current = true;
     try {
       const setup = String(signal.signal || signal.setup || "").toUpperCase();
-      let contractType = setup === "RISE" ? "CALL" : setup === "FALL" ? "PUT" : setup === "TOUCH" ? "ONETOUCH" : "NOTOUCH";
-      let barrier;
+      const isRecovery = Boolean(
+      settings.recoveryEnabled &&
+      recoveryPendingRef.current &&
+      !recoveryUsedRef.current
+    );
+
+    if (isRecovery) {
+      const recoveryConfidence = Number(signal.confidence || 0);
+      const recoveryAgreement = Number(signal.metrics?.agreementGap || 0);
+      const recoveryReady =
+        signal.entryQuality === "HIGH" &&
+        recoveryConfidence >= Number(settings.recoveryMinConfidence) &&
+        recoveryAgreement >= Number(settings.recoveryMinAgreement);
+
+      if (!recoveryReady) {
+        setBotStatus(`RECOVERY WAIT ${recoveryConfidence.toFixed(1)}%`);
+        return;
+      }
+    }
+
+    const baseStake = Math.max(Number(settings.stake) || 0, 0.35);
+    const tradeStake = isRecovery
+      ? baseStake * Number(settings.recoveryMultiplier || 2)
+      : baseStake;
+
+    let contractType = setup === "RISE" ? "CALL" : setup === "FALL" ? "PUT" : setup === "TOUCH" ? "ONETOUCH" : "NOTOUCH";
+    let barrier;
 
       if (setup === "TOUCH" || setup === "NO TOUCH") {
         const distance = Math.max(Number(settings.barrierDistance) || 1, 0.1);
@@ -177,13 +208,13 @@ export default function RiseFallTouchAnalysis() {
         barrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(2)}`;
       }
 
-      log(`SETUP SPOTTED ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${setup} Ãƒâ€šÃ‚Â· confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
+      log(`SETUP SPOTTED ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ${setup} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
       setBotStatus(`BUYING ${setup}`);
 
       const bought = await feed.placeTrade({
         symbol: feed.symbol,
         contractType,
-        amount: Number(settings.stake),
+        amount: tradeStake,
         currency: auth.selectedAccount?.currency || "USD",
         duration: Number(settings.duration),
         durationUnit: settings.durationUnit,
@@ -196,13 +227,23 @@ export default function RiseFallTouchAnalysis() {
       activeRef.current = {
         contractId,
         setup,
-        stake: Number(settings.stake),
+        stake: tradeStake,
+        recovery: isRecovery,
         started: Date.now()
       };
+      if (isRecovery) {
+        recoveryUsedRef.current = true;
+        recoveryPendingRef.current = false;
+        log(
+          `RECOVERY X2 OPEN → ${setup} · stake ${tradeStake.toFixed(2)}`,
+          "system"
+        );
+      }
+
       setTradeCount(x => x + 1);
       lastTradeRef.current = Date.now();
       setBotStatus(`MONITORING ${setup}`);
-      log(`TRADE OPEN ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${contractId}`, "trade");
+      log(`TRADE OPEN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ${contractId}`, "trade");
     } catch (error) {
       log(error?.message || "Trade failed.", "error");
       setBotStatus("SCAN");
@@ -241,11 +282,20 @@ export default function RiseFallTouchAnalysis() {
         return;
       }
 
-      const confidence = Number(signal.confidence || 0);
-      const minimum = Number(settings.minConfidence);
+      const confidence = Number(signal.confidence || 0);      const recoveryMode = Boolean(
+        settings.recoveryEnabled &&
+        recoveryPendingRef.current &&
+        !recoveryUsedRef.current
+      );
+
+      const minimum = recoveryMode
+        ? Number(settings.recoveryMinConfidence)
+        : Number(settings.minConfidence);
 
       if (!Number.isFinite(confidence) || confidence < minimum) {
-        setBotStatus(`SCANNING ${confidence.toFixed(1)}%`);
+        setBotStatus(
+          `${recoveryMode ? "RECOVERY " : ""}SCANNING ${confidence.toFixed(1)}%`
+        );
         return;
       }
 
@@ -270,6 +320,8 @@ export default function RiseFallTouchAnalysis() {
     analysis,
     settings.mode,
     settings.minConfidence,
+    settings.recoveryEnabled,
+    settings.recoveryMinConfidence,
     settings.stake,
     settings.duration,
     settings.durationUnit,
@@ -324,10 +376,31 @@ export default function RiseFallTouchAnalysis() {
 
           if (pnl >= 0) {
             setWins(x => x + 1);
-            log(`RESULT WON ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ +${pnl.toFixed(2)}`, "win");
+            log(`RESULT WON ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ +${pnl.toFixed(2)}`, "win");
           } else {
             setLosses(x => x + 1);
-            log(`RESULT LOST ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ ${pnl.toFixed(2)}`, "loss");
+            log(`RESULT LOST ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ ${pnl.toFixed(2)}`, "loss");
+          }
+
+          if (active.recovery) {
+            recoveryPendingRef.current = false;
+            recoveryUsedRef.current = true;
+            log(
+              "RECOVERY X2 LOST — recovery disabled; fresh setup required.",
+              "error"
+            );
+          } else if (pnl < 0 && settings.recoveryEnabled) {
+            recoveryPendingRef.current = true;
+            recoveryUsedRef.current = false;
+            log(
+              "RECOVERY ARMED — x2 only after HIGH-confidence confirmation.",
+              "system"
+            );
+          }
+
+          if (pnl >= 0) {
+            recoveryPendingRef.current = false;
+            recoveryUsedRef.current = false;
           }
 
           // Ref is now clear, so the continuous scanner can find
@@ -378,7 +451,7 @@ export default function RiseFallTouchAnalysis() {
     }
     setBotRunning(true);
     setBotStatus("SCANNING");
-    log("BOT STARTED → continuous scan until manually stopped.", "system");
+    log("BOT STARTED â†’ continuous scan until manually stopped.", "system");
   }
 
   function stopBot() {
@@ -396,7 +469,7 @@ export default function RiseFallTouchAnalysis() {
     <div className="rftPage">
       <Topbar
         title="Rise/Fall and Touch/No Touch Analysis Tool"
-        subtitle="Live market analysis Ãƒâ€šÃ‚Â· signal engine Ãƒâ€šÃ‚Â· continuous Demo/Real bot"
+        subtitle="Live market analysis ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· signal engine ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· continuous Demo/Real bot"
         connected={feed.connected}
         connecting={feed.status === "CONNECTING"}
         onConnect={() => {
@@ -462,8 +535,8 @@ export default function RiseFallTouchAnalysis() {
             ))}
             <article className="rftCard">
               <div className="rftCardTitle"><span>MARKET METRICS</span><b>{analysis.ready ? "READY" : "CALIBRATING"}</b></div>
-              <p>RSI {fmt(analysis.metrics?.rsi, 1)} Ãƒâ€šÃ‚Â· Vol {fmt(analysis.metrics?.volatility, 5)} Ãƒâ€šÃ‚Â· Z {fmt(analysis.metrics?.zScore, 2)}</p>
-              <p>Samples {analysis.metrics?.samples || 0} Ãƒâ€šÃ‚Â· Current {fmt(analysis.metrics?.current)}</p>
+              <p>RSI {fmt(analysis.metrics?.rsi, 1)} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Vol {fmt(analysis.metrics?.volatility, 5)} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Z {fmt(analysis.metrics?.zScore, 2)}</p>
+              <p>Samples {analysis.metrics?.samples || 0} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Current {fmt(analysis.metrics?.current)}</p>
             </article>
           </div>
         </main>
@@ -496,6 +569,72 @@ export default function RiseFallTouchAnalysis() {
             <label>Take profit<input type="number" min="0.1" step="0.1" value={settings.takeProfit} disabled={botRunning} onChange={e => update("takeProfit", e.target.value)} /></label>
             <label>Stop loss<input type="number" min="0.1" step="0.1" value={settings.stopLoss} disabled={botRunning} onChange={e => update("stopLoss", e.target.value)} /></label>
           </div>
+          <div className="rftRecoveryCard">
+            <div className="rftRecoveryHead">
+              <div>
+                <span>RECOVERY X2</span>
+                <small>After one loss, waits for a stronger entry before using 2× stake.</small>
+              </div>
+              <b className={recoveryPendingRef.current ? "armed" : ""}>
+                {recoveryPendingRef.current ? "ARMED" : "STANDBY"}
+              </b>
+            </div>
+            <div className="rftRecoveryGrid">
+              <label>
+                Enable
+                <input
+                  type="checkbox"
+                  checked={settings.recoveryEnabled}
+                  disabled={botRunning}
+                  onChange={e => update("recoveryEnabled", e.target.checked)}
+                />
+              </label>
+              <label>
+                Multiplier
+                <input
+                  type="number"
+                  min="2"
+                  max="2"
+                  step="1"
+                  value={settings.recoveryMultiplier}
+                  disabled={botRunning}
+                  onChange={e => update("recoveryMultiplier", Number(e.target.value))}
+                />
+              </label>
+              <label>
+                Recovery confidence
+                <input
+                  type="number"
+                  min="80"
+                  max="99"
+                  value={settings.recoveryMinConfidence}
+                  disabled={botRunning}
+                  onChange={e => update("recoveryMinConfidence", Number(e.target.value))}
+                />
+              </label>
+              <label>
+                Agreement gap
+                <input
+                  type="number"
+                  min="7"
+                  max="30"
+                  value={settings.recoveryMinAgreement}
+                  disabled={botRunning}
+                  onChange={e => update("recoveryMinAgreement", Number(e.target.value))}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="rftEntryGate">
+            <div>
+              <span>ENTRY GATE</span>
+              <strong>{analysis.entryQuality || "WAIT"}</strong>
+            </div>
+            <div><span>CONFIDENCE</span><b>{Number(analysis.confidence || 0).toFixed(1)}%</b></div>
+            <div><span>AGREEMENT</span><b>{Number(analysis.metrics?.agreementGap || 0).toFixed(1)}</b></div>
+            <div><span>SIGNAL</span><b>{analysis.signal || "WAIT"}</b></div>
+          </div>
           <div className="rftLivePanels">
             <div className="rftLivePanel rftOpenPanel">
               <div className="rftLivePanelHead">
@@ -514,7 +653,7 @@ export default function RiseFallTouchAnalysis() {
                         "CONTRACT"
                       ).toUpperCase()}
                     </strong>
-                    <span>{trade.contract_id || trade.id || "â€”"}</span>
+                    <span>{trade.contract_id || trade.id || "Ã¢â‚¬â€"}</span>
                     <em>{String(trade.status || "OPEN").toUpperCase()}</em>
                   </div>
                 ))
@@ -527,7 +666,7 @@ export default function RiseFallTouchAnalysis() {
               <div className="rftLivePanelHead">
                 <div>
                   <span>TRANSACTIONS</span>
-                  <small>5 latest trades Â· click to expand</small>
+                  <small>5 latest trades Ã‚Â· click to expand</small>
                 </div>
                 <b>{transactionRows.length}/5</b>
               </div>
@@ -591,7 +730,7 @@ export default function RiseFallTouchAnalysis() {
                           <span className={`rftTxStatus ${status.includes("LOST") ? "negative" : status.includes("WON") ? "positive" : ""}`}>
                             {status}
                           </span>
-                          <span className="rftTxArrow">{isOpen ? "â–²" : "â–¼"}</span>
+                          <span className="rftTxArrow">{isOpen ? "Ã¢â€“Â²" : "Ã¢â€“Â¼"}</span>
                         </button>
 
                         {isOpen && (
@@ -628,8 +767,8 @@ export default function RiseFallTouchAnalysis() {
                           <strong>WAITING</strong>
                           <small>No completed trade yet</small>
                         </span>
-                        <span className="rftTxStatus">â€”</span>
-                        <span className="rftTxArrow">â€¢</span>
+                        <span className="rftTxStatus">Ã¢â‚¬â€</span>
+                        <span className="rftTxArrow">Ã¢â‚¬Â¢</span>
                       </div>
                     </div>
                   ))}
@@ -641,8 +780,8 @@ export default function RiseFallTouchAnalysis() {
                       <div className="rftTxMain">
                         <span className="rftTxNumber">{i + 1}</span>
                         <span className="rftTxTrade"><strong>WAITING</strong><small>No transaction yet</small></span>
-                        <span className="rftTxStatus">â€”</span>
-                        <span className="rftTxArrow">â€¢</span>
+                        <span className="rftTxStatus">Ã¢â‚¬â€</span>
+                        <span className="rftTxArrow">Ã¢â‚¬Â¢</span>
                       </div>
                     </div>
                   ))}
@@ -662,7 +801,7 @@ export default function RiseFallTouchAnalysis() {
                     <span>{item.message}</span>
                   </div>
                 ))
-              : <div className="rftChatEmpty">Deriv bot chat will appear hereÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦</div>}
+              : <div className="rftChatEmpty">Deriv bot chat will appear hereÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦</div>}
           </div>
 
 

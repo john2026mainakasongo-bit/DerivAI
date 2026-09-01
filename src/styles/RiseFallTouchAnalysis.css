@@ -460,7 +460,7 @@
     grid-template-columns:1fr;
   }
 }
-/* RFT V4 â€” five-row expandable transaction history */
+/* RFT V4 Ã¢â‚¬â€ five-row expandable transaction history */
 .rftTransactionsPanel{
   min-width:0;
 }
@@ -587,7 +587,7 @@
   .rftTxDetails{
     grid-template-columns:repeat(2,minmax(0,1fr));
   }
-}/* RFT V5 — five-row multi-expand transaction history */
+}/* RFT V5 â€” five-row multi-expand transaction history */
 .rftTransactionsPanel{
   min-width:0;
 }
@@ -728,4 +728,132 @@
   .rftTxDetails{
     grid-template-columns:repeat(2,minmax(0,1fr));
   }
+}
+/* ================= RFT V10 — FINAL BALANCE ================= */
+.rftPage{height:100vh;max-height:100vh;overflow:hidden}
+.rftShell{
+  height:calc(100vh - 78px);
+  max-height:calc(100vh - 78px);
+  min-height:0;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  margin:6px 8px 8px;
+  padding:8px;
+}
+.rftCompactStatus{margin:2px 2px 5px;min-height:18px}
+.rftGrid{
+  flex:1 1 auto;
+  min-height:0;
+  grid-template-columns:minmax(0,1fr) 300px;
+  gap:8px;
+  overflow:hidden;
+}
+.rftMain{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.rftToolbar{flex:0 0 auto;padding:6px}
+.rftChartCard{flex:1 1 auto;min-height:190px;height:auto;max-height:none}
+.rftSignalRow{flex:0 0 auto;margin-top:6px;gap:6px}
+.rftSignal{padding:7px}
+.rftSignal strong{font-size:15px}
+.rftEngineGrid{flex:0 0 auto;margin-top:6px;gap:6px}
+.rftCard{padding:7px}
+.rftScore{font-size:16px;margin:2px 0}
+.rftCard p{font-size:8px;line-height:1.25}
+.rftBot{height:100%;min-height:0;overflow:auto;scrollbar-width:thin}
+.rftBotHead{padding:8px 9px}
+.rftBotStats{padding:6px 8px}
+.rftBotActions{padding:6px}
+.rftControls{padding:6px;gap:5px}
+.rftControls input,.rftControls select{height:27px;min-height:27px;font-size:9px}
+.rftLivePanels{padding:5px;gap:5px}
+.rftChat{min-height:58px;max-height:84px;padding:5px}
+.rftRealControl{padding:5px}
+
+.rftRecoveryCard,.rftEntryGate{
+  margin:5px 5px 0;
+  border:1px solid rgba(130,145,180,.14);
+  border-radius:8px;
+  background:#070b12;
+}
+.rftRecoveryHead{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:7px;
+  padding:6px 7px;
+  border-bottom:1px solid rgba(130,145,180,.08);
+}
+.rftRecoveryHead span,.rftEntryGate span{
+  display:block;
+  color:#7f8aa0;
+  font-size:7px;
+  font-weight:900;
+  letter-spacing:.06em;
+}
+.rftRecoveryHead small{
+  display:block;
+  margin-top:2px;
+  color:#657187;
+  font-size:6px;
+  line-height:1.2;
+}
+.rftRecoveryHead>b{color:#778399;font-size:8px}
+.rftRecoveryHead>b.armed{color:#f2c45b}
+.rftRecoveryGrid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:4px;
+  padding:5px 7px 6px;
+}
+.rftRecoveryGrid label{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  color:#718097;
+  font-size:6px;
+}
+.rftRecoveryGrid input{
+  width:100%;
+  height:24px;
+  box-sizing:border-box;
+  background:#0b1019;
+  color:#dfe7f5;
+  border:1px solid rgba(130,145,180,.18);
+  border-radius:5px;
+  padding:2px 4px;
+  font-size:8px;
+}
+.rftEntryGate{
+  display:grid;
+  grid-template-columns:1.4fr 1fr 1fr 1fr;
+  gap:4px;
+  padding:5px 7px;
+}
+.rftEntryGate>div{min-width:0}
+.rftEntryGate strong,.rftEntryGate b{
+  display:block;
+  margin-top:2px;
+  font-size:8px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#dfe7f5;
+}
+.rftEntryGate>div:first-child strong{color:#5ff0aa}
+.rftEntryGate>div:last-child b{color:#9fc7ff}
+
+@media(max-width:1150px){
+  .rftGrid{grid-template-columns:minmax(0,1fr) 265px}
+}
+@media(max-width:900px){
+  .rftPage{height:auto;max-height:none;overflow:auto}
+  .rftShell{height:auto;max-height:none;overflow:visible}
+  .rftGrid{grid-template-columns:1fr;overflow:visible}
+  .rftMain{overflow:visible}
+  .rftChartCard{height:300px;flex:none}
+  .rftBot{height:auto}
+}
+@media(max-width:650px){
+  .rftRecoveryGrid{grid-template-columns:1fr 1fr}
+  .rftEntryGate{grid-template-columns:1fr 1fr}
 }
