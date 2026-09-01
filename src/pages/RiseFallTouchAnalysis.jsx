@@ -180,31 +180,64 @@ export default function RiseFallTouchAnalysis() {
     return () => window.clearInterval(timer);
   }, [botRunning]);
 
+  // Continuous bot watchdog.
+  // Re-checks the market independently every 500ms.
   useEffect(() => {
     if (!botRunning) return;
-    if (sessionPnl >= Number(settings.takeProfit)) {
-      setBotRunning(false);
-      setBotStatus("TAKE PROFIT");
-      log(`SESSION TAKE PROFIT HIT → +${sessionPnl.toFixed(2)}`, "win");
-      return;
-    }
-    if (sessionPnl <= -Math.abs(Number(settings.stopLoss))) {
-      setBotRunning(false);
-      setBotStatus("STOP LOSS");
-      log(`SESSION STOP LOSS HIT → ${sessionPnl.toFixed(2)}`, "loss");
-      return;
-    }
 
-    const signal = selectedSignal();
-    if (!signal?.ready || signal.signal === "WAIT") {
-      setBotStatus("SCANNING");
-      return;
-    }
-    if (Number(signal.confidence || 0) < Number(settings.minConfidence)) {
-      setBotStatus(`SCANNING ${Number(signal.confidence || 0).toFixed(1)}%`);
-      return;
-    }
-    if (!activeRef.current) void execute(signal);
+    const scan = () => {
+      if (!botRunning) return;
+      if (busyRef.current || activeRef.current) return;
+
+      const pnl = Number(pnlRef.current || 0);
+      const takeProfit = Number(settings.takeProfit);
+      const stopLoss = Math.abs(Number(settings.stopLoss));
+
+      if (Number.isFinite(takeProfit) && pnl >= takeProfit) {
+        setBotRunning(false);
+        setBotStatus("TAKE PROFIT");
+        log(`SESSION TAKE PROFIT HIT → +${pnl.toFixed(2)}`, "win");
+        return;
+      }
+
+      if (Number.isFinite(stopLoss) && pnl <= -stopLoss) {
+        setBotRunning(false);
+        setBotStatus("STOP LOSS");
+        log(`SESSION STOP LOSS HIT → ${pnl.toFixed(2)}`, "loss");
+        return;
+      }
+
+      const signal = selectedSignal();
+
+      if (!signal?.ready || signal.signal === "WAIT") {
+        setBotStatus("SCANNING");
+        return;
+      }
+
+      const confidence = Number(signal.confidence || 0);
+      const minimum = Number(settings.minConfidence);
+
+      if (!Number.isFinite(confidence) || confidence < minimum) {
+        setBotStatus(`SCANNING ${confidence.toFixed(1)}%`);
+        return;
+      }
+
+      if (
+        Date.now() - lastTradeRef.current <
+        Math.max(0, Number(settings.cooldown) || 0) * 1000
+      ) {
+        setBotStatus("COOLDOWN");
+        return;
+      }
+
+      void execute(signal);
+    };
+
+    scan();
+
+    const timer = window.setInterval(scan, 500);
+
+    return () => window.clearInterval(timer);
   }, [
     botRunning,
     analysis,
@@ -590,6 +623,7 @@ export default function RiseFallTouchAnalysis() {
     </div>
   );
 }
+
 
 
 
