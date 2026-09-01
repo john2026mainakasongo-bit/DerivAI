@@ -19,7 +19,7 @@ const INITIAL = {
 };
 
 function fmt(v, d = 5) {
-  return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : "—";
+  return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : "â€”";
 }
 function accountId(a) {
   return String(a?.id || a?.account_id || a?.loginid || a?.login_id || "");
@@ -53,6 +53,7 @@ export default function RiseFallTouchAnalysis() {
   const [tradeCount, setTradeCount] = useState(0);
   const [logs, setLogs] = useState([]);
   const [scanPulse, setScanPulse] = useState(0);
+  const [expandedTx, setExpandedTx] = useState(null);
   const activeRef = useRef(null);
   const busyRef = useRef(false);
   const lastTradeRef = useRef(0);
@@ -70,6 +71,42 @@ export default function RiseFallTouchAnalysis() {
   const active = analysis.engines?.[0];
   const openTrades = feed.openContracts || [];
   const transactions = feed.transactions || [];
+
+  const transactionRows = useMemo(() => {
+    const source = Array.isArray(transactions) ? transactions : [];
+    const grouped = new Map();
+
+    source.forEach((tx, index) => {
+      const contractId = String(
+        tx?.contract_id ||
+        tx?.contractId ||
+        tx?.id ||
+        tx?.transaction_id ||
+        `tx-${index}`
+      );
+
+      const prev = grouped.get(contractId) || {
+        contract_id: contractId,
+        events: []
+      };
+
+      prev.events.push(tx);
+      grouped.set(contractId, {
+        ...prev,
+        ...tx,
+        contract_id: contractId,
+        events: prev.events
+      });
+    });
+
+    return Array.from(grouped.values())
+      .sort((a, b) => {
+        const at = Number(a?.timestamp || a?.time || a?.epoch || 0);
+        const bt = Number(b?.timestamp || b?.time || b?.epoch || 0);
+        return bt - at;
+      })
+      .slice(0, 5);
+  }, [transactions]);
 
   function log(message, type = "info") {
     setLogs(current => [
@@ -136,7 +173,7 @@ export default function RiseFallTouchAnalysis() {
         barrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(2)}`;
       }
 
-      log(`SETUP SPOTTED → ${setup} · confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
+      log(`SETUP SPOTTED â†’ ${setup} Â· confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
       setBotStatus(`BUYING ${setup}`);
 
       const bought = await feed.placeTrade({
@@ -161,7 +198,7 @@ export default function RiseFallTouchAnalysis() {
       setTradeCount(x => x + 1);
       lastTradeRef.current = Date.now();
       setBotStatus(`MONITORING ${setup}`);
-      log(`TRADE OPEN → ${contractId}`, "trade");
+      log(`TRADE OPEN â†’ ${contractId}`, "trade");
     } catch (error) {
       log(error?.message || "Trade failed.", "error");
       setBotStatus("SCAN");
@@ -196,14 +233,14 @@ export default function RiseFallTouchAnalysis() {
       if (Number.isFinite(takeProfit) && pnl >= takeProfit) {
         setBotRunning(false);
         setBotStatus("TAKE PROFIT");
-        log(`SESSION TAKE PROFIT HIT → +${pnl.toFixed(2)}`, "win");
+        log(`SESSION TAKE PROFIT HIT â†’ +${pnl.toFixed(2)}`, "win");
         return;
       }
 
       if (Number.isFinite(stopLoss) && pnl <= -stopLoss) {
         setBotRunning(false);
         setBotStatus("STOP LOSS");
-        log(`SESSION STOP LOSS HIT → ${pnl.toFixed(2)}`, "loss");
+        log(`SESSION STOP LOSS HIT â†’ ${pnl.toFixed(2)}`, "loss");
         return;
       }
 
@@ -297,10 +334,10 @@ export default function RiseFallTouchAnalysis() {
 
           if (pnl >= 0) {
             setWins(x => x + 1);
-            log(`RESULT WON → +${pnl.toFixed(2)}`, "win");
+            log(`RESULT WON â†’ +${pnl.toFixed(2)}`, "win");
           } else {
             setLosses(x => x + 1);
-            log(`RESULT LOST → ${pnl.toFixed(2)}`, "loss");
+            log(`RESULT LOST â†’ ${pnl.toFixed(2)}`, "loss");
           }
 
           // Ref is now clear, so the continuous scanner can find
@@ -351,7 +388,7 @@ export default function RiseFallTouchAnalysis() {
     }
     setBotRunning(true);
     setBotStatus("SCANNING");
-    log("BOT STARTED → continuous scan until signal / TP / SL.", "system");
+    log("BOT STARTED â†’ continuous scan until signal / TP / SL.", "system");
   }
 
   function stopBot() {
@@ -369,7 +406,7 @@ export default function RiseFallTouchAnalysis() {
     <div className="rftPage">
       <Topbar
         title="Rise/Fall and Touch/No Touch Analysis Tool"
-        subtitle="Live market analysis · signal engine · continuous Demo/Real bot"
+        subtitle="Live market analysis Â· signal engine Â· continuous Demo/Real bot"
         connected={feed.connected}
         connecting={feed.status === "CONNECTING"}
         onConnect={() => {
@@ -435,8 +472,8 @@ export default function RiseFallTouchAnalysis() {
             ))}
             <article className="rftCard">
               <div className="rftCardTitle"><span>MARKET METRICS</span><b>{analysis.ready ? "READY" : "CALIBRATING"}</b></div>
-              <p>RSI {fmt(analysis.metrics?.rsi, 1)} · Vol {fmt(analysis.metrics?.volatility, 5)} · Z {fmt(analysis.metrics?.zScore, 2)}</p>
-              <p>Samples {analysis.metrics?.samples || 0} · Current {fmt(analysis.metrics?.current)}</p>
+              <p>RSI {fmt(analysis.metrics?.rsi, 1)} Â· Vol {fmt(analysis.metrics?.volatility, 5)} Â· Z {fmt(analysis.metrics?.zScore, 2)}</p>
+              <p>Samples {analysis.metrics?.samples || 0} Â· Current {fmt(analysis.metrics?.current)}</p>
             </article>
           </div>
         </main>
@@ -469,16 +506,15 @@ export default function RiseFallTouchAnalysis() {
             <label>Take profit<input type="number" min="0.1" step="0.1" value={settings.takeProfit} disabled={botRunning} onChange={e => update("takeProfit", e.target.value)} /></label>
             <label>Stop loss<input type="number" min="0.1" step="0.1" value={settings.stopLoss} disabled={botRunning} onChange={e => update("stopLoss", e.target.value)} /></label>
           </div>
-
           <div className="rftLivePanels">
-            <div className="rftLivePanel">
+            <div className="rftLivePanel rftOpenPanel">
               <div className="rftLivePanelHead">
                 <span>OPEN TRADE</span>
                 <b>{openTrades.length}</b>
               </div>
 
               {openTrades.length ? (
-                openTrades.slice(0, 2).map((trade, i) => (
+                openTrades.slice(0, 3).map((trade, i) => (
                   <div className="rftLiveRow" key={`${trade.contract_id || trade.id || i}`}>
                     <strong>
                       {String(
@@ -488,12 +524,8 @@ export default function RiseFallTouchAnalysis() {
                         "CONTRACT"
                       ).toUpperCase()}
                     </strong>
-                    <span>
-                      {trade.contract_id || trade.id || "—"}
-                    </span>
-                    <em>
-                      {String(trade.status || "OPEN").toUpperCase()}
-                    </em>
+                    <span>{trade.contract_id || trade.id || "—"}</span>
+                    <em>{String(trade.status || "OPEN").toUpperCase()}</em>
                   </div>
                 ))
               ) : (
@@ -501,36 +533,99 @@ export default function RiseFallTouchAnalysis() {
               )}
             </div>
 
-            <div className="rftLivePanel">
+            <div className="rftLivePanel rftTransactionsPanel">
               <div className="rftLivePanelHead">
-                <span>TRANSACTIONS</span>
-                <b>{transactions.length}</b>
+                <div>
+                  <span>TRANSACTIONS</span>
+                  <small>5 latest trades · click to expand</small>
+                </div>
+                <b>{transactionRows.length}/5</b>
               </div>
 
-              {transactions.length ? (
-                transactions.slice(0, 3).map((tx, i) => (
-                  <div className="rftLiveRow" key={`${tx.id || tx.transaction_id || i}`}>
-                    <strong>
-                      {String(
-                        tx.action ||
-                        tx.transaction_type ||
-                        tx.contract_type ||
-                        "TRADE"
-                      ).toUpperCase()}
-                    </strong>
-                    <span>
-                      {tx.contract_id || tx.id || "—"}
-                    </span>
-                    <em>
-                      {Number(
-                        tx.amount ??
-                        tx.buy_price ??
-                        tx.sell_price ??
-                        0
-                      ).toFixed(2)}
-                    </em>
-                  </div>
-                ))
+              {transactionRows.length ? (
+                <div className="rftTxTable">
+                  {transactionRows.map((tx, i) => {
+                    const id = String(tx.contract_id || tx.id || `tx-${i}`);
+                    const isOpen = expandedTx === id;
+                    const type = String(
+                      tx.action ||
+                      tx.contract_type ||
+                      tx.contractType ||
+                      tx.setup ||
+                      tx.transaction_type ||
+                      "TRADE"
+                    ).toUpperCase();
+
+                    const status = String(
+                      tx.status ||
+                      tx.result ||
+                      tx.transaction_type ||
+                      (tx.sell_price != null ? "CLOSED" : "OPEN")
+                    ).toUpperCase();
+
+                    const amount = Number(
+                      tx.amount ??
+                      tx.buy_price ??
+                      tx.sell_price ??
+                      tx.stake ??
+                      0
+                    );
+
+                    const profit = Number(
+                      tx.profit ??
+                      tx.profit_loss ??
+                      tx.pnl ??
+                      0
+                    );
+
+                    return (
+                      <div
+                        className={`rftTxRow ${isOpen ? "expanded" : ""}`}
+                        key={id}
+                      >
+                        <button
+                          type="button"
+                          className="rftTxMain"
+                          onClick={() => setExpandedTx(isOpen ? null : id)}
+                          aria-expanded={isOpen}
+                        >
+                          <span className="rftTxNumber">{i + 1}</span>
+                          <span className="rftTxTrade">
+                            <strong>{type}</strong>
+                            <small>{id}</small>
+                          </span>
+                          <span className={`rftTxStatus ${status.includes("LOST") ? "negative" : status.includes("WON") ? "positive" : ""}`}>
+                            {status}
+                          </span>
+                          <span className="rftTxArrow">{isOpen ? "▲" : "▼"}</span>
+                        </button>
+
+                        {isOpen && (
+                          <div className="rftTxDetails">
+                            <div>
+                              <span>CONTRACT</span>
+                              <strong>{id}</strong>
+                            </div>
+                            <div>
+                              <span>AMOUNT</span>
+                              <strong>{Number.isFinite(amount) ? amount.toFixed(2) : "0.00"} USD</strong>
+                            </div>
+                            <div>
+                              <span>RESULT</span>
+                              <strong className={profit < 0 ? "negative" : profit > 0 ? "positive" : ""}>
+                                {status.includes("OPEN") ? "Pending" : `${profit >= 0 ? "+" : ""}${profit.toFixed(2)} USD`}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>EVENTS</span>
+                              <strong>{Array.isArray(tx.events) ? tx.events.length : 1}</strong>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
                 <div className="rftPanelEmpty">No transactions yet</div>
               )}
@@ -548,7 +643,7 @@ export default function RiseFallTouchAnalysis() {
                     <span>{item.message}</span>
                   </div>
                 ))
-              : <div className="rftChatEmpty">Deriv bot chat will appear here…</div>}
+              : <div className="rftChatEmpty">Deriv bot chat will appear hereâ€¦</div>}
           </div>
 
 
