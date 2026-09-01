@@ -417,49 +417,6 @@ export default function RiseFallTouchAnalysis() {
               <p>Samples {analysis.metrics?.samples || 0} · Current {fmt(analysis.metrics?.current)}</p>
             </article>
           </div>
-
-          <section className="rftTransactions">
-            <div className="rftTransactionsHead">
-              <div>
-                <span>TRADE HISTORY</span>
-                <strong>Recent Transactions</strong>
-              </div>
-              <b>{transactions.length}</b>
-            </div>
-
-            {transactions.length ? (
-              <div className="rftTransactionsList">
-                {transactions.slice(0, 8).map((tx, i) => (
-                  <div className="rftTransactionRow" key={`${tx.id || tx.transaction_id || i}`}>
-                    <div>
-                      <strong>
-                        {String(
-                          tx.action ||
-                          tx.transaction_type ||
-                          tx.contract_type ||
-                          "TRADE"
-                        ).toUpperCase()}
-                      </strong>
-                      <span>
-                        {tx.contract_id || tx.id || "Transaction"}
-                      </span>
-                    </div>
-
-                    <em>
-                      {Number(
-                        tx.amount ??
-                        tx.buy_price ??
-                        tx.sell_price ??
-                        0
-                      ).toFixed(2)}
-                    </em>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rftPanelEmpty">No transactions yet</div>
-            )}
-          </section>
         </main>
 
         <aside className="rftBot">
@@ -623,6 +580,8 @@ export default function RiseFallTouchAnalysis() {
     </div>
   );
 }
+
+
 
 
 

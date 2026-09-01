@@ -280,3 +280,183 @@
     width:100%;
   }
 }
+
+/* FINAL RFT dashboard balance */
+.rftGrid{
+  grid-template-columns:minmax(0,1fr) 285px;
+  gap:10px;
+}
+
+.rftBot{
+  min-width:0;
+  overflow:hidden;
+}
+
+.rftBotHead{
+  padding:9px 10px;
+}
+
+.rftBotHead strong{
+  font-size:11px;
+}
+
+.rftBotStats{
+  padding:7px 9px;
+}
+
+.rftBotStats b{
+  font-size:11px;
+}
+
+.rftBotActions{
+  padding:7px;
+}
+
+.rftBotActions button{
+  min-height:34px;
+  font-size:9px;
+}
+
+.rftControls{
+  padding:7px;
+  gap:6px;
+}
+
+.rftControls input,
+.rftControls select{
+  height:29px;
+  min-height:29px;
+  font-size:9px;
+}
+
+.rftLivePanels{
+  padding:6px;
+  gap:6px;
+}
+
+.rftLivePanel{
+  padding:6px;
+}
+
+.rftLiveRow{
+  padding:4px 0;
+}
+
+.rftLiveRow strong,
+.rftLiveRow span,
+.rftLiveRow em{
+  font-size:8px;
+}
+
+.rftChat{
+  min-height:80px;
+  max-height:115px;
+  padding:6px;
+}
+
+.rftChatLine time,
+.rftChatLine span{
+  font-size:8px;
+}
+
+@media (max-width:1100px){
+  .rftGrid{
+    grid-template-columns:minmax(0,1fr) 265px;
+  }
+}
+
+@media (max-width:900px){
+  .rftGrid{
+    grid-template-columns:1fr;
+  }
+}
+
+/* FINAL RFT dashboard balance */
+.rftGrid{
+  grid-template-columns:minmax(0,1fr) 285px;
+  gap:10px;
+}
+
+.rftBot{
+  min-width:0;
+  overflow:hidden;
+}
+
+.rftBotHead{
+  padding:9px 10px;
+}
+
+.rftBotHead strong{
+  font-size:11px;
+}
+
+.rftBotStats{
+  padding:7px 9px;
+}
+
+.rftBotStats b{
+  font-size:11px;
+}
+
+.rftBotActions{
+  padding:7px;
+}
+
+.rftBotActions button{
+  min-height:34px;
+  font-size:9px;
+}
+
+.rftControls{
+  padding:7px;
+  gap:6px;
+}
+
+.rftControls input,
+.rftControls select{
+  height:29px;
+  min-height:29px;
+  font-size:9px;
+}
+
+.rftLivePanels{
+  padding:6px;
+  gap:6px;
+}
+
+.rftLivePanel{
+  padding:6px;
+}
+
+.rftLiveRow{
+  padding:4px 0;
+}
+
+.rftLiveRow strong,
+.rftLiveRow span,
+.rftLiveRow em{
+  font-size:8px;
+}
+
+.rftChat{
+  min-height:80px;
+  max-height:115px;
+  padding:6px;
+}
+
+.rftChatLine time,
+.rftChatLine span{
+  font-size:8px;
+}
+
+@media (max-width:1100px){
+  .rftGrid{
+    grid-template-columns:minmax(0,1fr) 265px;
+  }
+}
+
+@media (max-width:900px){
+  .rftGrid{
+    grid-template-columns:1fr;
+  }
+}
