@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useDerivTicks from "../hooks/useDerivTicks";
 import Topbar from "../components/Topbar";
 import { useDerivAuth } from "../auth/DerivAuthContext";
@@ -253,11 +253,17 @@ export default function RiseFallTouchAnalysis() {
     sessionPnl
   ]);
 
+    // Contract settlement monitor.
+  // activeRef is a ref, so changing it does not rerender the component.
+  // The monitor therefore starts/stops with botRunning and checks the
+  // currently active contract every 900ms.
   useEffect(() => {
-    if (!activeRef.current) return;
-    const timer = window.setInterval(async () => {
+    if (!botRunning) return;
+
+    const monitor = async () => {
       const active = activeRef.current;
-      if (!active) return;
+      if (!active || busyRef.current) return;
+
       try {
         const response = await feed.refreshContract(active.contractId);
         const contract =
@@ -266,35 +272,51 @@ export default function RiseFallTouchAnalysis() {
           response?.contract ||
           response?.data?.contract ||
           response;
+
         const status = String(contract?.status || "").toLowerCase();
         const finished = Boolean(
-          contract?.is_sold || contract?.is_expired ||
+          contract?.is_sold ||
+          contract?.is_expired ||
           ["sold", "won", "lost", "expired", "cancelled"].includes(status)
         );
+
         const profit = Number(
-          contract?.profit ?? contract?.profit_loss ?? contract?.pnl ??
-          (Number(contract?.sell_price || 0) - Number(contract?.buy_price || active.stake))
+          contract?.profit ??
+          contract?.profit_loss ??
+          contract?.pnl ??
+          (Number(contract?.sell_price || 0) -
+            Number(contract?.buy_price || active.stake))
         );
+
         if (finished) {
           const pnl = Number.isFinite(profit) ? profit : 0;
+
           activeRef.current = null;
           pnlRef.current += pnl;
           setSessionPnl(pnlRef.current);
+
           if (pnl >= 0) {
             setWins(x => x + 1);
-            log(`RESULT WON → ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}`, "win");
+            log(`RESULT WON → +${pnl.toFixed(2)}`, "win");
           } else {
             setLosses(x => x + 1);
             log(`RESULT LOST → ${pnl.toFixed(2)}`, "loss");
           }
+
+          // Ref is now clear, so the continuous scanner can find
+          // the next valid setup on its next scan.
           setBotStatus("SCANNING");
         }
       } catch (error) {
         log(`Contract monitor: ${error?.message || "retrying"}`, "error");
       }
-    }, 900);
+    };
+
+    monitor();
+    const timer = window.setInterval(monitor, 900);
+
     return () => window.clearInterval(timer);
-  }, [feed.refreshContract]);
+  }, [botRunning, feed.refreshContract]);
 
   function startBot() {
     if (!feed.connected) {
