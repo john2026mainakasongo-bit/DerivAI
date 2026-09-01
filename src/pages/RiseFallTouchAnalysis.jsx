@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import useDerivTicks from "../hooks/useDerivTicks";
+import Topbar from "../components/Topbar";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import derivPublicClient from "../services/derivApi";
 import { analyzeRiseFallTouch } from "../analysis/riseFallTouchEngine";
@@ -361,3 +362,6 @@ export default function RiseFallTouchAnalysis() {
     </section>
   );
 }
+
+
+
