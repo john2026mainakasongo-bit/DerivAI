@@ -384,6 +384,49 @@ export default function RiseFallTouchAnalysis() {
               <p>Samples {analysis.metrics?.samples || 0} · Current {fmt(analysis.metrics?.current)}</p>
             </article>
           </div>
+
+          <section className="rftTransactions">
+            <div className="rftTransactionsHead">
+              <div>
+                <span>TRADE HISTORY</span>
+                <strong>Recent Transactions</strong>
+              </div>
+              <b>{transactions.length}</b>
+            </div>
+
+            {transactions.length ? (
+              <div className="rftTransactionsList">
+                {transactions.slice(0, 8).map((tx, i) => (
+                  <div className="rftTransactionRow" key={`${tx.id || tx.transaction_id || i}`}>
+                    <div>
+                      <strong>
+                        {String(
+                          tx.action ||
+                          tx.transaction_type ||
+                          tx.contract_type ||
+                          "TRADE"
+                        ).toUpperCase()}
+                      </strong>
+                      <span>
+                        {tx.contract_id || tx.id || "Transaction"}
+                      </span>
+                    </div>
+
+                    <em>
+                      {Number(
+                        tx.amount ??
+                        tx.buy_price ??
+                        tx.sell_price ??
+                        0
+                      ).toFixed(2)}
+                    </em>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rftPanelEmpty">No transactions yet</div>
+            )}
+          </section>
         </main>
 
         <aside className="rftBot">
@@ -397,6 +440,11 @@ export default function RiseFallTouchAnalysis() {
             <div><span>WINS</span><b>{wins}</b></div>
             <div><span>LOSSES</span><b>{losses}</b></div>
             <div><span>TRADES</span><b>{tradeCount}</b></div>
+          </div>
+          <div className="rftBotActions">
+            {!botRunning
+              ? <button type="button" className="primary" onClick={startBot}>START CONTINUOUS BOT</button>
+              : <button type="button" className="danger" onClick={stopBot}>STOP BOT</button>}
           </div>
 
           <div className="rftControls">
@@ -491,11 +539,7 @@ export default function RiseFallTouchAnalysis() {
               : <div className="rftChatEmpty">Deriv bot chat will appear here…</div>}
           </div>
 
-          <div className="rftBotActions">
-            {!botRunning
-              ? <button type="button" className="primary" onClick={startBot}>START CONTINUOUS BOT</button>
-              : <button type="button" className="danger" onClick={stopBot}>STOP BOT</button>}
-          </div>
+
           <div className="rftRealControl">
   <div className="rftAccountMode">
     <span>EXECUTION ACCOUNT</span>
@@ -546,6 +590,8 @@ export default function RiseFallTouchAnalysis() {
     </div>
   );
 }
+
+
 
 
 
