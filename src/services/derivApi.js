@@ -1,4 +1,4 @@
-﻿const PUBLIC_SOCKET_URLS = [
+const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -732,20 +732,44 @@ class DerivTradingClient {
 
   async getHistory(symbol, count = 100) {
     const message = await this.request({
-        ticks_history: symbol,
-        count,
-        end: "latest",
-        style: "ticks",
-        adjust_start_time: 1,
+      ticks_history: symbol,
+      count,
+      end: "latest",
+      style: "ticks",
+      adjust_start_time: 1,
     });
 
     const history =
-        message.history ||
-        message.data?.history ||
-        [];
+      message.history ||
+      message.data?.history ||
+      [];
 
-    return history;
-}
+    // Deriv returns history as:
+    // { prices: [...], times: [...] }
+    // The rest of the app expects an array of tick objects.
+    if (Array.isArray(history)) {
+      return history;
+    }
+
+    const prices = Array.isArray(history?.prices)
+      ? history.prices
+      : [];
+
+    const times = Array.isArray(history?.times)
+      ? history.times
+      : [];
+
+    return prices
+      .map((price, index) => ({
+        quote: Number(price),
+        epoch: Number(times[index] ?? 0),
+      }))
+      .filter(
+        (item) =>
+          Number.isFinite(item.quote) &&
+          Number.isFinite(item.epoch)
+      );
+  }
 
   async subscribeTicks(symbol) {
     await this.forgetCurrentSubscription();
