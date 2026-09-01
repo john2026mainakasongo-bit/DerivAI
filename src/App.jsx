@@ -1,4 +1,4 @@
-import {
+﻿import {
   BrowserRouter,
   Navigate,
   Route,
@@ -8,6 +8,7 @@ import {
 import Dashboard from "./pages/Dashboard";
 import TradingCommandCenter from "./pages/TradingCommandCenter";
 import Login from "./pages/Login";
+import RiseFallTouchAnalysis from "./pages/RiseFallTouchAnalysis";
 import "./index.css";
 
 export default function App() {
@@ -17,7 +18,14 @@ export default function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/command-center" element={<TradingCommandCenter />} />
+        <Route
+          path="/command-center"
+          element={<TradingCommandCenter />}
+        />
+        <Route
+          path="/rise-fall-touch"
+          element={<RiseFallTouchAnalysis />}
+        />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
