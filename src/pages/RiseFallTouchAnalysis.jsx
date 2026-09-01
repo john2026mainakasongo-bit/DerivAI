@@ -118,9 +118,19 @@ export default function RiseFallTouchAnalysis() {
       if (setup === "TOUCH" || setup === "NO TOUCH") {
         const distance = Math.max(Number(settings.barrierDistance) || 1, 0.1);
         const vol = Number(analysis.metrics?.volatility || 0);
-        const px = Number(analysis.metrics?.current || feed.currentPrice || 0);
-        const direction = setup === "TOUCH" ? (active?.setup === "RISE" ? 1 : -1) : (active?.setup === "RISE" ? -1 : 1);
-        barrier = String(px + direction * Math.max(vol * distance, 0.00001));
+
+        const bullish = active?.setup === "RISE";
+        const direction =
+          setup === "TOUCH"
+            ? (bullish ? 1 : -1)
+            : (bullish ? -1 : 1);
+
+        const offset = Math.max(
+          vol * distance,
+          0.01
+        );
+
+        barrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(2)}`;
       }
 
       log(`SETUP SPOTTED → ${setup} · confidence ${Number(signal.confidence || 0).toFixed(1)}%`, "signal");
@@ -338,16 +348,16 @@ export default function RiseFallTouchAnalysis() {
 
           <div className="rftSignalRow">
             <article className={`rftSignal ${analysis.signal === "RISE" ? "active" : ""}`}>
-              <span>RISE</span><strong>{Number(analysis.engines?.find(x => x.family === "RISE_FALL")?.probability || 0).toFixed(1)}%</strong>
+              <span>RISE</span><strong>{Number(analysis.engines?.find(x => x.family === "RISE_FALL")?.riseProbability || 0).toFixed(1)}%</strong>
             </article>
             <article className={`rftSignal ${analysis.signal === "FALL" ? "active" : ""}`}>
-              <span>FALL</span><strong>{Number(analysis.engines?.find(x => x.family === "RISE_FALL")?.probability || 0).toFixed(1)}%</strong>
+              <span>FALL</span><strong>{Number(analysis.engines?.find(x => x.family === "RISE_FALL")?.fallProbability || 0).toFixed(1)}%</strong>
             </article>
             <article className={`rftSignal ${analysis.signal === "TOUCH" ? "active" : ""}`}>
-              <span>TOUCH</span><strong>{Number(analysis.engines?.find(x => x.setup === "TOUCH")?.probability || 0).toFixed(1)}%</strong>
+              <span>TOUCH</span><strong>{Number(analysis.engines?.find(x => x.family === "TOUCH_NO_TOUCH")?.touchProbability || 0).toFixed(1)}%</strong>
             </article>
             <article className={`rftSignal ${analysis.signal === "NO TOUCH" ? "active" : ""}`}>
-              <span>NO TOUCH</span><strong>{Number(analysis.engines?.find(x => x.setup === "NO TOUCH")?.probability || 0).toFixed(1)}%</strong>
+              <span>NO TOUCH</span><strong>{Number(analysis.engines?.find(x => x.family === "TOUCH_NO_TOUCH")?.noTouchProbability || 0).toFixed(1)}%</strong>
             </article>
           </div>
 
@@ -450,6 +460,8 @@ export default function RiseFallTouchAnalysis() {
     </div>
   );
 }
+
+
 
 
 
