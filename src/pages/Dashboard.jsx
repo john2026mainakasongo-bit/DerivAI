@@ -1,5 +1,5 @@
-﻿import RiseFallTouchAnalysis from "./RiseFallTouchAnalysis";
+﻿import StrategyEngineV36 from "../components/StrategyEngineV36";
 
 export default function Dashboard() {
-  return <RiseFallTouchAnalysis />;
+  return <StrategyEngineV36 />;
 }
