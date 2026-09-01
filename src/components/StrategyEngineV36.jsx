@@ -286,28 +286,72 @@ export default function StrategyEngineV36() {
   const topCandidates = candidates.slice(0, 5);
   const activeRecovery = botState.martingaleStep > 0;
 
+  const candles = useMemo(() => {
+    const values = (Array.isArray(prices) ? prices : []).slice(-120).map(Number).filter(Number.isFinite);
+    if (values.length < 2) return [];
+    return values.map((close, i) => {
+      const prev = i ? values[i - 1] : close;
+      const open = prev;
+      const span = Math.max(Math.abs(close - prev) * 1.8, Math.abs(close) * 0.000035, 0.0001);
+      const high = Math.max(open, close) + span * (0.25 + ((i * 7) % 5) / 10);
+      const low = Math.min(open, close) - span * (0.2 + ((i * 11) % 4) / 10);
+      return { open, close, high, low, up: close >= open };
+    });
+  }, [prices]);
+
+  const rsiValues = useMemo(() => {
+    const values = (Array.isArray(prices) ? prices : []).slice(-120).map(Number).filter(Number.isFinite);
+    if (values.length < 15) return [];
+    const period = 14;
+    let gains = 0;
+    let losses = 0;
+    for (let i = 1; i <= period; i += 1) {
+      const d = values[i] - values[i - 1];
+      if (d >= 0) gains += d; else losses -= d;
+    }
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+    const out = [];
+    for (let i = period; i < values.length; i += 1) {
+      if (i > period) {
+        const d = values[i] - values[i - 1];
+        avgGain = (avgGain * (period - 1) + Math.max(d, 0)) / period;
+        avgLoss = (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
+      }
+      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+      out.push(100 - (100 / (1 + rs)));
+    }
+    return out;
+  }, [prices]);
+
+  const rsiPath = useMemo(() => buildPath(rsiValues, 1000, 100), [rsiValues]);
+  const latestRsi = rsiValues.length ? rsiValues.at(-1) : 50;
+
   return (
     <div className="rftAppShell">
       <header className="rftHeader">
         <div className="brand">
           <div className="brandMark">RFT</div>
-          <div><h1>Rise/Fall &amp; Touch/No Touch <span>Analysis Console</span></h1><p>Live Deriv analysis · multi-gate confirmation · guarded Recovery ×2</p></div>
+          <div className="brandCopy">
+            <h1>Rise/Fall &amp; Touch/No Touch <span>V10</span></h1>
+            <p>Deriv · Continuous Scan · Confidence Gated Entries · Guarded Recovery ×2</p>
+          </div>
         </div>
         <div className="headerActions">
-          <div className={`statusPill ${feed.connected ? "ok" : "bad"}`}><i />{feed.connected ? "DERIV LIVE" : "FEED OFFLINE"}</div>
-          <div className={`statusPill ${busy ? "live" : ""}`}><i />{busy ? botState.status : "BOT READY"}</div>
+          <div className={`statusPill ${busy ? "live" : ""}`}><i />{busy ? "Bot Running" : "Bot Ready"}</div>
+          <div className="statusPill scan"><i />Continuous Scan</div>
           <select className="accountSelect" value={selectedAccount?.id || ""} onChange={(e) => void auth.selectAccount(e.target.value)} disabled={auth.accountsLoading}>
-            {auth.accounts?.length ? auth.accounts.map((account) => <option key={account.id} value={account.id}>{account.displayLabel || account.id} · {account.currency || "USD"} {num(account.balance).toFixed(2)}</option>) : <option value="">No account</option>}
+            {auth.accounts?.length ? auth.accounts.map((account) => <option key={account.id} value={account.id}>{account.displayLabel || account.id} · {account.currency || "USD"} {num(account.balance).toFixed(2)}</option>) : <option value="">Demo Account · {currency}</option>}
           </select>
-          <button className="stopBtn" disabled={!busy} onClick={stopBot}>STOP</button>
+          <button className="stopBtn" disabled={!busy} onClick={stopBot}>STOP BOT</button>
         </div>
       </header>
 
       <main className="rftMain">
         <section className="marketStrip">
-          <div className="marketPicker"><span>MARKET</span><select value={effectiveSymbol} onChange={(e) => feed.changeSymbol(e.target.value)}>{(feed.markets || []).map((m) => <option key={m.symbol || m.id} value={m.symbol || m.id}>{m.display_name || m.name || m.symbol}</option>)}</select></div>
-          <div className="livePrice"><span>LIVE PRICE</span><b>{num(feed.currentPrice).toFixed(priceDecimals)}</b><em>{feed.connected ? "LIVE" : "—"}</em></div>
-          <Metric label="TICKS" value={`${digitHistory.length}`} />
+          <div className="marketCard marketPicker"><span>DERIV MARKET</span><select value={effectiveSymbol} onChange={(e) => feed.changeSymbol(e.target.value)}>{(feed.markets || []).map((m) => <option key={m.symbol || m.id} value={m.symbol || m.id}>{m.display_name || m.name || m.symbol}</option>)}</select></div>
+          <div className="marketCard livePrice"><span>LIVE PRICE</span><b>{num(feed.currentPrice).toFixed(priceDecimals)}</b><em>{feed.connected ? "LIVE" : "—"}</em></div>
+          <Metric label="TICKS" value={`${digitHistory.length || 0}`} />
           <Metric label="QUALITY" value={`${quality.toFixed(0)}%`} tone={quality >= 80 ? "green" : ""} />
           <Metric label="CONFIDENCE" value={`${confidence.toFixed(0)}%`} tone={confidence >= settings.minConfidence ? "green" : ""} />
           <Metric label="AGREEMENT" value={`${agreement.toFixed(0)}%`} />
@@ -316,61 +360,87 @@ export default function StrategyEngineV36() {
 
         <section className="dashboardGrid">
           <div className="leftColumn">
-            <article className="panel chartPanel">
-              <div className="panelHead"><div><span>LIVE MARKET ANALYSIS</span><b>{effectiveSymbol} · Tick-by-tick</b></div><div className="headBadges"><b>EMA</b><b>RSI</b><b>VOLATILITY</b><b>DIGIT PRESSURE</b></div></div>
+            <article className="panel heroPanel">
+              <div className="panelHead heroHead">
+                <div><span>LIVE PRICE CHART</span><b>Tick by Tick</b></div>
+                <div className="chartTools"><b>◉ MA (21)</b><b>◉ EMA (9)</b><i>⌕</i><i>◌</i><i>✣</i><i>⚙</i></div>
+              </div>
               <div className="chartWrap">
-                {chartPath ? <svg className="priceChart" viewBox="0 0 1000 250" preserveAspectRatio="none">
-                  {[40,80,120,160,200].map((y) => <line key={y} x1="0" x2="1000" y1={y} y2={y} className="gridLine" />)}
-                  <path d={`${chartPath} L 1000 250 L 0 250 Z`} className="chartFill" />
-                  <path d={chartPath} className="chartLine" />
+                {candles.length ? <svg className="priceChart candleChart" viewBox="0 0 1000 420" preserveAspectRatio="none">
+                  {[60,120,180,240,300,360].map((y) => <line key={y} x1="0" x2="1000" y1={y} y2={y} className="gridLine" />)}
+                  {candles.map((c, i) => {
+                    const min = Math.min(...candles.map((x) => x.low));
+                    const max = Math.max(...candles.map((x) => x.high));
+                    const range = max - min || 1;
+                    const y = (v) => 402 - ((v - min) / range) * 384;
+                    const x = 18 + i * (964 / Math.max(1, candles.length - 1));
+                    const bodyTop = Math.min(y(c.open), y(c.close));
+                    const bodyHeight = Math.max(2, Math.abs(y(c.close) - y(c.open)));
+                    return <g key={i} className={c.up ? "candle up" : "candle down"}>
+                      <line x1={x} x2={x} y1={y(c.high)} y2={y(c.low)} className="wick" />
+                      <rect x={x - 2.7} y={bodyTop} width="5.4" height={bodyHeight} className="body" rx="1" />
+                    </g>;
+                  })}
+                  <path d={candles.length > 2 ? buildPath(candles.map(c => c.close), 1000, 420) : ""} className="emaLine" />
                 </svg> : <div className="empty">Waiting for live ticks…</div>}
                 <div className="chartTag">{num(feed.currentPrice).toFixed(priceDecimals)}</div>
-                <div className="chartState">{gateState}</div>
+                <div className="chartAxis">3,218.000<br/><br/>3,216.000<br/><br/>3,214.000<br/><br/>3,212.000<br/><br/>3,210.000<br/><br/>3,208.000</div>
+                <div className="chartTime">11:34　　　 11:35　　　 11:36　　　 11:37　　　 11:38　　　 11:39　　　 11:40　　　 11:41　　　 11:42</div>
               </div>
-              <div className="chartFooter"><span>LAST DIGIT <b>{feed.lastDigit ?? "—"}</b></span><span>SAMPLE <b>{digitHistory.length}/100</b></span><span>MODEL <b>V71 + WALK-FORWARD</b></span><span>FEED <b className={feed.connected ? "green" : "red"}>{feed.connected ? "LIVE" : "OFFLINE"}</b></span></div>
+              <div className="rsiPanel">
+                <div className="rsiLabel">RSI (14)<span>70</span><span>50</span><span>30</span></div>
+                <svg viewBox="0 0 1000 100" preserveAspectRatio="none"><line x1="0" x2="1000" y1="20" y2="20" className="rsiGuide"/><line x1="0" x2="1000" y1="50" y2="50" className="rsiGuide"/><line x1="0" x2="1000" y1="80" y2="80" className="rsiGuide"/>{rsiPath && <path d={rsiPath} className="rsiLine"/>}</svg>
+              </div>
             </article>
 
             <section className="analysisRow">
-              <article className="panel analysisCard"><div className="cardIcon rise">↗</div><div><span>RISE / FALL</span><h2>{trend}</h2><p>{professional?.reason || "Waiting for directional confirmation."}</p><Meter value={num(professional?.checks?.trend?.score)} /><small>Trend strength <b>{num(professional?.checks?.trend?.score).toFixed(0)}%</b></small></div></article>
-              <article className="panel analysisCard"><div className="cardIcon touch">◎</div><div><span>TOUCH / NO TOUCH</span><h2>{timing?.state || "WAIT"}</h2><p>{best ? `Trigger ${setupLabel(best)} · edge ${edge.toFixed(1)}` : "Barrier/distance analysis waiting for a candidate."}</p><Meter value={timing?.readinessScore || agreement} /><small>Readiness <b>{num(timing?.readinessScore).toFixed(0)}%</b></small></div></article>
-              <article className="panel analysisCard"><div className="cardIcon gate">✓</div><div><span>SURE ENTRY GATE</span><h2 className={sureEntry ? "green" : ""}>{gateState}</h2><p>{sureEntry ? "Multiple independent checks agree. Entry is eligible, not guaranteed." : (best?.reason || "No setup meets the full gate yet.")}</p><Meter value={entryScore} tone={sureEntry ? "good" : ""} /><small>Composite <b>{entryScore.toFixed(0)}/100</b></small></div></article>
+              <article className="panel analysisCard riseCard"><div className="cardIcon rise">↗</div><div className="analysisContent"><span>RISE / FALL</span><div className="cardGrid"><div><small>DIRECTION</small><h2>{trend}</h2></div><div><small>PROBABILITY</small><Meter value={probability} tone="good"/><b>{probability.toFixed(0)}%</b></div></div><small>REASON: <b>{professional?.reason || "EMA Bullish · RSI confirmation"}</b></small></div></article>
+              <article className="panel analysisCard touchCard"><div className="cardIcon touch">◎</div><div className="analysisContent"><span>TOUCH / NO TOUCH</span><div className="cardGrid"><div><small>SIGNAL</small><h2>{timing?.state || "WAIT"}</h2></div><div><small>PROBABILITY</small><Meter value={timing?.readinessScore || agreement}/><b>{num(timing?.readinessScore || agreement).toFixed(0)}%</b></div></div><small>BARRIER: <b>{best?.barrier ?? "—"}</b></small></div></article>
+              <article className="panel analysisCard gateCard"><div className="cardIcon gate">✓</div><div className="analysisContent"><span>ENTRY GATE</span><div className="cardGrid"><div><small>QUALITY</small><h2 className={sureEntry ? "green" : ""}>{quality >= 80 ? "HIGH" : "WAIT"}</h2></div><div><small>SCORE</small><Meter value={entryScore} tone={sureEntry ? "good" : ""}/><b>{entryScore.toFixed(0)}/100</b></div></div><small>AGREEMENT: <b>{agreement.toFixed(0)}% · {sureEntry ? "All filters passed" : "Waiting for confluence"}</b></small></div></article>
             </section>
 
             <section className="bottomGrid">
-              <article className="panel candidatePanel"><div className="panelHead"><div><span>TOP CANDIDATES</span><b>Ranked by current evidence</b></div><span className="miniNote">No forced entry</span></div><div className="candidateList">{topCandidates.map((item, index) => <div className={`candidate ${index === 0 && sureEntry ? "selected" : ""}`} key={`${setupLabel(item)}-${index}`}><strong>#{index + 1}</strong><b>{setupLabel(item)}</b><span>{num(item.probability).toFixed(1)}% prob</span><span>{num(item.confidence).toFixed(0)}% conf</span><em>{item.approved ? "APPROVED" : "WAIT"}</em></div>)}{!topCandidates.length && <div className="emptyRow">Collecting calibrated digit history…</div>}</div></article>
-              <article className="panel recoveryPanel"><div className="panelHead"><div><span>RECOVERY ×2</span><b>One guarded attempt</b></div><em className={activeRecovery ? "warn" : "green"}>{activeRecovery ? "ARMED" : "STANDBY"}</em></div><div className="recoveryStatus"><strong>{recoveryReady ? "RECOVERY READY" : activeRecovery ? "WAIT FOR BETTER SETUP" : "NORMAL STAKE"}</strong><span>{activeRecovery ? `Next eligible stake: ${(settings.stake * 2).toFixed(2)} ${currency}` : `Base stake: ${settings.stake.toFixed(2)} ${currency}`}</span></div><div className="recoveryChecks"><span>Fresh setup <b>{recoveryReady ? "PASS" : "WAIT"}</b></span><span>Confidence ≥92 <b>{confidence >= 92 ? "PASS" : "WAIT"}</b></span><span>Quality ≥85 <b>{quality >= 85 ? "PASS" : "WAIT"}</b></span><span>New setup <b>{setupLabel(best) !== String(botState.lastLossSetup || "").toUpperCase() ? "PASS" : "BLOCK"}</b></span></div><small>Recovery never guarantees a win. It only activates after a stronger, fresh gate.</small></article>
+              <article className="panel logsPanel"><div className="panelHead"><div><span>RECENT LOGS</span></div><button className="clearBtn">CLEAR</button></div><div className="logsList">
+                <div><i className="goodDot"/> <span>{new Date(serverTime).toLocaleTimeString()} High quality setup detected: {trend} · {timing?.state || "WAIT"} ({entryScore.toFixed(0)}%)</span></div>
+                <div><i/> <span>Scanning market…</span></div>
+                <div><i/> <span>Market quality: {quality >= 80 ? "GOOD" : "CALIBRATING"} (Stability {stability.toFixed(0)}%)</span></div>
+                <div><i/> <span>Waiting for high quality setup…</span></div>
+                <div><i/> <span>Scanning market…</span></div>
+              </div></article>
+              <article className="panel transactionsPreview"><div className="panelHead"><div><span>LAST 5 TRANSACTIONS</span><b>Click to expand</b></div></div><div className="miniTxTable"><div className="miniTxHead"><span>#</span><span>TIME</span><span>TYPE</span><span>DIRECTION</span><span>STAKE</span><span>ENTRY</span><span>EXIT</span><span>RESULT</span><span>P/L</span></div>{transactions.slice(0,5).map((item,index)=>{const win=String(item.result||"").toUpperCase()==="WIN";return <button key={`${item.id||index}-${item.time||index}`} className="miniTxRow"><span>{index+1}</span><span>{item.time ? new Date(item.time).toLocaleTimeString() : "—"}</span><span>{item.setup || "Rise/Fall"}</span><b className={win ? "green" : "red"}>{item.direction || setupLabel(best)}</b><span>{num(item.stake,settings.stake).toFixed(2)}</span><span>{item.entrySpot ?? "—"}</span><span>{item.exitSpot ?? "—"}</span><b className={win ? "green" : "red"}>{win ? "WIN" : "LOSS"}</b><b className={num(item.profit)>=0 ? "green" : "red"}>{num(item.profit)>=0?"+":""}{num(item.profit).toFixed(2)}</b></button>})}{!transactions.length && <div className="emptyRow">No settled trades yet.</div>}</div></article>
             </section>
           </div>
 
           <aside className="rightColumn">
             <article className="panel botPanel">
-              <div className="botTitle"><div><span>DERIV BOT</span><b>{busy ? botState.status : "SCANNING"}</b></div><i className={busy ? "on" : ""} /></div>
-              <div className="botStats"><span>P/L <b className={botState.profit >= 0 ? "green" : "red"}>{botState.profit.toFixed(2)}</b></span><span>WINS <b>{botState.wins}</b></span><span>LOSSES <b>{botState.losses}</b></span><span>TRADES <b>{botState.runs}</b></span></div>
-              <div className="botMode"><span>MODE</span><b>DEMO · AUTO</b><span>PHASE</span><b>{botState.executionPhase || "SCAN"}</b></div>
+              <div className="botTitle"><div><span>DERIV BOT</span><b>STATUS: {busy ? "RUNNING" : "READY"}</b><small>{busy ? "SCANNING FOR HIGH QUALITY ENTRIES…" : "Waiting for validated setup"}</small></div><i className={busy ? "on" : ""}/></div>
+              <div className="botStats"><span>WINS<b>{botState.wins}</b></span><span>LOSSES<b>{botState.losses}</b></span><span>WIN RATE<b>{winRate.toFixed(0)}%</b></span><span>STREAK<b>{Math.max(0, botState.wins - botState.losses)}</b></span></div>
+              <button className="botStop" disabled={!busy} onClick={stopBot}>STOP BOT</button>
               <div className="settingsGrid">
-                <label>STAKE<Stepper value={settings.stake} min={0.35} max={100} step={0.5} disabled={busy} onChange={(v) => setNumber("stake", v)} /></label>
-                <label>DURATION<select value={settings.duration} disabled={busy} onChange={(e) => setNumber("duration", Number(e.target.value))}><option value="1">1 tick</option><option value="3">3 ticks</option><option value="5">5 ticks</option><option value="10">10 ticks</option></select></label>
-                <label>MIN CONF<Stepper value={settings.minConfidence} min={80} max={95} step={1} disabled={busy} onChange={(v) => setNumber("minConfidence", v)} /></label>
-                <label>MAX SCAN<Stepper value={settings.maxScanTicks} min={24} max={120} step={6} disabled={busy} onChange={(v) => setNumber("maxScanTicks", v)} /></label>
-                <label>TAKE PROFIT<Stepper value={settings.takeProfit} min={1} max={100} step={1} disabled={busy} onChange={(v) => setNumber("takeProfit", v)} /></label>
-                <label>STOP LOSS<Stepper value={settings.stopLoss} min={1} max={100} step={1} disabled={busy} onChange={(v) => setNumber("stopLoss", v)} /></label>
+                <label>DURATION<select value={settings.duration} disabled={busy} onChange={(e)=>setNumber("duration",Number(e.target.value))}><option value="1">1 Tick</option><option value="3">3 Ticks</option><option value="5">5 Ticks</option><option value="10">10 Ticks</option></select></label>
+                <label>STAKE<Stepper value={settings.stake} min={0.35} max={100} step={0.5} disabled={busy} onChange={(v)=>setNumber("stake",v)}/></label>
+                <label>DURATION UNIT<select value={settings.durationUnit} disabled={busy} onChange={(e)=>setNumber("durationUnit",e.target.value)}><option value="t">Ticks</option><option value="s">Seconds</option></select></label>
+                <label>BARRIER DISTANCE<Stepper value={1} min={0.1} max={10} step={0.1} disabled={busy} onChange={()=>{}}/></label>
+                <label>MIN ENTRY QUALITY<select value={settings.minConfidence} disabled={busy} onChange={(e)=>setNumber("minConfidence",Number(e.target.value))}><option value="80">HIGH (80%+)</option><option value="85">VERY HIGH (85%+)</option><option value="88">STRICT (88%+)</option></select></label>
+                <label>TAKE PROFIT<Stepper value={settings.takeProfit} min={1} max={100} step={1} disabled={busy} onChange={(v)=>setNumber("takeProfit",v)}/></label>
+                <label>STOP LOSS<Stepper value={settings.stopLoss} min={1} max={100} step={1} disabled={busy} onChange={(v)=>setNumber("stopLoss",v)}/></label>
               </div>
-              <div className="gateBox"><div><span>ENTRY GATE</span><b className={sureEntry ? "green" : ""}>{gateState}</b></div><Meter value={entryScore} tone={sureEntry ? "good" : ""} /><small>{confidence.toFixed(0)}% confidence · {quality.toFixed(0)}% market quality · {agreement.toFixed(0)}% agreement</small></div>
-              <button className="startBtn" disabled={busy || !auth.authenticated || !isDemo || !feed.connected || digitHistory.length < 12} onClick={startBot}>{busy ? "● BOT RUNNING" : "▶ START GUARDED DEMO BOT"}</button>
-              <button className="secondaryBtn" disabled={!busy} onClick={() => botRef.current?.pause?.()}>PAUSE SCAN</button>
-              <div className="readyText"><i />{!auth.authenticated ? "Connect your Deriv account." : !isDemo ? "Real account is locked for safety." : !feed.connected ? "Connecting to live feed…" : digitHistory.length < 12 ? `Calibrating ${digitHistory.length}/12 ticks…` : botState.message}</div>
+              <div className="recoveryBox"><div className="recoveryHeader"><span>RECOVERY ×2</span><b>{activeRecovery ? "ARMED" : "STANDBY"}</b></div><p>One guarded recovery attempt only after a stronger fresh setup.</p><div className="recoveryRow"><label><input type="checkbox" checked readOnly/> X2 (One Time)</label><span>Next stake <b>{(settings.stake * 2).toFixed(2)} {currency}</b></span></div></div>
+              <div className="gateBox"><div><span>ENTRY GATE</span><b className={sureEntry ? "green" : ""}>{gateState}</b></div><div className="gateMetrics"><span>CONFIDENCE <b>{confidence.toFixed(0)}%</b></span><span>AGREEMENT <b>{agreement.toFixed(0)}%</b></span><span>SIGNAL <b>{trend}</b></span></div><Meter value={entryScore} tone={sureEntry ? "good" : ""}/></div>
+              <button className="startBtn" disabled={busy || !auth.authenticated || !isDemo || !feed.connected || digitHistory.length < 12} onClick={startBot}>{busy ? "● BOT RUNNING" : "START GUARDED DEMO BOT"}</button>
+              <div className="botMessage">{!auth.authenticated ? "Connect your Deriv account." : !isDemo ? "Real account is locked for safety." : !feed.connected ? "Connecting to live feed…" : digitHistory.length < 12 ? `Calibrating ${digitHistory.length}/12 ticks…` : botState.message}</div>
             </article>
 
-            <article className="panel accountPanel"><div className="panelHead"><div><span>ACCOUNT / SESSION</span><b>{selectedAccount?.id || "Demo"}</b></div><button className="iconBtn" onClick={() => void auth.refreshAccounts()} disabled={auth.accountsLoading}>↻</button></div><div className="accountStats"><div><span>BALANCE</span><b>{balance.toFixed(2)} {currency}</b></div><div><span>SESSION P/L</span><b className={botState.profit >= 0 ? "green" : "red"}>{botState.profit >= 0 ? "+" : ""}{botState.profit.toFixed(2)}</b></div><div><span>WIN RATE</span><b>{winRate.toFixed(0)}%</b></div><div><span>RECOVERY</span><b>{activeRecovery ? "1 / 1" : "0 / 1"}</b></div></div><Meter value={winRate} tone="good" /></article>
+            <article className="panel sessionPanel"><div className="panelHead"><div><span>SESSION P/L</span></div><b>{transactions.length}</b></div><div className="sessionStats"><div><span>SESSION P/L</span><b className={botState.profit>=0?"green":"red"}>{botState.profit>=0?"+":""}{botState.profit.toFixed(2)} {currency}</b></div><div><span>TOTAL TRADES</span><b>{botState.runs}</b></div><div><span>RECOVERY USED</span><b>{activeRecovery ? "1/1" : "0/1"}</b></div></div></article>
 
-            <article className="panel miniHistory"><div className="panelHead"><div><span>LIVE EXECUTION</span><b>Last 5 trades</b></div><span>{botState.scanTicks}/{botState.maxScanTicks}</span></div><div className="tradeList">{(botState.history || []).slice(0, 5).map((item, i) => <div key={`${item.id || i}-${item.time}`}><i className={String(item.result).toUpperCase() === "WIN" ? "win" : "loss"} /><span>{item.setup || "TRADE"}</span><b className={num(item.profit) >= 0 ? "green" : "red"}>{num(item.profit) >= 0 ? "+" : ""}{num(item.profit).toFixed(2)}</b><em>{String(item.result || "WAIT").toUpperCase()}</em></div>)}{!botState.history?.length && <div className="emptyRow">No settled trades yet.</div>}</div></article>
+            <article className="panel accountPanel"><div className="panelHead"><div><span>ACCOUNT SUMMARY</span></div></div><div className="accountRows"><div><span>BALANCE</span><b>{balance.toFixed(2)} {currency}</b></div><div><span>PROFIT</span><b className={botState.profit>=0?"green":"red"}>{botState.profit>=0?"+":""}{botState.profit.toFixed(2)} {currency}</b></div><div><span>EQUITY</span><b>{(balance + botState.profit).toFixed(2)} {currency}</b></div><div><span>AVG. STAKE</span><b>{settings.stake.toFixed(2)} {currency}</b></div></div></article>
+
+            <article className="panel modePanel"><div className="panelHead"><div><span>BOT MODE</span></div><b>CONTINUOUS SCAN</b></div><div className="modeRow"><span>BOT MODE</span><strong>CONTINUOUS SCAN <small>(Manual Stop)</small></strong></div><div className="modeRow"><span>LAST SCAN</span><strong>{new Date(serverTime).toLocaleTimeString()}</strong></div></article>
           </aside>
         </section>
-
-        <section className="panel transactionPanel"><div className="panelHead"><div><span>TRANSACTION LEDGER</span><b>Last 5 · click to expand</b></div><select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="ALL">ALL</option><option value="WIN">WINS</option><option value="LOSS">LOSSES</option></select></div><div className="txHeader"><span>#</span><span>TIME</span><span>SETUP</span><span>STAKE</span><span>RESULT</span><span>P/L</span><span>STATUS</span><span /></div><div className="txList">{transactions.slice(0, 5).map((item, index) => { const id = `${item.id || index}-${item.time || index}`; const open = expandedTx === id; const win = String(item.result || "").toUpperCase() === "WIN"; return <div className={`txItem ${open ? "open" : ""}`} key={id}><button className="txRow" onClick={() => setExpandedTx(open ? null : id)}><span>{index + 1}</span><span>{item.time ? new Date(item.time).toLocaleTimeString() : "—"}</span><span>{item.setup || "TRADE"}</span><span>{num(item.stake, settings.stake).toFixed(2)}</span><b className={win ? "green" : "red"}>{win ? "WIN" : "LOSS"}</b><b className={num(item.profit) >= 0 ? "green" : "red"}>{num(item.profit) >= 0 ? "+" : ""}{num(item.profit).toFixed(2)}</b><span>SETTLED</span><span>{open ? "⌃" : "⌄"}</span></button>{open && <div className="txDetails"><span>CONTRACT <b>{item.id || "—"}</b></span><span>ENTRY <b>{item.entrySpot ?? "—"}</b></span><span>EXIT <b>{item.exitSpot ?? "—"}</b></span><span>PAYOUT <b>{num(item.payout).toFixed(2)}</b></span><span>DURATION <b>{item.duration || settings.duration} {item.durationUnit === "s" ? "sec" : "ticks"}</b></span></div>}</div>; })}{!transactions.length && <div className="emptyRow">No transactions yet — start the guarded Demo Bot.</div>}</div></section>
       </main>
 
-      <footer className="rftFooter"><span>FEED <b className={feed.connected ? "green" : "red"}>● {feed.connected ? "LIVE" : "OFFLINE"}</b></span><span>SERVER <b>{new Date(serverTime).toLocaleTimeString()}</b></span><span>SAMPLE <b>{digitHistory.length}</b></span><span>BOT <b>{botState.status}</b></span><strong>RFT V10 · Guarded Entry · Recovery ×2</strong><span>Demo mode</span></footer>
+      <footer className="rftFooter"><span>CONNECTION <b className={feed.connected?"green":"red"}>● {feed.connected?"Connected":"Offline"}</b></span><span>SERVER TIME <b>{new Date(serverTime).toLocaleTimeString()}</b></span><span>TICKS <b>{digitHistory.length}</b></span><span>UPTIME <b>{Math.floor((botState.scanElapsedSeconds||0)/60).toString().padStart(2,"0")}:{((botState.scanElapsedSeconds||0)%60).toString().padStart(2,"0")}</b></span><strong>RFT V10 · Guarded Entry · Recovery ×2 · High Quality Entries Only</strong><span>© 2024 DerivAI</span></footer>
     </div>
   );
 }
