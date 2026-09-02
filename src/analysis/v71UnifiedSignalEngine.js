@@ -2,6 +2,7 @@
 const DIGITS = Array.from({ length: 10 }, (_, index) => index);
 const OVER_BARRIERS = [1, 2, 3, 4, 5, 6, 7];
 const UNDER_BARRIERS = [1, 2, 3, 4, 5, 6, 7];
+import { analyzeRiseFallTouch } from "./riseFallTouchEngine";
 
 function clamp(value, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Number(value) || 0));
@@ -500,7 +501,7 @@ function differsCandidates(digits, minimumConfidence) {
       highRisk: false,
       source: primary.source,
       reason: executable
-        ? `After ${primary.currentDigit ?? "—"}, digit ${target} return estimate ${(targetProbability * 100).toFixed(1)}%; historical lower bound ${(historical.lowerBound * 100).toFixed(1)}%.`
+        ? `After ${primary.currentDigit ?? "â€”"}, digit ${target} return estimate ${(targetProbability * 100).toFixed(1)}%; historical lower bound ${(historical.lowerBound * 100).toFixed(1)}%.`
         : `DIFFERS ${target} waiting: return ${(targetProbability * 100).toFixed(1)}%, lower bound ${(historical.lowerBound * 100).toFixed(1)}%.`,
     };
   });
@@ -554,10 +555,53 @@ export function analyzeUnifiedSignals(input = {}) {
     95
   );
 
-  const candidates = rankCandidates([
+  const digitCandidates = [
     ...overUnderCandidates(digits, minimumConfidence),
     ...parityCandidates(digits, minimumConfidence),
     ...differsCandidates(digits, minimumConfidence),
+  ];
+
+  const riseFall = analyzeRiseFallTouch(input.prices);
+
+  // The existing RFT engine has two families:
+  // RISE/FALL and TOUCH/NO TOUCH. The current DerivBotEngine contract
+  // mapper supports RISE/FALL -> CALL/PUT, so only RISE/FALL is executable
+  // here. TOUCH/NO TOUCH is still returned for diagnostics/UI.
+  const riseFallExecutable =
+    Boolean(riseFall?.ready) &&
+    (riseFall?.signal === "RISE" || riseFall?.signal === "FALL") &&
+    riseFall?.entryQuality !== "WAIT" &&
+    Number(riseFall?.confidence || 0) >= minimumConfidence &&
+    Number(riseFall?.metrics?.samples || 0) >= 40;
+
+  const riseFallCandidate =
+    riseFall?.ready &&
+    (riseFall?.signal === "RISE" || riseFall?.signal === "FALL")
+      ? {
+          setup: riseFall.signal,
+          action: riseFall.signal,
+          mode: riseFall.signal,
+          family: "RISE_FALL",
+          contractType: riseFall.signal === "RISE" ? "CALL" : "PUT",
+          probability: Number(riseFall.probability || 0),
+          confidence: Number(riseFall.confidence || 0),
+          qualityScore: Number(riseFall.confidence || 0),
+          score: Number(riseFall.confidence || 0),
+          sampleSize: Number(riseFall.metrics?.samples || 0),
+          samples: Number(riseFall.metrics?.samples || 0),
+          stability: Number(riseFall.metrics?.stability || 0),
+          agreementGap: Number(riseFall.metrics?.agreementGap || 0),
+          executable: riseFallExecutable,
+          approved: riseFallExecutable,
+          highRisk: false,
+          source: "RISE_FALL_TOUCH_ENGINE",
+          reason: riseFall.reason || `RFT ${riseFall.signal}`,
+        }
+      : null;
+
+  const candidates = rankCandidates([
+    ...digitCandidates,
+    ...(riseFallCandidate ? [riseFallCandidate] : []),
   ]);
 
   const best = candidates.find((candidate) => candidate.executable) || null;
@@ -573,17 +617,20 @@ export function analyzeUnifiedSignals(input = {}) {
         ? best.reason
         : digits.length < 100
           ? `Collecting calibrated history ${digits.length}/100.`
-          : "No calibrated digit entry. Continue scanning or switch market.",
+          : "No calibrated entry. Continue scanning.",
     },
     riseFall: {
-      executable: false,
-      signal: "WAIT",
-      setup: "WAIT",
-      risk: "DISABLED",
-      reason: "RISE/FALL is disabled in V52.",
-      instruction: "Use calibrated digit contracts only.",
+      ...riseFall,
+      executable: Boolean(riseFallCandidate?.executable),
+      best: riseFallCandidate,
+      risk: riseFallCandidate?.executable ? "QUALIFIED" : "WAIT",
+      instruction:
+        riseFallCandidate?.executable
+          ? `RFT ${riseFallCandidate.setup} passed the unified confidence gate.`
+          : riseFall?.signal === "TOUCH" || riseFall?.signal === "NO TOUCH"
+            ? "Touch/No-Touch is diagnostic only in this execution path."
+            : riseFall?.reason || "Waiting for RISE/FALL quality.",
     },
   };
 }
-
 export default analyzeUnifiedSignals;
