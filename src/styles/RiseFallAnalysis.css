@@ -3568,10 +3568,6 @@
     min-width: 0;
   }
 
-  .rfDecisionChips {
-    display: flex;
-    flex
-
 /* ================================================================
    EDGEPILOT RISE/FALL — DESKTOP V90
    Layout / visual polish only
@@ -4059,3 +4055,4 @@
     z-index: 90 !important;
   }
 }
+
