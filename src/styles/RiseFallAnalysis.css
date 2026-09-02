@@ -4301,3 +4301,47 @@
     grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
   }
 }
+/* V93 — Entry alert stats final alignment */
+@media (min-width: 901px) {
+
+  .rfEntryBanner {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(430px, 0.9fr) !important;
+    gap: 24px !important;
+  }
+
+  .rfEntryBannerStats {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .rfEntryBannerStats > * {
+    min-height: 84px !important;
+    padding: 11px 10px !important;
+    overflow: hidden !important;
+  }
+
+  .rfEntryBannerStats small,
+  .rfEntryBannerStats label {
+    display: block;
+    line-height: 1.15 !important;
+  }
+
+  .rfEntryBannerStats strong {
+    display: block;
+    margin-top: 6px;
+    line-height: 1.15;
+  }
+
+  /* Keep the real-account control out of the stats row */
+  .rfEntryBanner input[type="checkbox"] {
+    position: relative !important;
+    z-index: 4 !important;
+  }
+
+  .rfEntryBanner label {
+    position: relative !important;
+    z-index: 4 !important;
+  }
+}
