@@ -4248,3 +4248,56 @@
     height: 470px !important;
   }
 }
+
+/* V92 — final desktop alignment */
+@media (min-width: 901px) {
+
+  .rfEntryBanner {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(410px, 0.95fr) !important;
+    gap: 22px !important;
+  }
+
+  .rfEntryBannerStats {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 9px !important;
+  }
+
+  .rfEntryBannerStats > * {
+    min-width: 0 !important;
+    position: relative !important;
+    z-index: 1 !important;
+  }
+
+  .rfEntryBanner input[type="checkbox"],
+  .rfEntryBanner label {
+    position: relative !important;
+    z-index: 3 !important;
+  }
+
+  .rfEntryBanner > label {
+    align-self: end !important;
+  }
+
+  .rfToolbar {
+    grid-template-columns:
+      minmax(210px, 1.25fr)
+      auto
+      auto
+      minmax(150px, .85fr)
+      minmax(145px, .75fr) !important;
+  }
+
+  .rfToolbarActions {
+    gap: 8px !important;
+  }
+
+  .rfAutoPanel {
+    padding: 15px 16px !important;
+  }
+
+  .rfAutoControls {
+    grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+  }
+}
