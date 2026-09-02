@@ -1549,7 +1549,7 @@ export default function RiseFallAnalysis() {
     waitStartedAtRef.current = Date.now();
 
     setExecutionMessage(
-      `Switching volatility ${symbol || "market"} â†’ ${nextSymbol} Â· ${reason}.`
+      `Switching volatility ${symbol || "market"} â†’ ${nextSymbol} · ${reason}.`
     );
 
     try {
@@ -1936,7 +1936,7 @@ export default function RiseFallAnalysis() {
       ].slice(0, 100));
 
       setManualStatus(
-        `${signal} bought directly Â· ${displayDuration} Â· ${amount.toFixed(2)}`
+        `${signal} bought directly · ${displayDuration} · ${amount.toFixed(2)}`
       );
     } catch (error) {
       setManualStatus(
@@ -2046,7 +2046,7 @@ export default function RiseFallAnalysis() {
     }
 
     setExecutionMessage(
-      `Sending ${parameters.label} Â· ${parameters.displayDuration} Â· stake ${safeStake.toFixed(2)}.`
+      `Sending ${parameters.label} · ${parameters.displayDuration} · stake ${safeStake.toFixed(2)}.`
     );
 
     try {
@@ -2126,7 +2126,7 @@ export default function RiseFallAnalysis() {
           stoppedDuringPurchase
             ? `${parameters.label} opened before STOP completed. No new trade will open.`
             : `${parameters.label} trade opened${
-                contractId ? ` Â· Contract ${contractId}` : ""
+                contractId ? ` · Contract ${contractId}` : ""
               }.`
         );
       }
@@ -2721,8 +2721,8 @@ export default function RiseFallAnalysis() {
 
       <main className="mainContent rfPage">
         <Topbar
-          title="EdgePilot V108 Â· Continuous Rise/Fall Trader"
-          subtitle="Automatic settlement recovery Â· fresh-tick rearming Â· continuous qualified entries"
+          title="EdgePilot V108 · Continuous Rise/Fall Trader"
+          subtitle="Automatic settlement recovery · fresh-tick rearming · continuous qualified entries"
           connected={connected}
           connecting={false}
           onConnect={connect}
@@ -2778,8 +2778,8 @@ export default function RiseFallAnalysis() {
               disabled={autoRunning}
               onChange={(event) => setDurationMode(event.target.value)}
             >
-              <option value="AUTO">AUTO Â· 2T / 5T / 10S / 15S</option>
-              <option value="2T">2 TICKS Â· STRONG ONLY</option>
+              <option value="AUTO">AUTO · 2T / 5T / 10S / 15S</option>
+              <option value="2T">2 TICKS · STRONG ONLY</option>
               <option value="10T">10 TICKS</option>
               <option value="15S">15 SECONDS</option>
             </select>
@@ -2814,7 +2814,7 @@ export default function RiseFallAnalysis() {
           }`}
         >
           {connected
-            ? `LIVE FEED Â· ${
+            ? `LIVE FEED · ${
                 market?.label || symbol
               }`
             : feedMessage}
@@ -2885,7 +2885,7 @@ export default function RiseFallAnalysis() {
               <span>Auto market</span>
               <strong>
                 {autoSwitchMarket
-                  ? `ON Â· ${switchAfterSeconds}s`
+                  ? `ON · ${switchAfterSeconds}s`
                   : "OFF"}
               </strong>
             </div>
@@ -2894,12 +2894,12 @@ export default function RiseFallAnalysis() {
               <span>Contract</span>
               <strong>
                 {durationMode === "2T"
-                  ? "RISE/FALL Â· 2 TICKS"
+                  ? "RISE/FALL · 2 TICKS"
                   : durationMode === "10T"
-                    ? "RISE/FALL Â· 10 TICKS"
+                    ? "RISE/FALL · 10 TICKS"
                     : durationMode === "15S"
-                      ? "RISE/FALL Â· 15 SECONDS"
-                      : "RISE/FALL Â· AUTO"}
+                      ? "RISE/FALL · 15 SECONDS"
+                      : "RISE/FALL · AUTO"}
               </strong>
             </div>
 
@@ -2945,7 +2945,7 @@ export default function RiseFallAnalysis() {
                 disabled={autoRunning}
                 onChange={(event) => setBurstMode(event.target.checked)}
               />
-              Strong-signal burst mode Â· maximum 5 trades before a fresh reset
+              Strong-signal burst mode · maximum 5 trades before a fresh reset
             </label>
 
             <label>
@@ -2955,7 +2955,7 @@ export default function RiseFallAnalysis() {
                 disabled={autoRunning}
                 onChange={(event) => setAllowOneTick(event.target.checked)}
               />
-              Auto 1-tick disabled Â· manual digit contracts remain 1 tick
+              Auto 1-tick disabled · manual digit contracts remain 1 tick
             </label>
 
             <label>
@@ -3730,7 +3730,7 @@ export default function RiseFallAnalysis() {
             </strong>
             <span>
               Base {Number(active.adaptiveThresholds?.buy || 72).toFixed(0)}
-              {" Â· "}
+              {" · "}
               Adjustment {learningProfile.thresholdAdjustment >= 0 ? "+" : ""}
               {learningProfile.thresholdAdjustment}
             </span>
@@ -3761,7 +3761,7 @@ export default function RiseFallAnalysis() {
             <p>
               {active.autoSkip
                 ? active.skipReason || "Searching for a cleaner setup."
-                : `${active.consensus?.riseVotes || 0} RISE Â· ${active.consensus?.fallVotes || 0} FALL Â· ${active.consensus?.waitVotes || 0} WAIT`}
+                : `${active.consensus?.riseVotes || 0} RISE · ${active.consensus?.fallVotes || 0} FALL · ${active.consensus?.waitVotes || 0} WAIT`}
             </p>
           </div>
 
@@ -3773,7 +3773,7 @@ export default function RiseFallAnalysis() {
             <span>
               <small>Consensus</small>
               <strong>
-                {active.consensus?.riseVotes || 0}/{active.consensus?.total || 12} R Â·{" "}
+                {active.consensus?.riseVotes || 0}/{active.consensus?.total || 12} R ·{" "}
                 {active.consensus?.fallVotes || 0}/{active.consensus?.total || 12} F
               </strong>
             </span>
@@ -3807,7 +3807,7 @@ export default function RiseFallAnalysis() {
               {Number(active.adaptiveThresholds?.buy || 72).toFixed(0)}
             </strong>
             <span>
-              {active.regime || "UNKNOWN"} regime Â· {pct(active.noiseRatio)} noise
+              {active.regime || "UNKNOWN"} regime · {pct(active.noiseRatio)} noise
             </span>
           </article>
 
@@ -3833,7 +3833,7 @@ export default function RiseFallAnalysis() {
               {active.freshTick?.passed || 0}/{active.freshTick?.total || 5}
             </strong>
             <span>
-              {active.freshTick?.ready ? "READY" : "FORMING"} Â· {pct(active.freshTick?.score)}
+              {active.freshTick?.ready ? "READY" : "FORMING"} · {pct(active.freshTick?.score)}
             </span>
           </article>
 
@@ -4163,7 +4163,7 @@ export default function RiseFallAnalysis() {
               {Number(active.flowDelta?.delta || 0).toFixed(1)}
             </strong>
             <span>
-              Buy {pct(active.flowDelta?.buy)} Â· Sell {pct(active.flowDelta?.sell)}
+              Buy {pct(active.flowDelta?.buy)} · Sell {pct(active.flowDelta?.sell)}
             </span>
           </article>
 
@@ -4753,5 +4753,7 @@ export default function RiseFallAnalysis() {
     </div>
   );
 }
+
+
 
 

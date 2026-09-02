@@ -4056,3 +4056,195 @@
   }
 }
 
+
+/* ================================================================
+   EDGEPILOT — V91 FINAL LAPTOP POLISH
+   Desktop only — layout/visual corrections
+   ================================================================ */
+
+@media (min-width: 901px) {
+
+  .rfPage {
+    width: 100%;
+    max-width: 1540px;
+    margin-inline: auto;
+    padding: 8px 18px 44px !important;
+  }
+
+  /* Keep sections visually separated without wasting vertical space */
+  .rfPage > section {
+    margin-bottom: 10px !important;
+  }
+
+  /* TOP TOOLBAR */
+  .rfToolbar {
+    min-height: 52px !important;
+    padding: 6px 8px !important;
+    gap: 7px !important;
+  }
+
+  .rfToolbarActions {
+    gap: 6px !important;
+  }
+
+  .rfToolbar button,
+  .rfToolbar select {
+    min-height: 35px !important;
+  }
+
+  /* FEED */
+  .rfFeed {
+    min-height: 58px !important;
+    padding: 10px 14px !important;
+  }
+
+  /* AUTO EXECUTION */
+  .rfAutoPanel {
+    padding: 14px !important;
+  }
+
+  .rfAutoPanelHead {
+    margin-bottom: 10px !important;
+  }
+
+  .rfAutoControls {
+    gap: 8px !important;
+  }
+
+  .rfAutoChecks {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(0, 1fr)
+      max-content
+      max-content
+      max-content !important;
+    gap: 7px !important;
+    min-height: 30px;
+  }
+
+  .rfAutoChecks label {
+    white-space: nowrap;
+  }
+
+  /* ENTRY ALERT — prevents stats/checkbox overlap */
+  .rfEntryBanner {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(390px, 0.95fr) !important;
+    min-height: 126px !important;
+    padding: 16px !important;
+    gap: 18px !important;
+  }
+
+  .rfEntryBannerStats {
+    grid-template-columns: repeat(4, minmax(82px, 1fr)) !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+  }
+
+  .rfEntryBannerStats > * {
+    min-height: 78px !important;
+    padding: 10px !important;
+    overflow: hidden !important;
+  }
+
+  /* Hide accidental checkbox text overlap inside banner */
+  .rfEntryBanner > input,
+  .rfEntryBanner > label {
+    min-width: 0 !important;
+  }
+
+  /* FAST DECISION */
+  .rfFastDecisionRow {
+    gap: 8px !important;
+  }
+
+  .rfFastDecisionRow article {
+    min-height: 68px !important;
+    padding: 11px !important;
+  }
+
+  /* HERO */
+  .rfHero {
+    grid-template-columns:
+      minmax(0, 1.35fr)
+      minmax(360px, 0.9fr) !important;
+    gap: 14px !important;
+    padding: 16px !important;
+  }
+
+  .rfHeroStats {
+    gap: 7px !important;
+  }
+
+  /* MAIN CHART */
+  .rfCandleSection {
+    padding: 10px !important;
+  }
+
+  .rfTvCanvas {
+    height: clamp(320px, 43vh, 500px) !important;
+    min-height: 320px !important;
+  }
+
+  /* MAIN 2-COLUMN ANALYSIS AREA */
+  .rfGrid {
+    grid-template-columns:
+      minmax(0, 1.7fr)
+      minmax(310px, 0.8fr) !important;
+    gap: 10px !important;
+  }
+
+  /* METRICS */
+  .rfMetrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .rfMetricCard {
+    min-height: 76px !important;
+    padding: 11px !important;
+  }
+
+  /* GENERAL PANELS */
+  .rfPanel {
+    border-radius: 12px !important;
+  }
+
+  .rfPanelHead {
+    margin-bottom: 8px !important;
+  }
+
+  /* KEEP LARGE LOWER SECTIONS COMPACT */
+  .rfConsensusStats,
+  .rfScoreGrid,
+  .rfRecoveryMetrics {
+    gap: 7px !important;
+  }
+
+  /* TRADE TABLE */
+  .rfTradeTable {
+    font-size: 10px !important;
+  }
+
+  /* MANUAL BUY */
+  .rfManualLauncher {
+    right: 20px !important;
+    bottom: 18px !important;
+    min-width: 142px !important;
+    min-height: 46px !important;
+  }
+}
+
+/* Extra-wide desktop */
+@media (min-width: 1450px) {
+  .rfPage {
+    max-width: 1580px;
+    padding-left: 22px !important;
+    padding-right: 22px !important;
+  }
+
+  .rfTvCanvas {
+    height: 470px !important;
+  }
+}
