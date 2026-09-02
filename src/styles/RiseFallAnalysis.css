@@ -1,4 +1,4 @@
-﻿
+
 .rfPage {
   padding-bottom: 36px;
 }
@@ -3567,6 +3567,7 @@
   .rfHeroDecision {
     min-width: 0;
   }
+}
 
 /* ================================================================
    EDGEPILOT RISE/FALL — DESKTOP V90
@@ -4629,5 +4630,191 @@
   .rfProfessionalSummary,
   .rfQuantumMetrics {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* ================================================================
+   EDGEPILOT — V95 ONE-SCREEN LAPTOP MODE
+   Keep the essential execution surface above the fold.
+   Secondary analytical panels remain in source for mobile/future detail use.
+   ================================================================ */
+@media (min-width: 1100px) {
+  .rfPage {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    min-height: 0 !important;
+    padding: 6px 16px 10px !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  .rfPage > .rfToolbar {
+    flex: 0 0 auto !important;
+    margin: 0 0 6px !important;
+  }
+
+  .rfPage > .rfFeed {
+    flex: 0 0 auto !important;
+    min-height: 48px !important;
+    height: 48px !important;
+    margin-bottom: 7px !important;
+    padding: 9px 13px !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  .rfPage > .rfAutoPanel {
+    flex: 0 0 auto !important;
+    margin-bottom: 7px !important;
+    padding: 11px 13px !important;
+    border-radius: 12px !important;
+  }
+
+  .rfPage > .rfAutoPanel .rfAutoPanelHead {
+    min-height: 42px !important;
+    margin-bottom: 7px !important;
+  }
+
+  .rfPage > .rfAutoPanel .rfAutoPanelHead h2 {
+    font-size: 20px !important;
+    margin: 2px 0 !important;
+  }
+
+  .rfPage > .rfAutoPanel .rfAutoPanelHead p {
+    font-size: 9px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 680px !important;
+  }
+
+  .rfPage > .rfAutoPanel .rfAutoControls {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+    margin-top: 7px !important;
+  }
+
+  .rfPage > .rfAutoPanel .rfAutoControls > *,
+  .rfPage > .rfAutoPanel .rfAutoControls label {
+    min-height: 52px !important;
+    padding: 8px !important;
+  }
+
+  .rfPage > .rfAutoPanel .rfAutoControls span {
+    margin-bottom: 3px !important;
+    font-size: 8px !important;
+  }
+
+  .rfPage > .rfAutoPanel .rfAutoControls input {
+    min-height: 31px !important;
+    padding: 6px 8px !important;
+  }
+
+  .rfPage > .rfAutoPanel .rfAutoChecks {
+    margin-top: 6px !important;
+    gap: 5px 8px !important;
+    max-height: 30px !important;
+    overflow: hidden !important;
+    font-size: 8px !important;
+  }
+
+  .rfPage > .rfEntryBanner {
+    flex: 0 0 auto !important;
+    min-height: 104px !important;
+    height: 104px !important;
+    margin-bottom: 7px !important;
+    padding: 12px 14px !important;
+    gap: 12px !important;
+    box-sizing: border-box !important;
+  }
+
+  .rfPage > .rfEntryBanner > div:first-child {
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .rfPage > .rfEntryBanner > div:first-child > strong {
+    font-size: 27px !important;
+    line-height: 1 !important;
+  }
+
+  .rfPage > .rfEntryBanner > div:first-child > span {
+    display: block !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-size: 10px !important;
+  }
+
+  .rfPage > .rfEntryBanner .rfEntryBannerStats {
+    width: 49% !important;
+    min-width: 0 !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .rfPage > .rfEntryBanner .rfEntryBannerStats > span {
+    min-width: 0 !important;
+    min-height: 70px !important;
+    padding: 8px !important;
+  }
+
+  .rfPage > .rfEntryBanner .rfEntryBannerStats small {
+    font-size: 8px !important;
+  }
+
+  .rfPage > .rfEntryBanner .rfEntryBannerStats strong {
+    font-size: 13px !important;
+  }
+
+  .rfPage > .rfFastDecisionRow {
+    flex: 0 0 auto !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+    margin-bottom: 7px !important;
+  }
+
+  .rfPage > .rfFastDecisionRow article {
+    min-height: 64px !important;
+    padding: 9px 11px !important;
+    border-radius: 10px !important;
+  }
+
+  .rfPage > .rfFastDecisionRow strong {
+    font-size: 22px !important;
+  }
+
+  /* Everything below the first decision surface is intentionally hidden on desktop. */
+  .rfPage > .rfHero,
+  .rfPage > .rfModeCards,
+  .rfPage > .rfSyntheticScanner,
+  .rfPage > .rfCandleSection,
+  .rfPage > .rfGrid,
+  .rfPage > .rfMetrics,
+  .rfPage > .rfLearningPanel,
+  .rfPage > .rfConsensusHero,
+  .rfPage > .rfProfessionalSummary,
+  .rfPage > .rfQuantumMetrics,
+  .rfPage > .rfConsensusBoard,
+  .rfPage > .rfNextTickPanel,
+  .rfPage > .rfAiEntryTerminal,
+  .rfPage > .rfMicroGrid,
+  .rfPage > .rfDeepAnalysisGrid,
+  .rfPage > .rfAdvancedTools,
+  .rfPage > .rfProGrid,
+  .rfPage > .rfScoreTerminal,
+  .rfPage > .rfRecoveryStatus,
+  .rfPage > .rfTradeViewer,
+  .rfPage > .rfSafety {
+    display: none !important;
+  }
+
+  .rfManualLauncher {
+    right: 18px !important;
+    bottom: 14px !important;
+    min-width: 138px !important;
+    min-height: 44px !important;
   }
 }

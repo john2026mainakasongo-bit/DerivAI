@@ -1,4 +1,4 @@
-﻿
+
 import {
   useEffect,
   useMemo,
@@ -29,7 +29,7 @@ function pct(value) {
 function num(value, digits = 5) {
   return Number.isFinite(Number(value))
     ? Number(value).toFixed(digits)
-    : "â€”";
+    : "—";
 }
 
 function signalClass(value) {
@@ -404,7 +404,7 @@ function CandleChart({
   if (!candles.length) {
     return (
       <div className="rfEmptyChart">
-        Building professional candlestick historyâ€¦
+        Building professional candlestick history…
       </div>
     );
   }
@@ -743,7 +743,7 @@ function MetricCard({
   return (
     <article className={`rfMetricCard ${tone || ""}`}>
       <small>{label}</small>
-      <strong>{value ?? "â€”"}</strong>
+      <strong>{value ?? "—"}</strong>
       {note ? <span>{note}</span> : null}
     </article>
   );
@@ -800,7 +800,7 @@ function MiniChart({
   if (values.length < 2) {
     return (
       <div className="rfMiniChartEmpty">
-        Waiting for enough live price pointsâ€¦
+        Waiting for enough live price points…
       </div>
     );
   }
@@ -895,7 +895,7 @@ export default function RiseFallAnalysis() {
 
   const [mode, setMode] = useState("15s");
   const [feedMessage, setFeedMessage] = useState(
-    "Connecting live feedâ€¦"
+    "Connecting live feed…"
   );
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [signalLog, setSignalLog] = useState([]);
@@ -914,7 +914,6 @@ export default function RiseFallAnalysis() {
     "Auto execution is stopped."
   );
   const [executionRuns, setExecutionRuns] = useState(0);
-  const [sessionRunTarget, setSessionRunTarget] = useState(100);
   const [burstMode, setBurstMode] = useState(true);
   const [burstRuns, setBurstRuns] = useState(0);
   const [sessionTrades, setSessionTrades] = useState([]);
@@ -1897,7 +1896,7 @@ export default function RiseFallAnalysis() {
           : contractType;
 
     try {
-      setManualStatus(`Sending ${signal} contractâ€¦`);
+      setManualStatus(`Sending ${signal} contract…`);
 
       const response = await placeTrade({
         contractType,
@@ -1969,7 +1968,6 @@ export default function RiseFallAnalysis() {
       executionBusyRef.current ||
       recoveryRequiredRef.current ||
       !autoRunningRef.current ||
-      executionRunsRef.current >= Math.max(1, Number(sessionRunTarget) || 100) ||
       Date.now() < nextAutoEntryAtRef.current ||
       burstRunsRef.current >= 5 ||
       hasOpenSessionTrade ||
@@ -2119,17 +2117,13 @@ export default function RiseFallAnalysis() {
       setRecoveryPhase("TRADE OPEN");
       nextAutoEntryAtRef.current = Date.now() + 1200;
 
-      if (nextRuns >= Math.max(1, Number(sessionRunTarget) || 100)) {
-        stopAuto(`Session target completed: ${nextRuns} runs.`);
-      } else {
-        setExecutionMessage(
-          stoppedDuringPurchase
-            ? `${parameters.label} opened before STOP completed. No new trade will open.`
-            : `${parameters.label} trade opened${
-                contractId ? ` · Contract ${contractId}` : ""
-              }.`
-        );
-      }
+      setExecutionMessage(
+        stoppedDuringPurchase
+          ? `${parameters.label} opened before STOP completed. No new trade will open.`
+          : `${parameters.label} trade opened${
+              contractId ? ` · Contract ${contractId}` : ""
+            }. Continuous scanner remains armed.`
+      );
 
     } catch (error) {
       lastExecutedSignalRef.current = "";
@@ -2330,8 +2324,7 @@ export default function RiseFallAnalysis() {
       recoveryRequired ||
       !immediateEntryReady ||
       hasOpenSessionTrade ||
-      consecutiveLosses >= 3 ||
-      executionRuns >= Math.max(1, Number(sessionRunTarget) || 100)
+      consecutiveLosses >= 3
     ) {
       return;
     }
@@ -2345,7 +2338,6 @@ export default function RiseFallAnalysis() {
     hasOpenSessionTrade,
     consecutiveLosses,
     executionRuns,
-    sessionRunTarget,
     burstEntryReady,
     active.signal,
     active.tradeNow,
@@ -2769,7 +2761,7 @@ export default function RiseFallAnalysis() {
               className={`rfSoundToggle ${soundEnabled ? "on" : "off"}`}
               onClick={() => setSoundEnabled((value) => !value)}
             >
-              {soundEnabled ? "ðŸ”Š SOUND" : "ðŸ”‡ MUTED"}
+              {soundEnabled ? "🔊 SOUND" : "🔇 MUTED"}
             </button>
 
             <select
@@ -2865,21 +2857,10 @@ export default function RiseFallAnalysis() {
               />
             </label>
 
-            <label>
-              <span>Session run target</span>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={sessionRunTarget}
-                disabled={autoRunning}
-                onChange={(event) =>
-                  setSessionRunTarget(
-                    Math.max(1, Math.min(100, Number(event.target.value) || 100))
-                  )
-                }
-              />
-            </label>
+            <div>
+              <span>Execution mode</span>
+              <strong>CONTINUOUS</strong>
+            </div>
 
             <div>
               <span>Auto market</span>
@@ -2904,8 +2885,8 @@ export default function RiseFallAnalysis() {
             </div>
 
             <div>
-              <span>Session runs</span>
-              <strong>{executionRuns}/{sessionRunTarget}</strong>
+              <span>Trades this session</span>
+              <strong>{executionRuns}</strong>
             </div>
 
             <label>
@@ -3044,7 +3025,7 @@ export default function RiseFallAnalysis() {
                   ? pct(active.probabilityRise)
                   : active.rawDirection === "FALL"
                     ? pct(active.probabilityFall)
-                    : "â€”"}
+                    : "—"}
               </strong>
             </span>
 
@@ -3087,7 +3068,7 @@ export default function RiseFallAnalysis() {
             <strong>
               {!active.tradeNow && !active.prepare
                 ? "WAIT"
-                : "â€”"}
+                : "—"}
             </strong>
             <span>
               {!active.tradeNow && !active.prepare
@@ -3346,7 +3327,7 @@ export default function RiseFallAnalysis() {
                   key={item.label}
                   className={item.passed ? "passed" : "failed"}
                 >
-                  <b>{item.passed ? "âœ“" : "Ã—"} {item.label}</b>
+                  <b>{item.passed ? "✓" : "Ã—"} {item.label}</b>
                   <strong>{item.value}</strong>
                 </span>
               ))}
@@ -3885,7 +3866,7 @@ export default function RiseFallAnalysis() {
                   key={`${tick}-${index}`}
                   className={String(tick).toLowerCase()}
                 >
-                  {tick === "RISE" ? "â†‘" : tick === "FALL" ? "â†“" : "â€”"}
+                  {tick === "RISE" ? "↑" : tick === "FALL" ? "↓" : "—"}
                 </span>
               ))}
             </h2>
@@ -4030,7 +4011,7 @@ export default function RiseFallAnalysis() {
                 key={item.size}
                 className={String(item.direction).toLowerCase()}
               >
-                {item.size} {item.direction === "RISE" ? "â†‘" : item.direction === "FALL" ? "â†“" : "â€”"}
+                {item.size} {item.direction === "RISE" ? "↑" : item.direction === "FALL" ? "↓" : "—"}
               </span>
             ))}
           </div>
@@ -4113,7 +4094,7 @@ export default function RiseFallAnalysis() {
                   className={check.passed ? "passed" : "failed"}
                 >
                   <span>
-                    {check.passed ? "âœ“" : "Ã—"} {check.label}
+                    {check.passed ? "✓" : "Ã—"} {check.label}
                   </span>
                   <strong>{check.detail}</strong>
                 </div>
@@ -4518,7 +4499,7 @@ export default function RiseFallAnalysis() {
                     >
                       {Number(trade.profit || 0).toFixed(2)}
                     </td>
-                    <td>{trade.contractId || "â€”"}</td>
+                    <td>{trade.contractId || "—"}</td>
                   </tr>
                 ))}
 

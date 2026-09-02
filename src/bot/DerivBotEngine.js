@@ -1393,11 +1393,9 @@ function v49BuildFastDigitCandidates(signal = {}) {
 function v48AllowedCandidate(candidate = {}, isDemo = false) {
   const setup = candidateAction(candidate);
 
-  if (isDemo && (setup === "RISE" || setup === "FALL")) {
-    return false;
-  }
-
-  return true;
+  // RISE/FALL is allowed on Demo and Real.
+  // RISE -> CALL, FALL -> PUT via contractFromSetup().
+  return Boolean(setup);
 }
 
 function v47CanExecute(candidate = {}, isDemo = false) {
@@ -1481,7 +1479,7 @@ export default class DerivBotEngine {
       largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: DEFAULTS.stake,
-      activeSetup: "â€”",
+      activeSetup: "Ã¢â‚¬â€",
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
@@ -1493,7 +1491,7 @@ export default class DerivBotEngine {
       signalConfirmations: 0,
       requiredConfirmations: DEFAULTS.confirmationCount,
       blockedSetupUntil: 0,
-      lastLossSetup: "â€”",
+      lastLossSetup: "Ã¢â‚¬â€",
       lossProtectionCount: 0,
       deepScore: 0,
       deepConsensus: 0,
@@ -1502,7 +1500,7 @@ export default class DerivBotEngine {
       fastLane: false,
       gate: null,
       executionPhase: "SCAN",
-      lockedCandidate: "â€”",
+      lockedCandidate: "Ã¢â‚¬â€",
       signalVersion: 0,
       lockedSignalVersion: 0,
       history: [],
@@ -1724,10 +1722,10 @@ export default class DerivBotEngine {
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       message: reason,
-      activeSetup: "â€”",
+      activeSetup: "Ã¢â‚¬â€",
       signalConfirmations: 0,
       executionPhase: "SCAN",
-      lockedCandidate: "â€”",
+      lockedCandidate: "Ã¢â‚¬â€",
       signalVersion: this.signalVersion,
       lockedSignalVersion: 0,
     });
@@ -1966,7 +1964,7 @@ export default class DerivBotEngine {
         this.isDemoAccount
       )
     ) {
-      this.releaseCandidateLock("V48 Demo Auto excludes RISE/FALL.");
+      this.releaseCandidateLock("Demo RISE/FALL is enabled only after the scored gate.");
     }
 
     if (this.lockedCandidate) {
@@ -2100,7 +2098,7 @@ export default class DerivBotEngine {
           ),
           accountExecutionPass: Boolean(selectedCanExecute),
           executionPhase: "SCAN",
-          lockedCandidate: selected?.setup || "â€”",
+          lockedCandidate: selected?.setup || "Ã¢â‚¬â€",
           signalVersion: this.signalVersion,
           lockedSignalVersion: 0,
         },
@@ -2116,7 +2114,7 @@ export default class DerivBotEngine {
       ) {
         return {
           ok: false,
-          reason: "V48 Demo Auto excludes RISE/FALL. Waiting for a digit contract.",
+          reason: "Demo RISE/FALL is enabled only after the scored gate. Waiting for a digit contract.",
           elapsedSeconds,
           confirmations: 0,
           requiredConfirmations: 1,
@@ -2126,7 +2124,7 @@ export default class DerivBotEngine {
             qualificationMode: "DEMO_DIGITS_ONLY",
             accountExecutionPass: false,
             executionPhase: "SCAN",
-            lockedCandidate: "â€”",
+            lockedCandidate: "Ã¢â‚¬â€",
           },
         };
       }
@@ -2269,11 +2267,11 @@ export default class DerivBotEngine {
       this.isDemoAccount &&
       (setup === "RISE" || setup === "FALL")
     ) {
-      this.releaseCandidateLock("V48 Demo Auto excludes RISE/FALL.");
+      this.releaseCandidateLock("Demo RISE/FALL is enabled only after the scored gate.");
 
       return {
         ok: false,
-        reason: "V48 Demo Auto excludes RISE/FALL. Waiting for a digit contract.",
+        reason: "Demo RISE/FALL is enabled only after the scored gate. Waiting for a digit contract.",
         elapsedSeconds,
         confirmations: 0,
         requiredConfirmations: 1,
@@ -2283,7 +2281,7 @@ export default class DerivBotEngine {
           qualificationMode: "DEMO_DIGITS_ONLY",
           accountExecutionPass: false,
           executionPhase: "SCAN",
-          lockedCandidate: "â€”",
+          lockedCandidate: "Ã¢â‚¬â€",
         },
       };
     }
@@ -2396,7 +2394,7 @@ export default class DerivBotEngine {
     this.patch({
       status: "RUNNING",
       message:
-        "V49 keeps Demo digits-only, adds lower/upper row pressure, ranks OVER/UNDER barriers 1â€“7, dynamically ranks DIFFERS digits, and enters after one fresh confirmation.",
+        "V49 keeps Demo digits-only, adds lower/upper row pressure, ranks OVER/UNDER barriers 1Ã¢â‚¬â€œ7, dynamically ranks DIFFERS digits, and enters after one fresh confirmation.",
       scanStartedAt: Date.now(),
       scanElapsedSeconds: 0,
       scanTicks: 0,
@@ -2474,7 +2472,7 @@ export default class DerivBotEngine {
       largestLossStreak: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
-      activeSetup: "â€”",
+      activeSetup: "Ã¢â‚¬â€",
       activeContractId: "",
       scanStartedAt: 0,
       scanElapsedSeconds: 0,
@@ -2486,7 +2484,7 @@ export default class DerivBotEngine {
       signalConfirmations: 0,
       requiredConfirmations: this.settings.confirmationCount,
       blockedSetupUntil: 0,
-      lastLossSetup: "â€”",
+      lastLossSetup: "Ã¢â‚¬â€",
       lossProtectionCount: 0,
       deepScore: 0,
       deepConsensus: 0,
@@ -2495,7 +2493,7 @@ export default class DerivBotEngine {
       fastLane: false,
       gate: null,
       executionPhase: "SCAN",
-      lockedCandidate: "â€”",
+      lockedCandidate: "Ã¢â‚¬â€",
       signalVersion: 0,
       lockedSignalVersion: 0,
       history: [],
@@ -2620,7 +2618,7 @@ export default class DerivBotEngine {
       consecutiveLosses: 0,
       martingaleStep: 0,
       currentStake: this.settings.stake,
-      activeSetup: "â€”",
+      activeSetup: "Ã¢â‚¬â€",
       signalConfirmations: 0,
       lastBlockReason: "",
     });
@@ -2650,7 +2648,7 @@ export default class DerivBotEngine {
       console.debug("[V49] GATE", {
         ok: check.ok,
         phase: this.executionPhase,
-        lockedCandidate: this.lockedCandidate?.setup || "â€”",
+        lockedCandidate: this.lockedCandidate?.setup || "Ã¢â‚¬â€",
         confirmations: check.confirmations || 0,
         requiredConfirmations: check.requiredConfirmations || 0,
         signalVersion: this.signalVersion,
@@ -2661,7 +2659,7 @@ export default class DerivBotEngine {
         this.patch({
           status: "WAITING",
           message: check.reason,
-          activeSetup: "â€”",
+          activeSetup: "Ã¢â‚¬â€",
           scanElapsedSeconds: number(check.elapsedSeconds),
           scanTicks: this.scanTickCount,
           maxScanTicks: this.settings.maxScanTicks,
@@ -2682,7 +2680,7 @@ export default class DerivBotEngine {
           fastLane: Boolean(check.deepAssessment?.fastLane),
           gate: check.gate || null,
           executionPhase: check.gate?.executionPhase || this.executionPhase || "SCAN",
-          lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "â€”",
+          lockedCandidate: check.gate?.lockedCandidate || this.lockedCandidate?.setup || "Ã¢â‚¬â€",
         });
 
         await sleep(1000);
@@ -2707,7 +2705,7 @@ export default class DerivBotEngine {
         this.addHistory({
           id: `error-${Date.now()}`,
           time: Date.now(),
-          setup: `${check.contract.label} Â· ${message}`,
+          setup: `${check.contract.label} Ã‚Â· ${message}`,
           result: "ERROR",
           profit: 0,
           stake: this.state.currentStake,
@@ -2813,11 +2811,11 @@ export default class DerivBotEngine {
       executionPhase: "PROPOSAL",
       lockedCandidate: check.contract.label,
       message:
-        `${this.isDemoAccount ? "Demo" : "REAL"} Â· V49 fast digit-row entry confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
+        `${this.isDemoAccount ? "Demo" : "REAL"} Ã‚Â· V49 fast digit-row entry confirmed ${check.contract.label} at scan tick ${this.scanTickCount}/${this.settings.maxScanTicks} for ${durationText(
           tradeDuration,
           tradeDurationUnit
         )}. Requesting ${stake.toFixed(2)} ${this.currency}.`,
-      activeSetup: `${check.contract.label} Â· V49 FAST DIGIT ROW`,
+      activeSetup: `${check.contract.label} Ã‚Â· V49 FAST DIGIT ROW`,
       signalConfirmations: number(
         check.requiredConfirmations,
         this.settings.confirmationCount
@@ -2984,8 +2982,8 @@ export default class DerivBotEngine {
         check.decision.professionalScore ?? check.decision.confidence
       ),
       marketQuality: number(check.decision.marketQuality),
-      riskLevel: String(check.decision.riskLevel || "â€”"),
-      entryStage: String(check.timing.state || "â€”"),
+      riskLevel: String(check.decision.riskLevel || "Ã¢â‚¬â€"),
+      entryStage: String(check.timing.state || "Ã¢â‚¬â€"),
       votes: number(check.decision.passedCount),
       martingaleStep: this.state.martingaleStep,
       executionMode: check.mode || "V12_DEEP_CYCLE_AI",
@@ -3051,13 +3049,13 @@ export default class DerivBotEngine {
         this.settings.confirmationCount
       ),
       blockedSetupUntil,
-      lastLossSetup: this.lastLossSetup || "â€”",
+      lastLossSetup: this.lastLossSetup || "Ã¢â‚¬â€",
       lossProtectionCount,
       lastBlockReason: won
         ? ""
         : `Loss protection: ${setup} blocked on ${this.symbol}.`,
       executionPhase: "SCAN",
-      lockedCandidate: "â€”",
+      lockedCandidate: "Ã¢â‚¬â€",
       signalVersion: this.signalVersion,
       lockedSignalVersion: 0,
     });
@@ -3133,5 +3131,6 @@ export default class DerivBotEngine {
     waiter.resolve(contract);
   }
 }
+
 
 
