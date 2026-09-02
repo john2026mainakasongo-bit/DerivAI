@@ -1,8 +1,0 @@
-V19 FINAL FULL ANALYZER
-- Reference dark/navy/teal/blue/yellow/purple/red color system applied across the analyzer.
-- Increased Deriv history buffer from 60/400 ticks to up to 5,000 historical + live, retained up to 6,500.
-- Timed chart windows now use substantially more source records: 5s 900, 15s 1800, 30s 3000, 1m 5000.
-- One-screen desktop layout retained.
-- Analysis-only workflow retained: no manual buy/sell controls added back.
-- EMA 9/21, barrier scanner, entry engine, confirmed entries, strategy header and summary preserved.
-- Large history request falls back to 1,000 if the API/session rejects it.

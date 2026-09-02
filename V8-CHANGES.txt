@@ -1,9 +1,0 @@
-V8 Exact Compact Trading Workspace
-- Rebuilt analyzer page to match the approved compact mockup.
-- Added 5-stage Entry Engine progress track.
-- Added compact Market Bias cards and Last Signal card.
-- Kept live Deriv market chart and safe V7 scaling/barrier logic.
-- Rebuilt Manual Entry panel for selected Demo/Real Deriv account.
-- Added qualified Recent Signals cards and Analysis Summary.
-- Added compact market/API footer.
-- No fabricated win/loss results are shown; only qualified setup history is displayed.

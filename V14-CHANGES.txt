@@ -1,9 +1,0 @@
-Deriv AI Analyzer V14 — Stable Trading Chart
-
-- Timed chart intervals now load a larger history window so 5s/15s/30s/1m candles form normally instead of only a few oversized candles.
-- Chart shows at most the latest 3 confirmed entries to avoid TOUCH/NO TOUCH marker clutter.
-- Auto Barrier Scanner wording separates BEST BARRIER SIDE from TRADE DECISION.
-- Scanner now shows Touch probability, No Touch probability, barrier distance and decision separately.
-- AI barrier chart label now says BEST SIDE and DECISION instead of presenting WAIT confidence like a buy signal.
-- Laptop layout tightened so chart + scanner + entry controls fit more comfortably on one screen.
-- Existing Deriv account connection, manual trading, barrier workflow, proposal preview and live confirmation logic preserved.

@@ -1,8 +1,0 @@
-V17 ONE-SCREEN ANALYSIS TERMINAL
-- Desktop/laptop analysis page is constrained to one viewport with no page scroll.
-- Added compact Active Analysis Strategies header.
-- Internal confluence engine now combines EMA trend, multi-window momentum, price action, barrier distance/expected travel, volatility regime, persistence, range position, breakout/rejection, choppiness, Rise/Fall context, and 3-tick live confirmation.
-- UI stays minimal: chart + scanner + entry engine + compact recent signals/summary.
-- Hidden duplicate Market Bias and Last Signal cards on desktop; the same evidence remains inside the engine/footer.
-- Chart scanner status moved out of price action area to prevent text overlap.
-- No claim of guaranteed wins; strategies are evidence filters feeding the master decision engine.

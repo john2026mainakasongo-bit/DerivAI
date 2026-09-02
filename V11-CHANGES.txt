@@ -1,9 +1,0 @@
-V11 — Deriv-style Touch / No Touch barrier workflow
-
-- Barrier controls now mirror Deriv's Above spot / Below spot / Fixed barrier model.
-- Default relative offset is +0.15, with +/- controls and exact current spot + calculated barrier price.
-- Analyzer evaluates the exact same selected barrier that the trade will use.
-- Above/Below send relative +/- barriers; Fixed sends the absolute target for Synthetic Indices.
-- Added live Touch and No Touch proposal previews (price/payout) from the authenticated Deriv account.
-- Manual BUY TOUCH / BUY NO TOUCH uses the selected Demo/Real account and the same barrier/duration/stake shown in the panel.
-- Existing confirmed-live-entry logic remains; no automatic purchases were added.

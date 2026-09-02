@@ -1,8 +1,0 @@
-V6 fixes
-- Fixed analyzer stuck in COLLECTING: analysis buffer is now independent from contract duration.
-- 10-tick contract can use up to 120 recent ticks for analysis while keeping 10 ticks as the contract horizon.
-- Manual trade card moved near the top of the right panel so BUY TOUCH / BUY NO TOUCH are visible on laptops.
-- Manual Deriv orders use a relative barrier gap (+/-) from live spot while the UI still shows the target barrier price.
-- Increased tiny 7–8px labels and values for readability.
-- Reduced laptop chart height and widened the right panel.
-- Added analysis sample count to Touch/No Touch card.

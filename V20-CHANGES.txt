@@ -1,9 +1,0 @@
-V20 FINAL SIGNAL QUALITY ENGINE
-- Visual layout/colors preserved from V19.
-- Added strict multi-strategy quality gate before any TOUCH / NO TOUCH entry can qualify.
-- High barrier probability alone can no longer create ENTRY READY.
-- Touch requires broad agreement from confluence, momentum, EMA trend, multi-window movement, price action, rejection, choppiness, regime, expected travel, persistence, expansion and direction alignment.
-- Strong contradictory evidence forces WAIT.
-- No Touch has its own containment/low-travel agreement gate and contradiction checks.
-- Confirmation/cooldown workflow retained.
-- Analysis-only one-screen workspace retained.

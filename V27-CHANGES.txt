@@ -1,9 +1,0 @@
-V27 - Stable live Strategy Engine feed
-
-- Strategy Engine auto-connects to the public Deriv analysis feed without requiring OAuth.
-- Public live feed is preferred for ticks/history.
-- Authenticated trading connection is no longer prewarmed on the same socket, preventing OAuth/OTP failures from disconnecting live analysis.
-- Trading authorization remains available when a trade action explicitly requests it.
-- Default market selection prioritizes 1HZ100V when available.
-- Removed the misleading authenticated-feed warning from the analysis connection.
-- Keeps the single Strategy Engine dashboard independent from trading authorization failures.
