@@ -1,0 +1,485 @@
+/* EdgePilot Rise/Fall — clean desktop layout overrides */
+
+.rfPage {
+  min-width: 0;
+}
+
+@media (min-width: 1100px) {
+  .appShell:has(.rfPage) {
+    grid-template-columns: 168px minmax(0, 1fr) !important;
+  }
+
+  .appShell:has(.rfPage) .sidebar {
+    width: 168px !important;
+    padding: 14px 10px !important;
+    overflow-y: auto !important;
+    scrollbar-width: thin;
+  }
+
+  .appShell:has(.rfPage) .brand {
+    padding: 0 7px 16px !important;
+  }
+
+  .appShell:has(.rfPage) .brand strong {
+    font-size: 15px !important;
+  }
+
+  .appShell:has(.rfPage) .brand small {
+    font-size: 9px !important;
+  }
+
+  .appShell:has(.rfPage) .navLink {
+    min-height: 36px !important;
+    padding: 7px 9px !important;
+    gap: 9px !important;
+    border-radius: 9px !important;
+    font-size: 10px !important;
+  }
+
+  .appShell:has(.rfPage) .mainContent {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    padding: 10px 16px 34px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .appShell:has(.rfPage) .topbar {
+    min-height: 52px !important;
+    gap: 12px !important;
+  }
+
+  .appShell:has(.rfPage) .topbar h1 {
+    font-size: 21px !important;
+    line-height: 1.05 !important;
+  }
+
+  .appShell:has(.rfPage) .topbar p {
+    font-size: 10px !important;
+    margin-top: 4px !important;
+  }
+
+  .rfPage {
+    width: 100%;
+    max-width: 1540px;
+    margin: 0 auto;
+    padding: 0 2px 40px;
+  }
+
+  .rfToolbar {
+    display: grid !important;
+    grid-template-columns: minmax(220px, 1fr) 120px minmax(540px, 1.7fr) !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin: 8px 0 !important;
+    padding: 7px !important;
+    border: 1px solid #164b63 !important;
+    border-radius: 11px !important;
+    background: linear-gradient(180deg, #082033, #051827) !important;
+  }
+
+  .rfToolbarActions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 7px !important;
+    min-width: 0 !important;
+  }
+
+  .rfToolbarActions > * {
+    min-width: 0 !important;
+  }
+
+  .rfCompactAccount {
+    min-height: 36px !important;
+    padding: 6px 8px !important;
+  }
+
+  .rfToolbar button,
+  .rfToolbar select {
+    min-height: 34px !important;
+    border-radius: 8px !important;
+    font-size: 10px !important;
+  }
+
+  .rfDurationSelect {
+    max-width: 170px !important;
+  }
+
+  .rfModeSwitch {
+    min-width: 166px !important;
+  }
+
+  .rfFeed {
+    min-height: 56px !important;
+    margin: 0 0 10px !important;
+    padding: 10px 13px !important;
+  }
+
+  .rfAutoPanel {
+    margin-bottom: 10px !important;
+    padding: 14px !important;
+    border-radius: 13px !important;
+    overflow: visible !important;
+  }
+
+  .rfAutoPanelHead {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .rfAutoPanelHead h2 {
+    font-size: 21px !important;
+  }
+
+  .rfAutoPanelButtons button {
+    min-width: 112px !important;
+    min-height: 38px !important;
+    padding: 0 13px !important;
+    border-radius: 9px !important;
+  }
+
+  .rfAutoControls {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-top: 8px !important;
+  }
+
+  .rfAutoControls label,
+  .rfAutoControls > div {
+    min-width: 0 !important;
+    padding: 9px !important;
+    border-radius: 9px !important;
+  }
+
+  .rfAutoControls input {
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+  }
+
+  .rfAutoChecks {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.35fr) minmax(210px, 1fr) 120px 130px !important;
+    gap: 7px !important;
+    margin-top: 8px !important;
+    align-items: center !important;
+  }
+
+  .rfAutoChecks > * {
+    min-width: 0 !important;
+  }
+
+  .rfAutoChecks label {
+    font-size: 9px !important;
+    line-height: 1.25 !important;
+  }
+
+  .rfAutoChecks > span {
+    padding: 6px 7px !important;
+    font-size: 9px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .rfInlineNumber {
+    width: 48px !important;
+    min-width: 48px !important;
+    margin-inline: 4px !important;
+  }
+
+  .rfEntryBanner {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(430px, .9fr) !important;
+    align-items: stretch !important;
+    gap: 18px !important;
+    min-height: 132px !important;
+    margin-bottom: 10px !important;
+    padding: 15px !important;
+    border-radius: 13px !important;
+  }
+
+  .rfEntryBanner > div:first-child {
+    min-width: 0 !important;
+    align-self: center !important;
+  }
+
+  .rfEntryBanner > div:first-child > strong {
+    font-size: 28px !important;
+  }
+
+  .rfEntryBannerStats {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    align-self: stretch !important;
+    gap: 8px !important;
+  }
+
+  .rfEntryBannerStats > span {
+    min-width: 0 !important;
+    min-height: 84px !important;
+    padding: 10px !important;
+    border-radius: 9px !important;
+    overflow: hidden !important;
+  }
+
+  .rfEntryBannerStats small {
+    font-size: 9px !important;
+    line-height: 1.15 !important;
+  }
+
+  .rfEntryBannerStats strong {
+    margin-top: 5px !important;
+    font-size: 12px !important;
+    line-height: 1.15 !important;
+  }
+
+  .rfFastDecisionRow {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .rfFastDecisionRow article {
+    min-height: 72px !important;
+    padding: 11px !important;
+    border-radius: 10px !important;
+  }
+
+  .rfModeCards {
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .rfModeCard {
+    padding: 11px !important;
+  }
+
+  .rfSyntheticScanner,
+  .rfCandleSection,
+  .rfConsensusHero,
+  .rfConsensusBoard,
+  .rfAiEntryTerminal,
+  .rfScoreTerminal,
+  .rfTradeViewer,
+  .rfRecoveryStatus {
+    margin-top: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .rfCandleSection {
+    padding: 10px !important;
+  }
+
+  .rfTvCanvas {
+    height: clamp(330px, 42vh, 500px) !important;
+    min-height: 330px !important;
+  }
+
+  .rfGrid {
+    grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr) !important;
+    gap: 10px !important;
+  }
+
+  .rfMetrics,
+  .rfProfessionalSummary,
+  .rfQuantumMetrics,
+  .rfLearningPanel {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .rfMetricCard,
+  .rfProfessionalSummary article,
+  .rfQuantumMetrics article,
+  .rfLearningPanel article {
+    min-width: 0 !important;
+    padding: 10px !important;
+    border-radius: 10px !important;
+  }
+
+  .rfMetricCard strong,
+  .rfProfessionalSummary strong,
+  .rfQuantumMetrics strong,
+  .rfLearningPanel strong {
+    font-size: 17px !important;
+  }
+
+  .rfConsensusHero {
+    grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr) !important;
+    gap: 12px !important;
+    padding: 13px !important;
+  }
+
+  .rfConsensusStats {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  .rfConsensusStats span {
+    padding: 9px !important;
+    min-width: 0 !important;
+  }
+
+  .rfConsensusBoard {
+    padding: 12px !important;
+  }
+
+  .rfVoteGrid {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .rfVoteGrid article {
+    min-width: 0 !important;
+    min-height: 54px !important;
+    padding: 8px !important;
+    border-radius: 8px !important;
+  }
+
+  .rfNextTickPanel {
+    grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(145px, .8fr)) !important;
+    gap: 7px !important;
+    margin-top: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .rfNextTickPanel > div {
+    min-width: 0 !important;
+    padding: 10px !important;
+  }
+
+  .rfAiEntryTerminal {
+    padding: 12px !important;
+  }
+
+  .rfAiEntryGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  .rfAiEntryGrid > div {
+    min-width: 0 !important;
+    padding: 8px !important;
+  }
+
+  .rfAdvancedTools,
+  .rfDeepAnalysisGrid,
+  .rfProGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .rfAdvancedTools article,
+  .rfDeepAnalysisGrid article,
+  .rfProGrid article {
+    min-width: 0 !important;
+    padding: 10px !important;
+    border-radius: 9px !important;
+  }
+
+  .rfScoreTerminal {
+    padding: 12px !important;
+  }
+
+  .rfScoreGrid {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  .rfScoreGrid > div {
+    min-width: 0 !important;
+    padding: 9px !important;
+  }
+
+  .rfRecoveryStatus {
+    grid-template-columns: minmax(280px, .9fr) minmax(500px, 1.6fr) !important;
+    gap: 10px !important;
+    padding: 11px 12px !important;
+  }
+
+  .rfRecoveryMetrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  .rfRecoveryMetrics span {
+    min-width: 0 !important;
+    min-height: 62px !important;
+    padding: 8px !important;
+  }
+
+  .rfTradeViewer {
+    padding: 12px !important;
+  }
+
+  .rfTradeTable th,
+  .rfTradeTable td {
+    padding: 7px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .rfRawTrades {
+    margin-top: 7px !important;
+  }
+
+  .rfSafety {
+    margin-top: 8px !important;
+    margin-bottom: 10px !important;
+    padding: 8px 11px !important;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1250px) {
+  .appShell:has(.rfPage) .sidebar {
+    width: 150px !important;
+  }
+
+  .appShell:has(.rfPage) {
+    grid-template-columns: 150px minmax(0, 1fr) !important;
+  }
+
+  .rfToolbar {
+    grid-template-columns: minmax(190px, 1fr) 108px minmax(440px, 1.5fr) !important;
+  }
+
+  .rfEntryBanner {
+    grid-template-columns: 1fr !important;
+  }
+
+  .rfEntryBannerStats {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .rfNextTickPanel {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .rfRecoveryStatus {
+    grid-template-columns: 1fr !important;
+  }
+
+  .rfVoteGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .rfAdvancedTools,
+  .rfDeepAnalysisGrid,
+  .rfProGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .rfScoreGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
