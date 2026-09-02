@@ -1,0 +1,143 @@
+﻿.pulseRiseCore {
+  width: 100%;
+  margin: 14px 0;
+  padding: 16px;
+  border: 1px solid #164f68;
+  border-radius: 14px;
+  background: #061825;
+  box-sizing: border-box;
+}
+
+.pulseRiseHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+}
+
+.pulseRiseEyebrow {
+  display: block;
+  color: #20e0b2;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.pulseRiseHeader h2 {
+  margin: 3px 0;
+  font-size: 22px;
+}
+
+.pulseRiseHeader p {
+  margin: 0;
+  color: #82aabd;
+  font-size: 11px;
+}
+
+.pulseRiseActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pulseRiseActions button {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pulseRiseActions button.primary {
+  background: #1388ff;
+  color: #fff;
+}
+
+.pulseRiseActions button.danger {
+  background: #ee4266;
+  color: #fff;
+}
+
+.pulseRiseSwitch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #b4cbd5;
+}
+
+.pulseRiseGrid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.pulseRiseCard {
+  min-width: 0;
+  min-height: 64px;
+  padding: 9px;
+  border: 1px solid #164f68;
+  border-radius: 9px;
+  background: #071e2c;
+  box-sizing: border-box;
+}
+
+.pulseRiseCard span {
+  display: block;
+  color: #7eaabb;
+  font-size: 9px;
+}
+
+.pulseRiseCard strong {
+  display: block;
+  margin-top: 5px;
+  color: #fff;
+  font-size: 17px;
+}
+
+.pulseRiseCard strong.rise {
+  color: #26e0b0;
+}
+
+.pulseRiseCard strong.fall {
+  color: #ff5f78;
+}
+
+.pulseRiseCard strong.wait {
+  color: #f2cb63;
+}
+
+.pulseRiseFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  color: #7eaabb;
+  font-size: 10px;
+}
+
+.pulseRiseFooter b {
+  color: #20e0b2;
+}
+
+@media (max-width: 1100px) {
+  .pulseRiseGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .pulseRiseHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pulseRiseGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pulseRiseFooter {
+    flex-direction: column;
+  }
+}

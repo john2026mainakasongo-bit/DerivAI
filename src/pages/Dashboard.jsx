@@ -39,6 +39,8 @@ import DashboardAIAnalyzerV6 from "../components/DashboardAIAnalyzerV6";
 import DashboardAIAnalyzer from "../components/DashboardAIAnalyzer";
 import DerivAIAnalyzerCard from "../components/DerivAIAnalyzerCard";
 import { GeminiXDashboardPanel } from "./GeminiXEngine";
+import PulseRiseCore from "../components/PulseRiseCore";
+import "../styles/PulseRiseCore.css";
 
 function buildPath(
   prices,
@@ -377,6 +379,8 @@ export default function Dashboard() {
           </div>
         ) : null}
 
+        <PulseRiseCore data={deriv} />
+
         <section className="signalGrid">
           {signals.map((item) => (
             <SignalCard
@@ -575,6 +579,7 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 
 
