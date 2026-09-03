@@ -95,3 +95,125 @@
     align-items: stretch;
   }
 }
+
+/* =========================================
+   CLEAN BOT - ACCOUNT SWITCHER
+   ========================================= */
+
+.cleanAccountBar {
+  width: min(100%, 1000px);
+  margin: 0 auto 14px;
+  padding: 10px 14px;
+  box-sizing: border-box;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  border: 1px solid rgba(45, 212, 191, 0.24);
+  border-radius: 12px;
+
+  background: rgba(4, 18, 30, 0.94);
+}
+
+.cleanAccountInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 190px;
+}
+
+.cleanAccountLabel {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: #5eead4;
+}
+
+.cleanAccountInfo strong {
+  font-size: 13px;
+  color: #f8fafc;
+}
+
+.cleanAccountInfo small {
+  font-size: 9px;
+  color: #7893a5;
+}
+
+.cleanAccountActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cleanAccountButton {
+  min-width: 92px;
+
+  border: 1px solid #23465b;
+  border-radius: 8px;
+
+  padding: 7px 11px;
+
+  background: #071b2a;
+  color: #d7e8f2;
+
+  font-size: 11px;
+  font-weight: 900;
+
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.cleanAccountButton:hover {
+  border-color: #2dd4bf;
+  transform: translateY(-1px);
+}
+
+.cleanAccountButton small {
+  display: block;
+  margin-top: 2px;
+
+  max-width: 120px;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  color: #7893a5;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.cleanAccountButton.selected {
+  border-color: #21d3a7;
+  background: #0a2b2a;
+  color: #5eead4;
+  box-shadow: 0 0 0 1px rgba(33, 211, 167, 0.12) inset;
+}
+
+.cleanAccountButton.login {
+  border-color: #21d3a7;
+  color: #5eead4;
+}
+
+@media (max-width: 700px) {
+  .cleanAccountBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .cleanAccountActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .cleanAccountInfo {
+    width: 100%;
+  }
+}
