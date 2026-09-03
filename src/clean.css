@@ -1,0 +1,97 @@
+﻿.cleanShell {
+  min-height: 100vh;
+  display: flex;
+  background: #020914;
+}
+
+.cleanMain {
+  flex: 1;
+  min-width: 0;
+  padding: 20px;
+}
+
+.connectionPanel,
+.newProjectPanel {
+  border: 1px solid #16445c;
+  border-radius: 14px;
+  background: #061825;
+  padding: 20px;
+  margin-top: 16px;
+}
+
+.connectionPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.eyebrow {
+  color: #20dfb1;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+
+.connectionPanel h1,
+.newProjectPanel h2 {
+  margin: 6px 0;
+}
+
+.connectionPanel p,
+.newProjectPanel p {
+  margin: 0;
+  color: #8caab9;
+}
+
+.connectionControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 320px;
+}
+
+.connectionBadge,
+.connectionMessage {
+  border: 1px solid #16445c;
+  border-radius: 9px;
+  padding: 10px 14px;
+}
+
+.connectionBadge.online {
+  color: #20dfb1;
+}
+
+.connectionMessage {
+  margin-top: 10px;
+  color: #ff6680;
+}
+
+.newProjectPanel {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  align-content: center;
+}
+
+.newProjectPanel p {
+  max-width: 520px;
+}
+
+@media (max-width: 800px) {
+  .cleanMain {
+    padding: 12px;
+  }
+
+  .connectionPanel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .connectionControls {
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
