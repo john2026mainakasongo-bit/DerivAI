@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -128,7 +128,7 @@ export default function useDerivTicks() {
       markets[0] || {
         id: "",
         label: "No market selected",
-        short: "—",
+        short: "â€”",
         decimals: 3,
       },
     [markets, symbol]
@@ -202,7 +202,9 @@ export default function useDerivTicks() {
     }
 
     try {
-      const connection = await ensureSharedSocket({ allowPublicFallback: !auth.authenticated });
+      const connection = await ensureSharedSocket({
+        allowPublicFallback: true,
+      });
 
       const liveMarkets =
         await derivPublicClient.getVolatilityMarkets();
@@ -376,7 +378,9 @@ export default function useDerivTicks() {
 
     void (async () => {
       try {
-        await derivPublicClient.reconnect({ allowPublicFallback: !auth.authenticated });
+        await derivPublicClient.reconnect({
+          allowPublicFallback: true,
+        });
 
         const liveMarkets =
           await derivPublicClient.getVolatilityMarkets();
@@ -756,8 +760,6 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
-
-
 
 
 

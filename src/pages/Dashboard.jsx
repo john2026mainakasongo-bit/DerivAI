@@ -1,6 +1,4 @@
 ﻿import { useEffect, useState } from "react";
-import Sidebar from "../components/Sidebar";
-import Topbar from "../components/Topbar";
 import { completeDerivLogin } from "../auth/derivOAuth";
 import RiseFallBot from "../components/RiseFallBot";
 
@@ -12,12 +10,9 @@ export default function Dashboard() {
     let cancelled = false;
 
     async function finish() {
-      const u = new URL(window.location.href);
+      const url = new URL(window.location.href);
 
-      if (
-        !u.searchParams.has("code") &&
-        !u.searchParams.has("error")
-      ) {
+      if (!url.searchParams.has("code") && !url.searchParams.has("error")) {
         return;
       }
 
@@ -25,29 +20,22 @@ export default function Dashboard() {
         setCompletingOAuth(true);
         setOauthError("");
 
-        const s = await completeDerivLogin();
+        const session = await completeDerivLogin();
 
-        if (!cancelled && s?.accessToken) {
-          window.history.replaceState(
-            {},
-            document.title,
-            window.location.pathname
-          );
-
+        if (!cancelled && session?.accessToken) {
+          window.history.replaceState({}, document.title, window.location.pathname);
           window.location.reload();
         }
-      } catch (e) {
+      } catch (error) {
         if (!cancelled) {
           setOauthError(
-            e instanceof Error
-              ? e.message
+            error instanceof Error
+              ? error.message
               : "Unable to complete Deriv login."
           );
         }
       } finally {
-        if (!cancelled) {
-          setCompletingOAuth(false);
-        }
+        if (!cancelled) setCompletingOAuth(false);
       }
     }
 
@@ -59,29 +47,20 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="appShell">
-      <Sidebar />
+    <main className="cleanBotPage">
+      {completingOAuth ? (
+        <div className="connectionError">
+          Completing Deriv login. Please wait...
+        </div>
+      ) : null}
 
-      <main className="mainContent">
-        <Topbar
-          title="DerivAI"
-          subtitle="Compact Rise/Fall trading engine"
-        />
+      {oauthError ? (
+        <div className="connectionError">
+          Deriv login failed: {oauthError}
+        </div>
+      ) : null}
 
-        {completingOAuth ? (
-          <div className="connectionError">
-            Completing Deriv login. Please wait...
-          </div>
-        ) : null}
-
-        {oauthError ? (
-          <div className="connectionError">
-            Deriv login failed: {oauthError}
-          </div>
-        ) : null}
-
-        <RiseFallBot />
-      </main>
-    </div>
+      <RiseFallBot />
+    </main>
   );
 }
