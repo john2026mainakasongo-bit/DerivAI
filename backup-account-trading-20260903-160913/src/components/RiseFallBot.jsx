@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import useDerivTicks from "../hooks/useDerivTicks";
-import { useDerivAuth } from "../auth/DerivAuthContext";
 import { analyzeRiseFall } from "../analysis/riseFallEngine";
 import { createRiskManager } from "../bot/riskManager";
 import "../styles/RiseFallBot.css";
@@ -25,17 +24,6 @@ const profitOf = (value) => {
 
   if (Number.isFinite(direct)) return direct;
 
-  const selectedAccount = auth.selectedAccount;
-  const selectedAccountType =
-    auth.selectedAccountType || "demo";
-  const selectedAccountBalance = Number(
-    selectedAccount?.balance
-  );
-  const selectedAccountCurrency =
-    selectedAccount?.currency || "USD";
-  const balanceText = Number.isFinite(selectedAccountBalance)
-    ? `${selectedAccountCurrency} ${selectedAccountBalance.toFixed(2)}`
-    : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
   return (
     Number(value?.sell_price || value?.payout || 0) -
     Number(value?.buy_price || value?.purchase_price || 0)
@@ -52,7 +40,6 @@ const settled = (value) =>
   );
 
 export default function RiseFallBot() {
-  const auth = useDerivAuth();
   const {
     markets = [],
     market = null,
@@ -233,7 +220,7 @@ export default function RiseFallBot() {
 
   const price = Number.isFinite(currentPrice)
     ? currentPrice.toFixed(market?.decimals ?? 3)
-    : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
+    : "—";
 
   const real =
     String(selectedAccountType).toLowerCase() === "real";
@@ -241,14 +228,14 @@ export default function RiseFallBot() {
   const connectionLabel = !connected
     ? status
     : authenticatedFeed
-      ? "LIVE ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ TRADING"
-      : "LIVE ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ FEED ONLY";
+      ? "LIVE • TRADING"
+      : "LIVE • FEED ONLY";
 
   return (
     <section className="rfBot">
       <div className="rfBotTop">
         <div>
-          <small>DERIV ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ RISE / FALL ENGINE</small>
+          <small>DERIV • RISE / FALL ENGINE</small>
           <h1>Pulse Rise/Fall</h1>
           <p>Momentum + trend + volatility filter</p>
         </div>
@@ -256,33 +243,6 @@ export default function RiseFallBot() {
         <div className="rfConnection">
           <span className={authenticatedFeed ? "rfDot live" : "rfDot"} />
           {connectionLabel}
-        </div>
-      </div>
-
-      <div className="rfAccountBalance">
-        <div>
-          <small>ACCOUNT</small>
-          <strong>
-            {selectedAccountType === "demo"
-              ? "DEMO"
-              : selectedAccountType === "real"
-                ? "REAL"
-                : "NOT SELECTED"}
-          </strong>
-          {selectedAccount?.id ? (
-            <span>{String(selectedAccount.id)}</span>
-          ) : null}
-        </div>
-        <div>
-          <small>BALANCE</small>
-          <strong>{balanceText}</strong>
-          <span>
-            {auth.balanceStatus === "live"
-              ? "LIVE BALANCE"
-              : auth.balanceStatus === "connecting"
-                ? "CONNECTINGÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦"
-                : "BALANCE OFFLINE"}
-          </span>
         </div>
       </div>
 
@@ -320,14 +280,13 @@ export default function RiseFallBot() {
             </div>
 
             <div
-              className={
-                "rfSignalDirection " +
-                (analysis.signal === "RISE"
+              className={`rfDirection ${
+                analysis.signal === "RISE"
                   ? "rise"
                   : analysis.signal === "FALL"
                     ? "fall"
-                    : "")
-              }
+                    : ""
+              }`}
             >
               {analysis.signal}
             </div>
@@ -347,14 +306,14 @@ export default function RiseFallBot() {
               <b>RISE</b>{" "}
               {analysis.signal === "RISE"
                 ? pct(analysis.confidence)
-                : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}
+                : "—"}
             </span>
 
             <span>
               <b>FALL</b>{" "}
               {analysis.signal === "FALL"
                 ? pct(analysis.confidence)
-                : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}
+                : "—"}
             </span>
           </div>
 
@@ -369,7 +328,11 @@ export default function RiseFallBot() {
 
           <button
             className="rfTradeButton"
-            disabled={tradeBusy || !authenticatedFeed || !analysis.ready || analysis.signal === "WAIT"}
+            disabled={
+              tradeBusy ||
+              !analysis.ready ||
+              analysis.signal === "WAIT"
+            }
             onClick={() => void execute("manual")}
           >
             {tradeBusy ? "EXECUTING..." : `TRADE ${analysis.signal}`}
@@ -389,7 +352,7 @@ export default function RiseFallBot() {
             />
             <Metric
               label="AGREEMENT"
-              value={analysis.ready ? `${analysis.agreement}/4` : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}
+              value={analysis.ready ? `${analysis.agreement}/4` : "—"}
             />
           </div>
 
@@ -488,7 +451,7 @@ export default function RiseFallBot() {
       ) : null}
 
       <div className="rfStatus">
-        <span>{running ? "ÃƒÂ¢Ã¢â‚¬â€Ã‚Â SCANNING" : "ÃƒÂ¢Ã¢â‚¬â€Ã¢â‚¬Â¹ READY"}</span>
+        <span>{running ? "● SCANNING" : "○ READY"}</span>
         <span>{message}</span>
       </div>
 
@@ -509,4 +472,3 @@ function Metric({ label, value }) {
     </div>
   );
 }
-

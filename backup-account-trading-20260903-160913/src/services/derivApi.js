@@ -1,4 +1,4 @@
-const PUBLIC_SOCKET_URLS = [
+﻿const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -135,7 +135,6 @@ class DerivTradingClient {
     this.manualClose = false;
     this.connectPromise = null;
     this.socketAuthenticated = false;
-    this.socketAuthKey = "";
     this.lastAuthConnectionError = "";
 
     this.auth = {
@@ -393,7 +392,6 @@ class DerivTradingClient {
     this.pending.clear();
     this.socket = null;
     this.socketAuthenticated = false;
-    this.socketAuthKey = "";
     this.subscriptionId = "";
     this.contractSubscriptionIds.clear();
   }
@@ -492,9 +490,6 @@ class DerivTradingClient {
           this.handleMessage(event);
 
         this.socketAuthenticated = Boolean(authenticatedSocket);
-        this.socketAuthKey = authenticatedSocket
-          ? `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`
-          : "";
 
         this.pingTimer = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
@@ -1118,5 +1113,4 @@ export const derivPublicClient =
   new DerivTradingClient();
 
 export default derivPublicClient;
-
 

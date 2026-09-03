@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -128,7 +128,7 @@ export default function useDerivTicks() {
       markets[0] || {
         id: "",
         label: "No market selected",
-        short: "â€”",
+        short: "—",
         decimals: 3,
       },
     [markets, symbol]
@@ -233,27 +233,41 @@ export default function useDerivTicks() {
         }
       }
 
+      setConnected(true);
+      setStatus("CONNECTED");
+
+      // V26 trading connection prewarm:
+      // authorize the selected account before an entry appears.
       if (auth.authenticated && selectedAccountId) {
-        await derivPublicClient.ensureTradingConnection();
-
-        if (!mountedRef.current) {
-          return connection;
-        }
-
-        setTradingReady(true);
+        Promise.resolve(
+          derivPublicClient.ensureTradingConnection()
+        )
+          .then(() => {
+            if (mountedRef.current) {
+              setTradingReady(true);
+            }
+          })
+          .catch((error) => {
+            if (mountedRef.current) {
+              setTradingReady(false);
+              setStatusDetail(
+                error instanceof Error
+                  ? error.message
+                  : "Trading connection prewarm failed."
+              );
+            }
+          });
       } else {
         setTradingReady(false);
       }
 
-      if (auth.authenticated && !derivPublicClient.socketAuthenticated) {
-        throw new Error(
-          "Authenticated trading connection is required while a Deriv account is selected."
+      if (connection?.fallback && auth.authenticated) {
+        setStatusDetail(
+          derivPublicClient.lastAuthConnectionError
+            ? `Live analysis connected. Trading login failed: ${derivPublicClient.lastAuthConnectionError}`
+            : "Live analysis connected. Reconnect the account before trading."
         );
       }
-
-      setConnected(true);
-      setStatus("CONNECTED");
-      setStatusDetail("");
 
       return connection;
     } catch (error) {
@@ -541,14 +555,9 @@ export default function useDerivTicks() {
       setTradeError("");
 
       try {
-        const selectedConfig = {
-          accessToken: auth.session?.accessToken || "",
-          appId: auth.config?.clientId || "",
-          accountId: selectedAccountId,
-        };
-
-        derivPublicClient.configureAccount(selectedConfig);
-        await derivPublicClient.ensureTradingConnection();
+        if (!derivPublicClient.socketAuthenticated) {
+          await derivPublicClient.ensureTradingConnection();
+        }
 
         setTradingReady(true);
 
@@ -747,7 +756,6 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
-
 
 
 
