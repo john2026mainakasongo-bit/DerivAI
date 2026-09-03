@@ -6,6 +6,7 @@ import App from "./App";
 
 import "./index.css";
 import "./clean.css";
+import "./styles/CoreShell.css";
 
 ReactDOM.createRoot(
   document.getElementById("root")

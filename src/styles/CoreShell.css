@@ -1,0 +1,456 @@
+﻿.appShell{
+  min-height:100vh;
+  display:flex;
+  background:#020914;
+  color:#eaf6ff;
+}
+
+.sidebar{
+  width:190px;
+  min-width:190px;
+  height:100vh;
+  position:sticky;
+  top:0;
+  display:flex;
+  flex-direction:column;
+  padding:16px 10px;
+  background:#04111c;
+  border-right:1px solid #12344a;
+  overflow-y:auto;
+}
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:5px 7px 18px;
+  border-bottom:1px solid #102d40;
+}
+
+.brandMark{
+  width:30px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  border-radius:9px;
+  background:#138ff0;
+  color:white;
+  font-weight:1000;
+}
+
+.brand strong{
+  display:block;
+  font-size:13px;
+}
+
+.brand small{
+  display:block;
+  margin-top:2px;
+  color:#6f8b9b;
+  font-size:9px;
+}
+
+.sidebarNav{
+  flex:1;
+  padding-top:12px;
+}
+
+.navGroup{
+  margin-bottom:15px;
+}
+
+.navGroupLabel{
+  display:block;
+  padding:0 8px 6px;
+  color:#4f7388;
+  font-size:8px;
+  font-weight:1000;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+}
+
+.navLink{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:31px;
+  margin:2px 0;
+  padding:0 8px;
+  border-radius:7px;
+  color:#86a2b2;
+  text-decoration:none;
+  font-size:10px;
+  font-weight:800;
+}
+
+.navLink:hover{
+  background:#082235;
+  color:#dff5ff;
+}
+
+.navLink.active{
+  background:#087de0;
+  color:white;
+  box-shadow:0 5px 16px rgba(8,125,224,.2);
+}
+
+.navIcon{
+  width:17px;
+  text-align:center;
+  font-size:10px;
+}
+
+.navText{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.sidebarFooter{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:10px 8px;
+  border-top:1px solid #102d40;
+  color:#6f8b9b;
+  font-size:9px;
+}
+
+.statusDot{
+  width:6px;
+  height:6px;
+  flex:0 0 6px;
+  border-radius:50%;
+  background:#596b77;
+}
+
+.topbar{
+  min-height:72px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  padding:14px 20px;
+  border-bottom:1px solid #102f42;
+  background:#020c16;
+}
+
+.topbarTitle h1{
+  margin:0;
+  font-size:21px;
+  line-height:1.1;
+}
+
+.topbarTitle p{
+  margin:4px 0 0;
+  color:#6e899a;
+  font-size:10px;
+}
+
+.topbarActions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:7px;
+  flex-wrap:wrap;
+}
+
+.connection,
+.connectButton,
+.derivLoginButton,
+.derivLogoutButton,
+.derivAccountButton{
+  min-height:32px;
+  border:1px solid #16445c;
+  border-radius:8px;
+  background:#061a29;
+  color:#c8dce7;
+  font-size:9px;
+  font-weight:900;
+}
+
+.connection{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:0 9px;
+}
+
+.connection.connected{
+  color:#43dfb4;
+  border-color:#17614e;
+}
+
+.connectButton,
+.derivLoginButton,
+.derivLogoutButton,
+.derivAccountButton{
+  padding:0 10px;
+  cursor:pointer;
+}
+
+.connectButton:hover,
+.derivLoginButton:hover{
+  border-color:#168fe0;
+}
+
+.connectButton.disconnect,
+.derivLogoutButton{
+  color:#ff8299;
+  border-color:#633047;
+  background:#21101a;
+}
+
+.derivAccountSwitcher{
+  position:relative;
+}
+
+.derivAccountButton{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-width:150px;
+  text-align:left;
+}
+
+.derivAccountTypeIcon{
+  width:21px;
+  height:21px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:#075d92;
+  color:#fff;
+  font-size:9px;
+  font-weight:1000;
+}
+
+.derivAccountTypeIcon.real{
+  background:#7b263f;
+}
+
+.derivAccountButtonText{
+  display:flex;
+  flex-direction:column;
+  flex:1;
+}
+
+.derivAccountButtonText strong{
+  font-size:9px;
+}
+
+.derivAccountButtonText small{
+  margin-top:2px;
+  color:#698697;
+  font-size:8px;
+}
+
+.derivAccountChevron{
+  color:#6f8b9b;
+}
+
+.derivAccountMenu{
+  position:absolute;
+  z-index:20;
+  top:39px;
+  right:0;
+  width:270px;
+  padding:9px;
+  border:1px solid #17445b;
+  border-radius:11px;
+  background:#061521;
+  box-shadow:0 15px 35px rgba(0,0,0,.45);
+}
+
+.derivAccountMenuHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:5px 6px 9px;
+  border-bottom:1px solid #123246;
+}
+
+.derivAccountMenuHeader strong{
+  display:block;
+  font-size:10px;
+}
+
+.derivAccountMenuHeader small{
+  color:#6e8999;
+  font-size:8px;
+}
+
+.derivAccountMenuHeader button{
+  border:0;
+  background:transparent;
+  color:#6fe5c0;
+  cursor:pointer;
+}
+
+.derivAccountMenuList{
+  max-height:220px;
+  overflow:auto;
+  padding:5px 0;
+}
+
+.derivAccountRow{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 6px;
+  border:0;
+  border-radius:7px;
+  background:transparent;
+  color:#d8e8ef;
+  text-align:left;
+  cursor:pointer;
+}
+
+.derivAccountRow:hover,
+.derivAccountRow.active{
+  background:#092538;
+}
+
+.derivAccountRowCopy{
+  flex:1;
+}
+
+.derivAccountRowCopy strong,
+.derivAccountRowCopy small{
+  display:block;
+}
+
+.derivAccountRowCopy strong{
+  font-size:9px;
+}
+
+.derivAccountRowCopy small{
+  margin-top:2px;
+  color:#658393;
+  font-size:8px;
+}
+
+.derivAccountRowBalance{
+  text-align:right;
+}
+
+.derivAccountRowBalance strong,
+.derivAccountRowBalance small{
+  display:block;
+}
+
+.derivAccountRowBalance strong{
+  font-size:9px;
+}
+
+.derivAccountRowBalance small{
+  color:#658393;
+  font-size:8px;
+}
+
+.derivAccountCheck{
+  color:#38dfb0;
+}
+
+.derivAccountBalanceStatus{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:8px 5px 3px;
+  border-top:1px solid #123246;
+  color:#6e8999;
+  font-size:8px;
+}
+
+.derivAuthInlineError{
+  position:absolute;
+  top:70px;
+  right:20px;
+  z-index:30;
+  padding:7px 10px;
+  border:1px solid #6b3047;
+  border-radius:7px;
+  background:#24101a;
+  color:#ff8ba4;
+  font-size:9px;
+}
+
+.mainContent{
+  flex:1;
+  min-width:0;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+.connectionError{
+  margin:10px 20px;
+  padding:8px 10px;
+  border:1px solid #5e3044;
+  border-radius:8px;
+  background:#1d1018;
+  color:#ff8da5;
+  font-size:9px;
+}
+
+@media(max-width:900px){
+  .sidebar{
+    width:64px;
+    min-width:64px;
+    padding:12px 7px;
+  }
+
+  .brand{
+    justify-content:center;
+    padding-bottom:12px;
+  }
+
+  .brand>div:last-child,
+  .navGroupLabel,
+  .navText,
+  .sidebarFooter{
+    display:none;
+  }
+
+  .navLink{
+    justify-content:center;
+    padding:0;
+  }
+
+  .navIcon{
+    width:auto;
+  }
+
+  .topbar{
+    padding:12px;
+  }
+
+  .topbarTitle h1{
+    font-size:17px;
+  }
+
+  .topbarActions{
+    gap:5px;
+  }
+}
+
+@media(max-width:600px){
+  .topbar{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+
+  .topbarActions{
+    width:100%;
+    justify-content:flex-start;
+  }
+
+  .derivAccountButton{
+    min-width:130px;
+  }
+
+  .derivAccountMenu{
+    left:0;
+    right:auto;
+  }
+}
