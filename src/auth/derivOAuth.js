@@ -80,36 +80,75 @@ function normalizeAccounts(payload) {
 
   const list = candidates.find(Array.isArray) || [];
 
-  return list.map((item, index) => ({
-    id: String(
-      item?.id ||
-        item?.account_id ||
-        item?.loginid ||
-        item?.login_id ||
-        `account-${index}`
-    ),
-    label: String(
-      item?.display_name ||
-        item?.name ||
-        item?.account_type ||
-        item?.loginid ||
-        `Deriv account ${index + 1}`
-    ),
-    accountType: String(
-      item?.account_type ||
-        item?.type ||
-        ""
-    ),
-    currency: String(item?.currency || ""),
-    balance:
-      item?.balance == null
-        ? null
-        : Number(
-            item.balance?.value ??
-              item.balance
-          ),
-    raw: item,
-  }));
+  return list
+    .map((item, index) => {
+      const raw = item && typeof item === "object" ? item : {};
+
+      const id = String(
+        raw.id ||
+          raw.account_id ||
+          raw.loginid ||
+          raw.login_id ||
+          raw.accountId ||
+          `account-${index}`
+      ).trim();
+
+      const accountType = String(
+        raw.account_type ||
+          raw.accountType ||
+          raw.type ||
+          raw.display_type ||
+          raw.displayType ||
+          raw.raw?.account_type ||
+          raw.raw?.type ||
+          ""
+      ).trim();
+
+      // Keep the real Deriv currency instead of assuming USD.
+      // Different account responses may expose it under slightly
+      // different keys, so preserve all common variants.
+      const currency = String(
+        raw.currency ||
+          raw.currency_code ||
+          raw.currencyCode ||
+          raw.account_currency ||
+          raw.accountCurrency ||
+          raw.raw?.currency ||
+          raw.raw?.currency_code ||
+          ""
+      ).trim().toUpperCase();
+
+      const balanceValue =
+        raw.balance?.value ??
+        raw.balance?.amount ??
+        raw.balance ??
+        raw.amount ??
+        null;
+
+      const balance =
+        balanceValue == null || balanceValue === ""
+          ? null
+          : Number(balanceValue);
+
+      return {
+        ...raw,
+        id,
+        label: String(
+          raw.display_name ||
+            raw.name ||
+            raw.account_type ||
+            raw.accountType ||
+            raw.loginid ||
+            id ||
+            `Deriv account ${index + 1}`
+        ),
+        accountType,
+        currency: currency || "USD",
+        balance: Number.isFinite(balance) ? balance : null,
+        raw,
+      };
+    })
+    .filter((account) => account.id);
 }
 
 function getCallbackLock() {
