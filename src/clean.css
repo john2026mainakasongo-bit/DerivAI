@@ -1,4 +1,4 @@
-﻿.cleanShell {
+.cleanShell {
   min-height: 100vh;
   display: flex;
   background: #020914;
@@ -320,4 +320,48 @@
   .accountSwitcherBar{align-items:flex-start;flex-direction:column}
   .accountSwitcherControls{width:100%;justify-content:flex-start}
   .rfAccountBalance{align-items:flex-start;flex-direction:column}
+}
+
+/* RF_FINAL_OVERFLOW_FIX */
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.appShell,
+.mainContent,
+.cleanBotPage {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.rfRoot {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.rfRoot * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.rfSignal,
+.rfSignalHeader,
+.rfProb,
+.rfConnection,
+.rfStatus {
+  min-width: 0;
+}
+
+.rfSignalHeader small,
+.rfSignalHeader strong,
+.rfProb,
+.rfProb span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
