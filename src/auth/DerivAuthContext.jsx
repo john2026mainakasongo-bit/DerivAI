@@ -91,31 +91,60 @@ function accountLabel(account) {
 }
 
 function normalizeBalanceMessage(message) {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
   const payload =
     message?.balance ||
     message?.data?.balance ||
     message?.data ||
+    message;
+
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const rawBalance =
+    payload?.balance?.value ??
+    payload?.balance?.amount ??
+    payload?.balance ??
+    payload?.amount ??
+    payload?.value ??
     null;
 
-  if (!payload) return null;
-
-  const value = Number(
-    payload?.balance?.value ??
-      payload?.balance ??
-      payload?.value
-  );
+  const value = Number(rawBalance);
 
   if (!Number.isFinite(value)) {
     return null;
   }
 
+  const currency = String(
+    payload?.currency ||
+      payload?.balance?.currency ||
+      message?.currency ||
+      message?.data?.currency ||
+      "USD"
+  )
+    .trim()
+    .toUpperCase();
+
+  const accountId = String(
+    payload?.loginid ||
+      payload?.login_id ||
+      payload?.account_id ||
+      payload?.accountId ||
+      message?.loginid ||
+      message?.login_id ||
+      message?.account_id ||
+      message?.accountId ||
+      ""
+  ).trim();
+
   return {
     balance: value,
-    currency: String(
-      payload?.currency ||
-        payload?.balance?.currency ||
-        "USD"
-    ),
+    currency: currency || "USD",
+    accountId,
   };
 }
 

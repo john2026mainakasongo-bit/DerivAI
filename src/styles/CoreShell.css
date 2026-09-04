@@ -1,5 +1,5 @@
 ﻿
-.appShell*{
+.appShell{
   min-height:100vh;
   display:flex;
   background:#020914;
