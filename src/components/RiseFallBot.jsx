@@ -443,7 +443,7 @@ export default function RiseFallBot() {
             type="checkbox"
             checked={allowReal}
             onChange={(event) => setAllowReal(event.target.checked)}
-            disabled={!real}
+            disabled={!allowReal}
           />
           ALLOW REAL
         </label>
