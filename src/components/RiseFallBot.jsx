@@ -66,23 +66,24 @@ export default function RiseFallBot() {
     }
   }, [openContracts]);
 
-  const execute = useCallback(async (source = "manual") => {
+  const execute = useCallback(async (source = "manual", forcedSignal = null) => {
     if (busyRef.current) return;
     if (!connected) return setMessage("Connect the Deriv feed first.");
     if (!accountId) return setMessage("Select a Demo or Real account first.");
-    if (analysis.signal === "WAIT" || !analysis.ready) return setMessage("No qualified Rise/Fall signal.");
+    const direction = forcedSignal || analysis.signal;
+    if (!["RISE", "FALL"].includes(direction)) return setMessage("Choose RISE or FALL, or wait for the AI signal.");
     if (String(selectedAccountType).toLowerCase() === "real" && !allowReal) return setMessage("REAL ACCOUNT LOCKED.");
     if (String(selectedAccountType).toLowerCase() === "demo" && allowReal) setAllowReal(false);
     const gate = riskRef.current.canTrade();
     if (!gate.ok) return setMessage(gate.reason);
     busyRef.current = true;
-    setMessage(`${source === "auto" ? "Auto" : "Manual"}: executing ${analysis.signal} ${analysis.confidence}%...`);
+    setMessage(`${source === "auto" ? "Auto" : "Manual"}: executing ${direction}${source === "auto" ? ` ${analysis.confidence}%` : ""}...`);
     try {
-      const result = await placeTrade({ contractType: analysis.contractType, amount: Number(stake), basis: "stake", duration: Number(duration), durationUnit: "t", symbol });
+      const result = await placeTrade({ contractType: direction === "RISE" ? "CALL" : "PUT", amount: Number(stake), basis: "stake", duration: Number(duration), durationUnit: "t", symbol });
       const id = idOf(result);
-      if (source === "auto") lastAutoSignalRef.current = `${symbol}:${analysis.signal}`;
+      if (source === "auto") lastAutoSignalRef.current = `${symbol}:${direction}`;
       riskRef.current.onEntry(id);
-      setMessage(`${analysis.signal} opened${id ? ` #${id}` : ""}. Waiting for result...`);
+      setMessage(`${direction} opened${id ? ` #${id}` : ""}. Waiting for result...`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Trade failed.");
     } finally { busyRef.current = false; }
@@ -154,8 +155,8 @@ export default function RiseFallBot() {
         <label>Market<select value={symbol} disabled={!connected} onChange={(e) => void changeSymbol(e.target.value)}>{markets.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <label>Stake ({currency})<div className="rfInputGroup"><input type="number" min="0.35" step="0.01" value={stake} onChange={(e) => setStake(Math.max(0.35, Number(e.target.value) || 0.35))} /><button type="button" onClick={() => setStake((v) => Math.max(0.35, v - 0.05))}>−</button><button type="button" onClick={() => setStake((v) => v + 0.05)}>+</button></div></label>
         <label>Duration<div className="rfInputGroup"><select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>{[1,2,3,5,8,10].map((v) => <option key={v} value={v}>{v}</option>)}</select><span>Ticks</span></div></label>
-        <button className="rfBigTrade rise" disabled={tradeBusy || !analysis.ready || analysis.signal === "FALL"} onClick={() => { if (analysis.signal === "RISE") void execute("manual"); }}>▲ RISE<small>Higher than entry</small></button>
-        <button className="rfBigTrade fall" disabled={tradeBusy || !analysis.ready || analysis.signal === "RISE"} onClick={() => { if (analysis.signal === "FALL") void execute("manual"); }}>▼ FALL<small>Lower than entry</small></button>
+        <button className="rfBigTrade rise" disabled={tradeBusy} onClick={() => void execute("manual", "RISE")}>▲ RISE<small>Higher than entry</small></button>
+        <button className="rfBigTrade fall" disabled={tradeBusy} onClick={() => void execute("manual", "FALL")}>▼ FALL<small>Lower than entry</small></button>
       </div>
 
       <div className="rfMarketGrid">
