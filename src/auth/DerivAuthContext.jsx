@@ -414,6 +414,107 @@ export function DerivAuthProvider({ children }) {
   const balanceClientId =
     config?.clientId || "";
 
+  // Fetch one live balance for every logged-in account so Demo and Real
+  // balances are both available in the UI without requiring account switching.
+  useEffect(() => {
+    if (!session?.accessToken || !accounts.length) return undefined;
+
+    let disposed = false;
+    const sockets = new Set();
+
+    async function readBalance(account) {
+      const accountId = getAccountId(account);
+      if (!accountId) return null;
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/trading/v1/options/accounts/${encodeURIComponent(accountId)}/otp`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.accessToken}`,
+              "Deriv-App-ID": config.clientId,
+              Accept: "application/json",
+            },
+          }
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) return null;
+
+        const url = String(payload?.data?.url || payload?.url || "").trim();
+        if (!url || disposed) return null;
+
+        return await new Promise((resolve) => {
+          const socket = new WebSocket(url);
+          sockets.add(socket);
+          let done = false;
+          const finish = (value) => {
+            if (done) return;
+            done = true;
+            sockets.delete(socket);
+            try { socket.close(); } catch {}
+            resolve(value);
+          };
+          const timer = window.setTimeout(() => finish(null), 9000);
+
+          socket.onopen = () => {
+            if (disposed) return finish(null);
+            socket.send(JSON.stringify({ balance: 1 }));
+          };
+          socket.onmessage = (event) => {
+            try {
+              const message = JSON.parse(event.data);
+              if (message?.error) return finish(null);
+              const result = normalizeBalanceMessage(message);
+              if (result) finish({ ...result, accountId });
+            } catch {}
+          };
+          socket.onerror = () => finish(null);
+          socket.onclose = () => {
+            window.clearTimeout(timer);
+            if (!done) finish(null);
+          };
+        });
+      } catch {
+        return null;
+      }
+    }
+
+    void Promise.all(accounts.map(readBalance)).then((results) => {
+      if (disposed) return;
+      const valid = results.filter(Boolean);
+      if (!valid.length) return;
+
+      setSession((current) => {
+        if (!current) return current;
+        let changed = false;
+        const updatedAccounts = (current.accounts || []).map((account) => {
+          const id = getAccountId(account);
+          const result = valid.find((item) => item.accountId === id);
+          if (!result) return account;
+          if (Number(account.balance) === Number(result.balance) &&
+              String(account.currency || "") === String(result.currency || "")) {
+            return account;
+          }
+          changed = true;
+          return { ...account, balance: result.balance, currency: result.currency };
+        });
+        if (!changed) return current;
+        const next = { ...current, accounts: updatedAccounts };
+        saveSession(next);
+        return next;
+      });
+    });
+
+    return () => {
+      disposed = true;
+      sockets.forEach((socket) => {
+        try { socket.close(); } catch {}
+      });
+      sockets.clear();
+    };
+  }, [session?.accessToken, config.clientId, accounts.length]);
+
   useEffect(() => {
     let disposed = false;
     let socket = null;
