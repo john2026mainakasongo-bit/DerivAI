@@ -24,12 +24,12 @@ export default function RiseFallBot() {
   const auth = useDerivAuth();
   const {
     markets = [], market = null, symbol = "", status = "DISCONNECTED", statusDetail = "", connected = false,
-    authenticatedFeed = false, selectedAccountType = "demo", selectedAccount = null, prices = [], currentPrice = null,
+    authenticatedFeed = false, selectedAccountType = "demo", selectedAccount = null, selectedAccountId = "", prices = [], currentPrice = null,
     openContracts = [], transactions = [], tradeBusy = false, tradeError = "", connect, disconnect, changeSymbol, placeTrade,
   } = useDerivTicks();
 
   const currency = String(selectedAccount?.currency || "USD").toUpperCase();
-  const accountId = String(selectedAccount?.id || selectedAccount?.account_id || selectedAccount?.loginid || "");
+  const accountId = String(selectedAccountId || selectedAccount?.id || selectedAccount?.account_id || selectedAccount?.loginid || "");
   const [running, setRunning] = useState(false);
   const [stake, setStake] = useState(0.35);
   const [duration, setDuration] = useState(5);
@@ -94,6 +94,7 @@ export default function RiseFallBot() {
     connected,
     duration,
     placeTrade,
+    selectedAccountId,
     selectedAccountType,
     stake,
     symbol,

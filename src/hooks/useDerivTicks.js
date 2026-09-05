@@ -738,6 +738,7 @@ export default function useDerivTicks() {
       Boolean(derivPublicClient.socketAuthenticated),
 
     selectedAccountId,
+    selectedAccount: auth.selectedAccount,
     selectedAccountType: auth.selectedAccountType,
 
     openContracts,
