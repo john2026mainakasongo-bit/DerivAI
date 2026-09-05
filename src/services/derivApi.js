@@ -136,6 +136,7 @@ class DerivTradingClient {
     this.debugLog = [];
     this.subscriptionId = "";
     this.contractSubscriptionIds = new Set();
+    this.activeContractIds = new Set();
     this.activeSymbol = "";
     this.pingTimer = null;
     this.manualClose = false;
@@ -356,6 +357,34 @@ class DerivTradingClient {
     const contract = normalizeContract(message);
 
     if (contract) {
+      const contractId = String(
+        contract?.contract_id ||
+        contract?.contractId ||
+        contract?.id ||
+        ""
+      ).trim();
+
+      if (contractId) {
+        const status = String(
+          contract?.status ||
+          contract?.contract_status ||
+          ""
+        ).toLowerCase();
+
+        const settled =
+          Boolean(
+            contract?.is_sold ||
+            contract?.is_expired ||
+            contract?.is_settled
+          ) ||
+          ["won", "lost", "sold", "expired", "settled"].includes(status);
+
+        if (settled) {
+          this.activeContractIds.delete(contractId);
+        } else {
+          this.activeContractIds.add(contractId);
+        }
+      }
       const subscriptionId = String(
         message.subscription?.id ||
           message.data?.subscription?.id ||
@@ -646,7 +675,19 @@ class DerivTradingClient {
 
     const connection = await this.connect(options);
 
-    if (previousSymbol && this.socket?.readyState === WebSocket.OPEN) {
+    
+    if (this.socketAuthenticated && this.activeContractIds.size) {
+      const contractIds = [...this.activeContractIds];
+
+      for (const contractId of contractIds) {
+        try {
+          await this.subscribeOpenContract(contractId);
+        } catch {
+          // Contract may have settled while the socket was offline.
+        }
+      }
+    }
+if (previousSymbol && this.socket?.readyState === WebSocket.OPEN) {
       try {
         await this.subscribeTicks(previousSymbol);
       } catch (error) {
@@ -1066,6 +1107,8 @@ class DerivTradingClient {
       throw new Error(`Buy failed: ${detail}`);
     }
 
+    this.activeContractIds.add(contractId);
+
     await this.subscribeOpenContract(contractId);
 
     return {
@@ -1086,9 +1129,17 @@ class DerivTradingClient {
   async subscribeOpenContract(contractId) {
     this.ensureAuthenticated();
 
+    const id = String(contractId || "").trim();
+
+    if (!id) {
+      throw new Error("A valid contract ID is required.");
+    }
+
+    this.activeContractIds.add(id);
+
     return this.request({
       proposal_open_contract: 1,
-      contract_id: Number(contractId),
+      contract_id: Number(id),
       subscribe: 1,
     });
   }
@@ -1152,6 +1203,7 @@ class DerivTradingClient {
     }
 
     if (!preserveAccount) {
+      this.activeContractIds.clear();
       this.clearAccount();
     }
 

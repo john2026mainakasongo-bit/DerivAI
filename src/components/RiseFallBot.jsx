@@ -124,7 +124,27 @@ export default function RiseFallBot() {
   ];
   const seenTradeIds = new Set();
   const recentTrades = recentSource
-    .filter((tx) => tx?.action === "buy" || tx?.transaction?.action === "buy" || tx?.contract_id || tx?.buy_price)
+      .filter((tx) => {
+        const action = String(
+          tx?.action ||
+          tx?.transaction?.action ||
+          ""
+        ).toLowerCase();
+
+        // Only BUY transactions represent trade entries.
+        // SELL transactions are settlement events and must not
+        // appear as new trades.
+        if (action) return action === "buy";
+
+        // Contract snapshots are allowed.
+        return Boolean(
+          tx?.contract_id ||
+          tx?.contractId ||
+          tx?.id ||
+          tx?.buy_price ||
+          tx?.purchase_price
+        );
+      }).filter((tx) => tx?.action === "buy" || tx?.transaction?.action === "buy" || tx?.contract_id || tx?.buy_price)
     .filter((tx) => {
       const id = idOf(tx);
       if (!id || seenTradeIds.has(id)) return false;

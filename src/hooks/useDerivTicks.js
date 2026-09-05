@@ -120,6 +120,9 @@ export default function useDerivTicks() {
   const mountedRef = useRef(true);
   const manuallyDisconnectedRef = useRef(false);
 
+  // V29: remember contracts bought during this account session.
+  const activeContractIdsRef = useRef(new Set());
+
   const selectedAccountId = accountIdOf(auth.selectedAccount);
 
   const market = useMemo(
@@ -311,7 +314,26 @@ export default function useDerivTicks() {
       );
       if (!id) return;
 
+      activeContractIdsRef.current.add(id);
+
       setOpenContracts((current) => {
+        const previous = current.find(
+          (item) =>
+            String(
+              item?.contract_id ||
+                item?.contractId ||
+                item?.id ||
+                ""
+            ) === id
+        );
+
+        const merged = {
+          ...(previous || {}),
+          ...contract,
+          contract_id: id,
+          id,
+        };
+
         const rest = current.filter(
           (item) =>
             String(
@@ -321,7 +343,8 @@ export default function useDerivTicks() {
                 ""
             ) !== id
         );
-        return [contract, ...rest].slice(0, 30);
+
+        return [merged, ...rest].slice(0, 30);
       });
     });
 
@@ -593,6 +616,8 @@ export default function useDerivTicks() {
           );
         }
 
+        activeContractIdsRef.current.add(contractId);
+
         setOpenContracts((current) => {
           const optimistic = {
             contract_id: contractId,
@@ -628,10 +653,6 @@ export default function useDerivTicks() {
          * buyQuotedContract already subscribes, but requesting once more is
          * safe and helps recover if the first contract event was missed.
          */
-        Promise.resolve(
-          derivPublicClient.subscribeOpenContract(contractId)
-        ).catch(() => {});
-
         return {
           ...bought,
           contractId,
