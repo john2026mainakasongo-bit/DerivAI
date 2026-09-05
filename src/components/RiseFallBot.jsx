@@ -6,7 +6,7 @@ import { createRiskManager } from "../bot/riskManager";
 import "../styles/RiseFallBot.css";
 
 const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
-const money = (value, currency = "USD") => `${currency} ${Number(value || 0).toFixed(2)}`;
+const money = (value, currency = "USD") => `$${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${String(currency || "USD").toUpperCase()}`;
 const idOf = (value) => String(value?.contract_id || value?.contractId || value?.id || value?.buy?.contract_id || value?.proposal_open_contract?.contract_id || "");
 const profitOf = (value) => {
   const direct = Number(value?.profit ?? value?.profit_loss ?? value?.pnl);
@@ -95,7 +95,20 @@ export default function RiseFallBot() {
     setRunning(true); setMessage("Bot scanning live ticks and waiting for a qualified signal.");
   };
 
-  const recentTrades = transactions.filter((tx) => tx?.action === "buy" || tx?.transaction?.action === "buy" || tx?.contract_id || tx?.buy_price).slice(0, 8);
+  const recentSource = [
+    ...transactions,
+    ...openContracts.filter((contract) => settled(contract)),
+  ];
+  const seenTradeIds = new Set();
+  const recentTrades = recentSource
+    .filter((tx) => tx?.action === "buy" || tx?.transaction?.action === "buy" || tx?.contract_id || tx?.buy_price)
+    .filter((tx) => {
+      const id = idOf(tx);
+      if (!id || seenTradeIds.has(id)) return false;
+      seenTradeIds.add(id);
+      return true;
+    })
+    .slice(0, 8);
   const open = openContracts.filter((c) => !settled(c)).slice(0, 8);
   const chartPrices = prices.slice(-90);
 
@@ -152,8 +165,45 @@ export default function RiseFallBot() {
 function Metric({ label, value }) { return <div className="rfMetricRow"><span>{label}</span><b>{value}</b></div>; }
 function Stat({ label, value }) { return <div className="rfStatRow"><span>{label}</span><b>{value}</b></div>; }
 function TradeTable({ title, count, rows, open, currency }) {
-  return <div className="rfTableCard"><div className="rfTableTitle"><b>{title} {typeof count === "number" ? `(${count})` : ""}</b><span>{open ? "" : "View All"}</span></div><div className="rfTableHead"><span>#</span><span>TIME</span><span>MARKET</span><span>TYPE</span><span>STAKE</span><span>{open ? "CURRENT" : "P/L"}</span><span>STATUS</span></div>{rows.length ? rows.map((row, i) => { const pnl = profitOf(row); return <div className="rfTableRow" key={idOf(row) || `${title}-${i}`}><span>{i+1}</span><span>{timeOf(row)}</span><span>{row.symbol || row.underlying || row.display_name || "1HZ100V"}</span><span>{row.contract_type || row.type || row.action || "—"}</span><span>{money(row.buy_price || row.purchase_price || row.amount || row.stake, currency)}</span><span>{open ? money(row.bid_price || row.current_spot || row.sell_price || 0, currency) : money(pnl, currency)}</span><span className={settled(row) ? (pnl >= 0 ? "win" : "loss") : "liveState"}>{settled(row) ? (pnl >= 0 ? "WON" : "LOST") : "OPEN"}</span></div>; }) : <div className="rfEmpty"><strong>{open ? "No open trades" : "No trade history yet"}</strong><span>{open ? "Your active trades will appear here" : "Your completed trades will appear here"}</span></div>}</div>;
+  const value = (v) => Number.isFinite(Number(v)) ? Number(v).toFixed(3) : "—";
+  return (
+    <div className="rfTableCard">
+      <div className="rfTableTitle">
+        <b>{title} {typeof count === "number" ? `(${count})` : ""}</b>
+        <span>{open ? "LIVE" : "View All"}</span>
+      </div>
+      <div className="rfTableHead">
+        <span>#</span><span>TIME</span><span>MARKET</span><span>TYPE</span><span>STAKE</span><span>ENTRY</span><span>{open ? "CURRENT" : "EXIT"}</span><span>P/L</span><span>STATUS</span>
+      </div>
+      {rows.length ? rows.map((row, i) => {
+        const pnl = profitOf(row);
+        const entry = row.entry_spot ?? row.entrySpot ?? row.buy_price ?? row.purchase_price ?? row.amount ?? row.stake;
+        const current = row.current_spot ?? row.currentSpot ?? row.bid_price ?? row.sell_price ?? row.exit_spot ?? row.exitSpot;
+        const exit = row.exit_spot ?? row.exitSpot ?? row.sell_price ?? row.bid_price;
+        const isSettled = settled(row);
+        return (
+          <div className="rfTableRow" key={idOf(row) || `${title}-${i}`}>
+            <span>{i + 1}</span>
+            <span>{timeOf(row)}</span>
+            <span>{row.symbol || row.underlying || row.display_name || "1HZ100V"}</span>
+            <span>{row.contract_type || row.contractType || row.type || row.action || "—"}</span>
+            <span>{money(row.buy_price || row.purchase_price || row.amount || row.stake, currency)}</span>
+            <span>{value(entry)}</span>
+            <span>{value(open ? current : exit)}</span>
+            <span className={pnl >= 0 ? "win" : "loss"}>{money(pnl, currency)}</span>
+            <span className={isSettled ? (pnl >= 0 ? "win" : "loss") : "liveState"}>{isSettled ? (pnl >= 0 ? "WON" : "LOST") : "OPEN"}</span>
+          </div>
+        );
+      }) : (
+        <div className="rfEmpty">
+          <strong>{open ? "No open trades" : "No trade history yet"}</strong>
+          <span>{open ? "Your active trades will appear here" : "Your completed trades will appear here"}</span>
+        </div>
+      )}
+    </div>
+  );
 }
+
 function MiniChart({ values }) {
   if (!values.length) return <div className="rfEmpty chartEmpty"><strong>Waiting for live ticks</strong><span>Connect to load the chart.</span></div>;
   const w=760,h=240,p=22; const nums=values.map(v=>Number(v.quote)).filter(Number.isFinite); const min=Math.min(...nums),max=Math.max(...nums); const range=max-min || 1;
