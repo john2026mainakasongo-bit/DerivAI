@@ -66,7 +66,7 @@ export default function RiseFallBot() {
   const selectedBalance = Number(selectedAccount?.balance);
   const selectedCurrency = selectedAccount?.currency || "USD";
   const balanceText = Number.isFinite(selectedBalance)
-    ? `${selectedCurrency} ${selectedBalance.toFixed(2)}`
+    ? `$${selectedBalance.toFixed(2)} ${selectedCurrency}`
     : "—";
 
   const [running, setRunning] = useState(false);
@@ -235,13 +235,18 @@ export default function RiseFallBot() {
 
   return (
     <section className="rfBot">
-      <div className="rfBotTop">
-        <div>
+      <div className="rfHero">
+        <div className="rfHeroCopy">
           <small>DERIV RISE / FALL ENGINE</small>
-          <h1>Pulse Rise/Fall</h1>
-          <p>Momentum + trend + volatility filter</p>
+          <h2>Pulse Rise/Fall</h2>
+          <p>Real-time ticks • Smart analysis • Trade with confidence</p>
         </div>
-
+        <div className="rfHeroQuote">
+          <span>SMALL STEPS</span>
+          <strong>BIG RESULTS</strong>
+        </div>
+      </div>
+      <div className="rfBotTop">
         <div className="rfConnection">
           <span className={authenticatedFeed ? "rfDot live" : "rfDot"} />
           {connectionLabel}
@@ -305,7 +310,7 @@ export default function RiseFallBot() {
           <div className="rfSignalHeader">
             <div>
               <small>{market?.label || symbol || "MARKET"}</small>
-              <strong>{price}</strong>
+              <strong>{price} <em>{selectedCurrency}</em></strong>
             </div>
 
             <div
@@ -385,7 +390,7 @@ export default function RiseFallBot() {
           <div className="rfStats">
             <span>
               <small>Session P/L</small>
-              <b>{money(risk.sessionPnl)}</b>
+              <b>${money(risk.sessionPnl)} {selectedCurrency}</b>
             </span>
 
             <span>
@@ -400,7 +405,7 @@ export default function RiseFallBot() {
 
             <span>
               <small>Stake</small>
-              <b>${Number(stake).toFixed(2)}</b>
+              <b>${Number(stake).toFixed(2)} {selectedCurrency}</b>
             </span>
           </div>
         </div>
@@ -409,7 +414,7 @@ export default function RiseFallBot() {
       <div className="rfBottom">
         <label>
           Stake{" "}
-          <input
+          <span className="rfCurrency">{selectedCurrency}</span><input
             type="number"
             min="0.35"
             step="0.01"

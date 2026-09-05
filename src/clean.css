@@ -365,3 +365,18 @@ body,
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+/* ================= ZENTORA DESKTOP TERMINAL ================= */
+.zentoraShell{min-height:100vh;background:#020914}
+.zentoraShell .sidebar{width:220px;min-width:220px;background:#03111d url('/zentora-sidebar.jpg') center bottom/100% auto no-repeat;position:sticky}
+.zentoraShell .brand{padding:10px 8px 20px;border-bottom:1px solid rgba(42,180,230,.22)}
+.zentoraShell .brandMark{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#0c9cff,#12e2b2);font-size:24px;font-style:italic;box-shadow:0 0 22px rgba(0,190,255,.22)}
+.zentoraShell .brand strong{font-size:17px;letter-spacing:.12em;color:#f5fbff}
+.zentoraShell .brand small{font-size:8px;letter-spacing:.18em;color:#36d8bd}
+.zentoraShell .navGroupLabel{color:#47778d;font-size:8px}
+.zentoraShell .navLink{min-height:42px;border-radius:9px;font-size:11px;padding:0 11px}
+.zentoraShell .navLink.active{background:linear-gradient(90deg,#087fda,#075a9b);box-shadow:0 7px 22px rgba(0,132,255,.2)}
+.zentoraShell .sidebarFooter{font-size:8px;background:rgba(2,12,22,.76)}
+.cleanBotPage{flex:1;min-width:0;padding:0 28px 24px;background:radial-gradient(circle at 70% 0%,rgba(0,150,255,.08),transparent 32%),#020914}
+.cleanAccountBar{width:100%;max-width:none;margin:0 0 16px;padding:12px 18px;border-radius:0 0 14px 14px;background:rgba(2,15,26,.96);border-color:rgba(0,174,230,.25);box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.cleanAccountInfo{gap:11px}.cleanAccountInfo strong{font-size:13px}.cleanAccountInfo:before{content:'';width:8px;height:8px;border-radius:50%;background:#20dfb1;box-shadow:0 0 12px #20dfb1}
+@media(max-width:900px){.zentoraShell .sidebar{width:72px;min-width:72px}.zentoraShell .brand div:not(.brandMark),.zentoraShell .navText,.zentoraShell .navGroupLabel,.zentoraShell .sidebarFooter{display:none}.zentoraShell .brand{justify-content:center}.zentoraShell .navLink{justify-content:center}.cleanBotPage{padding:0 12px 18px}}

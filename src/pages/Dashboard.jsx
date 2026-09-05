@@ -1,7 +1,8 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { completeDerivLogin } from "../auth/derivOAuth";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import RiseFallBot from "../components/RiseFallBot";
+import Sidebar from "../components/Sidebar";
 
 export default function Dashboard() {
   const auth = useDerivAuth();
@@ -81,7 +82,9 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="cleanBotPage">
+    <div className="appShell zentoraShell">
+      <Sidebar />
+      <main className="cleanBotPage">
       <section className="cleanAccountBar">
         <div className="cleanAccountInfo">
           <span className="cleanAccountLabel">
@@ -164,7 +167,8 @@ export default function Dashboard() {
       ) : null}
 
       <RiseFallBot />
-    </main>
+      </main>
+    </div>
   );
 }
 
