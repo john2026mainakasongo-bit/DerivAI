@@ -144,6 +144,10 @@ class DerivTradingClient {
     this.socketAuthenticated = false;
     this.socketAuthKey = "";
     this.lastAuthConnectionError = "";
+    this.socketGeneration = 0;
+    this.reconnectTimer = null;
+    this.reconnectInProgress = false;
+    this.transactionsSubscribed = false;
 
     this.auth = {
       accessToken: "",
@@ -519,6 +523,8 @@ class DerivTradingClient {
   }
 
   async openUrl(url, authenticatedSocket = false) {
+    const generation = ++this.socketGeneration;
+
     await new Promise((resolve, reject) => {
       const socket = new WebSocket(url);
 
@@ -538,9 +544,7 @@ class DerivTradingClient {
           // Ignore.
         }
 
-        reject(
-          new Error("Deriv connection timed out.")
-        );
+        reject(new Error("Deriv connection timed out."));
       }, 12000);
 
       socket.onopen = () => {
@@ -549,18 +553,35 @@ class DerivTradingClient {
         settled = true;
         window.clearTimeout(timeout);
 
-        socket.onmessage = (event) =>
-          this.handleMessage(event);
+        if (generation !== this.socketGeneration) {
+          try {
+            socket.close();
+          } catch {
+            // Ignore.
+          }
+          resolve();
+          return;
+        }
 
-        this.socketAuthenticated =
-          Boolean(authenticatedSocket);
+        socket.onmessage = (event) => this.handleMessage(event);
+
+        this.socketAuthenticated = Boolean(authenticatedSocket);
 
         this.socketAuthKey = authenticatedSocket
           ? `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`
           : "";
 
+        if (this.pingTimer) {
+          window.clearInterval(this.pingTimer);
+          this.pingTimer = null;
+        }
+
         this.pingTimer = window.setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
+          if (
+            generation === this.socketGeneration &&
+            this.socket === socket &&
+            socket.readyState === WebSocket.OPEN
+          ) {
             try {
               this.send({ ping: 1 });
             } catch {
@@ -578,13 +599,19 @@ class DerivTradingClient {
         settled = true;
         window.clearTimeout(timeout);
 
-        reject(
-          new Error(`Unable to connect: ${url}`)
-        );
+        reject(new Error(`Unable to connect: ${url}`));
       };
 
       socket.onclose = () => {
         window.clearTimeout(timeout);
+
+        // A stale socket must NEVER clear state belonging to a newer socket.
+        if (
+          generation !== this.socketGeneration ||
+          this.socket !== socket
+        ) {
+          return;
+        }
 
         this.clearConnectionState();
 
@@ -593,13 +620,94 @@ class DerivTradingClient {
         } else if (settled) {
           this.emitStatus(
             "OFFLINE",
-            "Deriv live feed closed."
+            authenticatedSocket
+              ? "Deriv authenticated trading connection closed."
+              : "Deriv live feed closed."
           );
+
+          if (authenticatedSocket) {
+            this.scheduleReconnect();
+          }
         }
       };
     });
   }
+  scheduleReconnect() {
+    if (
+      this.manualClose ||
+      !this.authenticated ||
+      this.reconnectTimer ||
+      this.reconnectInProgress
+    ) {
+      return;
+    }
 
+    this.reconnectTimer = window.setTimeout(async () => {
+      this.reconnectTimer = null;
+
+      if (
+        this.manualClose ||
+        !this.authenticated ||
+        this.reconnectInProgress
+      ) {
+        return;
+      }
+
+      this.reconnectInProgress = true;
+
+      try {
+        await this.connect({ allowPublicFallback: false });
+      } catch (error) {
+        this.lastAuthConnectionError =
+          error?.message || "Authenticated reconnect failed.";
+
+        this.emitStatus(
+          "OFFLINE",
+          "Deriv trading connection lost. Retrying..."
+        );
+
+        this.reconnectInProgress = false;
+        this.scheduleReconnect();
+        return;
+      }
+
+      this.reconnectInProgress = false;
+    }, 1500);
+  }
+
+  async restoreSubscriptions() {
+    if (!this.socketAuthenticated) {
+      return;
+    }
+
+    if (this.transactionsSubscribed) {
+      try {
+        await this.subscribeTransactions();
+      } catch {
+        // Transaction subscription will be retried on the next reconnect.
+      }
+    }
+
+    if (this.activeContractIds.size) {
+      for (const contractId of [...this.activeContractIds]) {
+        try {
+          await this.subscribeOpenContract(contractId);
+        } catch {
+          // Ignore individual contract restore failures.
+        }
+      }
+    }
+
+    if (this.activeSymbol && this.socket?.readyState === WebSocket.OPEN) {
+      try {
+        await this.subscribeTicks(this.activeSymbol);
+      } catch (error) {
+        if (!duplicateSubscriptionError(error)) {
+          throw error;
+        }
+      }
+    }
+  }
   async connect({ allowPublicFallback = true } = {}) {
     if (
       this.socket?.readyState === WebSocket.OPEN
@@ -686,6 +794,15 @@ class DerivTradingClient {
             detail
           );
 
+          try {
+            await this.restoreSubscriptions();
+          } catch (error) {
+            this.emitStatus(
+              "ERROR",
+              error?.message ||
+                "Failed to restore Deriv subscriptions."
+            );
+          }
           return {
             authenticated:
               candidate.authenticated,
@@ -1397,10 +1514,14 @@ class DerivTradingClient {
   async subscribeTransactions() {
     this.ensureAuthenticated();
 
-    return this.request({
+    const response = await this.request({
       transaction: 1,
       subscribe: 1,
     });
+
+    this.transactionsSubscribed = true;
+
+    return response;
   }
 
   async getPortfolio() {
@@ -1447,6 +1568,13 @@ class DerivTradingClient {
   } = {}) {
     this.manualClose = true;
 
+    if (this.reconnectTimer) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    this.reconnectInProgress = false;
+
     if (this.pingTimer) {
       window.clearInterval(
         this.pingTimer
@@ -1470,6 +1598,7 @@ class DerivTradingClient {
 
     if (!preserveAccount) {
       this.activeContractIds.clear();
+      this.transactionsSubscribed = false;
       this.clearAccount();
     }
 
