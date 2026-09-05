@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import { analyzeRiseFall } from "../analysis/riseFallEngine";
@@ -16,7 +16,7 @@ const profitOf = (value) => {
 const settled = (value) => Boolean(value?.is_sold || value?.is_expired || ["won", "lost", "sold", "expired", "settled"].includes(String(value?.status || value?.contract_status || "").toLowerCase()));
 const timeOf = (value) => {
   const epoch = Number(value?.date_start || value?.transaction_time || value?.date || value?.purchase_time || value?.epoch);
-  if (!Number.isFinite(epoch)) return "—";
+  if (!Number.isFinite(epoch)) return "â€”";
   return new Date(epoch * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 };
 
@@ -44,7 +44,7 @@ export default function RiseFallBot() {
   const analysis = useMemo(() => analyzeRiseFall(prices, { minimumSamples: 60, minimumConfidence: 68 }), [prices]);
   const risk = riskRef.current.snapshot();
   const winRate = risk.wins + risk.losses ? (risk.wins / (risk.wins + risk.losses)) * 100 : 0;
-  const price = Number.isFinite(currentPrice) ? currentPrice.toFixed(market?.decimals ?? 3) : "—";
+  const price = Number.isFinite(currentPrice) ? currentPrice.toFixed(market?.decimals ?? 3) : "â€”";
 
   useEffect(() => {
     for (const contract of openContracts) {
@@ -77,7 +77,7 @@ export default function RiseFallBot() {
   };
 
   useEffect(() => {
-    if (!running || !analysis.READY || analysis.signal === "WAIT" || !authenticatedFeed) return;
+    if (!running || !analysis.READY || analysis.signal === "WAIT") return;
     const now = Date.now();
     const signalKey = `${symbol}:${analysis.signal}`;
     if (signalKey === lastAutoSignalRef.current && now - lastAutoAttemptRef.current < 3000) return;
@@ -105,28 +105,28 @@ export default function RiseFallBot() {
         <div className="rfHeroCopy">
           <small>DERIV RISE / FALL ENGINE</small>
           <h1>Pulse Rise/Fall</h1>
-          <p>Real-time ticks • Smart analysis • Trade with confidence</p>
+          <p>Real-time ticks â€¢ Smart analysis â€¢ Trade with confidence</p>
         </div>
-        <div className="rfHeroQuote">“SMALL STEPS<br /><b>BIG RESULTS</b>”</div>
+        <div className="rfHeroQuote">â€œSMALL STEPS<br /><b>BIG RESULTS</b>â€</div>
         <div className="rfConnection"><span className={connected ? "rfDot live" : "rfDot"} />{connected ? (authenticatedFeed ? "LIVE TRADING" : "LIVE FEED") : status}</div>
       </header>
 
       <div className="rfAccountBalance">
-        <div><small>ACCOUNT</small><strong>{selectedAccountType === "real" ? "REAL" : "DEMO"}</strong><span>{selectedAccount?.id || "—"}</span></div>
-        <div className="rfBalance"><small>BALANCE</small><strong>{Number.isFinite(Number(selectedAccount?.balance)) ? money(selectedAccount.balance, currency) : "—"}</strong><span>{auth.balanceStatus === "live" ? "LIVE BALANCE" : auth.balanceStatus === "connecting" ? "CONNECTING" : "BALANCE OFFLINE"}</span></div>
+        <div><small>ACCOUNT</small><strong>{selectedAccountType === "real" ? "REAL" : "DEMO"}</strong><span>{selectedAccount?.id || "â€”"}</span></div>
+        <div className="rfBalance"><small>BALANCE</small><strong>{Number.isFinite(Number(selectedAccount?.balance)) ? money(selectedAccount.balance, currency) : "â€”"}</strong><span>{auth.balanceStatus === "live" ? "LIVE BALANCE" : auth.balanceStatus === "connecting" ? "CONNECTING" : "BALANCE OFFLINE"}</span></div>
       </div>
 
       <div className="rfTradeControls">
         <label>Market<select value={symbol} disabled={!connected} onChange={(e) => void changeSymbol(e.target.value)}>{markets.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <label>Stake ({currency})<div className="rfInputGroup"><input type="number" min="0.35" step="0.01" value={stake} onChange={(e) => setStake(Math.max(0.35, Number(e.target.value) || 0.35))} /><button type="button" onClick={() => setStake((v) => Math.max(0.35, v - 0.05))}>−</button><button type="button" onClick={() => setStake((v) => v + 0.05)}>+</button></div></label>
+        <label>Stake ({currency})<div className="rfInputGroup"><input type="number" min="0.35" step="0.01" value={stake} onChange={(e) => setStake(Math.max(0.35, Number(e.target.value) || 0.35))} /><button type="button" onClick={() => setStake((v) => Math.max(0.35, v - 0.05))}>âˆ’</button><button type="button" onClick={() => setStake((v) => v + 0.05)}>+</button></div></label>
         <label>Duration<div className="rfInputGroup"><select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>{[1,2,3,5,8,10].map((v) => <option key={v} value={v}>{v}</option>)}</select><span>Ticks</span></div></label>
-        <button className="rfBigTrade rise" disabled={tradeBusy || !authenticatedFeed || !analysis.READY || analysis.signal === "FALL"} onClick={() => { if (analysis.signal === "RISE") void execute("manual"); }}>▲ RISE<small>Higher than entry</small></button>
-        <button className="rfBigTrade fall" disabled={tradeBusy || !authenticatedFeed || !analysis.READY || analysis.signal === "RISE"} onClick={() => { if (analysis.signal === "FALL") void execute("manual"); }}>▼ FALL<small>Lower than entry</small></button>
+        <button className="rfBigTrade rise" disabled={tradeBusy || !analysis.READY || analysis.signal === "FALL"} onClick={() => { if (analysis.signal === "RISE") void execute("manual"); }}>â–² RISE<small>Higher than entry</small></button>
+        <button className="rfBigTrade fall" disabled={tradeBusy || !analysis.READY || analysis.signal === "RISE"} onClick={() => { if (analysis.signal === "FALL") void execute("manual"); }}>â–¼ FALL<small>Lower than entry</small></button>
       </div>
 
       <div className="rfMarketGrid">
         <div className="rfChartCard">
-          <div className="rfCardHead"><div><b>{market?.label || "Market"}</b><span className="liveLabel">● Live</span></div><div className="rfPrice">{price} <small>{currency}</small></div></div>
+          <div className="rfCardHead"><div><b>{market?.label || "Market"}</b><span className="liveLabel">â— Live</span></div><div className="rfPrice">{price} <small>{currency}</small></div></div>
           <div className="rfChartTabs"><span className="active">Ticks</span><span>1M</span><span>5M</span><span>15M</span></div>
           <MiniChart values={chartPrices} />
         </div>
@@ -139,7 +139,7 @@ export default function RiseFallBot() {
         <TradeTable title="RECENT TRADES" rows={recentTrades} currency={currency}/>
       </div>
 
-      <div className="rfBottomBar"><span className={connected ? "ok" : ""}>● Deriv API {connected ? "Connected" : "Offline"}</span><span className={connected ? "ok" : ""}>● Live market feed</span><span>● {selectedAccountType === "real" ? "Real" : "Demo"} Account</span><span className="spacer">Server Time: {new Date().toLocaleTimeString()} (GMT+3)</span><span>● Ping: —</span></div>
+      <div className="rfBottomBar"><span className={connected ? "ok" : ""}>â— Deriv API {connected ? "Connected" : "Offline"}</span><span className={connected ? "ok" : ""}>â— Live market feed</span><span>â— {selectedAccountType === "real" ? "Real" : "Demo"} Account</span><span className="spacer">Server Time: {new Date().toLocaleTimeString()} (GMT+3)</span><span>â— Ping: â€”</span></div>
 
       <div className="rfActions"><button onClick={() => (connected ? disconnect() : connect())}>{connected ? "Disconnect" : "Connect"}</button><button className={running ? "danger" : "primary"} onClick={toggle}>{running ? "STOP BOT" : "START BOT"}</button><label className="realToggle"><input type="checkbox" checked={allowReal} onChange={(e) => setAllowReal(e.target.checked)} disabled={selectedAccountType !== "real"}/> ALLOW REAL</label><button className="rfSettings" onClick={() => setSettingsOpen((v) => !v)}>{settingsOpen ? "Hide Risk" : "Risk"}</button></div>
       {settingsOpen && <div className="rfRiskPanel"><span>Max session loss <b>{money(3, currency)}</b></span><span>Max trades <b>10</b></span><span>Max open <b>1</b></span><span>2 losses <b>60s pause</b></span></div>}
@@ -152,7 +152,7 @@ export default function RiseFallBot() {
 function Metric({ label, value }) { return <div className="rfMetricRow"><span>{label}</span><b>{value}</b></div>; }
 function Stat({ label, value }) { return <div className="rfStatRow"><span>{label}</span><b>{value}</b></div>; }
 function TradeTable({ title, count, rows, open, currency }) {
-  return <div className="rfTableCard"><div className="rfTableTitle"><b>{title} {typeof count === "number" ? `(${count})` : ""}</b><span>{open ? "" : "View All"}</span></div><div className="rfTableHead"><span>#</span><span>TIME</span><span>MARKET</span><span>TYPE</span><span>STAKE</span><span>{open ? "CURRENT" : "P/L"}</span><span>STATUS</span></div>{rows.length ? rows.map((row, i) => { const pnl = profitOf(row); return <div className="rfTableRow" key={idOf(row) || `${title}-${i}`}><span>{i+1}</span><span>{timeOf(row)}</span><span>{row.symbol || row.underlying || row.display_name || "1HZ100V"}</span><span>{row.contract_type || row.type || row.action || "—"}</span><span>{money(row.buy_price || row.purchase_price || row.amount || row.stake, currency)}</span><span>{open ? money(row.bid_price || row.current_spot || row.sell_price || 0, currency) : money(pnl, currency)}</span><span className={settled(row) ? (pnl >= 0 ? "win" : "loss") : "liveState"}>{settled(row) ? (pnl >= 0 ? "WON" : "LOST") : "OPEN"}</span></div>; }) : <div className="rfEmpty"><strong>{open ? "No open trades" : "No trade history yet"}</strong><span>{open ? "Your active trades will appear here" : "Your completed trades will appear here"}</span></div>}</div>;
+  return <div className="rfTableCard"><div className="rfTableTitle"><b>{title} {typeof count === "number" ? `(${count})` : ""}</b><span>{open ? "" : "View All"}</span></div><div className="rfTableHead"><span>#</span><span>TIME</span><span>MARKET</span><span>TYPE</span><span>STAKE</span><span>{open ? "CURRENT" : "P/L"}</span><span>STATUS</span></div>{rows.length ? rows.map((row, i) => { const pnl = profitOf(row); return <div className="rfTableRow" key={idOf(row) || `${title}-${i}`}><span>{i+1}</span><span>{timeOf(row)}</span><span>{row.symbol || row.underlying || row.display_name || "1HZ100V"}</span><span>{row.contract_type || row.type || row.action || "â€”"}</span><span>{money(row.buy_price || row.purchase_price || row.amount || row.stake, currency)}</span><span>{open ? money(row.bid_price || row.current_spot || row.sell_price || 0, currency) : money(pnl, currency)}</span><span className={settled(row) ? (pnl >= 0 ? "win" : "loss") : "liveState"}>{settled(row) ? (pnl >= 0 ? "WON" : "LOST") : "OPEN"}</span></div>; }) : <div className="rfEmpty"><strong>{open ? "No open trades" : "No trade history yet"}</strong><span>{open ? "Your active trades will appear here" : "Your completed trades will appear here"}</span></div>}</div>;
 }
 function MiniChart({ values }) {
   if (!values.length) return <div className="rfEmpty chartEmpty"><strong>Waiting for live ticks</strong><span>Connect to load the chart.</span></div>;
@@ -160,3 +160,4 @@ function MiniChart({ values }) {
   const points=nums.map((v,i)=>`${p+(i/Math.max(1,nums.length-1))*(w-p*2)},${h-p-((v-min)/range)*(h-p*2)}`).join(" ");
   return <svg className="rfChart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"><defs><linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="rgba(20,220,180,.35)"/><stop offset="1" stopColor="rgba(20,220,180,0)"/></linearGradient></defs>{[.2,.4,.6,.8].map((n)=><line key={n} x1="0" x2={w} y1={h*n} y2={h*n} className="gridLine"/>)}<polyline points={`${p},${h-p} ${points} ${w-p},${h-p}`} className="chartArea"/><polyline points={points} className="chartLine"/></svg>;
 }
+
