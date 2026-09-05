@@ -417,7 +417,7 @@ export function DerivAuthProvider({ children }) {
   // Fetch one live balance for every logged-in account so Demo and Real
   // balances are both available in the UI without requiring account switching.
   useEffect(() => {
-    if (!session?.accessToken || !accounts.length) return undefined;
+    if (!session?.accessToken || !session?.accounts?.length) return undefined;
 
     let disposed = false;
     const sockets = new Set();
@@ -480,7 +480,7 @@ export function DerivAuthProvider({ children }) {
       }
     }
 
-    void Promise.all(accounts.map(readBalance)).then((results) => {
+    void Promise.all(session.accounts.map(readBalance)).then((results) => {
       if (disposed) return;
       const valid = results.filter(Boolean);
       if (!valid.length) return;
@@ -513,7 +513,7 @@ export function DerivAuthProvider({ children }) {
       });
       sockets.clear();
     };
-  }, [session?.accessToken, config.clientId, accounts.length]);
+  }, [session?.accessToken, config.clientId, session?.accounts?.length]);
 
   useEffect(() => {
     let disposed = false;
