@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -239,9 +239,11 @@ export default function useDerivTicks() {
       setConnected(true);
       setStatus("CONNECTED");
       setStatusDetail(
-        auth.authenticated && selectedAccountId
-          ? "Live market feed connected. Checking trading connection..."
-          : "Live market feed connected."
+        auth.authenticated && selectedAccountId && connection?.authenticated
+          ? "Authenticated trading connection ready."
+          : auth.authenticated && selectedAccountId
+            ? "Live market feed connected. Trading connection unavailable."
+            : "Live market feed connected."
       );
 
       // Keep the public market feed connected. Authenticated trading is
@@ -275,6 +277,13 @@ export default function useDerivTicks() {
       setStatus(next.status);
       setStatusDetail(next.detail || "");
       setConnected(next.status === "CONNECTED");
+
+      if (["OFFLINE", "ERROR", "DISCONNECTED"].includes(next.status)) {
+        // Any socket close invalidates the previous subscription state.
+        // The next authenticated connection must subscribe again.
+        resetSharedSubscriptions();
+        setTradingReady(false);
+      }
 
       if (
         ["OFFLINE", "ERROR"].includes(next.status) &&
@@ -405,7 +414,11 @@ export default function useDerivTicks() {
       void Promise.resolve(
         derivPublicClient.ensureTradingConnection()
       )
-        .then(() => {
+        .then(async () => {
+          // The trading socket may have been replaced. Re-arm the transaction
+          // subscription so recent trades remain live after reconnects.
+          sharedTransactionReady = false;
+          await ensureTransactions();
           if (mountedRef.current) {
             setTradingReady(true);
           }
@@ -543,6 +556,11 @@ export default function useDerivTicks() {
 
         derivPublicClient.configureAccount(selectedConfig);
         await derivPublicClient.ensureTradingConnection();
+
+        // A forced account-auth reconnect creates a fresh socket. Re-arm the
+        // transaction stream so OPEN/settled trades keep updating the UI.
+        sharedTransactionReady = false;
+        await ensureTransactions();
 
         setTradingReady(true);
 

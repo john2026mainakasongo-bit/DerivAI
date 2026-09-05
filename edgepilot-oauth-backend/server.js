@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import cors from "cors";
 
 const app = express();
@@ -107,7 +107,9 @@ async function fetchDerivAccounts(accessToken) {
       method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        "Deriv-App-ID": DERIV_CLIENT_ID,
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
     });
 

@@ -95,6 +95,12 @@ function tickSymbol(tick = {}, fallback = "") {
   );
 }
 
+function duplicateSubscriptionError(error) {
+  return /already subscribed|duplicate subscription/i.test(
+    error instanceof Error ? error.message : String(error || "")
+  );
+}
+
 function errorMessage(payload, fallback) {
   return (
     payload?.errors?.[0]?.message ||
@@ -627,8 +633,28 @@ class DerivTradingClient {
   }
 
   async reconnect(options = {}) {
-    this.disconnect({ preserveAccount: true });
-    return this.connect(options);
+    const previousSymbol = this.activeSymbol;
+
+    // Reconnects can happen during trading authentication. Preserve the
+    // currently selected market so the live chart does not silently stop
+    // receiving ticks when the public socket is replaced by the account
+    // authenticated socket.
+    this.disconnect({
+      preserveAccount: true,
+      preserveSymbol: true,
+    });
+
+    const connection = await this.connect(options);
+
+    if (previousSymbol && this.socket?.readyState === WebSocket.OPEN) {
+      try {
+        await this.subscribeTicks(previousSymbol);
+      } catch (error) {
+        if (!duplicateSubscriptionError(error)) throw error;
+      }
+    }
+
+    return connection;
   }
 
   async ensureTradingConnection() {
@@ -638,11 +664,20 @@ class DerivTradingClient {
       );
     }
 
-    if (
+    const expectedAuthKey = `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`;
+    const socketMatchesSelectedAccount =
       this.socket?.readyState === WebSocket.OPEN &&
-      this.socketAuthenticated
-    ) {
+      this.socketAuthenticated &&
+      this.socketAuthKey === expectedAuthKey;
+
+    // Never reuse an authenticated socket belonging to another Demo/Real
+    // account. When the user switches accounts, force a fresh OTP/socket.
+    if (socketMatchesSelectedAccount) {
       return true;
+    }
+
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.disconnect({ preserveAccount: true });
     }
 
     await this.reconnect({ allowPublicFallback: false });
@@ -1094,7 +1129,7 @@ class DerivTradingClient {
     });
   }
 
-  disconnect({ preserveAccount = true } = {}) {
+  disconnect({ preserveAccount = true, preserveSymbol = false } = {}) {
     this.manualClose = true;
 
     if (this.pingTimer) {
@@ -1111,7 +1146,10 @@ class DerivTradingClient {
     }
 
     this.clearConnectionState();
-    this.activeSymbol = "";
+
+    if (!preserveSymbol) {
+      this.activeSymbol = "";
+    }
 
     if (!preserveAccount) {
       this.clearAccount();

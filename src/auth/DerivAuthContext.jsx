@@ -1,4 +1,4 @@
-﻿import {
+import {
   createContext,
   useCallback,
   useContext,
@@ -952,7 +952,7 @@ function DerivOAuthSetupModal() {
             type="button"
             onClick={auth.closeSetup}
           >
-            Ã—
+            ×
           </button>
         </div>
 
@@ -1017,7 +1017,7 @@ function DerivOAuthSetupModal() {
 
         <div className="derivAuthSecurityNote">
           Your password is entered only
-          on Derivâ€™s official login page.
+          on Deriv’s official login page.
         </div>
 
         <div className="derivAuthModalActions">
@@ -1045,4 +1045,3 @@ function DerivOAuthSetupModal() {
     </div>
   );
 }
-
