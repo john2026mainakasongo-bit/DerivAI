@@ -5,251 +5,1595 @@ import { analyzeRiseFall } from "../analysis/riseFallEngine";
 import { createRiskManager } from "../bot/riskManager";
 import "../styles/RiseFallBot.css";
 
-const pct = (value) => `${Number(value || 0).toFixed(1)}%`;
-const money = (value, currency = "USD") => `$${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${String(currency || "USD").toUpperCase()}`;
-const idOf = (value) => String(value?.contract_id || value?.contractId || value?.id || value?.buy?.contract_id || value?.proposal_open_contract?.contract_id || "");
+const pct = (value) =>
+  `${Number(value || 0).toFixed(1)}%`;
+
+const money = (value, currency = "USD") =>
+  `$${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ${String(currency || "USD").toUpperCase()}`;
+
+const idOf = (value) =>
+  String(
+    value?.contract_id ||
+      value?.contractId ||
+      value?.id ||
+      value?.buy?.contract_id ||
+      value?.proposal_open_contract?.contract_id ||
+      ""
+  );
+
 const profitOf = (value) => {
-  const direct = Number(value?.profit ?? value?.profit_loss ?? value?.pnl);
-  if (Number.isFinite(direct)) return direct;
-  return Number(value?.sell_price || value?.payout || 0) - Number(value?.buy_price || value?.purchase_price || 0);
+  const direct = Number(
+    value?.profit ??
+      value?.profit_loss ??
+      value?.pnl
+  );
+
+  if (Number.isFinite(direct)) {
+    return direct;
+  }
+
+  const sellPrice = Number(
+    value?.sell_price ??
+      value?.exit_price ??
+      value?.bid_price
+  );
+
+  const buyPrice = Number(
+    value?.buy_price ??
+      value?.purchase_price ??
+      value?.stake ??
+      value?.amount
+  );
+
+  if (
+    Number.isFinite(sellPrice) &&
+    Number.isFinite(buyPrice) &&
+    value?.sell_price != null
+  ) {
+    return sellPrice - buyPrice;
+  }
+
+  return 0;
 };
-const settled = (value) => Boolean(value?.is_sold || value?.is_expired || ["won", "lost", "sold", "expired", "settled"].includes(String(value?.status || value?.contract_status || "").toLowerCase()));
+
+const hasDirectProfit = (value) => {
+  const direct = Number(
+    value?.profit ??
+      value?.profit_loss ??
+      value?.pnl
+  );
+
+  return Number.isFinite(direct);
+};
+
+const settled = (value) =>
+  Boolean(
+    value?.is_sold ||
+      value?.is_expired ||
+      value?.is_settled ||
+      [
+        "won",
+        "lost",
+        "sold",
+        "expired",
+        "settled",
+      ].includes(
+        String(
+          value?.status ||
+            value?.contract_status ||
+            ""
+        ).toLowerCase()
+      )
+  );
+
 const timeOf = (value) => {
-  const epoch = Number(value?.date_start || value?.transaction_time || value?.date || value?.purchase_time || value?.epoch);
-  if (!Number.isFinite(epoch)) return "—";
-  return new Date(epoch * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const epoch = Number(
+    value?.date_start ||
+      value?.transaction_time ||
+      value?.date ||
+      value?.purchase_time ||
+      value?.epoch
+  );
+
+  if (!Number.isFinite(epoch)) {
+    return "—";
+  }
+
+  return new Date(
+    epoch * 1000
+  ).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+const directionOf = (value) => {
+  const type = String(
+    value?.contract_type ||
+      value?.contractType ||
+      value?.type ||
+      ""
+  ).toUpperCase();
+
+  if (type === "CALL") return "RISE";
+  if (type === "PUT") return "FALL";
+
+  const action = String(
+    value?.action ||
+      value?.transaction?.action ||
+      ""
+  ).toLowerCase();
+
+  if (action === "call") return "RISE";
+  if (action === "put") return "FALL";
+
+  return (
+    value?.direction ||
+    value?.signal ||
+    value?.action ||
+    "—"
+  );
 };
 
 export default function RiseFallBot() {
   const auth = useDerivAuth();
+
   const {
-    markets = [], market = null, symbol = "", status = "DISCONNECTED", statusDetail = "", connected = false,
-    authenticatedFeed = false, selectedAccountType = "demo", selectedAccount = null, selectedAccountId = "", prices = [], currentPrice = null,
-    openContracts = [], transactions = [], tradeBusy = false, tradeError = "", connect, disconnect, changeSymbol, placeTrade,
+    markets = [],
+    market = null,
+    symbol = "",
+    status = "DISCONNECTED",
+    statusDetail = "",
+    connected = false,
+    authenticatedFeed = false,
+    selectedAccountType = "demo",
+    selectedAccount = null,
+    selectedAccountId = "",
+    prices = [],
+    currentPrice = null,
+    openContracts = [],
+    transactions = [],
+    tradeBusy = false,
+    tradeError = "",
+    connect,
+    disconnect,
+    changeSymbol,
+    placeTrade,
   } = useDerivTicks();
 
-  const currency = String(selectedAccount?.currency || "USD").toUpperCase();
-  const accountId = String(selectedAccountId || selectedAccount?.id || selectedAccount?.account_id || selectedAccount?.loginid || "");
-  const [running, setRunning] = useState(false);
-  const [stake, setStake] = useState(0.35);
-  const [duration, setDuration] = useState(5);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [allowReal, setAllowReal] = useState(false);
-  const [message, setMessage] = useState("Scanner ready.");
-  const riskRef = useRef(createRiskManager());
+  const currency = String(
+    selectedAccount?.currency || "USD"
+  ).toUpperCase();
+
+  const accountId = String(
+    selectedAccountId ||
+      selectedAccount?.id ||
+      selectedAccount?.account_id ||
+      selectedAccount?.loginid ||
+      ""
+  );
+
+  const [running, setRunning] =
+    useState(false);
+
+  const [stake, setStake] =
+    useState(0.35);
+
+  const [duration, setDuration] =
+    useState(5);
+
+  const [settingsOpen, setSettingsOpen] =
+    useState(false);
+
+  const [allowReal, setAllowReal] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("Scanner ready.");
+
+  const [resultFlash, setResultFlash] =
+    useState(null);
+
+  const riskRef = useRef(
+    createRiskManager()
+  );
+
   const busyRef = useRef(false);
-  const processedRef = useRef(new Set());
-  const lastAutoSignalRef = useRef("");
-  const lastAutoAttemptRef = useRef(0);
 
-  const analysis = useMemo(() => analyzeRiseFall(prices, { minimumSamples: 60, minimumConfidence: 68 }), [prices]);
-  const risk = riskRef.current.snapshot();
-  const winRate = risk.wins + risk.losses ? (risk.wins / (risk.wins + risk.losses)) * 100 : 0;
-  const price = Number.isFinite(currentPrice) ? currentPrice.toFixed(market?.decimals ?? 3) : "—";
+  const processedRef = useRef(
+    new Set()
+  );
+
+  const lastAutoSignalRef =
+    useRef("");
+
+  const lastAutoAttemptRef =
+    useRef(0);
+
+  const analysis = useMemo(
+    () =>
+      analyzeRiseFall(prices, {
+        minimumSamples: 60,
+        minimumConfidence: 68,
+      }),
+    [prices]
+  );
+
+  const risk =
+    riskRef.current.snapshot();
+
+  const winRate =
+    risk.wins + risk.losses
+      ? (risk.wins /
+          (risk.wins + risk.losses)) *
+        100
+      : 0;
+
+  const price =
+    Number.isFinite(currentPrice)
+      ? currentPrice.toFixed(
+          market?.decimals ?? 3
+        )
+      : "—";
 
   useEffect(() => {
-    // Account switches are hard boundaries: stop automation and discard the
-    // previous account's in-memory trade list before using the new account.
     setRunning(false);
+
     lastAutoSignalRef.current = "";
+
     processedRef.current.clear();
-    setMessage(selectedAccountType === "real" ? "REAL account selected. Trading requires ALLOW REAL." : "DEMO account selected. Demo account is active.");
-  }, [accountId, selectedAccountType]);
 
-  useEffect(() => {
-    for (const contract of openContracts) {
-      if (!settled(contract)) continue;
-      const id = idOf(contract);
-      if (!id || processedRef.current.has(id)) continue;
-      processedRef.current.add(id);
-      riskRef.current.onResult(id, profitOf(contract));
-    }
-  }, [openContracts]);
+    setResultFlash(null);
 
-  const execute = useCallback(async (source = "manual", forcedSignal = null) => {
-    if (busyRef.current) return;
-    if (!connected) return setMessage("Connect the Deriv feed first.");
-    if (!accountId) return setMessage("Select a Demo or Real account first.");
-    const direction = forcedSignal || analysis.signal;
-    if (!["RISE", "FALL"].includes(direction)) return setMessage("Choose RISE or FALL, or wait for the AI signal.");
-    if (String(selectedAccountType).toLowerCase() === "real" && !allowReal) return setMessage("REAL ACCOUNT LOCKED.");
-    if (String(selectedAccountType).toLowerCase() === "demo" && allowReal) setAllowReal(false);
-    const gate = riskRef.current.canTrade();
-    if (!gate.ok) return setMessage(gate.reason);
-    busyRef.current = true;
-    setMessage(`${source === "auto" ? "Auto" : "Manual"}: executing ${direction}${source === "auto" ? ` ${analysis.confidence}%` : ""}...`);
-    try {
-      const result = await placeTrade({ contractType: direction === "RISE" ? "CALL" : "PUT", amount: Number(stake), basis: "stake", duration: Number(duration), durationUnit: "t", symbol });
-      const id = idOf(result);
-      if (source === "auto") lastAutoSignalRef.current = `${symbol}:${direction}`;
-      riskRef.current.onEntry(id);
-      setMessage(`${direction} opened${id ? ` #${id}` : ""}. Waiting for result...`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Trade failed.");
-    } finally { busyRef.current = false; }
+    setMessage(
+      selectedAccountType === "real"
+        ? "REAL account selected. Trading requires ALLOW REAL."
+        : "DEMO account selected. Demo account is active."
+    );
   }, [
     accountId,
-    allowReal,
-    analysis,
-    connected,
-    duration,
-    placeTrade,
-    selectedAccountId,
     selectedAccountType,
-    stake,
+  ]);
+
+  /*
+   * Settlement handler.
+   *
+   * IMPORTANT:
+   * A contract can arrive several times while it is open.
+   * We only process the final settled snapshot once.
+   */
+  useEffect(() => {
+    for (const contract of openContracts) {
+      if (!settled(contract)) {
+        continue;
+      }
+
+      const id = idOf(contract);
+
+      if (
+        !id ||
+        processedRef.current.has(id)
+      ) {
+        continue;
+      }
+
+      processedRef.current.add(id);
+
+      const pnl = profitOf(contract);
+      const direction =
+        directionOf(contract);
+
+      riskRef.current.onResult(
+        id,
+        pnl
+      );
+
+      const won = pnl >= 0;
+
+      setResultFlash({
+        id,
+        direction,
+        pnl,
+        won,
+      });
+
+      setMessage(
+        `${direction} ${won ? "WON" : "LOST"}${id ? ` #${id}` : ""} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)}`
+      );
+    }
+  }, [
+    openContracts,
+    currency,
+  ]);
+
+  /*
+   * Remove the result banner after a short period.
+   * The actual trade remains in Recent Trades.
+   */
+  useEffect(() => {
+    if (!resultFlash) return;
+
+    const timer =
+      window.setTimeout(() => {
+        setResultFlash(null);
+      }, 5000);
+
+    return () =>
+      window.clearTimeout(timer);
+  }, [resultFlash]);
+
+  const execute = useCallback(
+    async (
+      source = "manual",
+      forcedSignal = null
+    ) => {
+      if (busyRef.current) return;
+
+      /*
+       * Do not block a manual trade simply because
+       * the UI socket state has briefly dropped.
+       *
+       * placeTrade() is responsible for recovering
+       * the authenticated trading connection.
+       */
+      if (!accountId) {
+        return setMessage(
+          "Select a Demo or Real account first."
+        );
+      }
+
+      const direction =
+        forcedSignal ||
+        analysis.signal;
+
+      if (
+        !["RISE", "FALL"].includes(
+          direction
+        )
+      ) {
+        return setMessage(
+          "Choose RISE or FALL, or wait for the AI signal."
+        );
+      }
+
+      if (
+        String(
+          selectedAccountType
+        ).toLowerCase() === "real" &&
+        !allowReal
+      ) {
+        return setMessage(
+          "REAL ACCOUNT LOCKED."
+        );
+      }
+
+      if (
+        String(
+          selectedAccountType
+        ).toLowerCase() === "demo" &&
+        allowReal
+      ) {
+        setAllowReal(false);
+      }
+
+      const gate =
+        riskRef.current.canTrade();
+
+      if (!gate.ok) {
+        return setMessage(
+          gate.reason
+        );
+      }
+
+      busyRef.current = true;
+
+      setResultFlash(null);
+
+      setMessage(
+        `${
+          source === "auto"
+            ? "Auto"
+            : "Manual"
+        }: ${
+          connected
+            ? "executing"
+            : "reconnecting and executing"
+        } ${direction}${
+          source === "auto"
+            ? ` ${analysis.confidence}%`
+            : ""
+        }...`
+      );
+
+      try {
+        const result =
+          await placeTrade({
+            contractType:
+              direction === "RISE"
+                ? "CALL"
+                : "PUT",
+            amount:
+              Number(stake),
+            basis: "stake",
+            duration:
+              Number(duration),
+            durationUnit: "t",
+            symbol,
+          });
+
+        const id =
+          idOf(result);
+
+        if (
+          source === "auto"
+        ) {
+          lastAutoSignalRef.current =
+            `${symbol}:${direction}`;
+        }
+
+        riskRef.current.onEntry(
+          id
+        );
+
+        setMessage(
+          `${direction} opened${
+            id ? ` #${id}` : ""
+          }. Waiting for result...`
+        );
+      } catch (error) {
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "Trade failed."
+        );
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [
+      accountId,
+      allowReal,
+      analysis,
+      connected,
+      duration,
+      placeTrade,
+      selectedAccountType,
+      stake,
+      symbol,
+    ]
+  );
+
+  useEffect(() => {
+    if (
+      !running ||
+      !analysis.ready ||
+      analysis.signal === "WAIT"
+    ) {
+      return;
+    }
+
+    const now =
+      Date.now();
+
+    const signalKey =
+      `${symbol}:${analysis.signal}`;
+
+    if (
+      signalKey ===
+        lastAutoSignalRef.current &&
+      now -
+          lastAutoAttemptRef.current <
+        3000
+    ) {
+      return;
+    }
+
+    if (
+      signalKey ===
+      lastAutoSignalRef.current
+    ) {
+      return;
+    }
+
+    lastAutoAttemptRef.current =
+      now;
+
+    void execute("auto");
+  }, [
+    analysis,
+    execute,
+    running,
     symbol,
   ]);
 
-  useEffect(() => {
-    if (!running || !analysis.ready || analysis.signal === "WAIT") return;
-    const now = Date.now();
-    const signalKey = `${symbol}:${analysis.signal}`;
-    if (signalKey === lastAutoSignalRef.current && now - lastAutoAttemptRef.current < 3000) return;
-    if (signalKey === lastAutoSignalRef.current) return;
-    lastAutoAttemptRef.current = now;
-    void execute("auto");
-  }, [analysis, execute, running, symbol]);
-
   const toggle = () => {
     if (running) {
-      setRunning(false); setMessage("Bot stopped."); lastAutoSignalRef.current = ""; return;
+      setRunning(false);
+
+      setMessage(
+        "Bot stopped."
+      );
+
+      lastAutoSignalRef.current =
+        "";
+
+      return;
     }
-    riskRef.current.reset(); processedRef.current.clear(); lastAutoSignalRef.current = ""; lastAutoAttemptRef.current = 0;
-    setRunning(true); setMessage("Bot scanning live ticks and waiting for a qualified signal.");
+
+    riskRef.current.reset();
+
+    processedRef.current.clear();
+
+    lastAutoSignalRef.current =
+      "";
+
+    lastAutoAttemptRef.current =
+      0;
+
+    setResultFlash(null);
+
+    setRunning(true);
+
+    setMessage(
+      "Bot scanning live ticks and waiting for a qualified signal."
+    );
   };
 
-  const recentSource = [
-    ...transactions,
-    ...openContracts.filter((contract) => settled(contract)),
-  ];
-  const seenTradeIds = new Set();
-  const recentTrades = recentSource
-      .filter((tx) => {
-        const action = String(
-          tx?.action ||
-          tx?.transaction?.action ||
-          ""
-        ).toLowerCase();
+  /*
+   * RECENT TRADES
+   *
+   * Settled contract snapshots must have priority over
+   * BUY transactions because BUY transactions normally
+   * contain only the entry/purchase information.
+   *
+   * This prevents:
+   *
+   * BUY → $0.00 → OPEN
+   *
+   * from hiding:
+   *
+   * SETTLED → actual P/L → WON/LOST
+   */
+  const settledContracts =
+    openContracts.filter(
+      (contract) =>
+        settled(contract)
+    );
 
-        // Only BUY transactions represent trade entries.
-        // SELL transactions are settlement events and must not
-        // appear as new trades.
-        if (action) return action === "buy";
+  const buyTransactions =
+    transactions.filter(
+      (tx) => {
+        const action =
+          String(
+            tx?.action ||
+              tx?.transaction
+                ?.action ||
+              ""
+          ).toLowerCase();
 
-        // Contract snapshots are allowed.
-        return Boolean(
-          tx?.contract_id ||
-          tx?.contractId ||
-          tx?.id ||
-          tx?.buy_price ||
-          tx?.purchase_price
+        return (
+          action === "buy"
         );
-      }).filter((tx) => tx?.action === "buy" || tx?.transaction?.action === "buy" || tx?.contract_id || tx?.buy_price)
-    .filter((tx) => {
-      const id = idOf(tx);
-      if (!id || seenTradeIds.has(id)) return false;
-      seenTradeIds.add(id);
-      return true;
-    })
-    .slice(0, 8);
-  const open = openContracts.filter((c) => !settled(c)).slice(0, 8);
-  const chartPrices = prices.slice(-90);
+      }
+    );
+
+  const recentMap =
+    new Map();
+
+  /*
+   * Settled contracts go in first.
+   */
+  for (const contract of settledContracts) {
+    const id =
+      idOf(contract);
+
+    if (!id) continue;
+
+    recentMap.set(
+      id,
+      contract
+    );
+  }
+
+  /*
+   * BUY transactions only fill gaps.
+   */
+  for (const tx of buyTransactions) {
+    const id =
+      idOf(tx);
+
+    if (!id) continue;
+
+    if (
+      !recentMap.has(id)
+    ) {
+      recentMap.set(
+        id,
+        tx
+      );
+    }
+  }
+
+  const recentTrades =
+    [...recentMap.values()]
+      .sort((a, b) => {
+        const aTime =
+          Number(
+            a?.date_start ||
+              a?.transaction_time ||
+              a?.date ||
+              a?.purchase_time ||
+              a?.epoch ||
+              0
+          );
+
+        const bTime =
+          Number(
+            b?.date_start ||
+              b?.transaction_time ||
+              b?.date ||
+              b?.purchase_time ||
+              b?.epoch ||
+              0
+          );
+
+        return bTime - aTime;
+      })
+      .slice(0, 8);
+
+  const open =
+    openContracts
+      .filter(
+        (c) => !settled(c)
+      )
+      .slice(0, 8);
+
+  const chartPrices =
+    prices.slice(-90);
 
   return (
     <section className="rfBot">
       <header className="rfHero">
         <div className="rfHeroCopy">
-          <small>DERIV RISE / FALL ENGINE</small>
-          <h1>Pulse Rise/Fall</h1>
-          <p>Real-time ticks • Smart analysis • Trade with confidence</p>
+          <small>
+            DERIV RISE / FALL ENGINE
+          </small>
+
+          <h1>
+            Pulse Rise/Fall
+          </h1>
+
+          <p>
+            Real-time ticks • Smart analysis • Trade with confidence
+          </p>
         </div>
-        <div className="rfHeroQuote">“SMALL STEPS<br /><b>BIG RESULTS</b>”</div>
-        <div className="rfConnection"><span className={connected ? "rfDot live" : "rfDot"} />{connected ? (authenticatedFeed ? "LIVE TRADING" : "LIVE FEED") : status}</div>
+
+        <div className="rfHeroQuote">
+          “SMALL STEPS
+          <br />
+          <b>BIG RESULTS</b>”
+        </div>
+
+        <div className="rfConnection">
+          <span
+            className={
+              connected
+                ? "rfDot live"
+                : "rfDot"
+            }
+          />
+
+          {connected
+            ? authenticatedFeed
+              ? "LIVE TRADING"
+              : "LIVE FEED"
+            : status}
+        </div>
       </header>
 
       <div className="rfAccountBalance">
-        <div><small>ACCOUNT</small><strong>{selectedAccountType === "real" ? "REAL" : "DEMO"}</strong><span>{selectedAccount?.id || "—"}</span></div>
-        <div className="rfBalance"><small>BALANCE</small><strong>{Number.isFinite(Number(selectedAccount?.balance)) ? money(selectedAccount.balance, currency) : "—"}</strong><span>{auth.balanceStatus === "live" ? "LIVE BALANCE" : auth.balanceStatus === "connecting" ? "CONNECTING" : "BALANCE OFFLINE"}</span></div>
+        <div>
+          <small>
+            ACCOUNT
+          </small>
+
+          <strong>
+            {selectedAccountType ===
+            "real"
+              ? "REAL"
+              : "DEMO"}
+          </strong>
+
+          <span>
+            {selectedAccount?.id ||
+              "—"}
+          </span>
+        </div>
+
+        <div className="rfBalance">
+          <small>
+            BALANCE
+          </small>
+
+          <strong>
+            {Number.isFinite(
+              Number(
+                selectedAccount?.balance
+              )
+            )
+              ? money(
+                  selectedAccount.balance,
+                  currency
+                )
+              : "—"}
+          </strong>
+
+          <span>
+            {auth.balanceStatus ===
+            "live"
+              ? "LIVE BALANCE"
+              : auth.balanceStatus ===
+                  "connecting"
+                ? "CONNECTING"
+                : "BALANCE OFFLINE"}
+          </span>
+        </div>
       </div>
 
       <div className="rfTradeControls">
-        <label>Market<select value={symbol} disabled={!connected} onChange={(e) => void changeSymbol(e.target.value)}>{markets.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <label>Stake ({currency})<div className="rfInputGroup"><input type="number" min="0.35" step="0.01" value={stake} onChange={(e) => setStake(Math.max(0.35, Number(e.target.value) || 0.35))} /><button type="button" onClick={() => setStake((v) => Math.max(0.35, v - 0.05))}>−</button><button type="button" onClick={() => setStake((v) => v + 0.05)}>+</button></div></label>
-        <label>Duration<div className="rfInputGroup"><select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>{[1,2,3,5,8,10].map((v) => <option key={v} value={v}>{v}</option>)}</select><span>Ticks</span></div></label>
-        <button className="rfBigTrade rise" disabled={tradeBusy} onClick={() => void execute("manual", "RISE")}>▲ RISE<small>Higher than entry</small></button>
-        <button className="rfBigTrade fall" disabled={tradeBusy} onClick={() => void execute("manual", "FALL")}>▼ FALL<small>Lower than entry</small></button>
+        <label>
+          Market
+
+          <select
+            value={symbol}
+            disabled={!connected}
+            onChange={(e) =>
+              void changeSymbol(
+                e.target.value
+              )
+            }
+          >
+            {markets.map(
+              (item) => (
+                <option
+                  key={item.id}
+                  value={item.id}
+                >
+                  {item.label}
+                </option>
+              )
+            )}
+          </select>
+        </label>
+
+        <label>
+          Stake ({currency})
+
+          <div className="rfInputGroup">
+            <input
+              type="number"
+              min="0.35"
+              step="0.01"
+              value={stake}
+              onChange={(e) =>
+                setStake(
+                  Math.max(
+                    0.35,
+                    Number(
+                      e.target.value
+                    ) || 0.35
+                  )
+                )
+              }
+            />
+
+            <button
+              type="button"
+              onClick={() =>
+                setStake((v) =>
+                  Math.max(
+                    0.35,
+                    v - 0.05
+                  )
+                )
+              }
+            >
+              −
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setStake(
+                  (v) =>
+                    v + 0.05
+                )
+              }
+            >
+              +
+            </button>
+          </div>
+        </label>
+
+        <label>
+          Duration
+
+          <div className="rfInputGroup">
+            <select
+              value={duration}
+              onChange={(e) =>
+                setDuration(
+                  Number(
+                    e.target.value
+                  )
+                )
+              }
+            >
+              {[1, 2, 3, 5, 8, 10].map(
+                (v) => (
+                  <option
+                    key={v}
+                    value={v}
+                  >
+                    {v}
+                  </option>
+                )
+              )}
+            </select>
+
+            <span>
+              Ticks
+            </span>
+          </div>
+        </label>
+
+        <button
+          className="rfBigTrade rise"
+          disabled={tradeBusy}
+          onClick={() =>
+            void execute(
+              "manual",
+              "RISE"
+            )
+          }
+        >
+          ▲ RISE
+          <small>
+            Higher than entry
+          </small>
+        </button>
+
+        <button
+          className="rfBigTrade fall"
+          disabled={tradeBusy}
+          onClick={() =>
+            void execute(
+              "manual",
+              "FALL"
+            )
+          }
+        >
+          ▼ FALL
+          <small>
+            Lower than entry
+          </small>
+        </button>
       </div>
+
+      {resultFlash && (
+        <div
+          className={`rfResultFlash ${
+            resultFlash.won
+              ? "win"
+              : "loss"
+          }`}
+        >
+          <strong>
+            {resultFlash.won
+              ? "✓ TRADE WON"
+              : "✕ TRADE LOST"}
+          </strong>
+
+          <span>
+            {resultFlash.direction}
+            {resultFlash.id
+              ? ` #${resultFlash.id}`
+              : ""}
+          </span>
+
+          <b>
+            {resultFlash.pnl >= 0
+              ? "+"
+              : ""}
+            {money(
+              resultFlash.pnl,
+              currency
+            )}
+          </b>
+        </div>
+      )}
 
       <div className="rfMarketGrid">
         <div className="rfChartCard">
-          <div className="rfCardHead"><div><b>{market?.label || "Market"}</b><span className="liveLabel">● Live</span></div><div className="rfPrice">{price} <small>{currency}</small></div></div>
-          <div className="rfChartTabs"><span className="active">Ticks</span><span>1M</span><span>5M</span><span>15M</span></div>
-          <MiniChart values={chartPrices} />
+          <div className="rfCardHead">
+            <div>
+              <b>
+                {market?.label ||
+                  "Market"}
+              </b>
+
+              <span className="liveLabel">
+                ● Live
+              </span>
+            </div>
+
+            <div className="rfPrice">
+              {price}{" "}
+              <small>
+                {currency}
+              </small>
+            </div>
+          </div>
+
+          <div className="rfChartTabs">
+            <span className="active">
+              Ticks
+            </span>
+            <span>1M</span>
+            <span>5M</span>
+            <span>15M</span>
+          </div>
+
+          <MiniChart
+            values={chartPrices}
+          />
         </div>
-        <div className="rfAiCard"><div className="rfCardHead"><b>AI ANALYSIS</b><span className="rfPill">{analysis.momentum || "WAIT"}</span></div><Metric label="Trend" value={analysis.trend || "WAIT"}/><Metric label="Momentum" value={analysis.momentum || "WAIT"}/><Metric label="Volatility" value={analysis.volatility || "WAIT"}/><div className="rfConfidenceBar"><span>Confidence</span><b>{analysis.ready ? pct(analysis.confidence) : "WAIT"}</b><i><em style={{width:`${Math.max(2, analysis.confidence || 0)}%`}} /></i></div><div className="rfNext"><span>Next Signal</span><b>{analysis.signal}</b></div></div>
-        <div className="rfStatsCard"><div className="rfCardHead"><b>SESSION STATS</b><button type="button" onClick={() => riskRef.current.reset()}>Reset</button></div><Stat label="Trades" value={`${risk.trades}/10`}/><Stat label="Wins" value={risk.wins}/><Stat label="Losses" value={risk.losses}/><Stat label="Win rate" value={pct(winRate)}/><Stat label="Session P/L" value={money(risk.sessionPnl, currency)}/></div>
+
+        <div className="rfAiCard">
+          <div className="rfCardHead">
+            <b>
+              AI ANALYSIS
+            </b>
+
+            <span className="rfPill">
+              {analysis.momentum ||
+                "WAIT"}
+            </span>
+          </div>
+
+          <Metric
+            label="Trend"
+            value={
+              analysis.trend ||
+              "WAIT"
+            }
+          />
+
+          <Metric
+            label="Momentum"
+            value={
+              analysis.momentum ||
+              "WAIT"
+            }
+          />
+
+          <Metric
+            label="Volatility"
+            value={
+              analysis.volatility ||
+              "WAIT"
+            }
+          />
+
+          <div className="rfConfidenceBar">
+            <span>
+              Confidence
+            </span>
+
+            <b>
+              {analysis.ready
+                ? pct(
+                    analysis.confidence
+                  )
+                : "WAIT"}
+            </b>
+
+            <i>
+              <em
+                style={{
+                  width: `${
+                    Math.max(
+                      2,
+                      analysis.confidence ||
+                        0
+                    )
+                  }%`,
+                }}
+              />
+            </i>
+          </div>
+
+          <div className="rfNext">
+            <span>
+              Next Signal
+            </span>
+
+            <b>
+              {analysis.signal}
+            </b>
+          </div>
+        </div>
+
+        <div className="rfStatsCard">
+          <div className="rfCardHead">
+            <b>
+              SESSION STATS
+            </b>
+
+            <button
+              type="button"
+              onClick={() =>
+                riskRef.current.reset()
+              }
+            >
+              Reset
+            </button>
+          </div>
+
+          <Stat
+            label="Trades"
+            value={`${risk.trades}/10`}
+          />
+
+          <Stat
+            label="Wins"
+            value={risk.wins}
+          />
+
+          <Stat
+            label="Losses"
+            value={risk.losses}
+          />
+
+          <Stat
+            label="Win rate"
+            value={pct(winRate)}
+          />
+
+          <Stat
+            label="Session P/L"
+            value={money(
+              risk.sessionPnl,
+              currency
+            )}
+          />
+        </div>
       </div>
 
       <div className="rfTables">
-        <TradeTable title="OPEN TRADES" count={open.length} rows={open} open currency={currency}/>
-        <TradeTable title="RECENT TRADES" rows={recentTrades} currency={currency}/>
+        <TradeTable
+          title="OPEN TRADES"
+          count={open.length}
+          rows={open}
+          open
+          currency={currency}
+        />
+
+        <TradeTable
+          title="RECENT TRADES"
+          rows={recentTrades}
+          currency={currency}
+        />
       </div>
 
-      <div className="rfBottomBar"><span className={connected ? "ok" : ""}>● Deriv API {connected ? "Connected" : "Offline"}</span><span className={connected ? "ok" : ""}>● Live market feed</span><span className={authenticatedFeed ? "ok" : ""}>● Trading {authenticatedFeed ? "Ready" : "Auth Pending"}</span><span>● {selectedAccountType === "real" ? "Real" : "Demo"} Account</span><span className="spacer">Server Time: {new Date().toLocaleTimeString()} (GMT+3)</span><span>● Ping: —</span></div>
+      <div className="rfBottomBar">
+        <span
+          className={
+            connected
+              ? "ok"
+              : ""
+          }
+        >
+          ● Deriv API{" "}
+          {connected
+            ? "Connected"
+            : "Offline"}
+        </span>
 
-      <div className="rfActions"><button onClick={() => (connected ? disconnect() : connect())}>{connected ? "Disconnect" : "Connect"}</button><button className={running ? "danger" : "primary"} onClick={toggle}>{running ? "STOP BOT" : "START BOT"}</button><label className="realToggle"><input type="checkbox" checked={allowReal} onChange={(e) => setAllowReal(e.target.checked)} disabled={selectedAccountType !== "real"}/> ALLOW REAL</label><button className="rfSettings" onClick={() => setSettingsOpen((v) => !v)}>{settingsOpen ? "Hide Risk" : "Risk"}</button></div>
-      {settingsOpen && <div className="rfRiskPanel"><span>Max session loss <b>{money(3, currency)}</b></span><span>Max trades <b>10</b></span><span>Max open <b>1</b></span><span>2 losses <b>60s pause</b></span></div>}
-      <div className="rfStatus"><span>{running ? "SCANNING" : "READY"}</span><span>{message}</span></div>
-      {(statusDetail || tradeError) && <div className="rfError">{tradeError || statusDetail}</div>}
+        <span
+          className={
+            connected
+              ? "ok"
+              : ""
+          }
+        >
+          ● Live market feed
+        </span>
+
+        <span
+          className={
+            authenticatedFeed
+              ? "ok"
+              : ""
+          }
+        >
+          ● Trading{" "}
+          {authenticatedFeed
+            ? "Ready"
+            : "Auth Pending"}
+        </span>
+
+        <span>
+          ●{" "}
+          {selectedAccountType ===
+          "real"
+            ? "Real"
+            : "Demo"}{" "}
+          Account
+        </span>
+
+        <span className="spacer">
+          Server Time:{" "}
+          {new Date().toLocaleTimeString()}{" "}
+          (GMT+3)
+        </span>
+
+        <span>
+          ● Ping: —
+        </span>
+      </div>
+
+      <div className="rfActions">
+        <button
+          onClick={() =>
+            connected
+              ? disconnect()
+              : connect()
+          }
+        >
+          {connected
+            ? "Disconnect"
+            : "Connect"}
+        </button>
+
+        <button
+          className={
+            running
+              ? "danger"
+              : "primary"
+          }
+          onClick={toggle}
+        >
+          {running
+            ? "STOP BOT"
+            : "START BOT"}
+        </button>
+
+        <label className="realToggle">
+          <input
+            type="checkbox"
+            checked={allowReal}
+            onChange={(e) =>
+              setAllowReal(
+                e.target.checked
+              )
+            }
+            disabled={
+              selectedAccountType !==
+              "real"
+            }
+          />{" "}
+          ALLOW REAL
+        </label>
+
+        <button
+          className="rfSettings"
+          onClick={() =>
+            setSettingsOpen(
+              (v) => !v
+            )
+          }
+        >
+          {settingsOpen
+            ? "Hide Risk"
+            : "Risk"}
+        </button>
+      </div>
+
+      {settingsOpen && (
+        <div className="rfRiskPanel">
+          <span>
+            Max session loss{" "}
+            <b>
+              {money(
+                3,
+                currency
+              )}
+            </b>
+          </span>
+
+          <span>
+            Max trades{" "}
+            <b>10</b>
+          </span>
+
+          <span>
+            Max open{" "}
+            <b>1</b>
+          </span>
+
+          <span>
+            2 losses{" "}
+            <b>
+              60s pause
+            </b>
+          </span>
+        </div>
+      )}
+
+      <div className="rfStatus">
+        <span>
+          {running
+            ? "SCANNING"
+            : "READY"}
+        </span>
+
+        <span>
+          {message}
+        </span>
+      </div>
+
+      {(statusDetail ||
+        tradeError) && (
+        <div className="rfError">
+          {tradeError ||
+            statusDetail}
+        </div>
+      )}
     </section>
   );
 }
 
-function Metric({ label, value }) { return <div className="rfMetricRow"><span>{label}</span><b>{value}</b></div>; }
-function Stat({ label, value }) { return <div className="rfStatRow"><span>{label}</span><b>{value}</b></div>; }
-function TradeTable({ title, count, rows, open, currency }) {
-  const value = (v) => Number.isFinite(Number(v)) ? Number(v).toFixed(3) : "—";
+function Metric({
+  label,
+  value,
+}) {
+  return (
+    <div className="rfMetricRow">
+      <span>
+        {label}
+      </span>
+
+      <b>
+        {value}
+      </b>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+}) {
+  return (
+    <div className="rfStatRow">
+      <span>
+        {label}
+      </span>
+
+      <b>
+        {value}
+      </b>
+    </div>
+  );
+}
+
+function TradeTable({
+  title,
+  count,
+  rows,
+  open,
+  currency,
+}) {
+  const value = (v) =>
+    Number.isFinite(
+      Number(v)
+    )
+      ? Number(v).toFixed(3)
+      : "—";
+
   return (
     <div className="rfTableCard">
       <div className="rfTableTitle">
-        <b>{title} {typeof count === "number" ? `(${count})` : ""}</b>
-        <span>{open ? "LIVE" : "View All"}</span>
+        <b>
+          {title}{" "}
+          {typeof count ===
+          "number"
+            ? `(${count})`
+            : ""}
+        </b>
+
+        <span>
+          {open
+            ? "LIVE"
+            : "View All"}
+        </span>
       </div>
+
       <div className="rfTableHead">
-        <span>#</span><span>TIME</span><span>MARKET</span><span>TYPE</span><span>STAKE</span><span>ENTRY</span><span>{open ? "CURRENT" : "EXIT"}</span><span>P/L</span><span>STATUS</span>
+        <span>#</span>
+        <span>TIME</span>
+        <span>MARKET</span>
+        <span>TYPE</span>
+        <span>STAKE</span>
+        <span>ENTRY</span>
+        <span>
+          {open
+            ? "CURRENT"
+            : "EXIT"}
+        </span>
+        <span>P/L</span>
+        <span>STATUS</span>
       </div>
-      {rows.length ? rows.map((row, i) => {
-        const pnl = profitOf(row);
-        const entry = row.entry_spot ?? row.entrySpot ?? row.buy_price ?? row.purchase_price ?? row.amount ?? row.stake;
-        const current = row.current_spot ?? row.currentSpot ?? row.bid_price ?? row.sell_price ?? row.exit_spot ?? row.exitSpot;
-        const exit = row.exit_spot ?? row.exitSpot ?? row.sell_price ?? row.bid_price;
-        const isSettled = settled(row);
-        return (
-          <div className="rfTableRow" key={idOf(row) || `${title}-${i}`}>
-            <span>{i + 1}</span>
-            <span>{timeOf(row)}</span>
-            <span>{row.symbol || row.underlying || row.display_name || "1HZ100V"}</span>
-            <span>{row.contract_type || row.contractType || row.type || row.action || "—"}</span>
-            <span>{money(row.buy_price || row.purchase_price || row.amount || row.stake, currency)}</span>
-            <span>{value(entry)}</span>
-            <span>{value(open ? current : exit)}</span>
-            <span className={pnl >= 0 ? "win" : "loss"}>{money(pnl, currency)}</span>
-            <span className={isSettled ? (pnl >= 0 ? "win" : "loss") : "liveState"}>{isSettled ? (pnl >= 0 ? "WON" : "LOST") : "OPEN"}</span>
-          </div>
-        );
-      }) : (
+
+      {rows.length ? (
+        rows.map((row, i) => {
+          const isSettled =
+            settled(row);
+
+          /*
+           * Never display an estimated negative P/L
+           * from the stake while the trade is still open.
+           */
+          const pnl =
+            isSettled &&
+            hasDirectProfit(row)
+              ? profitOf(row)
+              : isSettled
+                ? profitOf(row)
+                : null;
+
+          const entry =
+            row.entry_spot ??
+            row.entrySpot ??
+            row.buy_price ??
+            row.purchase_price ??
+            row.amount ??
+            row.stake;
+
+          const current =
+            row.current_spot ??
+            row.currentSpot ??
+            row.bid_price ??
+            row.sell_price ??
+            row.exit_spot ??
+            row.exitSpot;
+
+          const exit =
+            row.exit_spot ??
+            row.exitSpot ??
+            row.sell_price ??
+            row.bid_price;
+
+          const direction =
+            directionOf(row);
+
+          const displayPnl =
+            pnl == null
+              ? "—"
+              : money(
+                  pnl,
+                  currency
+                );
+
+          return (
+            <div
+              className="rfTableRow"
+              key={
+                idOf(row) ||
+                `${title}-${i}`
+              }
+            >
+              <span>
+                {i + 1}
+              </span>
+
+              <span>
+                {timeOf(row)}
+              </span>
+
+              <span>
+                {row.symbol ||
+                  row.underlying ||
+                  row.display_name ||
+                  "1HZ100V"}
+              </span>
+
+              <span>
+                {direction}
+              </span>
+
+              <span>
+                {money(
+                  row.buy_price ||
+                    row.purchase_price ||
+                    row.amount ||
+                    row.stake,
+                  currency
+                )}
+              </span>
+
+              <span>
+                {value(entry)}
+              </span>
+
+              <span>
+                {value(
+                  open
+                    ? current
+                    : exit
+                )}
+              </span>
+
+              <span
+                className={
+                  pnl == null
+                    ? "liveState"
+                    : pnl >= 0
+                      ? "win"
+                      : "loss"
+                }
+              >
+                {displayPnl}
+              </span>
+
+              <span
+                className={
+                  isSettled
+                    ? pnl >= 0
+                      ? "win"
+                      : "loss"
+                    : "liveState"
+                }
+              >
+                {isSettled
+                  ? pnl >= 0
+                    ? "WON"
+                    : "LOST"
+                  : "OPEN"}
+              </span>
+            </div>
+          );
+        })
+      ) : (
         <div className="rfEmpty">
-          <strong>{open ? "No open trades" : "No trade history yet"}</strong>
-          <span>{open ? "Your active trades will appear here" : "Your completed trades will appear here"}</span>
+          <strong>
+            {open
+              ? "No open trades"
+              : "No trade history yet"}
+          </strong>
+
+          <span>
+            {open
+              ? "Your active trades will appear here"
+              : "Your completed trades will appear here"}
+          </span>
         </div>
       )}
     </div>
   );
 }
 
-function MiniChart({ values }) {
-  if (!values.length) return <div className="rfEmpty chartEmpty"><strong>Waiting for live ticks</strong><span>Connect to load the chart.</span></div>;
-  const w=760,h=240,p=22; const nums=values.map(v=>Number(v.quote)).filter(Number.isFinite); const min=Math.min(...nums),max=Math.max(...nums); const range=max-min || 1;
-  const points=nums.map((v,i)=>`${p+(i/Math.max(1,nums.length-1))*(w-p*2)},${h-p-((v-min)/range)*(h-p*2)}`).join(" ");
-  return <svg className="rfChart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"><defs><linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="rgba(20,220,180,.35)"/><stop offset="1" stopColor="rgba(20,220,180,0)"/></linearGradient></defs>{[.2,.4,.6,.8].map((n)=><line key={n} x1="0" x2={w} y1={h*n} y2={h*n} className="gridLine"/>)}<polyline points={`${p},${h-p} ${points} ${w-p},${h-p}`} className="chartArea"/><polyline points={points} className="chartLine"/></svg>;
+function MiniChart({
+  values,
+}) {
+  if (!values.length) {
+    return (
+      <div className="rfEmpty chartEmpty">
+        <strong>
+          Waiting for live ticks
+        </strong>
+
+        <span>
+          Connect to load the chart.
+        </span>
+      </div>
+    );
+  }
+
+  const w = 760;
+  const h = 240;
+  const p = 22;
+
+  const nums = values
+    .map((v) =>
+      Number(v.quote)
+    )
+    .filter(
+      Number.isFinite
+    );
+
+  const min =
+    Math.min(...nums);
+
+  const max =
+    Math.max(...nums);
+
+  const range =
+    max - min || 1;
+
+  const points =
+    nums
+      .map(
+        (v, i) =>
+          `${p +
+            (i /
+              Math.max(
+                1,
+                nums.length - 1
+              )) *
+              (w - p * 2)},${
+            h -
+            p -
+            ((v - min) /
+              range) *
+              (h - p * 2)
+          }`
+      )
+      .join(" ");
+
+  return (
+    <svg
+      className="rfChart"
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+    >
+      <defs>
+        <linearGradient
+          id="chartFill"
+          x1="0"
+          x2="0"
+          y1="0"
+          y2="1"
+        >
+          <stop
+            offset="0"
+            stopColor="rgba(20,220,180,.35)"
+          />
+
+          <stop
+            offset="1"
+            stopColor="rgba(20,220,180,0)"
+          />
+        </linearGradient>
+      </defs>
+
+      {[0.2, 0.4, 0.6, 0.8].map(
+        (n) => (
+          <line
+            key={n}
+            x1="0"
+            x2={w}
+            y1={h * n}
+            y2={h * n}
+            className="gridLine"
+          />
+        )
+      )}
+
+      <polyline
+        points={`${p},${h - p} ${points} ${w - p},${h - p}`}
+        className="chartArea"
+      />
+
+      <polyline
+        points={points}
+        className="chartLine"
+      />
+    </svg>
+  );
 }
