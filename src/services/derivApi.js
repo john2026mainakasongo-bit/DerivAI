@@ -553,6 +553,18 @@ class DerivTradingClient {
       let lastError = null;
       const candidates = [];
 
+      // Prefer the public market socket when fallback is allowed so the UI
+      // can become live immediately. Authenticated trading is verified in the
+      // background by ensureTradingConnection().
+      if (allowPublicFallback) {
+        PUBLIC_SOCKET_URLS.forEach((url) =>
+          candidates.push({
+            url,
+            authenticated: false,
+          })
+        );
+      }
+
       if (this.authenticated) {
         try {
           const authenticatedUrl = await this.getAuthenticatedSocketUrl();
@@ -569,13 +581,8 @@ class DerivTradingClient {
         }
       }
 
-      if (!this.authenticated || allowPublicFallback) {
-        PUBLIC_SOCKET_URLS.forEach((url) =>
-          candidates.push({
-            url,
-            authenticated: false,
-          })
-        );
+      if (!this.authenticated && !allowPublicFallback) {
+        throw new Error("A logged-in Deriv account is required.");
       }
 
       for (const candidate of candidates) {

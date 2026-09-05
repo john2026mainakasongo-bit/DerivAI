@@ -233,27 +233,21 @@ export default function useDerivTicks() {
         }
       }
 
-      if (auth.authenticated && selectedAccountId) {
-        await derivPublicClient.ensureTradingConnection();
-
-        if (!mountedRef.current) {
-          return connection;
-        }
-
-        setTradingReady(true);
-      } else {
-        setTradingReady(false);
-      }
-
-      if (auth.authenticated && !derivPublicClient.socketAuthenticated) {
-        throw new Error(
-          "Authenticated trading connection is required while a Deriv account is selected."
-        );
-      }
-
+      // Keep the market feed responsive even when the authenticated trading
+      // socket is temporarily unavailable. The public feed can still provide
+      // live prices/markets; authenticated trading is established separately.
       setConnected(true);
       setStatus("CONNECTED");
-      setStatusDetail("");
+      setStatusDetail(
+        auth.authenticated && selectedAccountId
+          ? "Live market feed connected. Checking trading connection..."
+          : "Live market feed connected."
+      );
+
+      // Keep the public market feed connected. Authenticated trading is
+      // established only when a trade is actually requested, so a temporary
+      // trading-auth issue cannot take the live market UI offline.
+      setTradingReady(Boolean(derivPublicClient.socketAuthenticated));
 
       return connection;
     } catch (error) {

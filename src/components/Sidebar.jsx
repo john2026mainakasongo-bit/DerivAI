@@ -35,10 +35,10 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brandMark zentoraMark">Z</div>
+        <div className="brandMark">E</div>
         <div>
-          <strong>ZENTORA</strong>
-          <small>TRADE SMARTER</small>
+          <strong>EdgePilot</strong>
+          <small>Trading Assistant</small>
         </div>
       </div>
 
@@ -77,7 +77,7 @@ export default function Sidebar() {
 
       <div className="sidebarFooter">
         <span className="statusDot" />
-        Deriv trading terminal
+        Demo environment
       </div>
     </aside>
   );

@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { completeDerivLogin } from "../auth/derivOAuth";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import RiseFallBot from "../components/RiseFallBot";
-import Sidebar from "../components/Sidebar";
 
 export default function Dashboard() {
   const auth = useDerivAuth();
@@ -82,9 +81,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="appShell zentoraShell">
-      <Sidebar />
-      <main className="cleanBotPage">
+    <main className="cleanBotPage">
       <section className="cleanAccountBar">
         <div className="cleanAccountInfo">
           <span className="cleanAccountLabel">
@@ -131,6 +128,11 @@ export default function Dashboard() {
                     <small>
                       {account.displayLabel || id}
                     </small>
+                    <strong className="accountBalanceValue">
+                      {Number.isFinite(Number(account.balance))
+                        ? `${Number(account.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${String(account.currency || "USD").toUpperCase()}`
+                        : "Balance unavailable"}
+                    </strong>
                   </button>
                 );
               })
@@ -167,8 +169,7 @@ export default function Dashboard() {
       ) : null}
 
       <RiseFallBot />
-      </main>
-    </div>
+    </main>
   );
 }
 
