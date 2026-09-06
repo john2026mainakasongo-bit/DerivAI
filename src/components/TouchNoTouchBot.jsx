@@ -39,6 +39,7 @@ export function TouchNoTouchBotView({ feed }) {
   const [message, setMessage] = useState("AI scanner ready — waiting for the best valid proposal.");
   const [liveQuote, setLiveQuote] = useState(null);
   const [quoteBusy, setQuoteBusy] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
   const [flash, setFlash] = useState(null);
   const busyRef = useRef(false);
   const processedRef = useRef(new Set());
@@ -49,7 +50,11 @@ export function TouchNoTouchBotView({ feed }) {
   const audioRef = useRef(null);
   const exitRequestedRef = useRef(new Set());
 
-  const analysis = useMemo(() => analyzeTouchNoTouch(prices, { minimumSamples: 120, maxSamples: 700 }), [prices]);
+  const analysisPrices = useMemo(() => {
+    if (prices.length) return prices;
+    return ticks.map((tick) => Number(tick?.quote)).filter(Number.isFinite);
+  }, [prices, ticks]);
+  const analysis = useMemo(() => analyzeTouchNoTouch(analysisPrices, { minimumSamples: 120, maxSamples: 700 }), [analysisPrices]);
   const balance = Number(selectedAccount?.balance) || 0;
   const sessionTarget = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionTPPct / 100) : 0;
   const sessionStop = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionSLPct / 100) : 0;
@@ -102,35 +107,55 @@ export function TouchNoTouchBotView({ feed }) {
     const contractType = setup === "TOUCH" ? "ONETOUCH" : "NOTOUCH";
     const rawBarrier = setup === "TOUCH" ? forcedAnalysis.touchBarrier : forcedAnalysis.noTouchBarrier;
     const spot = Number(forcedAnalysis.current || currentPrice);
-    const baseOffset = Math.max(Math.abs(rawBarrier - spot) * Math.max(0.5, Number(barrierMultiplier) || 1), Math.abs(spot) * 0.0001);
+    const baseOffset = Math.max(
+      Math.abs(rawBarrier - spot) * Math.max(0.35, Number(barrierMultiplier) || 1),
+      Math.abs(spot) * 0.0001
+    );
     const direction = rawBarrier >= spot ? 1 : -1;
     const decimals = Math.max(2, market?.decimals ?? 3);
-    const offsets = [1, 1.18, 0.84];
+    const multipliers = [0.5, 0.75, 1, 1.35, 1.8, 2.5];
+    const durations = [...new Set([Number(duration), 10])];
 
     busyRef.current = true;
     setQuoteBusy(true);
+    setQuoteError("");
     setMessage(`${isRecovery ? "RECOVERY X2" : "AI"} • FINDING BEST ${setup} PROPOSAL…`);
     try {
       const quotes = [];
-      for (const multiplier of offsets) {
-        const offset = Math.max(baseOffset * multiplier, Math.abs(spot) * 0.0001);
-        const barrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(decimals)}`;
-        try {
-          const quote = await quoteTrade({ symbol, contractType, amount: tradeStake, basis: "stake", duration: Number(duration), durationUnit: "t", barrier });
-          const ask = Number(quote?.askPrice);
-          const payout = Number(quote?.payout);
-          if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask) {
-            const returnPct = ((payout - ask) / ask) * 100;
-            const priceQuality = Math.min(100, Math.max(0, returnPct));
-            const quoteScore = Math.round(forcedAnalysis.entryScore * 0.8 + Math.min(100, priceQuality) * 0.2);
-            quotes.push({ ...quote, barrier, returnPct, quoteScore });
+      const errors = [];
+      for (const tradeDuration of durations) {
+        for (const multiplier of multipliers) {
+          const offset = Math.max(baseOffset * multiplier, Math.abs(spot) * 0.0001);
+          const relativeBarrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(decimals)}`;
+          const absoluteBarrier = (spot + direction * offset).toFixed(decimals);
+          for (const barrier of [relativeBarrier, absoluteBarrier]) {
+            try {
+              const quote = await quoteTrade({ symbol, contractType, amount: tradeStake, basis: "stake", duration: tradeDuration, durationUnit: "t", barrier });
+              const ask = Number(quote?.askPrice);
+              const payout = Number(quote?.payout);
+              if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask) {
+                const returnPct = ((payout - ask) / ask) * 100;
+                const priceQuality = Math.min(100, Math.max(0, returnPct));
+                const quoteScore = Math.round(forcedAnalysis.entryScore * 0.8 + Math.min(100, priceQuality) * 0.2);
+                quotes.push({ ...quote, barrier, duration: tradeDuration, returnPct, quoteScore });
+              } else {
+                errors.push(`invalid payout ${barrier}/${tradeDuration}t`);
+              }
+            } catch (error) {
+              errors.push(error instanceof Error ? error.message : String(error));
+            }
+            if (quotes.length >= 8) break;
           }
-        } catch { /* try the next valid barrier */ }
+          if (quotes.length >= 8) break;
+        }
+        if (quotes.length >= 8) break;
       }
 
       if (!quotes.length) {
         setLiveQuote(null);
-        throw new Error("No valid Touch/No Touch proposal returned a positive payout. AI will keep scanning.");
+        const diagnostic = [...new Set(errors)].slice(0, 3).join(" | ");
+        setQuoteError(diagnostic || "No proposal was returned.");
+        throw new Error(`Touch/No Touch proposal rejected: ${diagnostic || "no valid proposal"}`);
       }
 
       quotes.sort((a, b) => b.quoteScore - a.quoteScore);
@@ -233,6 +258,7 @@ export function TouchNoTouchBotView({ feed }) {
           <div className="tntDecision"><span>MASTER DECISION</span><strong>{analysis.signal}</strong><b>{analysis.entryScore}/99</b><p>{analysis.reason}</p></div>
           <div className="tntCards"><div className={`tntSide ${analysis.candidate === "TOUCH" ? "best" : ""}`}><span>TOUCH</span><strong>{analysis.touchScore}</strong><small>Barrier {analysis.touchBarrier ? analysis.touchBarrier.toFixed(market?.decimals ?? 3) : "—"}</small><em>{analysis.touchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div><div className={`tntSide ${analysis.candidate === "NO TOUCH" ? "best" : ""}`}><span>NO TOUCH</span><strong>{analysis.noTouchScore}</strong><small>Barrier {analysis.noTouchBarrier ? analysis.noTouchBarrier.toFixed(market?.decimals ?? 3) : "—"}</small><em>{analysis.noTouchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div></div>
           <div className="tntQuote"><div><span>AI PROPOSAL</span><strong>{quoteBusy ? "SCANNING QUOTES…" : liveQuote ? `${typeOf(liveQuote)} • ${liveQuote.barrier}` : "WAITING"}</strong></div><div><span>ASK / PAYOUT</span><b>{liveQuote ? `${money(liveQuote.askPrice, currency)} → ${money(liveQuote.payout, currency)}` : "—"}</b></div><div><span>EXPECTED RETURN</span><b>{liveQuote ? `${liveQuote.returnPct.toFixed(1)}%` : "—"}</b></div></div>
+          {quoteError && <div className="tntQuoteError">DERIV QUOTE: {quoteError}</div>}
           <div className="tntChecks"><div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Volatility</span><b>{analysis.volatility}</b></div><div><span>Confirmations</span><b>{analysis.confirmations}/6</b></div><div><span>Market quality</span><b>{analysis.marketQuality}/100</b></div><div><span>Timing</span><b>{analysis.noChase ? "NO CHASE OK" : "LATE — WAIT"}</b></div></div>
         </div>
       </div>
