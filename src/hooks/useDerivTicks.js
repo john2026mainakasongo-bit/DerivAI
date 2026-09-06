@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -131,7 +131,7 @@ export default function useDerivTicks() {
       markets[0] || {
         id: "",
         label: "No market selected",
-        short: "Ã¢â‚¬â€",
+        short: "â€”",
         decimals: 3,
       },
     [markets, symbol]
@@ -147,7 +147,7 @@ export default function useDerivTicks() {
           quote: Number(tick.quote),
           epoch: Number(tick.epoch),
         },
-      ].slice(-400)
+      ].slice(-5000)
     );
 
     setLiveTickCount((current) =>
@@ -172,7 +172,7 @@ export default function useDerivTicks() {
       const history = await derivPublicClient.getHistory(nextSymbol, 1800);
       if (!mountedRef.current) return;
 
-      setTicks(history.slice(-60));
+      setTicks(history.slice(-5000));
 
       try {
         await derivPublicClient.subscribeTicks(nextSymbol);
@@ -781,6 +781,7 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
+
 
 
 
