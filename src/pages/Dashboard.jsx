@@ -1,7 +1,7 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { completeDerivLogin } from "../auth/derivOAuth";
 import { useDerivAuth } from "../auth/DerivAuthContext";
-import RiseFallBot from "../components/RiseFallBot";
+import TouchNoTouchBot from "../components/TouchNoTouchBot";
 
 export default function Dashboard() {
   const auth = useDerivAuth();
@@ -168,7 +168,7 @@ export default function Dashboard() {
         </div>
       ) : null}
 
-      <RiseFallBot />
+      <TouchNoTouchBot />
     </main>
   );
 }
