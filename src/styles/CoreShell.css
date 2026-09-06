@@ -603,3 +603,352 @@ body,
     overflow-y: hidden;
   }
 }
+
+/* =========================================================
+   ZENTORA FULL TRADING TERMINAL — SHELL
+   ========================================================= */
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  background: #020b12;
+  color: #eaf6ff;
+  overflow-x: hidden;
+}
+
+.cleanBotPage {
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  padding: 0 !important;
+  margin: 0 !important;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(16,76,104,.18), transparent 42%),
+    #020b12;
+}
+
+/* Main ZENTORA navigation */
+.zentoraTerminalNav {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 1000;
+  width: 100%;
+  height: 70px;
+  min-height: 70px;
+  max-height: 70px;
+  display: grid !important;
+  grid-template-columns: 220px minmax(0,1fr) 120px;
+  align-items: center;
+  gap: 18px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  background: rgba(2,12,20,.97);
+  border-bottom: 1px solid #173544;
+  box-shadow: 0 8px 28px rgba(0,0,0,.25);
+  overflow: hidden;
+}
+
+.zentoraNavBrand {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1;
+}
+
+.zentoraNavBrand strong {
+  color: #f1fbff;
+  font-size: 24px;
+  font-weight: 1000;
+  letter-spacing: .06em;
+}
+
+.zentoraNavBrand strong::first-letter {
+  color: #18dfb6;
+}
+
+.zentoraNavBrand span {
+  margin-top: 5px;
+  color: #19d9bb;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .18em;
+}
+
+.zentoraNavLinks {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.zentoraNavLinks button {
+  height: 44px;
+  flex: 0 0 auto;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px;
+  padding: 0 17px;
+  background: transparent;
+  color: #a9bbc5;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.zentoraNavLinks button:hover {
+  color: #fff;
+  background: #0a1b27;
+}
+
+.zentoraNavLinks button.active {
+  color: #fff;
+  background: #0b2840;
+  border-bottom-color: #18cde0;
+}
+
+.zentoraNavStatus {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 92px;
+  height: 40px;
+  border: 1px solid #16465b;
+  border-radius: 9px;
+  background: #061923;
+  color: #cce8ef;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.ztLiveDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #657983;
+}
+
+.ztLiveDot.live {
+  background: #18d9af;
+  box-shadow: 0 0 13px rgba(24,217,175,.7);
+}
+
+/* Terminal body */
+.rfBot {
+  width: min(100%, 1600px) !important;
+  margin: 0 auto !important;
+  padding: 14px 18px 18px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Remove the dashboard-style hero */
+.rfHero {
+  min-height: 74px !important;
+  margin: 0 0 10px !important;
+  padding: 12px 16px !important;
+  border: 1px solid #153d51 !important;
+  border-radius: 10px !important;
+  background:
+    linear-gradient(90deg, rgba(4,22,33,.98), rgba(5,26,38,.82)) !important;
+}
+
+.rfHero h1 {
+  margin: 0 0 4px !important;
+  font-size: 20px !important;
+}
+
+.rfHero p {
+  font-size: 10px !important;
+}
+
+.rfHeroQuote {
+  font-size: 16px !important;
+}
+
+.rfConnection {
+  padding: 8px 11px !important;
+}
+
+/* Compact account strip */
+.rfAccountBalance {
+  min-height: 42px;
+  margin-bottom: 9px !important;
+  padding: 7px 12px !important;
+  border-radius: 8px !important;
+}
+
+/* Trading controls */
+.rfTradeControls {
+  grid-template-columns: minmax(240px,1.5fr) minmax(130px,.8fr) minmax(120px,.7fr) 1fr 1fr !important;
+  gap: 8px !important;
+  margin-bottom: 9px !important;
+}
+
+.rfTradeControls select,
+.rfTradeControls input,
+.rfInputGroup {
+  min-height: 38px !important;
+}
+
+/* Chart becomes the primary workspace */
+.rfMarketGrid {
+  grid-template-columns: minmax(0,1fr) 305px !important;
+  gap: 9px !important;
+  align-items: stretch;
+}
+
+.rfChartCard {
+  min-width: 0;
+  min-height: 600px !important;
+  padding: 10px !important;
+}
+
+.rfAiCard {
+  min-width: 0;
+  min-height: 280px;
+}
+
+.rfStatsCard {
+  grid-column: 2;
+}
+
+/* Keep chart visually dominant */
+.zentoraChart {
+  min-height: 570px !important;
+}
+
+.zentoraChartCanvas {
+  height: 500px !important;
+}
+
+/* Tables become terminal bottom panels */
+.rfTables {
+  grid-template-columns: 1fr 1fr !important;
+  gap: 9px !important;
+  margin-top: 9px !important;
+}
+
+/* Bottom terminal strip */
+.rfBottomBar {
+  margin: 9px 0 0 !important;
+  border: 1px solid #12394c;
+  border-radius: 8px;
+}
+
+/* Desktop terminal density */
+@media (min-width: 1200px) {
+  .rfBot {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  .rfHero {
+    display: none !important;
+  }
+
+  .rfChartCard {
+    min-height: 650px !important;
+  }
+
+  .zentoraChart {
+    min-height: 620px !important;
+  }
+
+  .zentoraChartCanvas {
+    height: 550px !important;
+  }
+}
+
+/* Tablet */
+@media (max-width: 1050px) {
+  .zentoraTerminalNav {
+    grid-template-columns: 180px minmax(0,1fr) 95px;
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  .zentoraNavLinks button {
+    padding: 0 10px;
+  }
+
+  .rfMarketGrid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .rfStatsCard {
+    grid-column: auto;
+  }
+}
+
+/* Mobile */
+@media (max-width: 700px) {
+  .zentoraTerminalNav {
+    grid-template-columns: 145px minmax(0,1fr) 76px;
+    height: 60px;
+    min-height: 60px;
+    max-height: 60px;
+  }
+
+  .zentoraNavBrand strong {
+    font-size: 18px;
+  }
+
+  .zentoraNavBrand span {
+    font-size: 6px;
+  }
+
+  .zentoraNavLinks {
+    justify-content: flex-start;
+  }
+
+  .zentoraNavLinks button {
+    padding: 0 8px;
+    font-size: 10px;
+  }
+
+  .zentoraNavLinks button:nth-child(n+4) {
+    display: none;
+  }
+
+  .zentoraNavStatus {
+    min-width: 68px;
+    height: 34px;
+  }
+
+  .rfBot {
+    padding: 8px !important;
+  }
+
+  .rfTradeControls {
+    grid-template-columns: 1fr !important;
+  }
+
+  .rfChartCard {
+    min-height: 470px !important;
+  }
+
+  .zentoraChart {
+    min-height: 450px !important;
+  }
+
+  .zentoraChartCanvas {
+    height: 390px !important;
+  }
+
+  .rfTables {
+    grid-template-columns: 1fr !important;
+  }
+}

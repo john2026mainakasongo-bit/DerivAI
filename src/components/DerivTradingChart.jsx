@@ -13,10 +13,10 @@ const TIMEFRAMES = [
 ];
 
 const DRAW_TOOLS = [
-  { id: "trendline", label: "? Trend" },
-  { id: "horizontal", label: "? H-Line" },
-  { id: "ray", label: "? Ray" },
-  { id: "rectangle", label: "? Rect" },
+  { id: "trendline", label: "Trendline" },
+  { id: "horizontal", label: "H-Line" },
+  { id: "ray", label: "Ray" },
+  { id: "rectangle", label: "Rect" },
   { id: "fibonacci", label: "Fib" },
   { id: "measure", label: "Measure" },
 ];
@@ -186,6 +186,90 @@ function analyzePriceAction(candles) {
   };
 }
 
+function detectStructureEvents(candles) {
+  if (!candles || candles.length < 15) return [];
+
+  const events = [];
+  const lookback = 12;
+
+  for (let i = lookback; i < candles.length; i += 1) {
+    const candle = candles[i];
+    const previous = candles.slice(i - lookback, i);
+    const high = Math.max(...previous.map((item) => item.high));
+    const low = Math.min(...previous.map((item) => item.low));
+    const range = Math.max(0.000001, high - low);
+    const padding = range * 0.025;
+
+    if (candle.close > high && candle.open <= high) {
+      events.push({
+        type: "breakout",
+        direction: "UP",
+        time: candle.time,
+        price: candle.close,
+      });
+    } else if (candle.close < low && candle.open >= low) {
+      events.push({
+        type: "breakout",
+        direction: "DOWN",
+        time: candle.time,
+        price: candle.close,
+      });
+    } else if (
+      candle.high > high &&
+      candle.close <= high &&
+      candle.close >= high - padding
+    ) {
+      events.push({
+        type: "fake",
+        direction: "UP",
+        time: candle.time,
+        price: candle.high,
+      });
+    } else if (
+      candle.low < low &&
+      candle.close >= low &&
+      candle.close <= low + padding
+    ) {
+      events.push({
+        type: "fake",
+        direction: "DOWN",
+        time: candle.time,
+        price: candle.low,
+      });
+    }
+
+    const prior = candles[i - 1];
+
+    if (
+      prior.close > high &&
+      candle.low <= high + padding &&
+      candle.close >= high
+    ) {
+      events.push({
+        type: "retest",
+        direction: "UP",
+        time: candle.time,
+        price: high,
+      });
+    }
+
+    if (
+      prior.close < low &&
+      candle.high >= low - padding &&
+      candle.close <= low
+    ) {
+      events.push({
+        type: "retest",
+        direction: "DOWN",
+        time: candle.time,
+        price: low,
+      });
+    }
+  }
+
+  return events.slice(-12);
+}
+
 function getPointFromEvent(event, chart, candleSeries, container) {
   const rect = container.getBoundingClientRect();
   const x = event.clientX - rect.left;
@@ -247,6 +331,11 @@ export default function DerivTradingChart({
 
   const levels = useMemo(
     () => findLevels(candles),
+    [candles]
+  );
+
+  const structureEvents = useMemo(
+    () => detectStructureEvents(candles),
     [candles]
   );
 
