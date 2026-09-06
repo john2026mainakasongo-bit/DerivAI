@@ -14,7 +14,7 @@ const typeOf = (v) => { const t = String(v?.contract_type || v?.contractType || 
 
 export function TouchNoTouchBotView({ feed }) {
   const auth = useDerivAuth();
-  const { markets = [], market, symbol, connected, authenticatedFeed, status, ticks = [], prices = [], currentPrice, openContracts = [], transactions = [], changeSymbol, placeTrade, sellContract, selectedAccount, selectedAccountType, selectedAccountId, tradeBusy } = feed;
+  const { markets = [], market, symbol, connected, authenticatedFeed, status, ticks = [], prices = [], currentPrice, openContracts = [], transactions = [], changeSymbol, placeTrade, sellContract, selectedAccount, selectedAccountType, selectedAccountId, loadingMarket = false, tradeBusy } = feed;
   const touchContracts = openContracts.filter((contract) => {
     const type = String(contract?.contract_type || contract?.contractType || contract?.type || "").toUpperCase();
     return type === "ONETOUCH" || type === "NOTOUCH" || type === "TOUCH" || type === "NO TOUCH";
