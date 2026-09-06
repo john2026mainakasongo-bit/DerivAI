@@ -1067,7 +1067,7 @@ class DerivTradingClient {
       count: safeCount,
       style: "candles",
       granularity: safeGranularity,
-      subscribe: 0,
+
     });
 
     const candles = Array.isArray(message?.candles)
