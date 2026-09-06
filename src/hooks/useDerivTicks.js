@@ -452,6 +452,30 @@ export default function useDerivTicks() {
     selectedAccountId,
   ]);
 
+  // One connection path only: when the selected account credentials are
+  // present, connect() establishes the authenticated trading socket directly.
+  // This avoids a public->auth->public race and repeated transaction
+  // subscriptions that previously caused unstable status changes.
+  useEffect(() => {
+    if (
+      !auth.authenticated ||
+      !selectedAccountId ||
+      manuallyDisconnectedRef.current
+    ) {
+      return;
+    }
+
+    if (!connected && status !== "CONNECTING") {
+      void connect().catch(() => {});
+    }
+  }, [
+    auth.authenticated,
+    selectedAccountId,
+    connected,
+    status,
+    connect,
+  ]);
+
   const disconnect = useCallback(() => {
     manuallyDisconnectedRef.current = true;
 
@@ -533,6 +557,89 @@ export default function useDerivTicks() {
       });
     },
     [auth.authenticated, auth.selectedAccount?.currency, selectedAccountId]
+  );
+
+  const placeQuotedTrade = useCallback(
+    async ({ quote }) => {
+      if (!auth.authenticated || !selectedAccountId) {
+        throw new Error(
+          "Log in and choose a Demo or Real account first."
+        );
+      }
+
+      if (!quote?.proposalId) {
+        throw new Error("A valid proposal is required before buying.");
+      }
+
+      setTradeBusy(true);
+      setTradeError("");
+
+      try {
+        const selectedConfig = {
+          accessToken: auth.session?.accessToken || "",
+          appId: auth.config?.clientId || "",
+          accountId: selectedAccountId,
+        };
+
+        derivPublicClient.configureAccount(selectedConfig);
+        await derivPublicClient.ensureTradingConnection();
+        sharedTransactionReady = false;
+        await ensureTransactions();
+
+        const bought = await derivPublicClient.buyQuotedContract(quote);
+        const contractId = String(
+          bought?.contractId ||
+            bought?.contract_id ||
+            bought?.buy?.contract_id ||
+            bought?.raw?.buy?.contract_id ||
+            bought?.raw?.data?.buy?.contract_id ||
+            ""
+        );
+
+        if (!contractId) {
+          throw new Error(
+            "Deriv confirmed the purchase but no contract ID was returned."
+          );
+        }
+
+        activeContractIdsRef.current.add(contractId);
+        setOpenContracts((current) => {
+          const optimistic = {
+            contract_id: contractId,
+            id: contractId,
+            status: "OPEN",
+            is_sold: false,
+            is_expired: false,
+            symbol: quote?.request?.symbol || symbolRef.current,
+            underlying: quote?.request?.symbol || symbolRef.current,
+            contract_type: quote?.request?.contractType || "",
+            buy_price: Number(quote?.askPrice || 0),
+            purchase_price: Number(quote?.askPrice || 0),
+            date_start: Math.floor(Date.now() / 1000),
+            duration: Number(quote?.request?.duration || 0),
+            duration_unit: quote?.request?.durationUnit || "t",
+            quantum_pending: true,
+          };
+
+          return [
+            optimistic,
+            ...current.filter(
+              (item) =>
+                String(item?.contract_id || item?.contractId || item?.id || "") !== contractId
+            ),
+          ].slice(0, 30);
+        });
+
+        return { ...bought, contractId };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Trade failed.";
+        setTradeError(message);
+        throw error;
+      } finally {
+        setTradeBusy(false);
+      }
+    },
+    [auth.authenticated, auth.config?.clientId, auth.session?.accessToken, selectedAccountId]
   );
 
   const placeTrade = useCallback(
@@ -765,6 +872,7 @@ export default function useDerivTicks() {
     changeSymbol,
     quoteTrade,
     placeTrade,
+    placeQuotedTrade,
     refreshContract,
     sellContract,
     loadPortfolio,
