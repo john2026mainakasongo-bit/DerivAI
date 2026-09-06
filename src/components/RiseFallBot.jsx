@@ -154,6 +154,7 @@ export default function RiseFallBot() {
     selectedAccountType = "demo",
     selectedAccount = null,
     selectedAccountId = "",
+    ticks = [],
     prices = [],
     currentPrice = null,
     openContracts = [],
@@ -950,7 +951,7 @@ export default function RiseFallBot() {
           </div>
 
           <DerivTradingChart
-              values={prices}
+              values={ticks}
               signal={analysis.signal}
               confidence={analysis.confidence}
             />
@@ -1600,6 +1601,10 @@ function MiniChart({
     </svg>
   );
 }
+
+
+
+
 
 
 
