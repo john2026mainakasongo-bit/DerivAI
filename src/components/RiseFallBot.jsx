@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import { analyzeRiseFall } from "../analysis/riseFallEngine";
@@ -99,7 +99,7 @@ const timeOf = (value) => {
   );
 
   if (!Number.isFinite(epoch)) {
-    return "—";
+    return "â€”";
   }
 
   return new Date(
@@ -135,7 +135,7 @@ const directionOf = (value) => {
     value?.direction ||
     value?.signal ||
     value?.action ||
-    "—"
+    "â€”"
   );
 };
 
@@ -238,7 +238,7 @@ export default function RiseFallBot() {
       ? currentPrice.toFixed(
           market?.decimals ?? 3
         )
-      : "—";
+      : "â€”";
 
   useEffect(() => {
     setRunning(false);
@@ -302,7 +302,7 @@ export default function RiseFallBot() {
       });
 
       setMessage(
-        `${direction} ${won ? "WON" : "LOST"}${id ? ` #${id}` : ""} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)}`
+        `${direction} ${won ? "WON" : "LOST"}${id ? ` #${id}` : ""} â€¢ ${pnl >= 0 ? "+" : ""}${money(pnl, currency)}`
       );
     }
   }, [
@@ -552,11 +552,11 @@ export default function RiseFallBot() {
    *
    * This prevents:
    *
-   * BUY → $0.00 → OPEN
+   * BUY â†’ $0.00 â†’ OPEN
    *
    * from hiding:
    *
-   * SETTLED → actual P/L → WON/LOST
+   * SETTLED â†’ actual P/L â†’ WON/LOST
    */
   const settledContracts =
     openContracts.filter(
@@ -668,14 +668,14 @@ export default function RiseFallBot() {
           </h1>
 
           <p>
-            Real-time ticks • Smart analysis • Trade with confidence
+            Real-time ticks â€¢ Smart analysis â€¢ Trade with confidence
           </p>
         </div>
 
         <div className="rfHeroQuote">
-          “SMALL STEPS
+          â€œSMALL STEPS
           <br />
-          <b>BIG RESULTS</b>”
+          <b>BIG RESULTS</b>â€
         </div>
 
         <div className="rfConnection">
@@ -710,7 +710,7 @@ export default function RiseFallBot() {
 
           <span>
             {selectedAccount?.id ||
-              "—"}
+              "â€”"}
           </span>
         </div>
 
@@ -729,7 +729,7 @@ export default function RiseFallBot() {
                   selectedAccount.balance,
                   currency
                 )
-              : "—"}
+              : "â€”"}
           </strong>
 
           <span>
@@ -802,7 +802,7 @@ export default function RiseFallBot() {
                 )
               }
             >
-              −
+              âˆ’
             </button>
 
             <button
@@ -861,7 +861,7 @@ export default function RiseFallBot() {
             )
           }
         >
-          ▲ RISE
+          â–² RISE
           <small>
             Higher than entry
           </small>
@@ -877,7 +877,7 @@ export default function RiseFallBot() {
             )
           }
         >
-          ▼ FALL
+          â–¼ FALL
           <small>
             Lower than entry
           </small>
@@ -894,8 +894,8 @@ export default function RiseFallBot() {
         >
           <strong>
             {resultFlash.won
-              ? "✓ TRADE WON"
-              : "✕ TRADE LOST"}
+              ? "âœ“ TRADE WON"
+              : "âœ• TRADE LOST"}
           </strong>
 
           <span>
@@ -927,7 +927,7 @@ export default function RiseFallBot() {
               </b>
 
               <span className="liveLabel">
-                ● Live
+                â— Live
               </span>
             </div>
 
@@ -1098,7 +1098,7 @@ export default function RiseFallBot() {
               : ""
           }
         >
-          ● Deriv API{" "}
+          â— Deriv API{" "}
           {connected
             ? "Connected"
             : "Offline"}
@@ -1111,7 +1111,7 @@ export default function RiseFallBot() {
               : ""
           }
         >
-          ● Live market feed
+          â— Live market feed
         </span>
 
         <span
@@ -1121,14 +1121,14 @@ export default function RiseFallBot() {
               : ""
           }
         >
-          ● Trading{" "}
+          â— Trading{" "}
           {authenticatedFeed
             ? "Ready"
             : "Auth Pending"}
         </span>
 
         <span>
-          ●{" "}
+          â—{" "}
           {selectedAccountType ===
           "real"
             ? "Real"
@@ -1143,7 +1143,7 @@ export default function RiseFallBot() {
         </span>
 
         <span>
-          ● Ping: —
+          â— Ping: â€”
         </span>
       </div>
 
@@ -1304,7 +1304,7 @@ function TradeTable({
       Number(v)
     )
       ? Number(v).toFixed(3)
-      : "—";
+      : "â€”";
 
   return (
     <div className="rfTableCard">
@@ -1384,7 +1384,7 @@ function TradeTable({
 
           const displayPnl =
             pnl == null
-              ? "—"
+              ? "â€”"
               : money(
                   pnl,
                   currency

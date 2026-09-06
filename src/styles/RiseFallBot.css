@@ -6,3 +6,154 @@
 .rfTables{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.rfTableCard{overflow:hidden}.rfTableTitle{padding:13px 14px;border-bottom:1px solid #15455c;display:flex;justify-content:space-between}.rfTableTitle span{color:#1bcde1;font-size:9px;font-weight:900}.rfTableHead,.rfTableRow{display:grid;grid-template-columns:30px 70px 1.2fr .8fr 1fr 1fr .65fr;gap:8px;align-items:center;padding:10px 12px;font-size:9px}.rfTableHead{color:#6f94a4;font-weight:900;border-bottom:1px solid #0d3041}.rfTableRow{color:#b8d0da;border-bottom:1px solid #0a2837}.rfTableRow:last-child{border-bottom:0}.rfTableRow span:nth-child(3){color:#e7f6fb}.win{color:#39e6b2}.loss{color:#ff6685}.liveState{color:#4db9e9}.rfEmpty{min-height:135px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#7290a0}.rfEmpty strong{font-size:13px;color:#a9c3cf}.rfEmpty span{font-size:10px}.chartEmpty{min-height:230px}
 .rfBottomBar{display:flex;gap:18px;align-items:center;margin:10px -18px 0;padding:10px 16px;border-top:1px solid #103547;background:#04131f;color:#7895a3;font-size:9px}.rfBottomBar .ok{color:#35dfb4}.rfBottomBar .spacer{margin-left:auto}.rfActions{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding-top:10px}.rfActions button,.rfSettings{min-height:34px;border:1px solid #17465d;border-radius:8px;background:#071c2a;color:#e9f6fb;padding:0 12px;font-weight:900;cursor:pointer}.rfActions .primary{background:#0e97e8;border-color:#0e97e8}.rfActions .danger{background:#7b2138;border-color:#a93654}.realToggle{font-size:9px;color:#91a9b5;font-weight:900}.rfRiskPanel{display:flex;gap:18px;flex-wrap:wrap;margin-top:9px;padding:10px;border:1px solid #183c51;border-radius:9px;color:#86a0af;font-size:9px}.rfRiskPanel b{color:#e6f3fa}.rfStatus{display:flex;justify-content:space-between;gap:12px;margin-top:10px;padding-top:9px;border-top:1px solid #102d3f;color:#7d98a8;font-size:9px}.rfStatus span:first-child{color:#42dfb2;font-weight:1000}.rfError{margin-top:8px;padding:8px 10px;border:1px solid #703049;border-radius:8px;background:#24101a;color:#ff8da7;font-size:10px}
 @media(max-width:1050px){.rfTradeControls{grid-template-columns:1fr 1fr}.rfBigTrade{min-height:46px}.rfMarketGrid{grid-template-columns:1fr}.rfTables{grid-template-columns:1fr}.rfHeroQuote{display:none}}@media(max-width:700px){.rfBot{padding:0 10px 10px}.rfHero{padding:22px 16px;margin:0 -10px 12px}.rfHero h1{font-size:25px}.rfAccountBalance{align-items:flex-start;flex-direction:column}.rfTradeControls{grid-template-columns:1fr}.rfTableHead,.rfTableRow{grid-template-columns:24px 58px 1fr .7fr .8fr .8fr}.rfTableHead span:nth-child(6),.rfTableRow span:nth-child(6){display:none}.rfBottomBar{flex-wrap:wrap}.rfBottomBar .spacer{margin-left:0}.rfActions{justify-content:flex-start;flex-wrap:wrap}}
+
+/* ZENTORA TradingView-style chart */
+
+.zentoraChart {
+  position: relative;
+  width: 100%;
+  min-height: 490px;
+  background: #071018;
+  border: 1px solid #172833;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.zentoraChartToolbar {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  background: #0a151e;
+  border-bottom: 1px solid #172833;
+}
+
+.chartToolGroup {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chartLabel {
+  font-size: 9px;
+  letter-spacing: .08em;
+  color: #6e8495;
+  margin-right: 4px;
+}
+
+.chartTool {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #91a6b7;
+  border-radius: 5px;
+  padding: 6px 9px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chartTool:hover {
+  background: #12222d;
+  color: #dce8ef;
+}
+
+.chartTool.active {
+  background: #163044;
+  border-color: #28516b;
+  color: #fff;
+}
+
+.chartSignal {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: #718797;
+}
+
+.chartSignal strong {
+  font-size: 11px;
+}
+
+.chartSignal strong.rise {
+  color: #19c37d;
+}
+
+.chartSignal strong.fall {
+  color: #ef476f;
+}
+
+.chartSignal small {
+  color: #94a9b8;
+}
+
+.zentoraChartCanvas {
+  width: 100%;
+  height: 430px;
+}
+
+.zentoraChartEmpty {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  color: #667c8c;
+  font-size: 12px;
+}
+
+.zentoraChartLegend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-top: 1px solid #172833;
+  background: #08131b;
+  color: #718797;
+  font-size: 10px;
+}
+
+.zentoraChartLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.zentoraChartLegend i {
+  width: 12px;
+  height: 2px;
+  display: inline-block;
+}
+
+.zentoraChartLegend .ema9 {
+  background: #f5c542;
+}
+
+.zentoraChartLegend .ema21 {
+  background: #55a7ff;
+}
+
+.zentoraChartLegend .ema50 {
+  background: #c77dff;
+}
+
+.zentoraChartLegend .support {
+  background: #19c37d;
+}
+
+.zentoraChartLegend .resistance {
+  background: #ef476f;
+}
+
+@media (max-width: 800px) {
+  .zentoraChartToolbar {
+    flex-wrap: wrap;
+  }
+
+  .zentoraChartLegend {
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
