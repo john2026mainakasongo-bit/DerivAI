@@ -159,13 +159,13 @@ export default function RiseFallBot() {
     currentPrice = null,
     openContracts = [],
     transactions = [],
-    candleHistory = {},
     tradeBusy = false,
     tradeError = "",
     connect,
     disconnect,
     changeSymbol,
     placeTrade,
+    sellContract,
   } = useDerivTicks();
 
   const currency = String(
@@ -188,6 +188,17 @@ export default function RiseFallBot() {
 
   const [duration, setDuration] =
     useState(5);
+
+  // Trade protection / recovery controls.
+  // These are local bot controls; fixed-duration contracts can only be
+  // closed early when Deriv exposes a valid sell price for the contract.
+  const [stopLoss, setStopLoss] = useState(0.35);
+  const [takeProfit, setTakeProfit] = useState(0.35);
+  const [sessionStopLoss, setSessionStopLoss] = useState(3);
+  const [sessionTakeProfit, setSessionTakeProfit] = useState(3);
+  const [recoveryEnabled, setRecoveryEnabled] = useState(true);
+  const [recoveryMultiplier, setRecoveryMultiplier] = useState(2);
+  const [recoveryCount, setRecoveryCount] = useState(0);
 
   const [settingsOpen, setSettingsOpen] =
     useState(false);
@@ -217,6 +228,11 @@ export default function RiseFallBot() {
   const lastAutoAttemptRef =
     useRef(0);
 
+  const recoveryCountRef = useRef(0);
+  const sessionPnlRef = useRef(0);
+  const exitRequestedRef = useRef(new Set());
+  const audioContextRef = useRef(null);
+
   const analysis = useMemo(
     () =>
       analyzeRiseFall(prices, {
@@ -243,7 +259,71 @@ export default function RiseFallBot() {
         )
       : "—";
 
+  const playResultSound = useCallback((won) => {
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+      if (!AudioCtx) return;
+
+      const ctx =
+        audioContextRef.current ||
+        new AudioCtx();
+
+      audioContextRef.current = ctx;
+
+      if (ctx.state === "suspended") {
+        void ctx.resume();
+      }
+
+      const now = ctx.currentTime;
+      const notes = won
+        ? [660, 880]
+        : [440, 260];
+
+      notes.forEach((frequency, index) => {
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        oscillator.type = won ? "sine" : "square";
+        oscillator.frequency.setValueAtTime(
+          frequency,
+          now + index * 0.13
+        );
+
+        gain.gain.setValueAtTime(
+          0.0001,
+          now + index * 0.13
+        );
+        gain.gain.exponentialRampToValueAtTime(
+          won ? 0.12 : 0.08,
+          now + index * 0.13 + 0.02
+        );
+        gain.gain.exponentialRampToValueAtTime(
+          0.0001,
+          now + index * 0.13 + 0.12
+        );
+
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+
+        oscillator.start(now + index * 0.13);
+        oscillator.stop(now + index * 0.13 + 0.14);
+      });
+    } catch {
+      // Browser audio may be blocked until a user gesture. Trading is unaffected.
+    }
+  }, []);
+
   useEffect(() => {
+    setRunning(false);
+
+    recoveryCountRef.current = 0;
+    sessionPnlRef.current = 0;
+    exitRequestedRef.current.clear();
+    setRecoveryCount(0);
+    lastAutoSignalRef.current = "";
     setRunning(false);
 
     lastAutoSignalRef.current = "";
@@ -260,57 +340,6 @@ export default function RiseFallBot() {
   }, [
     accountId,
     selectedAccountType,
-  ]);
-
-  /*
-   * Settlement handler.
-   *
-   * IMPORTANT:
-   * A contract can arrive several times while it is open.
-   * We only process the final settled snapshot once.
-   */
-  useEffect(() => {
-    for (const contract of openContracts) {
-      if (!settled(contract)) {
-        continue;
-      }
-
-      const id = idOf(contract);
-
-      if (
-        !id ||
-        processedRef.current.has(id)
-      ) {
-        continue;
-      }
-
-      processedRef.current.add(id);
-
-      const pnl = profitOf(contract);
-      const direction =
-        directionOf(contract);
-
-      riskRef.current.onResult(
-        id,
-        pnl
-      );
-
-      const won = pnl >= 0;
-
-      setResultFlash({
-        id,
-        direction,
-        pnl,
-        won,
-      });
-
-      setMessage(
-        `${direction} ${won ? "WON" : "LOST"}${id ? ` #${id}` : ""} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)}`
-      );
-    }
-  }, [
-    openContracts,
-    currency,
   ]);
 
   /*
@@ -332,7 +361,8 @@ export default function RiseFallBot() {
   const execute = useCallback(
     async (
       source = "manual",
-      forcedSignal = null
+      forcedSignal = null,
+      forcedStake = null
     ) => {
       if (busyRef.current) return;
 
@@ -352,6 +382,11 @@ export default function RiseFallBot() {
       const direction =
         forcedSignal ||
         analysis.signal;
+
+      const tradeStake = Math.max(
+        0.35,
+        Number(forcedStake ?? stake) || 0.35
+      );
 
       if (
         !["RISE", "FALL"].includes(
@@ -408,7 +443,9 @@ export default function RiseFallBot() {
         } ${direction}${
           source === "auto"
             ? ` ${analysis.confidence}%`
-            : ""
+            : source === "recovery"
+              ? ` x${recoveryMultiplier} • ${money(tradeStake, currency)}`
+              : ""
         }...`
       );
 
@@ -420,7 +457,7 @@ export default function RiseFallBot() {
                 ? "CALL"
                 : "PUT",
             amount:
-              Number(stake),
+              tradeStake,
             basis: "stake",
             duration:
               Number(duration),
@@ -464,11 +501,177 @@ export default function RiseFallBot() {
       connected,
       duration,
       placeTrade,
+      recoveryMultiplier,
       selectedAccountType,
       stake,
       symbol,
     ]
   );
+
+  /*
+   * Settlement handler.
+   *
+   * IMPORTANT:
+   * A contract can arrive several times while it is open.
+   * We only process the final settled snapshot once.
+   */
+  useEffect(() => {
+    for (const contract of openContracts) {
+      if (!settled(contract)) {
+        continue;
+      }
+
+      const id = idOf(contract);
+
+      if (
+        !id ||
+        processedRef.current.has(id)
+      ) {
+        continue;
+      }
+
+      processedRef.current.add(id);
+
+      const pnl = profitOf(contract);
+      const direction =
+        directionOf(contract);
+
+      riskRef.current.onResult(
+        id,
+        pnl
+      );
+
+      const won = pnl >= 0;
+
+      setResultFlash({
+        id,
+        direction,
+        pnl,
+        won,
+      });
+
+      playResultSound(won);
+
+      if (won) {
+        recoveryCountRef.current = 0;
+        setRecoveryCount(0);
+      }
+
+      setMessage(
+        `${direction} ${won ? "WON" : "LOST"}${id ? ` #${id}` : ""} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)}`
+      );
+
+      // Session-level hard stops.
+      sessionPnlRef.current += Number(pnl || 0);
+      const sessionPnl = sessionPnlRef.current;
+
+      if (
+        sessionPnl >= Math.max(0, Number(sessionTakeProfit) || 0)
+      ) {
+        setRunning(false);
+        lastAutoSignalRef.current = "";
+        setMessage(
+          `TAKE PROFIT reached • ${money(sessionPnl, currency)}`
+        );
+      } else if (
+        sessionPnl <= -Math.max(0, Number(sessionStopLoss) || 0)
+      ) {
+        setRunning(false);
+        lastAutoSignalRef.current = "";
+        setMessage(
+          `STOP LOSS reached • ${money(sessionPnl, currency)}`
+        );
+      } else if (
+        !won &&
+        running &&
+        recoveryEnabled &&
+        recoveryCountRef.current < 1
+      ) {
+        recoveryCountRef.current = 1;
+        setRecoveryCount(1);
+        setMessage(
+          `${direction} LOST • Recovery x${recoveryMultiplier} armed`
+        );
+
+        window.setTimeout(() => {
+          void execute(
+            "recovery",
+            direction,
+            Number(stake) * Number(recoveryMultiplier)
+          );
+        }, 250);
+      }
+    }
+  }, [
+    currency,
+    playResultSound,
+    recoveryEnabled,
+    recoveryMultiplier,
+    running,
+    sessionStopLoss,
+    sessionTakeProfit,
+    stake,
+    openContracts,
+    currency,
+    execute,
+  ]);
+
+  /*
+   * Per-trade protection.
+   *
+   * Rise/Fall contracts are fixed-duration products. We can request an
+   * early sell only when Deriv provides a sellable contract/price.
+   */
+  useEffect(() => {
+    if (!openContracts.length) return;
+
+    for (const contract of openContracts) {
+      if (settled(contract)) continue;
+
+      const id = idOf(contract);
+      if (!id || exitRequestedRef.current.has(id)) continue;
+
+      const pnlValue = Number(
+        contract?.profit ??
+          contract?.profit_loss ??
+          contract?.pnl
+      );
+
+      if (!Number.isFinite(pnlValue)) continue;
+
+      const hitTakeProfit =
+        Number(takeProfit) > 0 &&
+        pnlValue >= Number(takeProfit);
+
+      const hitStopLoss =
+        Number(stopLoss) > 0 &&
+        pnlValue <= -Number(stopLoss);
+
+      if (!hitTakeProfit && !hitStopLoss) continue;
+
+      exitRequestedRef.current.add(id);
+
+      const reason = hitTakeProfit
+        ? "TAKE PROFIT"
+        : "STOP LOSS";
+
+      setMessage(
+        `${reason} triggered for #${id} • ${money(pnlValue, currency)}`
+      );
+
+      void sellContract(id, 0).catch(() => {
+        // If early selling is unavailable for this contract, allow the
+        // contract to continue to normal expiry instead of retrying rapidly.
+      });
+    }
+  }, [
+    currency,
+    openContracts,
+    sellContract,
+    stopLoss,
+    takeProfit,
+  ]);
+
 
   useEffect(() => {
     if (
@@ -530,6 +733,10 @@ export default function RiseFallBot() {
     riskRef.current.reset();
 
     processedRef.current.clear();
+    exitRequestedRef.current.clear();
+    sessionPnlRef.current = 0;
+    recoveryCountRef.current = 0;
+    setRecoveryCount(0);
 
     lastAutoSignalRef.current =
       "";
@@ -952,11 +1159,10 @@ export default function RiseFallBot() {
           </div>
 
           <DerivTradingChart
-            values={ticks}
-            candleHistory={candleHistory}
-            signal={analysis.signal}
-            confidence={analysis.confidence}
-          />
+              values={ticks}
+              signal={analysis.signal}
+              confidence={analysis.confidence}
+            />
         </div>
 
         <div className="rfAiCard">
@@ -1076,6 +1282,17 @@ export default function RiseFallBot() {
               risk.sessionPnl,
               currency
             )}
+          />
+
+          <Stat
+            label="Recovery"
+            value={
+              recoveryEnabled
+                ? recoveryCount
+                  ? "USED"
+                  : "READY"
+                : "OFF"
+            }
           />
         </div>
       </div>
@@ -1212,13 +1429,81 @@ export default function RiseFallBot() {
 
       {settingsOpen && (
         <div className="rfRiskPanel">
+          <label>
+            Stop Loss / trade
+            <input
+              type="number"
+              min="0"
+              step="0.05"
+              value={stopLoss}
+              onChange={(e) =>
+                setStopLoss(
+                  Math.max(0, Number(e.target.value) || 0)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Take Profit / trade
+            <input
+              type="number"
+              min="0"
+              step="0.05"
+              value={takeProfit}
+              onChange={(e) =>
+                setTakeProfit(
+                  Math.max(0, Number(e.target.value) || 0)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Session Stop Loss
+            <input
+              type="number"
+              min="0"
+              step="0.50"
+              value={sessionStopLoss}
+              onChange={(e) =>
+                setSessionStopLoss(
+                  Math.max(0, Number(e.target.value) || 0)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Session Take Profit
+            <input
+              type="number"
+              min="0"
+              step="0.50"
+              value={sessionTakeProfit}
+              onChange={(e) =>
+                setSessionTakeProfit(
+                  Math.max(0, Number(e.target.value) || 0)
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Recovery x2
+            <input
+              type="checkbox"
+              checked={recoveryEnabled}
+              onChange={(e) =>
+                setRecoveryEnabled(e.target.checked)
+              }
+            />
+          </label>
+
           <span>
-            Max session loss{" "}
+            Recovery
             <b>
-              {money(
-                3,
-                currency
-              )}
+              {recoveryCount ? "USED" : "READY"}
             </b>
           </span>
 
@@ -1230,13 +1515,6 @@ export default function RiseFallBot() {
           <span>
             Max open{" "}
             <b>1</b>
-          </span>
-
-          <span>
-            2 losses{" "}
-            <b>
-              60s pause
-            </b>
           </span>
         </div>
       )}
