@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -134,7 +134,7 @@ export default function useDerivTicks() {
       markets[0] || {
         id: "",
         label: "No market selected",
-        short: "â€”",
+        short: "Ã¢â‚¬â€",
         decimals: 3,
       },
     [markets, symbol]
@@ -262,6 +262,11 @@ export default function useDerivTicks() {
         );
       }
 
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
       setConnected(true);
       setStatus("CONNECTED");
       setStatusDetail(
@@ -311,15 +316,16 @@ export default function useDerivTicks() {
       }
 
       if (
-        ["OFFLINE", "ERROR"].includes(next.status) &&
-        !manuallyDisconnectedRef.current &&
-        !auth.authenticated
+        ["OFFLINE", "ERROR", "DISCONNECTED"].includes(next.status) &&
+        !manuallyDisconnectedRef.current
       ) {
         if (reconnectTimer) window.clearTimeout(reconnectTimer);
 
         reconnectTimer = window.setTimeout(() => {
           reconnectTimer = null;
-          void connect().catch(() => {});
+          if (!manuallyDisconnectedRef.current) {
+            void connect().catch(() => {});
+          }
         }, 1500);
       }
     });
@@ -468,6 +474,47 @@ export default function useDerivTicks() {
     if (!connected && status !== "CONNECTING") {
       void connect().catch(() => {});
     }
+  }, [
+    auth.authenticated,
+    selectedAccountId,
+    connected,
+    status,
+    connect,
+  ]);
+
+  // V5: persistent connection watchdog. It retries only while the user is
+  // authenticated and has a selected account; manual Disconnect disables it.
+  useEffect(() => {
+    if (!auth.authenticated || !selectedAccountId || manuallyDisconnectedRef.current) {
+      return undefined;
+    }
+
+    let disposed = false;
+    let timer = null;
+
+    const attempt = async () => {
+      if (disposed || manuallyDisconnectedRef.current || connected || status === "CONNECTING") {
+        return;
+      }
+      try {
+        await connect();
+      } catch (_) {
+        // The next watchdog cycle retries. The UI already exposes statusDetail.
+      }
+    };
+
+    const tick = () => {
+      if (disposed) return;
+      void attempt();
+      timer = window.setTimeout(tick, 4000);
+    };
+
+    timer = window.setTimeout(tick, 250);
+
+    return () => {
+      disposed = true;
+      if (timer) window.clearTimeout(timer);
+    };
   }, [
     auth.authenticated,
     selectedAccountId,
@@ -879,6 +926,7 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
+
 
 
 
