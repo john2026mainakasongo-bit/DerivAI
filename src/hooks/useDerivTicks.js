@@ -123,6 +123,11 @@ export default function useDerivTicks() {
   const mountedRef = useRef(true);
   const manuallyDisconnectedRef = useRef(false);
 
+  // V5.1: dedupe market bootstrap requests and avoid repeated ticks_history bursts.
+  const loadSymbolPromiseRef = useRef(null);
+  const loadedSymbolRef = useRef("");
+  const loadedAtRef = useRef(0);
+
   // V29: remember contracts bought during this account session.
   const activeContractIdsRef = useRef(new Set());
 
@@ -159,11 +164,34 @@ export default function useDerivTicks() {
       throw new Error("No Deriv market was selected.");
     }
 
+    // If another reconnect/bootstrap already loaded this symbol, reuse it.
+    if (
+      loadSymbolPromiseRef.current?.symbol === nextSymbol &&
+      loadSymbolPromiseRef.current?.promise
+    ) {
+      return loadSymbolPromiseRef.current.promise;
+    }
+
+    const now = Date.now();
+    const recentlyLoaded =
+      loadedSymbolRef.current === nextSymbol &&
+      now - loadedAtRef.current < 15000;
+
     symbolRef.current = nextSymbol;
     setSymbol(nextSymbol);
-    setLoadingMarket(true);
 
-    // Never trade or draw using data from the previous market.
+    // A reconnect does not need another large history/candle burst. The live
+    // tick subscription is enough to keep the existing analysis warm.
+    if (recentlyLoaded) {
+      try {
+        await derivPublicClient.subscribeTicks(nextSymbol);
+      } catch (error) {
+        if (!duplicateSubscription(error)) throw error;
+      }
+      return;
+    }
+
+    setLoadingMarket(true);
     setTicks([]);
     setCandleHistory({
       60: [],
@@ -171,32 +199,49 @@ export default function useDerivTicks() {
       900: [],
     });
 
-    try {
-      const [history, oneMinute, fiveMinute, fifteenMinute] =
-        await Promise.all([
-          derivPublicClient.getHistory(nextSymbol, 5000),
-          derivPublicClient.getCandleHistory(nextSymbol, 60, 200),
-          derivPublicClient.getCandleHistory(nextSymbol, 300, 200),
-          derivPublicClient.getCandleHistory(nextSymbol, 900, 200),
-        ]);
-
-      if (!mountedRef.current) return;
-
-      setTicks(history.slice(-5000));
-      setCandleHistory({
-        60: oneMinute,
-        300: fiveMinute,
-        900: fifteenMinute,
-      });
-
+    const promise = (async () => {
       try {
-        await derivPublicClient.subscribeTicks(nextSymbol);
-      } catch (error) {
-        if (!duplicateSubscription(error)) throw error;
+        const [history, oneMinute, fiveMinute, fifteenMinute] =
+          await Promise.all([
+            // Keep bootstrap bounded so reconnects do not create a burst of
+            // large ticks_history/candle requests.
+            derivPublicClient.getHistory(nextSymbol, 500),
+            derivPublicClient.getCandleHistory(nextSymbol, 60, 120),
+            derivPublicClient.getCandleHistory(nextSymbol, 300, 120),
+            derivPublicClient.getCandleHistory(nextSymbol, 900, 120),
+          ]);
+
+        if (!mountedRef.current) return;
+
+        setTicks(history.slice(-500));
+        setCandleHistory({
+          60: oneMinute,
+          300: fiveMinute,
+          900: fifteenMinute,
+        });
+
+        try {
+          await derivPublicClient.subscribeTicks(nextSymbol);
+        } catch (error) {
+          if (!duplicateSubscription(error)) throw error;
+        }
+
+        loadedSymbolRef.current = nextSymbol;
+        loadedAtRef.current = Date.now();
+      } finally {
+        if (mountedRef.current) setLoadingMarket(false);
+        if (loadSymbolPromiseRef.current?.symbol === nextSymbol) {
+          loadSymbolPromiseRef.current = null;
+        }
       }
-    } finally {
-      if (mountedRef.current) setLoadingMarket(false);
-    }
+    })();
+
+    loadSymbolPromiseRef.current = {
+      symbol: nextSymbol,
+      promise,
+    };
+
+    return promise;
   }, []);
 
   const connect = useCallback(async () => {
@@ -471,7 +516,7 @@ export default function useDerivTicks() {
       return;
     }
 
-    if (!connected && status !== "CONNECTING") {
+    if (!connected && status !== "CONNECTING" && !loadingMarket) {
       void connect().catch(() => {});
     }
   }, [
@@ -479,6 +524,7 @@ export default function useDerivTicks() {
     selectedAccountId,
     connected,
     status,
+    loadingMarket,
     connect,
   ]);
 
@@ -926,6 +972,7 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
+
 
 
 
