@@ -164,7 +164,8 @@ export default function useDerivTicks() {
       throw new Error("No Deriv market was selected.");
     }
 
-    // If another reconnect/bootstrap already loaded this symbol, reuse it.
+    // V5.2.1: never let historical data block the live market connection.
+    // If another bootstrap is already subscribing/loading this symbol, reuse it.
     if (
       loadSymbolPromiseRef.current?.symbol === nextSymbol &&
       loadSymbolPromiseRef.current?.promise
@@ -172,22 +173,20 @@ export default function useDerivTicks() {
       return loadSymbolPromiseRef.current.promise;
     }
 
-    const now = Date.now();
     const recentlyLoaded =
       loadedSymbolRef.current === nextSymbol &&
-      now - loadedAtRef.current < 15000;
+      Date.now() - loadedAtRef.current < 15_000;
 
     symbolRef.current = nextSymbol;
     setSymbol(nextSymbol);
 
-    // A reconnect does not need another large history/candle burst. The live
-    // tick subscription is enough to keep the existing analysis warm.
     if (recentlyLoaded) {
       try {
         await derivPublicClient.subscribeTicks(nextSymbol);
       } catch (error) {
         if (!duplicateSubscription(error)) throw error;
       }
+      if (mountedRef.current) setLoadingMarket(false);
       return;
     }
 
@@ -199,41 +198,64 @@ export default function useDerivTicks() {
       900: [],
     });
 
+    // CRITICAL: the promise returned here resolves immediately after the
+    // live tick subscription. Background history/candles are NOT awaited.
     const promise = (async () => {
       try {
-        const [history, oneMinute, fiveMinute, fifteenMinute] =
-          await Promise.all([
-            // Keep bootstrap bounded so reconnects do not create a burst of
-            // large ticks_history/candle requests.
-            derivPublicClient.getHistory(nextSymbol, 500),
-            derivPublicClient.getCandleHistory(nextSymbol, 60, 120),
-            derivPublicClient.getCandleHistory(nextSymbol, 300, 120),
-            derivPublicClient.getCandleHistory(nextSymbol, 900, 120),
-          ]);
-
-        if (!mountedRef.current) return;
-
-        setTicks(history.slice(-500));
-        setCandleHistory({
-          60: oneMinute,
-          300: fiveMinute,
-          900: fifteenMinute,
-        });
-
-        try {
-          await derivPublicClient.subscribeTicks(nextSymbol);
-        } catch (error) {
-          if (!duplicateSubscription(error)) throw error;
-        }
-
-        loadedSymbolRef.current = nextSymbol;
-        loadedAtRef.current = Date.now();
-      } finally {
-        if (mountedRef.current) setLoadingMarket(false);
-        if (loadSymbolPromiseRef.current?.symbol === nextSymbol) {
-          loadSymbolPromiseRef.current = null;
-        }
+        await derivPublicClient.subscribeTicks(nextSymbol);
+      } catch (error) {
+        if (!duplicateSubscription(error)) throw error;
       }
+
+      loadedSymbolRef.current = nextSymbol;
+      loadedAtRef.current = Date.now();
+
+      // The live feed is ready now. Release the connection gate immediately.
+      if (mountedRef.current) setLoadingMarket(false);
+
+      // IMPORTANT: launch enrichment without awaiting it. This allows
+      // connect() to finish and status to become CONNECTED immediately.
+      void (async () => {
+        try {
+          const history = await derivPublicClient.getHistory(nextSymbol, 500);
+          if (mountedRef.current && symbolRef.current === nextSymbol) {
+            setTicks(history.slice(-500));
+          }
+        } catch (error) {
+          console.warn("[ZENTORA] Background tick history unavailable:", error);
+        }
+
+        const candleRequests = [
+          [60, 120],
+          [300, 120],
+          [900, 120],
+        ];
+
+        for (const [granularity, count] of candleRequests) {
+          try {
+            const candles = await derivPublicClient.getCandleHistory(
+              nextSymbol,
+              granularity,
+              count
+            );
+
+            if (mountedRef.current && symbolRef.current === nextSymbol) {
+              setCandleHistory((current) => ({
+                ...current,
+                [granularity]: candles,
+              }));
+            }
+          } catch (error) {
+            console.warn(
+              `[ZENTORA] Background ${granularity}s candles unavailable:`,
+              error
+            );
+          }
+
+          // Small pacing gap between historical market-data calls.
+          await new Promise((resolve) => window.setTimeout(resolve, 150));
+        }
+      })();
     })();
 
     loadSymbolPromiseRef.current = {
@@ -241,10 +263,14 @@ export default function useDerivTicks() {
       promise,
     };
 
-    return promise;
-  }, []);
+    promise.finally(() => {
+      if (loadSymbolPromiseRef.current?.symbol === nextSymbol) {
+        loadSymbolPromiseRef.current = null;
+      }
+    }).catch(() => {});
 
-  const connect = useCallback(async () => {
+    return promise;
+  }, []);  const connect = useCallback(async () => {
     manuallyDisconnectedRef.current = false;
     setTradeError("");
     setStatus("CONNECTING");
@@ -972,6 +998,8 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
+
+
 
 
 
