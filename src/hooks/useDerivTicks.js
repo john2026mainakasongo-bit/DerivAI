@@ -452,30 +452,6 @@ export default function useDerivTicks() {
     selectedAccountId,
   ]);
 
-  // One connection path only: when the selected account credentials are
-  // present, connect() establishes the authenticated trading socket directly.
-  // This avoids a public->auth->public race and repeated transaction
-  // subscriptions that previously caused unstable status changes.
-  useEffect(() => {
-    if (
-      !auth.authenticated ||
-      !selectedAccountId ||
-      manuallyDisconnectedRef.current
-    ) {
-      return;
-    }
-
-    if (!connected && status !== "CONNECTING") {
-      void connect().catch(() => {});
-    }
-  }, [
-    auth.authenticated,
-    selectedAccountId,
-    connected,
-    status,
-    connect,
-  ]);
-
   const disconnect = useCallback(() => {
     manuallyDisconnectedRef.current = true;
 
