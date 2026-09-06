@@ -140,7 +140,7 @@ const directionOf = (value) => {
   );
 };
 
-export default function RiseFallBot() {
+export function RiseFallBotView({ feed }) {
   const auth = useDerivAuth();
 
   const {
@@ -166,7 +166,7 @@ export default function RiseFallBot() {
     changeSymbol,
     placeTrade,
     sellContract,
-  } = useDerivTicks();
+  } = feed || {};
 
   const currency = String(
     selectedAccount?.currency || "USD"
@@ -179,6 +179,11 @@ export default function RiseFallBot() {
       selectedAccount?.loginid ||
       ""
   );
+
+  const riseFallContracts = openContracts.filter((contract) => {
+    const type = String(contract?.contract_type || contract?.contractType || contract?.type || "").toUpperCase();
+    return type === "CALL" || type === "PUT" || type === "RISE" || type === "FALL";
+  });
 
   const [running, setRunning] =
     useState(false);
@@ -516,7 +521,7 @@ export default function RiseFallBot() {
    * We only process the final settled snapshot once.
    */
   useEffect(() => {
-    for (const contract of openContracts) {
+    for (const contract of riseFallContracts) {
       if (!settled(contract)) {
         continue;
       }
@@ -625,7 +630,7 @@ export default function RiseFallBot() {
   useEffect(() => {
     if (!openContracts.length) return;
 
-    for (const contract of openContracts) {
+    for (const contract of riseFallContracts) {
       if (settled(contract)) continue;
 
       const id = idOf(contract);
@@ -769,7 +774,7 @@ export default function RiseFallBot() {
    * SETTLED → actual P/L → WON/LOST
    */
   const settledContracts =
-    openContracts.filter(
+    riseFallContracts.filter(
       (contract) =>
         settled(contract)
     );
@@ -856,7 +861,7 @@ export default function RiseFallBot() {
       .slice(0, 8);
 
   const open =
-    openContracts
+    riseFallContracts
       .filter(
         (c) => !settled(c)
       )
@@ -1888,3 +1893,9 @@ function MiniChart({
 
 
 
+
+
+export default function RiseFallBot() {
+  const feed = useDerivTicks();
+  return <RiseFallBotView feed={feed} />;
+}

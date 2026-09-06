@@ -12,10 +12,14 @@ const pnlOf = (v) => Number(v?.profit ?? v?.profit_loss ?? v?.pnl ?? 0);
 const timeOf = (v) => { const t = Number(v?.date_start || v?.transaction_time || v?.date || v?.purchase_time || v?.epoch); return Number.isFinite(t) ? new Date(t * 1000).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"}) : "—"; };
 const typeOf = (v) => { const t = String(v?.contract_type || v?.contractType || v?.type || "").toUpperCase(); return t === "ONETOUCH" ? "TOUCH" : t === "NOTOUCH" ? "NO TOUCH" : t || "—"; };
 
-export default function TouchNoTouchBot() {
+export function TouchNoTouchBotView({ feed }) {
   const auth = useDerivAuth();
-  const feed = useDerivTicks();
   const { markets = [], market, symbol, connected, authenticatedFeed, status, ticks = [], prices = [], currentPrice, openContracts = [], transactions = [], changeSymbol, placeTrade, sellContract, selectedAccount, selectedAccountType, selectedAccountId, tradeBusy } = feed;
+  const touchContracts = openContracts.filter((contract) => {
+    const type = String(contract?.contract_type || contract?.contractType || contract?.type || "").toUpperCase();
+    return type === "ONETOUCH" || type === "NOTOUCH" || type === "TOUCH" || type === "NO TOUCH";
+  });
+
   const currency = String(selectedAccount?.currency || "USD").toUpperCase();
   const [running, setRunning] = useState(false);
   const [stakeMode, setStakeMode] = useState("ADAPTIVE");
@@ -123,7 +127,7 @@ export default function TouchNoTouchBot() {
   }, [analysis, execute, minScore, running, symbol]);
 
   useEffect(() => {
-    for (const c of openContracts) {
+    for (const c of touchContracts) {
       if (settled(c)) continue;
       const id = idOf(c);
       if (!id || exitRequestedRef.current.has(id)) continue;
@@ -136,10 +140,10 @@ export default function TouchNoTouchBot() {
       setMessage(`${pnl >= 0 ? "TRADE TP" : "TRADE SL"} • #${id}`);
       void sellContract(id, 0).catch(() => {});
     }
-  }, [openContracts, sellContract]);
+  }, [touchContracts, sellContract]);
 
   useEffect(() => {
-    for (const c of openContracts) {
+    for (const c of touchContracts) {
       if (!settled(c)) continue;
       const id = idOf(c);
       if (!id || processedRef.current.has(id)) continue;
@@ -152,7 +156,7 @@ export default function TouchNoTouchBot() {
       setFlash({ won, pnl, type: typeOf(c) }); sound(won);
       setMessage(`${won ? "✓ WIN" : "✕ LOSS"} • ${typeOf(c)} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)}`);
     }
-  }, [currency, openContracts, recoveryEnabled, recoveryUsed, running, sound]);
+  }, [currency, touchContracts, recoveryEnabled, recoveryUsed, running, sound]);
 
   useEffect(() => {
     if (!running || !recoveryPendingRef.current || recoveryUsed || !analysis.ready || analysis.signal === "WAIT") return;
@@ -167,8 +171,8 @@ export default function TouchNoTouchBot() {
     if (sessionStop > 0 && sessionPnl <= -sessionStop) { setRunning(false); setMessage(`STOP LOSS • ${money(sessionPnl, currency)}`); }
   }, [currency, running, sessionPnl, sessionStop, sessionTarget]);
 
-  const recent = useMemo(() => openContracts.filter(settled).sort((a,b) => Number(b?.date_start || b?.transaction_time || 0) - Number(a?.date_start || a?.transaction_time || 0)).slice(0, 8), [openContracts]);
-  const open = openContracts.filter((c) => !settled(c)).slice(0, 8);
+  const recent = useMemo(() => touchContracts.filter(settled).sort((a,b) => Number(b?.date_start || b?.transaction_time || 0) - Number(a?.date_start || a?.transaction_time || 0)).slice(0, 8), [openContracts]);
+  const open = touchContracts.filter((c) => !settled(c)).slice(0, 8);
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
@@ -216,4 +220,10 @@ export default function TouchNoTouchBot() {
       <footer className="tntFooter"><span className={connected ? "ok" : ""}>● Deriv API {connected ? "Connected" : "Offline"}</span><span>● Live market feed</span><span>● {authenticatedFeed ? "Trading Ready" : "Trading Auth Pending"}</span><span>● {selectedAccountType === "real" ? "Real Account" : "Demo Account"}</span><span className="tntMessage">{tradeBusy ? "EXECUTING…" : message}</span></footer>
     </section>
   );
+}
+
+
+export default function TouchNoTouchBot() {
+  const feed = useDerivTicks();
+  return <TouchNoTouchBotView feed={feed} />;
 }
