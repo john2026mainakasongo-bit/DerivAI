@@ -4,6 +4,7 @@ import { useDerivAuth } from "../auth/DerivAuthContext";
 import { analyzeRiseFall } from "../analysis/riseFallEngine";
 import { createRiskManager } from "../bot/riskManager";
 import "../styles/RiseFallBot.css";
+import DerivTradingChart from "./DerivTradingChart";
 
 const pct = (value) =>
   `${Number(value || 0).toFixed(1)}%`;
@@ -948,9 +949,11 @@ export default function RiseFallBot() {
             <span>15M</span>
           </div>
 
-          <MiniChart
-            values={chartPrices}
-          />
+          <DerivTradingChart
+              values={prices}
+              signal={analysis.signal}
+              confidence={analysis.confidence}
+            />
         </div>
 
         <div className="rfAiCard">
@@ -1597,3 +1600,6 @@ function MiniChart({
     </svg>
   );
 }
+
+
+
