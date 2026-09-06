@@ -12,6 +12,15 @@ const TIMEFRAMES = [
   { label: "15m", seconds: 900 },
 ];
 
+const DRAW_TOOLS = [
+  { id: "trendline", label: "↗ Trend" },
+  { id: "horizontal", label: "━ H-Line" },
+  { id: "ray", label: "→ Ray" },
+  { id: "rectangle", label: "▭ Rect" },
+  { id: "fibonacci", label: "Fib" },
+  { id: "measure", label: "Measure" },
+];
+
 function buildCandles(ticks, seconds) {
   const map = new Map();
 
@@ -51,9 +60,7 @@ function calculateEMA(candles, period) {
 
   return candles.map((candle, index) => {
     if (index > 0) {
-      ema =
-        (candle.close - ema) * multiplier +
-        ema;
+      ema = (candle.close - ema) * multiplier + ema;
     }
 
     return {
@@ -84,6 +91,36 @@ function findLevels(candles) {
   };
 }
 
+function getPointFromEvent(event, chart, candleSeries, container) {
+  const rect = container.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  const time = chart.timeScale().coordinateToTime(x);
+  const price = candleSeries.coordinateToPrice(y);
+
+  if (time == null || price == null) return null;
+
+  return {
+    time: Number(time),
+    price: Number(price),
+  };
+}
+
+function fibLevels(first, second) {
+  const diff = second.price - first.price;
+
+  return [
+    { ratio: 0, price: first.price },
+    { ratio: 0.236, price: first.price + diff * 0.236 },
+    { ratio: 0.382, price: first.price + diff * 0.382 },
+    { ratio: 0.5, price: first.price + diff * 0.5 },
+    { ratio: 0.618, price: first.price + diff * 0.618 },
+    { ratio: 0.786, price: first.price + diff * 0.786 },
+    { ratio: 1, price: second.price },
+  ];
+}
+
 export default function DerivTradingChart({
   values = [],
   signal = "",
@@ -102,6 +139,11 @@ export default function DerivTradingChart({
   const [timeframe, setTimeframe] = useState(60);
   const [showEMA, setShowEMA] = useState(true);
   const [showLevels, setShowLevels] = useState(true);
+
+  const [activeTool, setActiveTool] = useState(null);
+  const [drawings, setDrawings] = useState([]);
+  const [pendingPoint, setPendingPoint] = useState(null);
+  const [, forceOverlayUpdate] = useState(0);
 
   const candles = useMemo(
     () => buildCandles(values, timeframe),
@@ -232,14 +274,24 @@ export default function DerivTradingChart({
       chart.applyOptions({
         width: containerRef.current.clientWidth,
       });
+
+      forceOverlayUpdate((value) => value + 1);
     };
 
     const observer = new ResizeObserver(resize);
     observer.observe(containerRef.current);
 
+    const updateOverlay = () => {
+      forceOverlayUpdate((value) => value + 1);
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updateOverlay);
+
     return () => {
       observer.disconnect();
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updateOverlay);
       chart.remove();
+
       chartRef.current = null;
       candleRef.current = null;
       ema9Ref.current = null;
@@ -307,11 +359,11 @@ export default function DerivTradingChart({
           text: `${signal} ${confidence || 0}%`,
         },
       ]);
+    } else {
+      markersRef.current?.setMarkers([]);
     }
 
-    if (candles.length) {
-      chartRef.current?.timeScale().fitContent();
-    }
+    forceOverlayUpdate((value) => value + 1);
   }, [
     candles,
     levels,
@@ -320,6 +372,265 @@ export default function DerivTradingChart({
     showEMA,
     showLevels,
   ]);
+
+  useEffect(() => {
+    setPendingPoint(null);
+  }, [activeTool, timeframe]);
+
+  const handleDrawingClick = (event) => {
+    if (!activeTool || !chartRef.current || !candleRef.current) {
+      return;
+    }
+
+    const point = getPointFromEvent(
+      event,
+      chartRef.current,
+      candleRef.current,
+      containerRef.current
+    );
+
+    if (!point) return;
+
+    if (activeTool === "horizontal") {
+      setDrawings((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          type: "horizontal",
+          a: point,
+          b: point,
+        },
+      ]);
+
+      setActiveTool(null);
+      setPendingPoint(null);
+      return;
+    }
+
+    if (!pendingPoint) {
+      setPendingPoint(point);
+      return;
+    }
+
+    setDrawings((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        type: activeTool,
+        a: pendingPoint,
+        b: point,
+      },
+    ]);
+
+    setPendingPoint(null);
+    setActiveTool(null);
+  };
+
+  const clearDrawings = () => {
+    setDrawings([]);
+    setPendingPoint(null);
+    setActiveTool(null);
+  };
+
+  const getXY = (point) => {
+    if (!chartRef.current) return null;
+
+    const x = chartRef.current
+      .timeScale()
+      .timeToCoordinate(point.time);
+
+    const y = candleRef.current?.priceToCoordinate(point.price);
+
+    if (x == null || y == null) return null;
+
+    return { x, y };
+  };
+
+  const renderDrawing = (drawing) => {
+    const first = getXY(drawing.a);
+    const second = getXY(drawing.b);
+
+    if (!first || !second) return null;
+
+    if (drawing.type === "horizontal") {
+      return (
+        <g key={drawing.id}>
+          <line
+            x1={0}
+            y1={first.y}
+            x2="100%"
+            y2={first.y}
+            stroke="#f5c542"
+            strokeWidth="1.5"
+            strokeDasharray="6 5"
+          />
+          <text
+            x={8}
+            y={first.y - 6}
+            fill="#f5c542"
+            fontSize="11"
+          >
+            H-Line {drawing.a.price.toFixed(2)}
+          </text>
+        </g>
+      );
+    }
+
+    if (drawing.type === "rectangle") {
+      const x = Math.min(first.x, second.x);
+      const y = Math.min(first.y, second.y);
+      const width = Math.abs(second.x - first.x);
+      const height = Math.abs(second.y - first.y);
+
+      return (
+        <rect
+          key={drawing.id}
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill="rgba(92, 112, 128, 0.08)"
+          stroke="#55a7ff"
+          strokeWidth="1.5"
+        />
+      );
+    }
+
+    if (drawing.type === "fibonacci") {
+      const levelsForDrawing = fibLevels(drawing.a, drawing.b);
+
+      return (
+        <g key={drawing.id}>
+          <line
+            x1={first.x}
+            y1={first.y}
+            x2={second.x}
+            y2={second.y}
+            stroke="#55a7ff"
+            strokeWidth="1"
+            strokeDasharray="4 4"
+          />
+
+          {levelsForDrawing.map((level) => {
+            const y = candleRef.current?.priceToCoordinate(
+              level.price
+            );
+
+            if (y == null) return null;
+
+            return (
+              <g key={level.ratio}>
+                <line
+                  x1={Math.min(first.x, second.x)}
+                  y1={y}
+                  x2={Math.max(first.x, second.x)}
+                  y2={y}
+                  stroke="#c77dff"
+                  strokeWidth="1"
+                />
+                <text
+                  x={Math.max(first.x, second.x) + 5}
+                  y={y - 3}
+                  fill="#c77dff"
+                  fontSize="10"
+                >
+                  {(level.ratio * 100).toFixed(1)}%
+                </text>
+              </g>
+            );
+          })}
+        </g>
+      );
+    }
+
+    if (drawing.type === "measure") {
+      const distance = Math.abs(drawing.b.price - drawing.a.price);
+      const percent =
+        drawing.a.price !== 0
+          ? (distance / drawing.a.price) * 100
+          : 0;
+
+      return (
+        <g key={drawing.id}>
+          <line
+            x1={first.x}
+            y1={first.y}
+            x2={second.x}
+            y2={second.y}
+            stroke="#f5c542"
+            strokeWidth="2"
+            strokeDasharray="5 4"
+          />
+          <circle
+            cx={first.x}
+            cy={first.y}
+            r="4"
+            fill="#f5c542"
+          />
+          <circle
+            cx={second.x}
+            cy={second.y}
+            r="4"
+            fill="#f5c542"
+          />
+          <text
+            x={(first.x + second.x) / 2}
+            y={(first.y + second.y) / 2 - 10}
+            fill="#f5c542"
+            fontSize="11"
+            textAnchor="middle"
+          >
+            {distance.toFixed(2)} ({percent.toFixed(2)}%)
+          </text>
+        </g>
+      );
+    }
+
+    const isRay = drawing.type === "ray";
+
+    let endX = second.x;
+    let endY = second.y;
+
+    if (isRay) {
+      const dx = second.x - first.x;
+      const dy = second.y - first.y;
+
+      if (Math.abs(dx) > 0.001) {
+        const rightEdge = containerRef.current?.clientWidth || 700;
+        const scale = (rightEdge - first.x) / dx;
+
+        if (scale > 0) {
+          endX = first.x + dx * scale;
+          endY = first.y + dy * scale;
+        }
+      }
+    }
+
+    return (
+      <g key={drawing.id}>
+        <line
+          x1={first.x}
+          y1={first.y}
+          x2={endX}
+          y2={endY}
+          stroke="#19c37d"
+          strokeWidth="1.8"
+        />
+        <circle
+          cx={first.x}
+          cy={first.y}
+          r="3.5"
+          fill="#19c37d"
+        />
+        <circle
+          cx={second.x}
+          cy={second.y}
+          r="3.5"
+          fill="#19c37d"
+        />
+      </g>
+    );
+  };
 
   return (
     <div className="zentoraChart">
@@ -344,13 +655,38 @@ export default function DerivTradingChart({
         </div>
 
         <div className="chartToolGroup">
+          {DRAW_TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              className={
+                activeTool === tool.id
+                  ? "chartTool active drawingActive"
+                  : "chartTool"
+              }
+              onClick={() =>
+                setActiveTool((current) =>
+                  current === tool.id ? null : tool.id
+                )
+              }
+            >
+              {tool.label}
+            </button>
+          ))}
+
           <button
             type="button"
-            className={
-              showEMA
-                ? "chartTool active"
-                : "chartTool"
-            }
+            className="chartTool"
+            onClick={clearDrawings}
+          >
+            Clear
+          </button>
+        </div>
+
+        <div className="chartToolGroup">
+          <button
+            type="button"
+            className={showEMA ? "chartTool active" : "chartTool"}
             onClick={() => setShowEMA((value) => !value)}
           >
             EMA
@@ -384,22 +720,75 @@ export default function DerivTradingChart({
           >
             {signal || "WAIT"}
           </strong>
+
           {signal && (
             <small>{confidence || 0}%</small>
           )}
         </div>
       </div>
 
+      {activeTool && (
+        <div
+          style={{
+            padding: "6px 10px",
+            fontSize: "10px",
+            color: "#8fa5b8",
+            background: "#08151f",
+            borderBottom: "1px solid #1b2a36",
+          }}
+        >
+          {pendingPoint
+            ? "Select the second point on the chart..."
+            : `Drawing: ${activeTool}. Click on the chart to place the first point.`}
+        </div>
+      )}
+
       <div
         ref={containerRef}
         className="zentoraChartCanvas"
-      />
+        style={{
+          position: "relative",
+          cursor: activeTool ? "crosshair" : "default",
+        }}
+        onClick={handleDrawingClick}
+      >
+        <svg
+          width="100%"
+          height="100%"
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 10,
+            pointerEvents: "none",
+            overflow: "visible",
+          }}
+        >
+          {drawings.map(renderDrawing)}
 
-      {!candles.length && (
-        <div className="zentoraChartEmpty">
-          Waiting for live Deriv ticks...
-        </div>
-      )}
+          {pendingPoint && (() => {
+            const point = getXY(pendingPoint);
+
+            if (!point) return null;
+
+            return (
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r="5"
+                fill="none"
+                stroke="#f5c542"
+                strokeWidth="2"
+              />
+            );
+          })()}
+        </svg>
+
+        {!candles.length && (
+          <div className="zentoraChartEmpty">
+            Waiting for live Deriv ticks...
+          </div>
+        )}
+      </div>
 
       <div className="zentoraChartLegend">
         <span><i className="ema9" /> EMA 9</span>
