@@ -22,14 +22,14 @@ export function TouchNoTouchBotView({ feed }) {
 
   const currency = String(selectedAccount?.currency || "USD").toUpperCase();
   const [running, setRunning] = useState(false);
-  const [stakeMode, setStakeMode] = useState("ADAPTIVE");
+  const [stakeMode, setStakeMode] = useState("FIXED");
   const [fixedStake, setFixedStake] = useState(0.35);
   const [duration, setDuration] = useState(5);
   const [barrierMultiplier, setBarrierMultiplier] = useState(1.8);
-  const [minScore, setMinScore] = useState(92);
+  const [minScore, setMinScore] = useState(95);
   const [sessionTPPct, setSessionTPPct] = useState(2);
   const [sessionSLPct, setSessionSLPct] = useState(1.5);
-  const [recoveryEnabled, setRecoveryEnabled] = useState(true);
+  const [recoveryEnabled, setRecoveryEnabled] = useState(false);
   const [recoveryUsed, setRecoveryUsed] = useState(false);
   const [allowReal, setAllowReal] = useState(false);
   const [sessionPnl, setSessionPnl] = useState(0);
@@ -100,9 +100,11 @@ export function TouchNoTouchBotView({ feed }) {
     if (sessionStop > 0 && sessionPnl <= -sessionStop) { setRunning(false); setMessage(`SESSION STOP • ${money(sessionPnl, currency)}`); return; }
     if (sessionTarget > 0 && sessionPnl >= sessionTarget) { setRunning(false); setMessage(`SESSION TARGET • ${money(sessionPnl, currency)}`); return; }
 
-    const base = stakeMode === "FIXED" ? Math.max(0.35, Number(fixedStake) || 0.35) : Math.max(0.35, Math.min(2.5, balance * 0.0025));
+    const base = stakeMode === "FIXED"
+      ? 0.35
+      : Math.max(0.35, Math.min(0.35, balance * 0.0025));
     const isRecovery = mode === "RECOVERY";
-    const tradeStake = isRecovery ? base * 2 : base;
+    const tradeStake = isRecovery ? Math.min(0.70, base * 2) : 0.35;
     const setup = forcedAnalysis.signal;
     const contractType = setup === "TOUCH" ? "ONETOUCH" : "NOTOUCH";
     const rawBarrier = setup === "TOUCH" ? forcedAnalysis.touchBarrier : forcedAnalysis.noTouchBarrier;
@@ -113,8 +115,7 @@ export function TouchNoTouchBotView({ feed }) {
     );
     const direction = rawBarrier >= spot ? 1 : -1;
     const decimals = Math.max(2, market?.decimals ?? 3);
-    const multipliers = [0.5, 0.75, 1, 1.35, 1.8, 2.5];
-    const durations = [...new Set([Number(duration), 10])];
+    const durations = [Number(duration)];
 
     busyRef.current = true;
     setQuoteBusy(true);
@@ -123,32 +124,101 @@ export function TouchNoTouchBotView({ feed }) {
     try {
       const quotes = [];
       const errors = [];
+
+      // Keep discovery fast: request a small candidate set in parallel instead
+      // of waiting up to 15s sequentially for every barrier candidate.
+      const candidates = [];
+      const seen = new Set();
+      const addCandidate = (barrier, tradeDuration) => {
+        const key = `${barrier}|${tradeDuration}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        candidates.push({ barrier, tradeDuration });
+      };
+
+      const primaryMultipliers = setup === "NO TOUCH" ? [Math.max(1.35, Number(barrierMultiplier) || 1.8), 2.2, 2.8] : [0.75, 1, Math.min(1.35, Number(barrierMultiplier) || 1.35)];
       for (const tradeDuration of durations) {
-        for (const multiplier of multipliers) {
+        for (const multiplier of primaryMultipliers) {
           const offset = Math.max(baseOffset * multiplier, Math.abs(spot) * 0.0001);
           const relativeBarrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(decimals)}`;
-          const absoluteBarrier = (spot + direction * offset).toFixed(decimals);
-          for (const barrier of [relativeBarrier, absoluteBarrier]) {
-            try {
-              const quote = await quoteTrade({ symbol, contractType, amount: tradeStake, basis: "stake", duration: tradeDuration, durationUnit: "t", barrier });
-              const ask = Number(quote?.askPrice);
-              const payout = Number(quote?.payout);
-              if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask) {
-                const returnPct = ((payout - ask) / ask) * 100;
-                const priceQuality = Math.min(100, Math.max(0, returnPct));
-                const quoteScore = Math.round(forcedAnalysis.entryScore * 0.8 + Math.min(100, priceQuality) * 0.2);
-                quotes.push({ ...quote, barrier, duration: tradeDuration, returnPct, quoteScore });
-              } else {
-                errors.push(`invalid payout ${barrier}/${tradeDuration}t`);
-              }
-            } catch (error) {
-              errors.push(error instanceof Error ? error.message : String(error));
-            }
-            if (quotes.length >= 8) break;
-          }
-          if (quotes.length >= 8) break;
+          addCandidate(relativeBarrier, tradeDuration);
         }
-        if (quotes.length >= 8) break;
+      }
+
+      const primaryResults = await Promise.allSettled(
+        candidates.map(({ barrier, tradeDuration }) =>
+          quoteTrade({
+            symbol,
+            contractType,
+            amount: tradeStake,
+            basis: "stake",
+            duration: tradeDuration,
+            durationUnit: "t",
+            barrier,
+          }).then((quote) => ({ quote, barrier, tradeDuration }))
+        )
+      );
+
+      for (const result of primaryResults) {
+        if (result.status === "rejected") {
+          errors.push(result.reason instanceof Error ? result.reason.message : String(result.reason));
+          continue;
+        }
+        const { quote, barrier, tradeDuration } = result.value;
+        const ask = Number(quote?.askPrice);
+        const payout = Number(quote?.payout);
+        if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask) {
+          const returnPct = ((payout - ask) / ask) * 100;
+          const priceQuality = Math.min(100, Math.max(0, returnPct));
+          const quoteScore = Math.round(forcedAnalysis.entryScore * 0.8 + Math.min(100, priceQuality) * 0.2);
+          quotes.push({ ...quote, barrier, duration: tradeDuration, returnPct, quoteScore });
+        } else {
+          errors.push(`invalid payout ${barrier}/${tradeDuration}t`);
+        }
+      }
+
+      // If relative barriers are rejected, make a short absolute-barrier fallback.
+      if (!quotes.length) {
+        const fallbackCandidates = [];
+        for (const tradeDuration of durations) {
+          for (const multiplier of [0.75, 1.5]) {
+            const offset = Math.max(baseOffset * multiplier, Math.abs(spot) * 0.0001);
+            const absoluteBarrier = (spot + direction * offset).toFixed(decimals);
+            fallbackCandidates.push({ barrier: absoluteBarrier, tradeDuration });
+          }
+        }
+
+        const fallbackResults = await Promise.allSettled(
+          fallbackCandidates.map(({ barrier, tradeDuration }) =>
+            quoteTrade({
+              symbol,
+              contractType,
+              amount: tradeStake,
+              basis: "stake",
+              duration: tradeDuration,
+              durationUnit: "t",
+              barrier,
+            }).then((quote) => ({ quote, barrier, tradeDuration }))
+          )
+        );
+
+        for (const result of fallbackResults) {
+          if (result.status === "rejected") {
+            errors.push(result.reason instanceof Error ? result.reason.message : String(result.reason));
+            continue;
+          }
+          const { quote, barrier, tradeDuration } = result.value;
+          const ask = Number(quote?.askPrice);
+          const payout = Number(quote?.payout);
+          if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask) {
+            const returnPct = ((payout - ask) / ask) * 100;
+            const priceQuality = Math.min(100, Math.max(0, returnPct));
+            const quoteScore = Math.round(forcedAnalysis.entryScore * 0.8 + Math.min(100, priceQuality) * 0.2);
+            quotes.push({ ...quote, barrier, duration: tradeDuration, returnPct, quoteScore });
+          } else {
+            errors.push(`invalid payout ${barrier}/${tradeDuration}t`);
+          }
+        }
       }
 
       if (!quotes.length) {
@@ -160,8 +230,16 @@ export function TouchNoTouchBotView({ feed }) {
 
       quotes.sort((a, b) => b.quoteScore - a.quoteScore);
       const best = quotes[0];
+      const bestBarrier = Number(best?.barrier);
+      const bestSpot = Number(best?.spot ?? spot);
+      if (Number.isFinite(bestBarrier) && Number.isFinite(bestSpot)) {
+        const minDistance = Math.max(Math.abs(bestSpot) * 0.00008, 0.01);
+        if (Math.abs(bestBarrier - bestSpot) < minDistance) {
+          throw new Error("Barrier too close to spot — skipping trade for risk protection.");
+        }
+      }
       setLiveQuote(best);
-      setMessage(`AI BEST ENTRY • ${setup} • ${forcedAnalysis.entryScore}/99 • Return ${best.returnPct.toFixed(1)}%`);
+      setMessage(`AI BEST ENTRY • ${setup} • AUTO ${direction > 0 ? "ABOVE" : "BELOW"} • Barrier ${best.barrier} • ${forcedAnalysis.entryScore}/99 • Return ${best.returnPct.toFixed(1)}%`);
 
       const result = await placeQuotedTrade({ quote: best });
       const id = idOf(result);
@@ -224,13 +302,13 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • waiting for 92+/99 A+ Touch / No Touch setup.");
+    resetSession(); setRunning(true); setMessage("SCANNING • AUTO side + protected barrier • fixed $0.35 stake.");
   };
 
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • PROTECTED OPTIONS ENGINE</small><h1>Touch / No Touch Growth Desk</h1><p>Structure-first entries • adaptive stake • one-time recovery • hard session protection</p></div>
+        <div><small>ZENTORA • PROTECTED OPTIONS ENGINE</small><h1>Touch / No Touch Growth Desk</h1><p>Structure-first entries • fixed $0.35 stake • optional one-time recovery • hard session protection</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
@@ -245,10 +323,10 @@ export function TouchNoTouchBotView({ feed }) {
 
       <div className="tntControls">
         <label>MARKET<select value={symbol} disabled={!connected} onChange={(e) => void changeSymbol(e.target.value)}>{markets.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
-        <label>STAKE MODE<select value={stakeMode} onChange={(e) => setStakeMode(e.target.value)}><option value="ADAPTIVE">ADAPTIVE</option><option value="FIXED">FIXED</option></select></label>
-        <label>STAKE<input type="number" min="0.35" step="0.05" value={fixedStake} onChange={(e) => setFixedStake(Math.max(0.35, Number(e.target.value) || 0.35))}/></label>
+        <label>STAKE MODE<select value={stakeMode} onChange={(e) => setStakeMode(e.target.value)}><option value="FIXED">FIXED • $0.35</option><option value="ADAPTIVE">ADAPTIVE • capped $0.35</option></select></label>
+        <label>STAKE<input type="number" min="0.35" max="0.35" step="0.05" value={0.35} disabled /></label>
         <label>DURATION<select value={duration} onChange={(e) => setDuration(Number(e.target.value))}><option value="3">3 TICKS</option><option value="5">5 TICKS</option><option value="10">10 TICKS</option><option value="15">15 TICKS</option></select></label>
-        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="85">85 / 99</option><option value="92">92 / 99</option><option value="95">95 / 99</option><option value="97">97 / 99</option></select></label>
+        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="92">92 / 99</option><option value="95">95 / 99</option><option value="97">97 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
         <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START A+ BOT"}</button>
       </div>
 
