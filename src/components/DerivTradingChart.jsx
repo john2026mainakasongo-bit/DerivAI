@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   LineSeries,
@@ -13,10 +13,10 @@ const TIMEFRAMES = [
 ];
 
 const DRAW_TOOLS = [
-  { id: "trendline", label: "↗ Trend" },
-  { id: "horizontal", label: "━ H-Line" },
-  { id: "ray", label: "→ Ray" },
-  { id: "rectangle", label: "▭ Rect" },
+  { id: "trendline", label: "? Trend" },
+  { id: "horizontal", label: "? H-Line" },
+  { id: "ray", label: "? Ray" },
+  { id: "rectangle", label: "? Rect" },
   { id: "fibonacci", label: "Fib" },
   { id: "measure", label: "Measure" },
 ];
@@ -88,6 +88,101 @@ function findLevels(candles) {
   return {
     support: Number.isFinite(support) ? support : null,
     resistance: Number.isFinite(resistance) ? resistance : null,
+  };
+}
+
+function analyzePriceAction(candles) {
+  if (!candles || candles.length < 12) {
+    return {
+      liquidityHigh: null,
+      liquidityLow: null,
+      breakout: null,
+      fakeBreakout: null,
+      retest: null,
+    };
+  }
+
+  const recent = candles.slice(-30);
+  const latest = candles[candles.length - 1];
+  const previous = candles[candles.length - 2];
+
+  const swingHigh = Math.max(
+    ...recent.slice(0, -1).map((candle) => candle.high)
+  );
+
+  const swingLow = Math.min(
+    ...recent.slice(0, -1).map((candle) => candle.low)
+  );
+
+  const range = Math.max(
+    0.000001,
+    swingHigh - swingLow
+  );
+
+  const zonePadding = range * 0.035;
+
+  const liquidityHigh = {
+    price: swingHigh,
+    low: swingHigh - zonePadding,
+    high: swingHigh + zonePadding,
+  };
+
+  const liquidityLow = {
+    price: swingLow,
+    low: swingLow - zonePadding,
+    high: swingLow + zonePadding,
+  };
+
+  const brokeHigh =
+    previous.close <= swingHigh &&
+    latest.close > swingHigh;
+
+  const brokeLow =
+    previous.close >= swingLow &&
+    latest.close < swingLow;
+
+  const fakeHigh =
+    latest.high > swingHigh &&
+    latest.close <= swingHigh;
+
+  const fakeLow =
+    latest.low < swingLow &&
+    latest.close >= swingLow;
+
+  const retestHigh =
+    previous.close > swingHigh &&
+    latest.low <= swingHigh + zonePadding &&
+    latest.close >= swingHigh;
+
+  const retestLow =
+    previous.close < swingLow &&
+    latest.high >= swingLow - zonePadding &&
+    latest.close <= swingLow;
+
+  return {
+    liquidityHigh,
+    liquidityLow,
+
+    breakout:
+      brokeHigh
+        ? { direction: "UP", price: swingHigh, candle: latest }
+        : brokeLow
+        ? { direction: "DOWN", price: swingLow, candle: latest }
+        : null,
+
+    fakeBreakout:
+      fakeHigh
+        ? { direction: "UP", price: swingHigh, candle: latest }
+        : fakeLow
+        ? { direction: "DOWN", price: swingLow, candle: latest }
+        : null,
+
+    retest:
+      retestHigh
+        ? { direction: "UP", price: swingHigh, candle: latest }
+        : retestLow
+        ? { direction: "DOWN", price: swingLow, candle: latest }
+        : null,
   };
 }
 
@@ -800,3 +895,4 @@ export default function DerivTradingChart({
     </div>
   );
 }
+
