@@ -169,7 +169,7 @@ export default function useDerivTicks() {
     setLiveTickCount(0);
 
     try {
-      const history = await derivPublicClient.getHistory(nextSymbol, 1800);
+      const history = await derivPublicClient.getHistory(nextSymbol, 5000);
       if (!mountedRef.current) return;
 
       setTicks(history.slice(-5000));
@@ -380,7 +380,12 @@ export default function useDerivTicks() {
       resetSharedSubscriptions();
     }
 
-    if (!changed || !connected) return;
+    /*
+     * Reconnect only when the selected Deriv account credentials change.
+     * Do NOT use `connected` as a trigger here: reconnect() itself changes
+     * connected state and can otherwise create a reconnect loop.
+     */
+    if (!changed) return;
 
     setOpenContracts([]);
     setTransactions([]);
@@ -413,7 +418,6 @@ export default function useDerivTicks() {
   }, [
     auth.config?.clientId,
     auth.session?.accessToken,
-    connected,
     loadSymbol,
     selectedAccountId,
   ]);
@@ -781,6 +785,8 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
+
+
 
 
 
