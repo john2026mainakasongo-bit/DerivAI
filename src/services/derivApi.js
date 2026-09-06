@@ -1,4 +1,4 @@
-const PUBLIC_SOCKET_URLS = [
+﻿const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -851,7 +851,6 @@ class DerivTradingClient {
       duration: Number(duration),
       duration_unit: String(durationUnit || "t"),
       underlying_symbol: String(symbol || ""),
-      subscribe: 1,
     };
 
     if (!proposal.underlying_symbol) {
@@ -1126,5 +1125,6 @@ export const derivPublicClient =
   new DerivTradingClient();
 
 export default derivPublicClient;
+
 
 
