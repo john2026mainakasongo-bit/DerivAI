@@ -13,6 +13,13 @@ export default function Dashboard() {
   const [completingOAuth, setCompletingOAuth] = useState(false);
 
   useEffect(() => {
+    if (feed.connected && !feed.loadingMarket && !feed.symbol && feed.markets?.length) {
+      const fallback = feed.markets.find((item) => /Volatility 75/i.test(item.label || "") && !/1s|1 sec|one second/i.test(item.label || "")) || feed.markets[0];
+      if (fallback?.id) void feed.changeSymbol(fallback.id).catch(() => {});
+    }
+  }, [feed]);
+
+  useEffect(() => {
     let cancelled = false;
     async function finish() {
       const url = new URL(window.location.href);

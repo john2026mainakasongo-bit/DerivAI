@@ -661,18 +661,16 @@ export function RiseFallBotView({ feed }) {
         : "STOP LOSS";
 
       setMessage(
-        `${reason} triggered for #${id} • ${money(pnlValue, currency)}`
+        `${reason} triggered for #${id} • ${money(pnlValue, currency)} • monitoring to settlement`
       );
 
-      void sellContract(id, 0).catch(() => {
-        // If early selling is unavailable for this contract, allow the
-        // contract to continue to normal expiry instead of retrying rapidly.
-      });
+      // Fixed-duration Rise/Fall contracts may not support early resale.
+      // Do not call sellContract here; the session guard stops new entries
+      // while this contract is allowed to settle normally.
     }
   }, [
     currency,
     openContracts,
-    sellContract,
     stopLoss,
     takeProfit,
   ]);

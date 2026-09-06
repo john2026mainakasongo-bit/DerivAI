@@ -47,16 +47,29 @@ export function TouchNoTouchBotView({ feed }) {
   const audioRef = useRef(null);
   const exitRequestedRef = useRef(new Set());
 
-  const analysis = useMemo(() => analyzeTouchNoTouch(prices, { minimumSamples: 120, maxSamples: 700 }), [prices]);
+  const analysisPrices = useMemo(() => {
+    if (prices.length) return prices;
+    return ticks.map((tick) => Number(tick?.quote)).filter(Number.isFinite);
+  }, [prices, ticks]);
+  const displayMarket = market?.id
+    ? market
+    : markets.find((item) => item.id === symbol) || { id: symbol, label: symbol || "Loading market", decimals: 3 };
+  const analysis = useMemo(() => analyzeTouchNoTouch(analysisPrices, { minimumSamples: 120, maxSamples: 700 }), [analysisPrices]);
   const balance = Number(selectedAccount?.balance) || 0;
   const sessionTarget = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionTPPct / 100) : 0;
   const sessionStop = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionSLPct / 100) : 0;
   const winRate = wins + losses ? (wins / (wins + losses)) * 100 : 0;
-  const chartPrices = prices.slice(-180);
+  const chartPrices = analysisPrices.slice(-180);
 
   useEffect(() => {
     if (selectedAccount?.balance != null && sessionStartBalanceRef.current <= 0) sessionStartBalanceRef.current = Number(selectedAccount.balance) || 0;
   }, [selectedAccount?.balance]);
+
+  useEffect(() => {
+    if (!connected || loadingMarket || symbol || !markets.length) return;
+    const fallback = markets.find((item) => /Volatility 75/i.test(item.label || "") && !/1s|1 sec|one second/i.test(item.label || "")) || markets[0];
+    if (fallback?.id) void changeSymbol(fallback.id).catch(() => {});
+  }, [changeSymbol, connected, loadingMarket, markets, symbol]);
 
   const sound = useCallback((won) => {
     try {
@@ -102,7 +115,7 @@ export function TouchNoTouchBotView({ feed }) {
     const spot = Number(forcedAnalysis.current || currentPrice);
     const direction = rawBarrier >= spot ? 1 : -1;
     const offset = Math.max(Math.abs(rawBarrier - spot) * Math.max(0.5, Number(barrierMultiplier) || 1), Math.abs(spot) * 0.0001);
-    const barrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(Math.max(2, market?.decimals ?? 3))}`;
+    const barrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(Math.max(2, displayMarket?.decimals ?? 3))}`;
 
     busyRef.current = true;
     setMessage(`${isRecovery ? "RECOVERY X2" : mode} • BUYING ${setup} • ${forcedAnalysis.entryScore}/99`);
@@ -138,9 +151,11 @@ export function TouchNoTouchBotView({ feed }) {
       if (!Number.isFinite(pnl) || (pnl < take && pnl > -stop)) continue;
       exitRequestedRef.current.add(id);
       setMessage(`${pnl >= 0 ? "TRADE TP" : "TRADE SL"} • #${id}`);
-      void sellContract(id, 0).catch(() => {});
+      setMessage(`${pnl >= 0 ? "TRADE TP" : "TRADE SL"} • #${id} • monitoring to settlement`);
+      // Do not force early resale: fixed-duration contracts can reject it.
+      // Session protection still prevents new entries once limits are hit.
     }
-  }, [touchContracts, sellContract]);
+  }, [touchContracts]);
 
   useEffect(() => {
     for (const c of touchContracts) {
@@ -205,10 +220,10 @@ export function TouchNoTouchBotView({ feed }) {
       </div>
 
       <div className="tntMainGrid">
-        <div className="tntChartCard"><div className="tntCardHead"><div><b>{market?.label || "Market"}</b><span>● LIVE</span></div><strong>{Number.isFinite(Number(currentPrice)) ? Number(currentPrice).toFixed(market?.decimals ?? 3) : "—"}</strong></div><div className="tntTabs"><span className="active">TICKS</span><span>1M</span><span>5M</span><span>15M</span></div><DerivTradingChart values={chartPrices} candleHistory={feed.candleHistory} signal={analysis.signal} confidence={analysis.entryScore} /></div>
+        <div className="tntChartCard"><div className="tntCardHead"><div><b>{displayMarket?.label || "Market"}</b><span>● LIVE</span></div><strong>{Number.isFinite(Number(currentPrice)) ? Number(currentPrice).toFixed(displayMarket?.decimals ?? 3) : "—"}</strong></div><div className="tntTabs"><span className="active">TICKS</span><span>1M</span><span>5M</span><span>15M</span></div><DerivTradingChart values={chartPrices} candleHistory={feed.candleHistory} signal={analysis.signal} confidence={analysis.entryScore} /></div>
         <div className="tntAnalysis">
           <div className="tntDecision"><span>MASTER DECISION</span><strong>{analysis.signal}</strong><b>{analysis.entryScore}/99</b><p>{analysis.reason}</p></div>
-          <div className="tntCards"><div className={`tntSide ${analysis.candidate === "TOUCH" ? "best" : ""}`}><span>TOUCH</span><strong>{analysis.touchScore}</strong><small>Barrier {analysis.touchBarrier ? analysis.touchBarrier.toFixed(market?.decimals ?? 3) : "—"}</small><em>{analysis.touchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div><div className={`tntSide ${analysis.candidate === "NO TOUCH" ? "best" : ""}`}><span>NO TOUCH</span><strong>{analysis.noTouchScore}</strong><small>Barrier {analysis.noTouchBarrier ? analysis.noTouchBarrier.toFixed(market?.decimals ?? 3) : "—"}</small><em>{analysis.noTouchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div></div>
+          <div className="tntCards"><div className={`tntSide ${analysis.candidate === "TOUCH" ? "best" : ""}`}><span>TOUCH</span><strong>{analysis.touchScore}</strong><small>Barrier {analysis.touchBarrier ? analysis.touchBarrier.toFixed(displayMarket?.decimals ?? 3) : "—"}</small><em>{analysis.touchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div><div className={`tntSide ${analysis.candidate === "NO TOUCH" ? "best" : ""}`}><span>NO TOUCH</span><strong>{analysis.noTouchScore}</strong><small>Barrier {analysis.noTouchBarrier ? analysis.noTouchBarrier.toFixed(displayMarket?.decimals ?? 3) : "—"}</small><em>{analysis.noTouchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div></div>
           <div className="tntChecks"><div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Volatility</span><b>{analysis.volatility}</b></div><div><span>Confirmations</span><b>{analysis.confirmations}/6</b></div><div><span>Market quality</span><b>{analysis.marketQuality}/100</b></div><div><span>Timing</span><b>{analysis.noChase ? "NO CHASE OK" : "LATE — WAIT"}</b></div></div>
         </div>
       </div>
