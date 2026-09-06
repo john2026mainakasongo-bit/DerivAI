@@ -42,6 +42,8 @@ export function TouchNoTouchBotView({ feed }) {
   const [quoteError, setQuoteError] = useState("");
   const [diagnosticQuote, setDiagnosticQuote] = useState(null);
   const [diagnosticBusy, setDiagnosticBusy] = useState(false);
+  const [diagnosticSide, setDiagnosticSide] = useState("");
+  const diagnosticRequestRef = useRef(0);
   const [flash, setFlash] = useState(null);
   const busyRef = useRef(false);
   const processedRef = useRef(new Set());
@@ -95,117 +97,96 @@ export function TouchNoTouchBotView({ feed }) {
 
   // V5.3 TOUCH / NO TOUCH PROPOSAL DIAGNOSTIC
   // This function ONLY requests a proposal. It NEVER buys.
-  const checkProposal = useCallback(async (side) => {
+  const checkProposal = useCallback(async (requestedSide) => {
+    const setup = String(requestedSide || "").trim().toUpperCase() === "NO TOUCH" ? "NO TOUCH" : "TOUCH";
+    const contractType = setup === "NO TOUCH" ? "NOTOUCH" : "ONETOUCH";
+    const requestId = diagnosticRequestRef.current + 1;
+    diagnosticRequestRef.current = requestId;
+
     if (diagnosticBusy) return;
+
+    // Clear the previous result immediately so TOUCH can never remain visible
+    // while a NO TOUCH request is being processed (and vice versa).
+    setDiagnosticSide(setup);
+    setDiagnosticQuote(null);
+    setLiveQuote(null);
+    setQuoteError("");
 
     if (!selectedAccountId) {
       setQuoteError("No active Deriv account.");
       return;
     }
-
     if (!authenticatedFeed) {
-      setQuoteError("Deriv trading feed is not authenticated yet.");
+      setQuoteError("Trading feed is not authenticated yet.");
       return;
     }
 
-    const setup = side === "TOUCH" ? "TOUCH" : "NO TOUCH";
-    const contractType = setup === "TOUCH" ? "ONETOUCH" : "NOTOUCH";
-    const rawBarrier =
-      setup === "TOUCH"
-        ? analysis.touchBarrier
-        : analysis.noTouchBarrier;
-
+    const rawBarrier = setup === "TOUCH" ? analysis.touchBarrier : analysis.noTouchBarrier;
     const spot = Number(analysis.current || currentPrice);
-
     if (!Number.isFinite(rawBarrier) || !Number.isFinite(spot)) {
-      setQuoteError(`${setup}: waiting for valid spot/barrier data.`);
+      setQuoteError(`No valid ${setup} barrier/spot available yet.`);
       return;
     }
 
     const decimals = Math.max(2, market?.decimals ?? 3);
-
     const distance = Math.max(
-      Math.abs(Number(rawBarrier) - spot) *
-        Math.max(0.35, Number(barrierMultiplier) || 1.8),
+      Math.abs(Number(rawBarrier) - spot) * Math.max(0.35, Number(barrierMultiplier) || 1.8),
       Math.abs(spot) * 0.0001
     );
-
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
-
-    const relativeBarrier =
-      `${direction >= 0 ? "+" : "-"}${distance.toFixed(decimals)}`;
-
-    const absoluteBarrier =
-      (spot + direction * distance).toFixed(decimals);
-
-    const stake = Math.max(0.35, Number(fixedStake) || 0.35);
+    const relativeBarrier = `${direction >= 0 ? "+" : "-"}${distance.toFixed(decimals)}`;
+    const absoluteBarrier = (spot + direction * distance).toFixed(decimals);
 
     setDiagnosticBusy(true);
-    setDiagnosticQuote(null);
-    setQuoteError("");
-    setMessage(`TESTING ${setup} PROPOSAL — NO BUY…`);
+    setMessage(`TESTING ${setup} Â· ${contractType} PROPOSAL â€” NO BUYâ€¦`);
 
     try {
       let quote = null;
       let usedBarrier = relativeBarrier;
-      let relativeError = "";
+      let firstError = "";
 
-      // First attempt: relative barrier
       try {
         quote = await quoteTrade({
           symbol,
           contractType,
-          amount: stake,
+          amount: Number(fixedStake) || 0.35,
           basis: "stake",
           duration: Number(duration),
           durationUnit: "t",
           barrier: relativeBarrier,
         });
       } catch (error) {
-        relativeError =
-          error instanceof Error ? error.message : String(error);
+        firstError = error instanceof Error ? error.message : String(error);
       }
 
-      // Fallback: absolute barrier
       if (!quote) {
         usedBarrier = absoluteBarrier;
-
-        try {
-          quote = await quoteTrade({
-            symbol,
-            contractType,
-            amount: stake,
-            basis: "stake",
-            duration: Number(duration),
-            durationUnit: "t",
-            barrier: absoluteBarrier,
-          });
-        } catch (error) {
-          const absoluteError =
-            error instanceof Error ? error.message : String(error);
-
+        quote = await quoteTrade({
+          symbol,
+          contractType,
+          amount: Number(fixedStake) || 0.35,
+          basis: "stake",
+          duration: Number(duration),
+          durationUnit: "t",
+          barrier: absoluteBarrier,
+        }).catch((error) => {
+          const secondError = error instanceof Error ? error.message : String(error);
           throw new Error(
-            `${setup} proposal rejected | Relative: ${
-              relativeError || "failed"
-            } | Absolute: ${absoluteError || "failed"}`
+            `${setup} proposal rejected. Relative: ${firstError || "failed"} | Absolute: ${secondError || "failed"}`
           );
-        }
+        });
       }
 
       const ask = Number(quote?.askPrice);
       const payout = Number(quote?.payout);
-
-      if (!Number.isFinite(ask) || ask <= 0) {
-        throw new Error(`${setup}: invalid ask price returned.`);
+      if (!Number.isFinite(ask) || ask <= 0 || !Number.isFinite(payout) || payout <= ask) {
+        throw new Error(`${setup} proposal returned invalid pricing.`);
       }
 
-      if (!Number.isFinite(payout) || payout <= 0) {
-        throw new Error(`${setup}: invalid payout returned.`);
-      }
+      // A late response from an older click must never overwrite the latest side.
+      if (requestId !== diagnosticRequestRef.current) return;
 
-      const returnPct =
-        payout > ask ? ((payout - ask) / ask) * 100 : 0;
-
+      const returnPct = ((payout - ask) / ask) * 100;
       const result = {
         ...quote,
         side: setup,
@@ -215,22 +196,22 @@ export function TouchNoTouchBotView({ feed }) {
         returnPct,
       };
 
+      setDiagnosticSide(setup);
       setDiagnosticQuote(result);
       setLiveQuote(result);
-
+      setQuoteError("");
       setMessage(
-        `${setup} PROPOSAL OK • Ask $${ask.toFixed(2)} • Payout $${payout.toFixed(2)} • Return ${returnPct.toFixed(1)}%`
+        `${setup} PROPOSAL OK Â· ${contractType} Â· Ask ${ask.toFixed(2)} Â· Payout ${payout.toFixed(2)} Â· Return ${returnPct.toFixed(1)}%`
       );
     } catch (error) {
+      if (requestId !== diagnosticRequestRef.current) return;
+      setDiagnosticSide(setup);
       setDiagnosticQuote(null);
-
-      const text =
-        error instanceof Error ? error.message : String(error);
-
-      setQuoteError(text);
+      setLiveQuote(null);
+      setQuoteError(error instanceof Error ? error.message : String(error));
       setMessage(`${setup} proposal test failed.`);
     } finally {
-      setDiagnosticBusy(false);
+      if (requestId === diagnosticRequestRef.current) setDiagnosticBusy(false);
     }
   }, [
     analysis,
@@ -599,6 +580,7 @@ export default function TouchNoTouchBot() {
   const feed = useDerivTicks();
   return <TouchNoTouchBotView feed={feed} />;
 }
+
 
 
 
