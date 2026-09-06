@@ -379,8 +379,12 @@ export default function DerivTradingChart({
         borderColor: "#20313d",
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 5,
-        barSpacing: 8,
+        rightOffset: 3,
+        barSpacing: 9,
+        minBarSpacing: 5,
+        shiftVisibleRangeOnNewBar: true,
+        fixLeftEdge: false,
+        fixRightEdge: false,
       },
       handleScroll: {
         mouseWheel: true,
@@ -984,4 +988,5 @@ export default function DerivTradingChart({
     </div>
   );
 }
+
 
