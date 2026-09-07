@@ -21,21 +21,16 @@ const DRAW_TOOLS = [
   { id: "measure", label: "Measure" },
 ];
 
-function mergeCandleHistory(history, ticks, seconds) {
-  const map = new Map(
-    (Array.isArray(history) ? history : []).map((candle) => [
-      Number(candle.time),
-      { ...candle },
-    ])
-  );
+function buildCandles(ticks, seconds) {
+  const map = new Map();
 
   for (const tick of ticks || []) {
-    const epoch = Number(tick?.epoch);
+    const time = Number(tick?.epoch);
     const price = Number(tick?.quote);
 
-    if (!Number.isFinite(epoch) || !Number.isFinite(price)) continue;
+    if (!Number.isFinite(time) || !Number.isFinite(price)) continue;
 
-    const bucket = Math.floor(epoch / seconds) * seconds;
+    const bucket = Math.floor(time / seconds) * seconds;
     const previous = map.get(bucket);
 
     if (!previous) {
@@ -54,16 +49,7 @@ function mergeCandleHistory(history, ticks, seconds) {
     previous.close = price;
   }
 
-  return [...map.values()]
-    .filter(
-      (candle) =>
-        Number.isFinite(Number(candle.time)) &&
-        Number.isFinite(Number(candle.open)) &&
-        Number.isFinite(Number(candle.high)) &&
-        Number.isFinite(Number(candle.low)) &&
-        Number.isFinite(Number(candle.close))
-    )
-    .sort((a, b) => Number(a.time) - Number(b.time));
+  return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
 function calculateEMA(candles, period) {
@@ -316,7 +302,6 @@ function fibLevels(first, second) {
 
 export default function DerivTradingChart({
   values = [],
-  candleHistory = {},
   signal = "",
   confidence = 0,
 }) {
@@ -329,7 +314,6 @@ export default function DerivTradingChart({
   const supportRef = useRef(null);
   const resistanceRef = useRef(null);
   const markersRef = useRef(null);
-  const lastVisibleKeyRef = useRef("");
 
   const [timeframe, setTimeframe] = useState(60);
   const [showEMA, setShowEMA] = useState(true);
@@ -341,13 +325,8 @@ export default function DerivTradingChart({
   const [, forceOverlayUpdate] = useState(0);
 
   const candles = useMemo(
-    () =>
-      mergeCandleHistory(
-        candleHistory?.[timeframe] || [],
-        values,
-        timeframe
-      ),
-    [candleHistory, timeframe, values]
+    () => buildCandles(values, timeframe),
+    [values, timeframe]
   );
 
   const levels = useMemo(
@@ -401,8 +380,8 @@ export default function DerivTradingChart({
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 3,
-        barSpacing: 5,
-        minBarSpacing: 3,
+        barSpacing: 9,
+        minBarSpacing: 5,
         shiftVisibleRangeOnNewBar: true,
         fixLeftEdge: false,
         fixRightEdge: false,
@@ -516,18 +495,6 @@ export default function DerivTradingChart({
     if (!candleRef.current) return;
 
     candleRef.current.setData(candles);
-
-    if (candles.length) {
-      const visibleKey = `${timeframe}:${candles.length}`;
-      if (visibleKey !== lastVisibleKeyRef.current) {
-        lastVisibleKeyRef.current = visibleKey;
-        const from = Math.max(0, candles.length - 120);
-        chartRef.current?.timeScale().setVisibleLogicalRange({
-          from,
-          to: candles.length + 4,
-        });
-      }
-    }
 
     ema9Ref.current?.setData(
       showEMA ? calculateEMA(candles, 9) : []

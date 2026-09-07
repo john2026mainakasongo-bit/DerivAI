@@ -139,7 +139,7 @@ export default function useDerivTicks() {
       markets[0] || {
         id: "",
         label: "No market selected",
-        short: "Ã¢â‚¬â€",
+        short: "—",
         decimals: 3,
       },
     [markets, symbol]

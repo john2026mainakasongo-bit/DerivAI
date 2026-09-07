@@ -1,4 +1,4 @@
-﻿const PUBLIC_SOCKET_URLS = [
+const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -95,6 +95,12 @@ function tickSymbol(tick = {}, fallback = "") {
   );
 }
 
+function duplicateSubscriptionError(error) {
+  return /already subscribed|duplicate subscription/i.test(
+    error instanceof Error ? error.message : String(error || "")
+  );
+}
+
 function errorMessage(payload, fallback) {
   return (
     payload?.errors?.[0]?.message ||
@@ -130,6 +136,7 @@ class DerivTradingClient {
     this.debugLog = [];
     this.subscriptionId = "";
     this.contractSubscriptionIds = new Set();
+    this.activeContractIds = new Set();
     this.activeSymbol = "";
     this.pingTimer = null;
     this.manualClose = false;
@@ -137,6 +144,10 @@ class DerivTradingClient {
     this.socketAuthenticated = false;
     this.socketAuthKey = "";
     this.lastAuthConnectionError = "";
+    this.socketGeneration = 0;
+    this.reconnectTimer = null;
+    this.reconnectInProgress = false;
+    this.transactionsSubscribed = false;
 
     this.auth = {
       accessToken: "",
@@ -288,7 +299,9 @@ class DerivTradingClient {
       message.error ||
       (Array.isArray(message.errors) ? message.errors[0] : null) ||
       message.data?.error ||
-      (Array.isArray(message.data?.errors) ? message.data.errors[0] : null);
+      (Array.isArray(message.data?.errors)
+        ? message.data.errors[0]
+        : null);
 
     if (responseError) {
       const messageText =
@@ -350,6 +363,37 @@ class DerivTradingClient {
     const contract = normalizeContract(message);
 
     if (contract) {
+      const contractId = String(
+        contract?.contract_id ||
+          contract?.contractId ||
+          contract?.id ||
+          ""
+      ).trim();
+
+      if (contractId) {
+        const status = String(
+          contract?.status ||
+            contract?.contract_status ||
+            ""
+        ).toLowerCase();
+
+        const settled =
+          Boolean(
+            contract?.is_sold ||
+            contract?.is_expired ||
+            contract?.is_settled
+          ) ||
+          ["won", "lost", "sold", "expired", "settled"].includes(
+            status
+          );
+
+        if (settled) {
+          this.activeContractIds.delete(contractId);
+        } else {
+          this.activeContractIds.add(contractId);
+        }
+      }
+
       const subscriptionId = String(
         message.subscription?.id ||
           message.data?.subscription?.id ||
@@ -405,7 +449,10 @@ class DerivTradingClient {
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 10000);
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        10000
+      );
 
       try {
         const response = await fetch(
@@ -423,7 +470,9 @@ class DerivTradingClient {
           }
         );
 
-        const payload = await response.json().catch(() => ({}));
+        const payload = await response.json().catch(
+          () => ({})
+        );
 
         if (!response.ok) {
           throw new Error(
@@ -434,7 +483,11 @@ class DerivTradingClient {
           );
         }
 
-        const url = String(payload?.data?.url || payload?.url || "");
+        const url = String(
+          payload?.data?.url ||
+            payload?.url ||
+            ""
+        );
 
         if (!url) {
           throw new Error(
@@ -446,11 +499,16 @@ class DerivTradingClient {
         return url;
       } catch (error) {
         lastError = error;
+
         this.lastAuthConnectionError =
-          error instanceof Error ? error.message : "Authenticated connection failed.";
+          error instanceof Error
+            ? error.message
+            : "Authenticated connection failed.";
 
         if (attempt < 2) {
-          await new Promise((resolve) => window.setTimeout(resolve, 700));
+          await new Promise((resolve) =>
+            window.setTimeout(resolve, 700)
+          );
         }
       } finally {
         window.clearTimeout(timeout);
@@ -459,12 +517,17 @@ class DerivTradingClient {
 
     throw lastError instanceof Error
       ? lastError
-      : new Error("Unable to obtain an authenticated Deriv connection.");
+      : new Error(
+          "Unable to obtain an authenticated Deriv connection."
+        );
   }
 
   async openUrl(url, authenticatedSocket = false) {
+    const generation = ++this.socketGeneration;
+
     await new Promise((resolve, reject) => {
       const socket = new WebSocket(url);
+
       this.socket = socket;
       this.socketUrl = url;
 
@@ -472,6 +535,7 @@ class DerivTradingClient {
 
       const timeout = window.setTimeout(() => {
         if (settled) return;
+
         settled = true;
 
         try {
@@ -485,19 +549,39 @@ class DerivTradingClient {
 
       socket.onopen = () => {
         if (settled) return;
+
         settled = true;
         window.clearTimeout(timeout);
 
-        socket.onmessage = (event) =>
-          this.handleMessage(event);
+        if (generation !== this.socketGeneration) {
+          try {
+            socket.close();
+          } catch {
+            // Ignore.
+          }
+          resolve();
+          return;
+        }
+
+        socket.onmessage = (event) => this.handleMessage(event);
 
         this.socketAuthenticated = Boolean(authenticatedSocket);
+
         this.socketAuthKey = authenticatedSocket
           ? `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`
           : "";
 
+        if (this.pingTimer) {
+          window.clearInterval(this.pingTimer);
+          this.pingTimer = null;
+        }
+
         this.pingTimer = window.setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
+          if (
+            generation === this.socketGeneration &&
+            this.socket === socket &&
+            socket.readyState === WebSocket.OPEN
+          ) {
             try {
               this.send({ ping: 1 });
             } catch {
@@ -511,15 +595,24 @@ class DerivTradingClient {
 
       socket.onerror = () => {
         if (settled) return;
+
         settled = true;
         window.clearTimeout(timeout);
-        reject(
-          new Error(`Unable to connect: ${url}`)
-        );
+
+        reject(new Error(`Unable to connect: ${url}`));
       };
 
       socket.onclose = () => {
         window.clearTimeout(timeout);
+
+        // A stale socket must NEVER clear state belonging to a newer socket.
+        if (
+          generation !== this.socketGeneration ||
+          this.socket !== socket
+        ) {
+          return;
+        }
+
         this.clearConnectionState();
 
         if (this.manualClose) {
@@ -527,15 +620,98 @@ class DerivTradingClient {
         } else if (settled) {
           this.emitStatus(
             "OFFLINE",
-            "Deriv live feed closed."
+            authenticatedSocket
+              ? "Deriv authenticated trading connection closed."
+              : "Deriv live feed closed."
           );
+
+          if (authenticatedSocket) {
+            this.scheduleReconnect();
+          }
         }
       };
     });
   }
+  scheduleReconnect() {
+    if (
+      this.manualClose ||
+      !this.authenticated ||
+      this.reconnectTimer ||
+      this.reconnectInProgress
+    ) {
+      return;
+    }
 
+    this.reconnectTimer = window.setTimeout(async () => {
+      this.reconnectTimer = null;
+
+      if (
+        this.manualClose ||
+        !this.authenticated ||
+        this.reconnectInProgress
+      ) {
+        return;
+      }
+
+      this.reconnectInProgress = true;
+
+      try {
+        await this.connect({ allowPublicFallback: false });
+      } catch (error) {
+        this.lastAuthConnectionError =
+          error?.message || "Authenticated reconnect failed.";
+
+        this.emitStatus(
+          "OFFLINE",
+          "Deriv trading connection lost. Retrying..."
+        );
+
+        this.reconnectInProgress = false;
+        this.scheduleReconnect();
+        return;
+      }
+
+      this.reconnectInProgress = false;
+    }, 1500);
+  }
+
+  async restoreSubscriptions() {
+    if (!this.socketAuthenticated) {
+      return;
+    }
+
+    if (this.transactionsSubscribed) {
+      try {
+        await this.subscribeTransactions();
+      } catch {
+        // Transaction subscription will be retried on the next reconnect.
+      }
+    }
+
+    if (this.activeContractIds.size) {
+      for (const contractId of [...this.activeContractIds]) {
+        try {
+          await this.subscribeOpenContract(contractId);
+        } catch {
+          // Ignore individual contract restore failures.
+        }
+      }
+    }
+
+    if (this.activeSymbol && this.socket?.readyState === WebSocket.OPEN) {
+      try {
+        await this.subscribeTicks(this.activeSymbol);
+      } catch (error) {
+        if (!duplicateSubscriptionError(error)) {
+          throw error;
+        }
+      }
+    }
+  }
   async connect({ allowPublicFallback = true } = {}) {
-    if (this.socket?.readyState === WebSocket.OPEN) {
+    if (
+      this.socket?.readyState === WebSocket.OPEN
+    ) {
       return {
         authenticated: this.socketAuthenticated,
         fallback: !this.socketAuthenticated,
@@ -553,21 +729,18 @@ class DerivTradingClient {
       let lastError = null;
       const candidates = [];
 
-      // Prefer the public market socket when fallback is allowed so the UI
-      // can become live immediately. Authenticated trading is verified in the
-      // background by ensureTradingConnection().
-      if (allowPublicFallback) {
-        PUBLIC_SOCKET_URLS.forEach((url) =>
-          candidates.push({
-            url,
-            authenticated: false,
-          })
-        );
-      }
-
+      /*
+       * IMPORTANT:
+       * If a logged-in Demo/Real account exists, always try
+       * the authenticated trading WebSocket FIRST.
+       *
+       * Public market feed is only a fallback.
+       */
       if (this.authenticated) {
         try {
-          const authenticatedUrl = await this.getAuthenticatedSocketUrl();
+          const authenticatedUrl =
+            await this.getAuthenticatedSocketUrl();
+
           candidates.push({
             url: authenticatedUrl,
             authenticated: true,
@@ -581,28 +754,60 @@ class DerivTradingClient {
         }
       }
 
-      if (!this.authenticated && !allowPublicFallback) {
-        throw new Error("A logged-in Deriv account is required.");
+      if (allowPublicFallback) {
+        PUBLIC_SOCKET_URLS.forEach((url) =>
+          candidates.push({
+            url,
+            authenticated: false,
+          })
+        );
+      }
+
+      if (
+        !this.authenticated &&
+        !allowPublicFallback
+      ) {
+        throw new Error(
+          "A logged-in Deriv account is required."
+        );
       }
 
       for (const candidate of candidates) {
         try {
-          await this.openUrl(candidate.url, candidate.authenticated);
+          await this.openUrl(
+            candidate.url,
+            candidate.authenticated
+          );
 
           const detail =
             candidate.authenticated
               ? ""
               : this.authenticated
                 ? `Public analysis feed connected. Trading connection unavailable: ${
-                    this.lastAuthConnectionError || "authenticated feed failed"
+                    this.lastAuthConnectionError ||
+                    "authenticated feed failed"
                   }`
                 : "";
 
-          this.emitStatus("CONNECTED", detail);
+          this.emitStatus(
+            "CONNECTED",
+            detail
+          );
 
+          try {
+            await this.restoreSubscriptions();
+          } catch (error) {
+            this.emitStatus(
+              "ERROR",
+              error?.message ||
+                "Failed to restore Deriv subscriptions."
+            );
+          }
           return {
-            authenticated: candidate.authenticated,
-            fallback: !candidate.authenticated,
+            authenticated:
+              candidate.authenticated,
+            fallback:
+              !candidate.authenticated,
           };
         } catch (error) {
           lastError = error;
@@ -615,7 +820,11 @@ class DerivTradingClient {
           ? lastError.message
           : "Unable to connect to Deriv feed.";
 
-      this.emitStatus("ERROR", message);
+      this.emitStatus(
+        "ERROR",
+        message
+      );
+
       throw new Error(message);
     })();
 
@@ -627,8 +836,60 @@ class DerivTradingClient {
   }
 
   async reconnect(options = {}) {
-    this.disconnect({ preserveAccount: true });
-    return this.connect(options);
+    const previousSymbol =
+      this.activeSymbol;
+
+    /*
+     * Reconnects can happen during trading authentication.
+     * Preserve the currently selected market so the live
+     * chart does not silently stop receiving ticks when the
+     * socket is replaced by the authenticated socket.
+     */
+    this.disconnect({
+      preserveAccount: true,
+      preserveSymbol: true,
+    });
+
+    const connection =
+      await this.connect(options);
+
+    if (
+      this.socketAuthenticated &&
+      this.activeContractIds.size
+    ) {
+      const contractIds = [
+        ...this.activeContractIds,
+      ];
+
+      for (const contractId of contractIds) {
+        try {
+          await this.subscribeOpenContract(
+            contractId
+          );
+        } catch {
+          // Contract may have settled while the socket was offline.
+        }
+      }
+    }
+
+    if (
+      previousSymbol &&
+      this.socket?.readyState === WebSocket.OPEN
+    ) {
+      try {
+        await this.subscribeTicks(
+          previousSymbol
+        );
+      } catch (error) {
+        if (
+          !duplicateSubscriptionError(error)
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    return connection;
   }
 
   async ensureTradingConnection() {
@@ -638,14 +899,33 @@ class DerivTradingClient {
       );
     }
 
-    if (
+    const expectedAuthKey =
+      `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`;
+
+    const socketMatchesSelectedAccount =
       this.socket?.readyState === WebSocket.OPEN &&
-      this.socketAuthenticated
-    ) {
+      this.socketAuthenticated &&
+      this.socketAuthKey === expectedAuthKey;
+
+    /*
+     * Never reuse an authenticated socket belonging
+     * to another Demo/Real account.
+     */
+    if (socketMatchesSelectedAccount) {
       return true;
     }
 
-    await this.reconnect({ allowPublicFallback: false });
+    if (
+      this.socket?.readyState === WebSocket.OPEN
+    ) {
+      this.disconnect({
+        preserveAccount: true,
+      });
+    }
+
+    await this.reconnect({
+      allowPublicFallback: false,
+    });
 
     if (!this.socketAuthenticated) {
       throw new Error(
@@ -662,16 +942,21 @@ class DerivTradingClient {
       active_symbols: "brief",
     });
 
-    const rawSymbols = extractRows(message);
+    const rawSymbols =
+      extractRows(message);
 
     const allMarkets = rawSymbols
       .map(normalizeSymbolRow)
       .filter(Boolean);
 
     const volatilityMarkets =
-      allMarkets.filter(isVolatilityMarket);
+      allMarkets.filter(
+        isVolatilityMarket
+      );
 
-    if (volatilityMarkets.length === 0) {
+    if (
+      volatilityMarkets.length === 0
+    ) {
       throw new Error(
         "Deriv connected, but no Volatility markets were returned."
       );
@@ -685,7 +970,8 @@ class DerivTradingClient {
       active_symbols: "brief",
     });
 
-    const rawSymbols = extractRows(message);
+    const rawSymbols =
+      extractRows(message);
 
     const allMarkets = rawSymbols
       .map(normalizeSymbolRow)
@@ -694,14 +980,21 @@ class DerivTradingClient {
     return {
       rawSymbols,
       allMarkets,
-      volatilityMarkets: allMarkets.filter(isVolatilityMarket),
+      volatilityMarkets:
+        allMarkets.filter(
+          isVolatilityMarket
+        ),
       response: message,
       socketUrl: this.socketUrl,
-      accountId: this.auth.accountId,
-      authenticated: this.authenticated,
+      accountId:
+        this.auth.accountId,
+      authenticated:
+        this.authenticated,
       detectedFields:
         rawSymbols[0]
-          ? Object.keys(rawSymbols[0])
+          ? Object.keys(
+              rawSymbols[0]
+            )
           : [],
     };
   }
@@ -720,7 +1013,10 @@ class DerivTradingClient {
     this.subscriptionId = "";
   }
 
-  async getHistory(symbol, count = 100) {
+  async getHistory(
+    symbol,
+    count = 100
+  ) {
     const message = await this.request({
       ticks_history: symbol,
       count,
@@ -755,7 +1051,9 @@ class DerivTradingClient {
         quote: Number(price),
         epoch: Number(
           times[index] ||
-            Date.now() / 1000 - prices.length + index
+            Date.now() / 1000 -
+              prices.length +
+              index
         ),
       }))
       .filter((item) =>
@@ -791,19 +1089,20 @@ class DerivTradingClient {
       );
 
       if (Number.isFinite(quote)) {
-        this.tickListeners.forEach((listener) =>
-          listener({
-            symbol: tickSymbol(
-              firstTick,
-              symbol
-            ),
-            quote,
-            epoch: Number(
-              firstTick.epoch ||
-                firstTick.timestamp ||
-                Date.now() / 1000
-            ),
-          })
+        this.tickListeners.forEach(
+          (listener) =>
+            listener({
+              symbol: tickSymbol(
+                firstTick,
+                symbol
+              ),
+              quote,
+              epoch: Number(
+                firstTick.epoch ||
+                  firstTick.timestamp ||
+                  Date.now() / 1000
+              ),
+            })
         );
       }
     }
@@ -820,7 +1119,8 @@ class DerivTradingClient {
 
     if (
       !this.socket ||
-      this.socket.readyState !== WebSocket.OPEN ||
+      this.socket.readyState !==
+        WebSocket.OPEN ||
       !this.socketAuthenticated
     ) {
       throw new Error(
@@ -845,44 +1145,90 @@ class DerivTradingClient {
     const proposal = {
       proposal: 1,
       amount: Number(amount),
-      basis: String(basis || "stake"),
-      contract_type: String(contractType || "").toUpperCase(),
-      currency: String(currency || "USD"),
+      basis: String(
+        basis || "stake"
+      ),
+      contract_type: String(
+        contractType || ""
+      ).toUpperCase(),
+      currency: String(
+        currency || "USD"
+      ),
       duration: Number(duration),
-      duration_unit: String(durationUnit || "t"),
-      underlying_symbol: String(symbol || ""),
+      duration_unit: String(
+        durationUnit || "t"
+      ),
+      underlying_symbol: String(
+        symbol || ""
+      ),
     };
 
     if (!proposal.underlying_symbol) {
-      throw new Error("Underlying symbol is missing.");
+      throw new Error(
+        "Underlying symbol is missing."
+      );
     }
 
-    if (!Number.isFinite(proposal.amount) || proposal.amount <= 0) {
-      throw new Error("Proposal amount must be greater than zero.");
+    if (
+      !Number.isFinite(
+        proposal.amount
+      ) ||
+      proposal.amount <= 0
+    ) {
+      throw new Error(
+        "Proposal amount must be greater than zero."
+      );
     }
 
-    if (!Number.isFinite(proposal.duration) || proposal.duration <= 0) {
-      throw new Error("Proposal duration must be greater than zero.");
+    if (
+      !Number.isFinite(
+        proposal.duration
+      ) ||
+      proposal.duration <= 0
+    ) {
+      throw new Error(
+        "Proposal duration must be greater than zero."
+      );
     }
 
-    if (barrier !== undefined && barrier !== null && barrier !== "") {
-      proposal.barrier = String(barrier);
+    if (
+      barrier !== undefined &&
+      barrier !== null &&
+      barrier !== ""
+    ) {
+      proposal.barrier =
+        String(barrier);
     }
 
-    return this.request(proposal);
+    return this.request(
+      proposal
+    );
   }
 
-  async buyProposal(proposalId, price) {
+  async buyProposal(
+    proposalId,
+    price
+  ) {
     this.ensureAuthenticated();
 
     if (!proposalId) {
-      throw new Error("Proposal ID is missing.");
+      throw new Error(
+        "Proposal ID is missing."
+      );
     }
 
-    const maximumPrice = Number(price);
+    const maximumPrice =
+      Number(price);
 
-    if (!Number.isFinite(maximumPrice) || maximumPrice <= 0) {
-      throw new Error("Buy price must be a positive number.");
+    if (
+      !Number.isFinite(
+        maximumPrice
+      ) ||
+      maximumPrice <= 0
+    ) {
+      throw new Error(
+        "Buy price must be a positive number."
+      );
     }
 
     return this.request({
@@ -891,17 +1237,36 @@ class DerivTradingClient {
     });
   }
 
-  normalizeTradeOptions(options = {}) {
+  normalizeTradeOptions(
+    options = {}
+  ) {
     const normalized = {
       ...options,
-      symbol: String(options?.symbol || "").trim(),
-      contractType: String(options?.contractType || "").trim().toUpperCase(),
-      amount: Number(options?.amount),
-      duration: Number(options?.duration),
-      durationUnit: String(options?.durationUnit || "t").trim().toLowerCase(),
+      symbol: String(
+        options?.symbol || ""
+      ).trim(),
+      contractType: String(
+        options?.contractType || ""
+      )
+        .trim()
+        .toUpperCase(),
+      amount: Number(
+        options?.amount
+      ),
+      duration: Number(
+        options?.duration
+      ),
+      durationUnit: String(
+        options?.durationUnit || "t"
+      )
+        .trim()
+        .toLowerCase(),
     };
 
-    const digitContract = normalized.contractType.startsWith("DIGIT");
+    const digitContract =
+      normalized.contractType.startsWith(
+        "DIGIT"
+      );
 
     if (digitContract) {
       normalized.duration = 1;
@@ -909,7 +1274,12 @@ class DerivTradingClient {
     }
 
     if (
-      ["DIGITEVEN", "DIGITODD", "CALL", "PUT"].includes(
+      [
+        "DIGITEVEN",
+        "DIGITODD",
+        "CALL",
+        "PUT",
+      ].includes(
         normalized.contractType
       )
     ) {
@@ -919,20 +1289,26 @@ class DerivTradingClient {
     return normalized;
   }
 
-  extractProposal(proposalResponse, normalized = {}) {
+  extractProposal(
+    proposalResponse,
+    normalized = {}
+  ) {
     const proposal =
       proposalResponse?.proposal ||
       proposalResponse?.data?.proposal ||
       proposalResponse?.result?.proposal ||
-      (proposalResponse?.data?.id ? proposalResponse.data : null) ||
+      (proposalResponse?.data?.id
+        ? proposalResponse.data
+        : null) ||
       null;
 
-    const proposalId = String(
-      proposal?.id ||
-        proposal?.proposal_id ||
-        proposalResponse?.proposal_id ||
-        ""
-    );
+    const proposalId =
+      String(
+        proposal?.id ||
+          proposal?.proposal_id ||
+          proposalResponse?.proposal_id ||
+          ""
+      );
 
     const askPrice = Number(
       proposal?.ask_price ??
@@ -957,23 +1333,34 @@ class DerivTradingClient {
     );
 
     if (!proposalId) {
-      const detail = errorMessage(
-        proposalResponse,
-        "Deriv did not return a proposal ID."
-      );
+      const detail =
+        errorMessage(
+          proposalResponse,
+          "Deriv did not return a proposal ID."
+        );
 
       throw new Error(
         `Proposal failed for ${normalized.contractType} on ${normalized.symbol}: ${detail}`
       );
     }
 
-    if (!Number.isFinite(askPrice) || askPrice <= 0) {
+    if (
+      !Number.isFinite(
+        askPrice
+      ) ||
+      askPrice <= 0
+    ) {
       throw new Error(
         `Proposal returned an invalid ask price for ${normalized.contractType}.`
       );
     }
 
-    if (!Number.isFinite(payout) || payout <= askPrice) {
+    if (
+      !Number.isFinite(
+        payout
+      ) ||
+      payout <= askPrice
+    ) {
       throw new Error(
         `Proposal returned an invalid payout for ${normalized.contractType}.`
       );
@@ -991,47 +1378,91 @@ class DerivTradingClient {
   }
 
   async quoteContract(options) {
-    const normalized = this.normalizeTradeOptions(options);
-    const proposalResponse = await this.getProposal(normalized);
-    return this.extractProposal(proposalResponse, normalized);
+    const normalized =
+      this.normalizeTradeOptions(
+        options
+      );
+
+    const proposalResponse =
+      await this.getProposal(
+        normalized
+      );
+
+    return this.extractProposal(
+      proposalResponse,
+      normalized
+    );
   }
 
-  async buyQuotedContract(quote) {
+  async buyQuotedContract(
+    quote
+  ) {
     this.ensureAuthenticated();
 
-    const proposalId = String(quote?.proposalId || "");
-    const askPrice = Number(quote?.askPrice);
+    const proposalId =
+      String(
+        quote?.proposalId || ""
+      );
 
-    if (!proposalId || !Number.isFinite(askPrice) || askPrice <= 0) {
-      throw new Error("A valid quoted proposal is required before buying.");
+    const askPrice =
+      Number(
+        quote?.askPrice
+      );
+
+    if (
+      !proposalId ||
+      !Number.isFinite(
+        askPrice
+      ) ||
+      askPrice <= 0
+    ) {
+      throw new Error(
+        "A valid quoted proposal is required before buying."
+      );
     }
 
-    const buyResponse = await this.buyProposal(proposalId, askPrice);
+    const buyResponse =
+      await this.buyProposal(
+        proposalId,
+        askPrice
+      );
 
     const buy =
       buyResponse?.buy ||
       buyResponse?.data?.buy ||
       buyResponse?.result?.buy ||
-      (buyResponse?.data?.contract_id ? buyResponse.data : null) ||
+      (buyResponse?.data?.contract_id
+        ? buyResponse.data
+        : null) ||
       null;
 
-    const contractId = String(
-      buy?.contract_id ||
-        buy?.id ||
-        buyResponse?.contract_id ||
-        ""
-    );
-
-    if (!contractId) {
-      const detail = errorMessage(
-        buyResponse,
-        "Deriv did not return a contract ID."
+    const contractId =
+      String(
+        buy?.contract_id ||
+          buy?.id ||
+          buyResponse?.contract_id ||
+          ""
       );
 
-      throw new Error(`Buy failed: ${detail}`);
+    if (!contractId) {
+      const detail =
+        errorMessage(
+          buyResponse,
+          "Deriv did not return a contract ID."
+        );
+
+      throw new Error(
+        `Buy failed: ${detail}`
+      );
     }
 
-    await this.subscribeOpenContract(contractId);
+    this.activeContractIds.add(
+      contractId
+    );
+
+    await this.subscribeOpenContract(
+      contractId
+    );
 
     return {
       proposal: quote.proposal,
@@ -1044,16 +1475,38 @@ class DerivTradingClient {
   }
 
   async buyContract(options) {
-    const quote = await this.quoteContract(options);
-    return this.buyQuotedContract(quote);
+    const quote =
+      await this.quoteContract(
+        options
+      );
+
+    return this.buyQuotedContract(
+      quote
+    );
   }
 
-  async subscribeOpenContract(contractId) {
+  async subscribeOpenContract(
+    contractId
+  ) {
     this.ensureAuthenticated();
+
+    const id = String(
+      contractId || ""
+    ).trim();
+
+    if (!id) {
+      throw new Error(
+        "A valid contract ID is required."
+      );
+    }
+
+    this.activeContractIds.add(
+      id
+    );
 
     return this.request({
       proposal_open_contract: 1,
-      contract_id: Number(contractId),
+      contract_id: Number(id),
       subscribe: 1,
     });
   }
@@ -1061,10 +1514,14 @@ class DerivTradingClient {
   async subscribeTransactions() {
     this.ensureAuthenticated();
 
-    return this.request({
+    const response = await this.request({
       transaction: 1,
       subscribe: 1,
     });
+
+    this.transactionsSubscribed = true;
+
+    return response;
   }
 
   async getPortfolio() {
@@ -1075,17 +1532,28 @@ class DerivTradingClient {
     });
   }
 
-  async getStatement(limit = 50) {
+  async getStatement(
+    limit = 50
+  ) {
     this.ensureAuthenticated();
 
     return this.request({
       statement: 1,
       description: 1,
-      limit: Math.max(1, Math.min(100, Number(limit) || 50)),
+      limit: Math.max(
+        1,
+        Math.min(
+          100,
+          Number(limit) || 50
+        )
+      ),
     });
   }
 
-  async sellContract(contractId, price = 0) {
+  async sellContract(
+    contractId,
+    price = 0
+  ) {
     this.ensureAuthenticated();
 
     return this.request({
@@ -1094,11 +1562,23 @@ class DerivTradingClient {
     });
   }
 
-  disconnect({ preserveAccount = true } = {}) {
+  disconnect({
+    preserveAccount = true,
+    preserveSymbol = false,
+  } = {}) {
     this.manualClose = true;
 
+    if (this.reconnectTimer) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    this.reconnectInProgress = false;
+
     if (this.pingTimer) {
-      window.clearInterval(this.pingTimer);
+      window.clearInterval(
+        this.pingTimer
+      );
       this.pingTimer = null;
     }
 
@@ -1111,13 +1591,20 @@ class DerivTradingClient {
     }
 
     this.clearConnectionState();
-    this.activeSymbol = "";
+
+    if (!preserveSymbol) {
+      this.activeSymbol = "";
+    }
 
     if (!preserveAccount) {
+      this.activeContractIds.clear();
+      this.transactionsSubscribed = false;
       this.clearAccount();
     }
 
-    this.emitStatus("DISCONNECTED");
+    this.emitStatus(
+      "DISCONNECTED"
+    );
   }
 }
 
@@ -1125,6 +1612,3 @@ export const derivPublicClient =
   new DerivTradingClient();
 
 export default derivPublicClient;
-
-
-

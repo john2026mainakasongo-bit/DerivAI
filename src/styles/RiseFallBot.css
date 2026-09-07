@@ -266,3 +266,40 @@
   }
 }
 
+
+
+/* Live Deriv Touch / No Touch confirmation layer */
+.rfTouchCard {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid rgba(80, 150, 190, 0.25);
+  border-radius: 16px;
+  background: rgba(5, 18, 28, 0.78);
+}
+.rfTouchPill {
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.rfTouchPill.confirmed { background: rgba(0, 210, 150, 0.16); }
+.rfTouchPill.filtered { background: rgba(240, 170, 40, 0.16); }
+.rfTouchPill.wait { background: rgba(150, 160, 175, 0.14); }
+.rfTouchGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+.rfTouchGrid div {
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.035);
+}
+.rfTouchGrid small { display: block; opacity: .65; font-size: 10px; }
+.rfTouchGrid strong { display: block; margin-top: 4px; font-size: 14px; }
+.rfTouchReason { font-size: 11px; line-height: 1.45; opacity: .72; min-height: 32px; }
+.rfTouchBarrierInput { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 11px; opacity: .8; }
+.rfTouchBarrierInput input { width: 78px; padding: 7px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.2); color: inherit; }
+@media (max-width: 900px) { .rfTouchGrid { grid-template-columns: repeat(2, minmax(0,1fr)); } }

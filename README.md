@@ -1,52 +1,16 @@
-# Zentora / EdgePilot — Clean Trading Dashboard
+# React + Vite
 
-This is the cleaned production project extracted from the current Zentora dashboard.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Included
-- React + Vite dashboard
-- Deriv OAuth login and Demo/Real account switching
-- Authenticated Deriv trading WebSocket
-- Automatic authenticated reconnect with backoff
-- Tick streaming
-- 1m / 5m / 15m historical OHLC candles
-- Real-time candle updates from ticks
-- Rise/Fall manual trading
-- Contract lifecycle tracking and WIN/LOSS results
-- Session risk manager
-- OAuth backend for secure code exchange
+Currently, two official plugins are available:
 
-## Removed
-- Legacy `DerivAI-StrategyEngine-V5` nested project
-- Old backup copies
-- Old version patch scripts
-- Unused strategy-lab files
-- Unused duplicate UI components
-- Old `.before-*` and `.V30-*` files
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## Run
+## React Compiler
 
-```bash
-npm install
-npm run dev
-```
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## Build
+## Expanding the ESLint configuration
 
-```bash
-npm run build
-```
-
-## OAuth backend
-
-```bash
-cd edgepilot-oauth-backend
-npm install
-npm start
-```
-
-Set the backend environment variables used by the existing OAuth flow:
-- `DERIV_CLIENT_ID`
-- `DERIV_REDIRECT_URI`
-- `ALLOWED_ORIGINS`
-
-The browser app can use `VITE_OAUTH_BACKEND_URL` when the OAuth exchange is served by the backend.
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.

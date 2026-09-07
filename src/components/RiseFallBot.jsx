@@ -3,6 +3,7 @@ import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import { analyzeRiseFall } from "../analysis/riseFallEngine";
 import { createRiskManager } from "../bot/riskManager";
+import { estimateTouchBarrier, evaluateTouchNoTouch } from "../analysis/touchNoTouchEngine";
 import "../styles/RiseFallBot.css";
 import DerivTradingChart from "./DerivTradingChart";
 
@@ -165,6 +166,7 @@ export default function RiseFallBot() {
     disconnect,
     changeSymbol,
     placeTrade,
+    quoteTrade,
     sellContract,
   } = useDerivTicks();
 
@@ -188,6 +190,22 @@ export default function RiseFallBot() {
 
   const [duration, setDuration] =
     useState(5);
+
+  // Live Deriv Touch / No Touch validation. This is a confirmation layer
+  // for the directional Rise/Fall signal; it does not claim a perfect win.
+  const [touchBarrier, setTouchBarrier] = useState(0.30);
+  const [touchCheck, setTouchCheck] = useState({
+    status: "WAIT",
+    direction: "NONE",
+    barrier: 0.30,
+    touchImplied: 0,
+    noTouchImplied: 0,
+    edge: 0,
+    reason: "Waiting for live Deriv proposal pricing.",
+  });
+  const touchQuoteBusyRef = useRef(false);
+  const lastTouchQuoteRef = useRef(0);
+  const lastTouchKeyRef = useRef("");
 
   // Trade protection / recovery controls.
   // These are local bot controls; fixed-duration contracts can only be
@@ -228,6 +246,10 @@ export default function RiseFallBot() {
   const lastAutoAttemptRef =
     useRef(0);
 
+  // Allows repeated high-quality entries after a cooldown instead of
+  // permanently blocking the same direction after the first trade.
+  const lastAutoEntryAtRef = useRef(0);
+
   const recoveryCountRef = useRef(0);
   const sessionPnlRef = useRef(0);
   const exitRequestedRef = useRef(new Set());
@@ -237,7 +259,7 @@ export default function RiseFallBot() {
     () =>
       analyzeRiseFall(prices, {
         minimumSamples: 60,
-        minimumConfidence: 68,
+        minimumConfidence: 70,
       }),
     [prices]
   );
@@ -673,40 +695,143 @@ export default function RiseFallBot() {
   ]);
 
 
+  // Ask Deriv for both live Touch and No Touch proposals and use their
+  // pricing as an additional entry-quality filter. Requests are throttled
+  // so the analyzer does not spam proposal calls on every incoming tick.
+  useEffect(() => {
+    if (
+      !connected ||
+      !authenticatedFeed ||
+      !analysis.ready ||
+      analysis.signal === "WAIT" ||
+      !symbol ||
+      touchQuoteBusyRef.current
+    ) {
+      return;
+    }
+
+    const direction = analysis.signal;
+    const touchKey = `${symbol}:${direction}:${duration}:${Math.abs(Number(touchBarrier) || 0.30)}`;
+    if (touchKey !== lastTouchKeyRef.current) {
+      lastTouchKeyRef.current = touchKey;
+      setTouchCheck({
+        status: "WAIT",
+        direction: direction === "RISE" ? "UP" : "DOWN",
+        barrier: Math.abs(Number(touchBarrier) || 0.30),
+        touchImplied: 0,
+        noTouchImplied: 0,
+        edge: 0,
+        reason: "Refreshing live Deriv Touch / No Touch proposals…",
+      });
+    }
+
+    const now = Date.now();
+    if (now - lastTouchQuoteRef.current < 1800) return;
+    lastTouchQuoteRef.current = now;
+    touchQuoteBusyRef.current = true;
+
+    const magnitude = estimateTouchBarrier(
+      prices,
+      market?.decimals,
+      touchBarrier
+    );
+    const barrier = direction === "RISE" ? magnitude : -magnitude;
+
+    void Promise.all([
+      quoteTrade({
+        contractType: "ONETOUCH",
+        amount: Math.max(0.35, Number(stake) || 0.35),
+        basis: "stake",
+        duration: Number(duration),
+        durationUnit: "t",
+        barrier,
+        symbol,
+      }),
+      quoteTrade({
+        contractType: "NOTOUCH",
+        amount: Math.max(0.35, Number(stake) || 0.35),
+        basis: "stake",
+        duration: Number(duration),
+        durationUnit: "t",
+        barrier,
+        symbol,
+      }),
+    ])
+      .then(([touchQuote, noTouchQuote]) => {
+        setTouchCheck(
+          evaluateTouchNoTouch({
+            direction,
+            touchQuote,
+            noTouchQuote,
+            barrier,
+            duration,
+          })
+        );
+      })
+      .catch((error) => {
+        setTouchCheck((current) => ({
+          ...current,
+          status: "WAIT",
+          reason:
+            error instanceof Error
+              ? `Deriv proposal check: ${error.message}`
+              : "Deriv proposal check unavailable.",
+        }));
+      })
+      .finally(() => {
+        touchQuoteBusyRef.current = false;
+      });
+  }, [
+    analysis,
+    authenticatedFeed,
+    connected,
+    duration,
+    market?.decimals,
+    prices,
+    quoteTrade,
+    stake,
+    symbol,
+    touchBarrier,
+  ]);
+
   useEffect(() => {
     if (
       !running ||
       !analysis.ready ||
-      analysis.signal === "WAIT"
+      !analysis.entryReady ||
+      !["RISE", "FALL"].includes(analysis.signal)
     ) {
       return;
     }
 
-    const now =
-      Date.now();
-
-    const signalKey =
-      `${symbol}:${analysis.signal}`;
-
-    if (
-      signalKey ===
-        lastAutoSignalRef.current &&
-      now -
-          lastAutoAttemptRef.current <
-        3000
-    ) {
+    // Touch/No Touch is an additional confirmation, not a hard lock.
+    // If Deriv returns a real FILTERED result we stay out; if pricing is
+    // still WAIT/unavailable, the core Rise/Fall strategy can still enter.
+    if (touchCheck.status === "FILTERED") {
       return;
     }
 
-    if (
-      signalKey ===
-      lastAutoSignalRef.current
-    ) {
+    const now = Date.now();
+    const AUTO_COOLDOWN_MS = 15000;
+
+    if (now - lastAutoEntryAtRef.current < AUTO_COOLDOWN_MS) {
       return;
     }
 
-    lastAutoAttemptRef.current =
-      now;
+    if (now - lastAutoAttemptRef.current < 2500) {
+      return;
+    }
+
+    const signalKey = `${symbol}:${analysis.signal}`;
+    lastAutoSignalRef.current = signalKey;
+    lastAutoAttemptRef.current = now;
+    lastAutoEntryAtRef.current = now;
+
+    setMessage(
+      touchCheck.status === "CONFIRMED"
+        ? `BEST ENTRY found • ${analysis.signal} • Touch confirmation active.`
+        : `BEST ENTRY found • ${analysis.signal} • Core strategy confirmed.`
+    );
 
     void execute("auto");
   }, [
@@ -714,6 +839,7 @@ export default function RiseFallBot() {
     execute,
     running,
     symbol,
+    touchCheck.status,
   ]);
 
   const toggle = () => {
@@ -743,13 +869,14 @@ export default function RiseFallBot() {
 
     lastAutoAttemptRef.current =
       0;
+    lastAutoEntryAtRef.current = 0;
 
     setResultFlash(null);
 
     setRunning(true);
 
     setMessage(
-      "Bot scanning live ticks and waiting for a qualified signal."
+      "Bot is scanning for the best entry. It will trade automatically when the strategy qualifies."
     );
   };
 
@@ -1238,6 +1365,49 @@ export default function RiseFallBot() {
               {analysis.signal}
             </b>
           </div>
+        </div>
+
+        <div className="rfTouchCard">
+          <div className="rfCardHead">
+            <b>DERIV TOUCH / NO TOUCH</b>
+            <span className={`rfTouchPill ${String(touchCheck.status || "WAIT").toLowerCase()}`}>
+              {touchCheck.status || "WAIT"}
+            </span>
+          </div>
+
+          <div className="rfTouchGrid">
+            <div>
+              <small>Barrier</small>
+              <strong>±{Math.abs(Number(touchCheck.barrier || touchBarrier)).toFixed(3)}</strong>
+            </div>
+            <div>
+              <small>Touch</small>
+              <strong>{touchCheck.touchImplied ? `${touchCheck.touchImplied}%` : "—"}</strong>
+            </div>
+            <div>
+              <small>No Touch</small>
+              <strong>{touchCheck.noTouchImplied ? `${touchCheck.noTouchImplied}%` : "—"}</strong>
+            </div>
+            <div>
+              <small>Edge</small>
+              <strong>{touchCheck.edge ? `${touchCheck.edge}%` : "—"}</strong>
+            </div>
+          </div>
+
+          <div className="rfTouchReason">
+            {touchCheck.reason}
+          </div>
+
+          <label className="rfTouchBarrierInput">
+            Validation barrier
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={touchBarrier}
+              onChange={(e) => setTouchBarrier(Math.max(0.01, Number(e.target.value) || 0.30))}
+            />
+          </label>
         </div>
 
         <div className="rfStatsCard">
@@ -1889,5 +2059,6 @@ function MiniChart({
 
 
 
-// Backward-compatible named export
+
+// Backward-compatible named export for Dashboard.jsx
 export { RiseFallBot as RiseFallBotView };
