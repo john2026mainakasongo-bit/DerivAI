@@ -1,0 +1,21 @@
+import BotLayout from "../components/BotLayout";
+import TouchNoTouchBot from "../components/TouchNoTouchBot";
+
+export default function TouchNoTouchPage() {
+  return (
+    <BotLayout eyebrow="TOUCH / NO TOUCH TRADING DESK">
+      <section className="deskPageIntro touchIntro">
+        <div>
+          <span>DEDICATED DESK</span>
+          <h1>Touch / No Touch Bot</h1>
+          <p>
+            Barrier contracts only. This desk owns its proposal checks,
+            entry timing and execution flow.
+          </p>
+        </div>
+        <strong>TOUCH / NO TOUCH</strong>
+      </section>
+      <TouchNoTouchBot />
+    </BotLayout>
+  );
+}

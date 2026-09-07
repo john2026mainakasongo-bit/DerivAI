@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { DerivAuthProvider } from "./auth/DerivAuthContext";
@@ -7,6 +7,7 @@ import App from "./App";
 import "./index.css";
 import "./clean.css";
 import "./styles/CoreShell.css";
+import "./styles/AppShell.css";
 
 ReactDOM.createRoot(
   document.getElementById("root")

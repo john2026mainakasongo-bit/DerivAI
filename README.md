@@ -1,16 +1,31 @@
-# React + Vite
+# DerivAI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+DerivAI is a React/Vite trading interface for Deriv with two independent trading desks.
 
-Currently, two official plugins are available:
+## Desk flow
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `/dashboard` — bot selection/control center only.
+- `/rise-fall` — dedicated Rise / Fall trading desk.
+- `/touch-no-touch` — dedicated Touch / No Touch trading desk.
+- `/login` — Deriv OAuth login.
 
-## React Compiler
+Rise / Fall and Touch / No Touch do not share strategy logic. The Rise / Fall desk no longer uses Touch / No Touch proposal confirmation.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Touch / No Touch
 
-## Expanding the ESLint configuration
+The Touch desk uses Deriv `ONETOUCH` and `NOTOUCH` proposals and checks `contracts_for` availability before allowing proposal tests or automated execution. Proposal pricing is treated as a market quote, not a guaranteed probability.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+Production build:
+
+```bash
+npm run build
+```
+
+The final source package intentionally excludes `node_modules`, `dist`, and old backup files. Install dependencies on the target machine with `npm install` before building.

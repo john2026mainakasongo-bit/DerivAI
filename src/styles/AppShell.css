@@ -1,0 +1,413 @@
+
+/* =========================================
+   DERIVAI DESK NAVIGATION / LANDING
+   ========================================= */
+
+.appShell{
+  min-height:100vh;
+  background:
+    radial-gradient(circle at 12% 0%,rgba(30,126,190,.12),transparent 30%),
+    radial-gradient(circle at 90% 8%,rgba(135,64,190,.10),transparent 28%),
+    #020914;
+  color:#eaf7ff;
+}
+
+.appMain{
+  width:min(1400px,100%);
+  margin:0 auto;
+  padding:0 20px 30px;
+}
+
+.appHeader{
+  position:sticky;
+  top:0;
+  z-index:50;
+  min-height:70px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:24px;
+  padding:10px max(20px,calc((100vw - 1400px)/2 + 20px));
+  background:rgba(2,9,20,.94);
+  border-bottom:1px solid #123247;
+  backdrop-filter:blur(16px);
+}
+
+.appBrand{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  color:#fff;
+  text-decoration:none;
+  min-width:205px;
+}
+.appBrandMark{
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  font-weight:1000;
+  font-size:13px;
+  color:#fff;
+  background:linear-gradient(135deg,#14dca8,#327cff);
+  box-shadow:0 0 24px rgba(39,178,255,.2);
+}
+.appBrand strong{
+  display:block;
+  font-size:20px;
+  letter-spacing:.08em;
+}
+.appBrand small{
+  display:block;
+  margin-top:2px;
+  color:#6e91a5;
+  font-size:8px;
+  font-weight:800;
+  letter-spacing:.12em;
+}
+
+.appNav{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.appNavLink{
+  padding:9px 12px;
+  border:1px solid transparent;
+  border-radius:9px;
+  color:#7898aa;
+  text-decoration:none;
+  font-size:10px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.appNavLink:hover{
+  color:#e9fbff;
+  background:#071b2a;
+}
+.appNavLink.active{
+  color:#5ef0bc;
+  border-color:#175a4a;
+  background:#06241f;
+}
+.appNavLink.rise.active{
+  color:#61d9ff;
+  border-color:#174b67;
+  background:#061c2b;
+}
+.appNavLink.touch.active{
+  color:#b992ff;
+  border-color:#58358a;
+  background:#160d28;
+}
+
+.dashboardHome .appMain{
+  padding-top:14px;
+}
+.dashboardHero{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  padding:26px 28px;
+  margin:0 0 14px;
+  border:1px solid #123b55;
+  border-radius:18px;
+  background:linear-gradient(135deg,#061622,#071c2b);
+}
+.dashboardEyebrow{
+  color:#43dcb1;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.15em;
+}
+.dashboardHero h1{
+  margin:6px 0 7px;
+  font-size:31px;
+  letter-spacing:-.03em;
+}
+.dashboardHero p{
+  margin:0;
+  max-width:680px;
+  color:#7896a8;
+  font-size:12px;
+  line-height:1.6;
+}
+.dashboardStatus{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-width:180px;
+  padding:12px 14px;
+  border:1px solid #154a43;
+  border-radius:12px;
+  background:#061b1a;
+}
+.statusDot{
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:#24e4a4;
+  box-shadow:0 0 12px #24e4a4;
+}
+.dashboardStatus b,
+.dashboardStatus small{
+  display:block;
+}
+.dashboardStatus b{
+  color:#62efba;
+  font-size:9px;
+  letter-spacing:.1em;
+}
+.dashboardStatus small{
+  margin-top:3px;
+  color:#718b9b;
+  font-size:9px;
+}
+
+.botChoiceGrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+.botCard{
+  min-width:0;
+  padding:24px;
+  border:1px solid #143a50;
+  border-radius:18px;
+  background:#04111c;
+  box-shadow:0 18px 55px rgba(0,0,0,.2);
+}
+.riseCard{
+  border-color:#126080;
+  background:
+    radial-gradient(circle at 90% 0%,rgba(24,189,255,.08),transparent 35%),
+    #04131d;
+}
+.touchCard{
+  border-color:#693a91;
+  background:
+    radial-gradient(circle at 90% 0%,rgba(150,83,255,.10),transparent 35%),
+    #09091b;
+}
+.botCardTop{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.botIcon{
+  width:56px;
+  height:56px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  border:2px solid #26b9e9;
+  color:#55ddff;
+  font-size:28px;
+  font-weight:900;
+  background:#061d2a;
+}
+.touchCard .botIcon{
+  border-color:#9759ff;
+  color:#b790ff;
+  background:#1a1030;
+}
+.botTag{
+  padding:7px 10px;
+  border-radius:999px;
+  color:#62eab5;
+  background:#082c27;
+  border:1px solid #1c765e;
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.touchCard .botTag{
+  color:#c39cff;
+  background:#24143a;
+  border-color:#68429b;
+}
+.botCard h2{
+  margin:20px 0 7px;
+  font-size:26px;
+}
+.botCard p{
+  min-height:38px;
+  margin:0;
+  color:#819bad;
+  font-size:11px;
+  line-height:1.55;
+}
+.botCard ul{
+  display:grid;
+  gap:9px;
+  margin:20px 0;
+  padding:0;
+  list-style:none;
+}
+.botCard li{
+  display:flex;
+  gap:9px;
+  align-items:center;
+  color:#b9d1dd;
+  font-size:11px;
+}
+.botCard li span{
+  color:#49e8b5;
+  font-weight:1000;
+}
+.touchCard .botCard li span{
+  color:#b184ff;
+}
+.botOpenButton{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  width:100%;
+  padding:14px 16px;
+  border-radius:10px;
+  color:#031018;
+  background:#16d8a3;
+  text-decoration:none;
+  font-size:11px;
+  font-weight:1000;
+}
+.botOpenButton:hover{
+  filter:brightness(1.08);
+  transform:translateY(-1px);
+}
+.touchCard .botOpenButton{
+  color:#fff;
+  background:linear-gradient(135deg,#7437e9,#a24cff);
+}
+.dashboardNotice{
+  display:flex;
+  align-items:center;
+  gap:13px;
+  margin-top:14px;
+  padding:15px 18px;
+  border:1px solid #123247;
+  border-radius:13px;
+  background:#05121e;
+}
+.noticeIcon{
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  color:#fff;
+  background:#2168d8;
+  font-weight:1000;
+}
+.dashboardNotice strong{
+  font-size:11px;
+}
+.dashboardNotice p{
+  margin:3px 0 0;
+  color:#6f8d9f;
+  font-size:10px;
+  line-height:1.5;
+}
+
+.deskPageIntro{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  margin-bottom:10px;
+  padding:14px 16px;
+  border:1px solid #14384e;
+  border-radius:13px;
+  background:#04121d;
+}
+.deskPageIntro span{
+  color:#6ca0b9;
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.14em;
+}
+.deskPageIntro h1{
+  margin:4px 0 3px;
+  font-size:20px;
+}
+.deskPageIntro p{
+  margin:0;
+  color:#718b9c;
+  font-size:10px;
+}
+.deskPageIntro>strong{
+  padding:8px 11px;
+  border-radius:999px;
+  font-size:8px;
+  letter-spacing:.1em;
+}
+.riseIntro{
+  border-color:#14527b;
+}
+.riseIntro>strong{
+  color:#60dfff;
+  background:#06283b;
+}
+.touchIntro{
+  border-color:#60348a;
+  background:#08091a;
+}
+.touchIntro>strong{
+  color:#c29cff;
+  background:#201032;
+}
+
+@media(max-width:900px){
+  .appHeader{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:8px;
+  }
+  .appNav{
+    width:100%;
+    overflow-x:auto;
+  }
+  .dashboardHero{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+  .dashboardStatus{
+    width:100%;
+  }
+  .botChoiceGrid{
+    grid-template-columns:1fr;
+  }
+}
+
+@media(max-width:700px){
+  .appMain{
+    padding:0 10px 20px;
+  }
+  .appHeader{
+    padding:9px 10px;
+  }
+  .appBrand{
+    min-width:0;
+  }
+  .appBrand strong{
+    font-size:17px;
+  }
+  .appNavLink{
+    padding:8px 9px;
+  }
+  .dashboardHero{
+    padding:20px;
+  }
+  .dashboardHero h1{
+    font-size:25px;
+  }
+  .botCard{
+    padding:18px;
+  }
+  .deskPageIntro{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+}

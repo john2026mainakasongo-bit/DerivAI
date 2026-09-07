@@ -7,3 +7,42 @@
 .tntQuote b{color:#45f0ad}
 .tntMainBtn:disabled{opacity:.65;cursor:wait}
 @media (max-width:800px){.tntQuote{grid-template-columns:1fr}.tntQuote strong,.tntQuote b{white-space:normal}}
+
+.tntAvailability{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:10px;
+  padding:10px 13px;
+  border:1px solid #123d57;
+  border-radius:11px;
+  background:#05131e;
+}
+.tntAvailability span{
+  color:#7295a8;
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.12em;
+}
+.tntAvailability strong{
+  color:#ffca6b;
+  font-size:10px;
+}
+.tntAvailability.ready{
+  border-color:#175c48;
+}
+.tntAvailability.ready strong{
+  color:#5cefb0;
+}
+.tntAvailability.blocked{
+  border-color:#714342;
+}
+.tntAvailability.blocked strong{
+  color:#ff9a8d;
+}
+.tntAvailability small{
+  width:100%;
+  color:#7893a5;
+  font-size:9px;
+}

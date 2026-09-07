@@ -922,6 +922,10 @@ export default function useDerivTicks() {
     }
   }, []);
 
+  const getContractsFor = useCallback(async (nextSymbol = symbol) => {
+    return derivPublicClient.getContractsFor(nextSymbol);
+  }, [symbol]);
+
   const loadPortfolio = useCallback(async () => {
     await derivPublicClient.ensureTradingConnection();
     return derivPublicClient.getPortfolio();
@@ -994,6 +998,7 @@ export default function useDerivTicks() {
     quoteTrade,
     placeTrade,
     placeQuotedTrade,
+    getContractsFor,
     refreshContract,
     sellContract,
     loadPortfolio,

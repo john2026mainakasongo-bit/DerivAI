@@ -1,178 +1,109 @@
-import { useEffect, useState } from "react";
-import { completeDerivLogin } from "../auth/derivOAuth";
-import { useDerivAuth } from "../auth/DerivAuthContext";
-import RiseFallBot from "../components/RiseFallBot";
-import TouchNoTouchBot from "../components/TouchNoTouchBot";
+import { Link } from "react-router-dom";
+import AppHeader from "../components/AppHeader";
+import AccountBar from "../components/AccountBar";
+
+const botCards = [
+  {
+    path: "/rise-fall",
+    className: "botCard riseCard",
+    icon: "↗",
+    tag: "CORE",
+    title: "Rise / Fall Bot",
+    description:
+      "Dedicated directional trading desk with live market analysis and best-entry timing.",
+    points: [
+      "Live market analysis",
+      "Momentum and trend confirmation",
+      "Best entry detection",
+      "Demo and Real trading",
+    ],
+    action: "Open Rise / Fall Bot",
+  },
+  {
+    path: "/touch-no-touch",
+    className: "botCard touchCard",
+    icon: "◎",
+    tag: "SEPARATE DESK",
+    title: "Touch / No Touch Bot",
+    description:
+      "Dedicated barrier-contract desk for Touch and No Touch proposals, entry quality and execution.",
+    points: [
+      "Touch and No Touch proposals",
+      "Dynamic barrier selection",
+      "AI entry timing",
+      "Demo and Real trading",
+    ],
+    action: "Open Touch / No Touch Bot",
+  },
+];
 
 export default function Dashboard() {
-  const auth = useDerivAuth();
-
-  const [oauthError, setOauthError] = useState("");
-  const [completingOAuth, setCompletingOAuth] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function finish() {
-      const url = new URL(window.location.href);
-
-      if (
-        !url.searchParams.has("code") &&
-        !url.searchParams.has("error")
-      ) {
-        return;
-      }
-
-      try {
-        setCompletingOAuth(true);
-        setOauthError("");
-
-        const session = await completeDerivLogin();
-
-        if (!cancelled && session?.accessToken) {
-          window.history.replaceState(
-            {},
-            document.title,
-            window.location.pathname
-          );
-
-          window.location.reload();
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setOauthError(
-            error instanceof Error
-              ? error.message
-              : "Unable to complete Deriv login."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setCompletingOAuth(false);
-        }
-      }
-    }
-
-    void finish();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const accountList = (auth.accounts || []).filter(
-    (account) =>
-      account.displayType === "demo" ||
-      account.displayType === "real"
-  );
-
-  const selectedId = String(
-    auth.selectedAccount?.id ||
-      auth.selectedAccount?.account_id ||
-      auth.selectedAccount?.loginid ||
-      ""
-  );
-
-  function handleAccountChange(accountId) {
-    if (!accountId || accountId === selectedId) {
-      return;
-    }
-
-    auth.selectAccount(accountId);
-  }
-
   return (
-    <main className="cleanBotPage">
-      <section className="cleanAccountBar">
-        <div className="cleanAccountInfo">
-          <span className="cleanAccountLabel">
-            ACCOUNT
-          </span>
+    <div className="appShell dashboardHome">
+      <AppHeader eyebrow="TRADING CONTROL CENTER" />
 
-          <strong>
-            {auth.authenticated
-              ? auth.selectedAccountType === "real"
-                ? "Real Account"
-                : "Demo Account"
-              : "Not connected"}
-          </strong>
+      <main className="appMain">
+        <AccountBar />
 
-          {auth.selectedAccount?.displayLabel ? (
-            <small>
-              {auth.selectedAccount.displayLabel}
-            </small>
-          ) : null}
-        </div>
+        <section className="dashboardHero">
+          <div>
+            <span className="dashboardEyebrow">DERIVAI CONTROL CENTER</span>
+            <h1>Choose your trading desk</h1>
+            <p>
+              Rise / Fall and Touch / No Touch are independent desks.
+              Open only the strategy you want to trade.
+            </p>
+          </div>
 
-        <div className="cleanAccountActions">
-          {auth.authenticated && accountList.length > 0
-            ? accountList.map((account) => {
-                const id = String(account.id || "");
-                const isSelected = id === selectedId;
+          <div className="dashboardStatus">
+            <span className="statusDot" />
+            <span>
+              <b>READY</b>
+              <small>Choose a bot to continue</small>
+            </span>
+          </div>
+        </section>
 
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    className={
-                      "cleanAccountButton" +
-                      (isSelected ? " selected" : "")
-                    }
-                    onClick={() =>
-                      handleAccountChange(id)
-                    }
-                  >
-                    {account.displayType === "real"
-                      ? "REAL"
-                      : "DEMO"}
+        <section className="botChoiceGrid">
+          {botCards.map((bot) => (
+            <article key={bot.path} className={bot.className}>
+              <div className="botCardTop">
+                <div className="botIcon">{bot.icon}</div>
+                <span className="botTag">{bot.tag}</span>
+              </div>
 
-                    <small>
-                      {account.displayLabel || id}
-                    </small>
-                    <strong className="accountBalanceValue">
-                      {Number.isFinite(Number(account.balance))
-                        ? `${Number(account.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${String(account.currency || "USD").toUpperCase()}`
-                        : "Balance unavailable"}
-                    </strong>
-                  </button>
-                );
-              })
-            : null}
+              <h2>{bot.title}</h2>
+              <p>{bot.description}</p>
 
-          {!auth.authenticated ? (
-            <button
-              type="button"
-              className="cleanAccountButton login"
-              onClick={auth.login}
-            >
-              LOGIN
-            </button>
-          ) : null}
-        </div>
-      </section>
+              <ul>
+                {bot.points.map((point) => (
+                  <li key={point}>
+                    <span>✓</span>
+                    {point}
+                  </li>
+                ))}
+              </ul>
 
-      {completingOAuth ? (
-        <div className="connectionError">
-          Completing Deriv login. Please wait...
-        </div>
-      ) : null}
+              <Link to={bot.path} className="botOpenButton">
+                {bot.action}
+                <span>→</span>
+              </Link>
+            </article>
+          ))}
+        </section>
 
-      {oauthError ? (
-        <div className="connectionError">
-          Deriv login failed: {oauthError}
-        </div>
-      ) : null}
-
-      {auth.authError ? (
-        <div className="connectionError">
-          {auth.authError}
-        </div>
-      ) : null}
-
-      <RiseFallBot />
-
-      <TouchNoTouchBot />
-    </main>
+        <section className="dashboardNotice">
+          <div className="noticeIcon">i</div>
+          <div>
+            <strong>One desk at a time</strong>
+            <p>
+              Each bot has its own screen, controls, analysis and trading
+              flow. This keeps Touch / No Touch completely separate from
+              Rise / Fall.
+            </p>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
-

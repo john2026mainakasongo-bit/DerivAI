@@ -1,4 +1,4 @@
-﻿import {
+import {
   BrowserRouter,
   Navigate,
   Route,
@@ -7,6 +7,8 @@
 
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import RiseFallPage from "./pages/RiseFallPage";
+import TouchNoTouchPage from "./pages/TouchNoTouchPage";
 
 export default function App() {
   return (
@@ -14,22 +16,20 @@ export default function App() {
       <Routes>
         <Route
           path="/"
-          element={
-            <Navigate
-              to="/dashboard"
-              replace
-            />
-          }
+          element={<Navigate to="/dashboard" replace />}
         />
 
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/rise-fall" element={<RiseFallPage />} />
         <Route
-          path="/dashboard"
-          element={<Dashboard />}
+          path="/touch-no-touch"
+          element={<TouchNoTouchPage />}
         />
+        <Route path="/login" element={<Login />} />
 
         <Route
-          path="/login"
-          element={<Login />}
+          path="*"
+          element={<Navigate to="/dashboard" replace />}
         />
       </Routes>
     </BrowserRouter>

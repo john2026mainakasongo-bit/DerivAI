@@ -1130,6 +1130,18 @@ class DerivTradingClient {
     }
   }
 
+  async getContractsFor(symbol) {
+    const underlyingSymbol = String(symbol || "").trim();
+
+    if (!underlyingSymbol) {
+      throw new Error("Underlying symbol is missing.");
+    }
+
+    return this.request({
+      contracts_for: underlyingSymbol,
+    });
+  }
+
   async getProposal({
     symbol,
     contractType,
