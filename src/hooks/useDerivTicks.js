@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -270,7 +270,9 @@ export default function useDerivTicks() {
     }).catch(() => {});
 
     return promise;
-  }, []);  const connect = useCallback(async () => {
+  }, []);
+
+  const connect = useCallback(async () => {
     manuallyDisconnectedRef.current = false;
     setTradeError("");
     setStatus("CONNECTING");
@@ -998,17 +1000,3 @@ export default function useDerivTicks() {
     loadStatement,
   };
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

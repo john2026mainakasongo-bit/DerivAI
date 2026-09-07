@@ -140,7 +140,7 @@ const directionOf = (value) => {
   );
 };
 
-export function RiseFallBotView({ feed }) {
+export default function RiseFallBot() {
   const auth = useDerivAuth();
 
   const {
@@ -166,7 +166,7 @@ export function RiseFallBotView({ feed }) {
     changeSymbol,
     placeTrade,
     sellContract,
-  } = feed || {};
+  } = useDerivTicks();
 
   const currency = String(
     selectedAccount?.currency || "USD"
@@ -179,11 +179,6 @@ export function RiseFallBotView({ feed }) {
       selectedAccount?.loginid ||
       ""
   );
-
-  const riseFallContracts = openContracts.filter((contract) => {
-    const type = String(contract?.contract_type || contract?.contractType || contract?.type || "").toUpperCase();
-    return type === "CALL" || type === "PUT" || type === "RISE" || type === "FALL";
-  });
 
   const [running, setRunning] =
     useState(false);
@@ -521,7 +516,7 @@ export function RiseFallBotView({ feed }) {
    * We only process the final settled snapshot once.
    */
   useEffect(() => {
-    for (const contract of riseFallContracts) {
+    for (const contract of openContracts) {
       if (!settled(contract)) {
         continue;
       }
@@ -630,7 +625,7 @@ export function RiseFallBotView({ feed }) {
   useEffect(() => {
     if (!openContracts.length) return;
 
-    for (const contract of riseFallContracts) {
+    for (const contract of openContracts) {
       if (settled(contract)) continue;
 
       const id = idOf(contract);
@@ -661,16 +656,18 @@ export function RiseFallBotView({ feed }) {
         : "STOP LOSS";
 
       setMessage(
-        `${reason} triggered for #${id} • ${money(pnlValue, currency)} • monitoring to settlement`
+        `${reason} triggered for #${id} • ${money(pnlValue, currency)}`
       );
 
-      // Fixed-duration Rise/Fall contracts may not support early resale.
-      // Do not call sellContract here; the session guard stops new entries
-      // while this contract is allowed to settle normally.
+      void sellContract(id, 0).catch(() => {
+        // If early selling is unavailable for this contract, allow the
+        // contract to continue to normal expiry instead of retrying rapidly.
+      });
     }
   }, [
     currency,
     openContracts,
+    sellContract,
     stopLoss,
     takeProfit,
   ]);
@@ -772,7 +769,7 @@ export function RiseFallBotView({ feed }) {
    * SETTLED → actual P/L → WON/LOST
    */
   const settledContracts =
-    riseFallContracts.filter(
+    openContracts.filter(
       (contract) =>
         settled(contract)
     );
@@ -859,7 +856,7 @@ export function RiseFallBotView({ feed }) {
       .slice(0, 8);
 
   const open =
-    riseFallContracts
+    openContracts
       .filter(
         (c) => !settled(c)
       )
@@ -1892,8 +1889,5 @@ function MiniChart({
 
 
 
-
-export default function RiseFallBot() {
-  const feed = useDerivTicks();
-  return <RiseFallBotView feed={feed} />;
-}
+// Backward-compatible named export
+export { RiseFallBot as RiseFallBotView };
