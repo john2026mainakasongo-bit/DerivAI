@@ -12,6 +12,88 @@ const pnlOf = (v) => Number(v?.profit ?? v?.profit_loss ?? v?.pnl ?? 0);
 const timeOf = (v) => { const t = Number(v?.date_start || v?.transaction_time || v?.date || v?.purchase_time || v?.epoch); return Number.isFinite(t) ? new Date(t * 1000).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"}) : "—"; };
 const typeOf = (v) => { const t = String(v?.contract_type || v?.contractType || v?.type || "").toUpperCase(); return t === "ONETOUCH" ? "TOUCH" : t === "NOTOUCH" ? "NO TOUCH" : t || "—"; };
 
+const DERIV_MEMORY_KEY = "zentora_deriv_first_memory_v1";
+const safeJson = (value, fallback) => {
+  try { return JSON.parse(value); } catch { return fallback; }
+};
+const readDerivMemory = () => {
+  if (typeof window === "undefined") return { profiles: {}, pending: {} };
+  return safeJson(window.localStorage.getItem(DERIV_MEMORY_KEY), { profiles: {}, pending: {} });
+};
+const writeDerivMemory = (memory) => {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(DERIV_MEMORY_KEY, JSON.stringify(memory)); } catch {}
+};
+const memoryKey = ({ symbol, setup, duration, durationUnit, barrier }) =>
+  `${symbol}|${setup}|${duration}${durationUnit}|${String(barrier)}`;
+const recordDerivObservation = ({ symbol, setup, duration, durationUnit, barrier, accepted, ask, payout }) => {
+  const memory = readDerivMemory();
+  const key = memoryKey({ symbol, setup, duration, durationUnit, barrier });
+  const old = memory.profiles[key] || {
+    symbol, setup, duration, durationUnit, barrier,
+    attempts: 0, accepted: 0, rejected: 0, wins: 0, losses: 0,
+    lastAsk: null, lastPayout: null, lastSeen: 0,
+  };
+  old.attempts += 1;
+  if (accepted) old.accepted += 1; else old.rejected += 1;
+  if (Number.isFinite(Number(ask))) old.lastAsk = Number(ask);
+  if (Number.isFinite(Number(payout))) old.lastPayout = Number(payout);
+  old.lastSeen = Date.now();
+  memory.profiles[key] = old;
+  writeDerivMemory(memory);
+  return old;
+};
+const recordDerivOutcome = ({ contractId, won }) => {
+  if (!contractId) return;
+  const memory = readDerivMemory();
+  const pending = memory.pending?.[String(contractId)];
+  if (!pending) return;
+  const profile = memory.profiles?.[pending.key];
+  if (profile) {
+    if (won) profile.wins += 1; else profile.losses += 1;
+    profile.lastSeen = Date.now();
+    memory.profiles[pending.key] = profile;
+  }
+  delete memory.pending[String(contractId)];
+  writeDerivMemory(memory);
+};
+const rememberPendingTrade = (contractId, details) => {
+  if (!contractId) return;
+  const memory = readDerivMemory();
+  memory.pending[String(contractId)] = details;
+  writeDerivMemory(memory);
+};
+const getMemoryProfile = (details) => readDerivMemory().profiles?.[memoryKey(details)] || null;
+const medianTickMove = (prices = []) => {
+  const values = prices.map((x) => Number(x?.quote ?? x)).filter(Number.isFinite);
+  const diffs = values.slice(1).map((v, i) => Math.abs(v - values[i])).filter(Number.isFinite).sort((a,b) => a-b);
+  if (!diffs.length) return 0;
+  const m = Math.floor(diffs.length / 2);
+  return diffs.length % 2 ? diffs[m] : (diffs[m-1] + diffs[m]) / 2;
+};
+const buildDerivNativeCandidates = ({ prices, decimals, direction, setup, modelOffset }) => {
+  const pip = 10 ** (-Math.max(0, Number(decimals) || 2));
+  const tickMove = Math.max(medianTickMove(prices), pip);
+  const seeds = [
+    pip * 5, pip * 10, pip * 20, pip * 30, pip * 50, pip * 75, pip * 100,
+    tickMove, tickMove * 1.5, tickMove * 2, tickMove * 3, tickMove * 4,
+    Math.max(Number(modelOffset) || 0, tickMove * 2),
+  ];
+  const unique = new Map();
+  const multipliers = setup === "NO TOUCH" ? [0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4] : [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4];
+  for (const seed of seeds) {
+    for (const multiplier of multipliers) {
+      const offset = Math.max(seed * multiplier, pip * 5);
+      const rounded = Number(offset.toFixed(Math.max(2, Number(decimals) || 2)));
+      if (rounded > 0) unique.set(rounded.toFixed(Math.max(2, Number(decimals) || 2)), rounded);
+    }
+  }
+  return [...unique.values()]
+    .sort((a,b) => a-b)
+    .slice(0, 14)
+    .map((offset) => `${direction >= 0 ? "+" : "-"}${offset.toFixed(Math.max(2, Number(decimals) || 2))}`);
+};
+
 export function TouchNoTouchBotView({ feed }) {
   const auth = useDerivAuth();
   const { markets = [], market, symbol, connected, authenticatedFeed, status, ticks = [], prices = [], currentPrice, openContracts = [], transactions = [], changeSymbol, quoteTrade, placeTrade, placeQuotedTrade, sellContract, selectedAccount, selectedAccountType, selectedAccountId, tradeBusy } = feed;
@@ -304,17 +386,18 @@ export function TouchNoTouchBotView({ feed }) {
         candidates.push({ barrier, tradeDuration });
       };
 
-      // Deriv-native barrier ladder. Every candidate is a signed OFFSET;
-      // only proposals that Deriv actually prices can reach the BUY stage.
-      const multipliers = setup === "NO TOUCH"
-        ? [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4]
-        : [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
+      // DERIV-FIRST: generate a broker-compatible offset ladder from live
+      // tick movement + small native offsets. These are candidates only.
+      // Deriv's proposal response is the authority on what can actually trade.
+      const nativeBarriers = buildDerivNativeCandidates({
+        prices: analysisPrices,
+        decimals,
+        direction,
+        setup,
+        modelOffset,
+      });
       for (const tradeDuration of durations) {
-        for (const multiplier of multipliers) {
-          const offset = Math.max(modelOffset * multiplier, minimumOffset);
-          const relativeBarrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(decimals)}`;
-          addCandidate(relativeBarrier, tradeDuration);
-        }
+        for (const relativeBarrier of nativeBarriers) addCandidate(relativeBarrier, tradeDuration);
       }
 
       const primaryResults = await Promise.allSettled(
@@ -333,13 +416,20 @@ export function TouchNoTouchBotView({ feed }) {
 
       for (const result of primaryResults) {
         if (result.status === "rejected") {
+          const failed = candidates[primaryResults.indexOf(result)];
+          if (failed) recordDerivObservation({ symbol, setup, duration: failed.tradeDuration, durationUnit, barrier: failed.barrier, accepted: false });
           errors.push(result.reason instanceof Error ? result.reason.message : String(result.reason));
           continue;
         }
         const { quote, barrier, tradeDuration } = result.value;
         const ask = Number(quote?.askPrice);
         const payout = Number(quote?.payout);
-        if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask) {
+        if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout)) {
+          recordDerivObservation({ symbol, setup, duration: tradeDuration, durationUnit, barrier, accepted: true, ask, payout });
+          if (payout <= ask) {
+            errors.push(`Deriv priced ${barrier}/${tradeDuration}${durationUnit} but payout <= stake`);
+            continue;
+          }
           const returnPct = ((payout - ask) / ask) * 100;
           const impliedProbability = Math.max(0, Math.min(1, ask / payout));
           // V10.3: probability belongs to the exact Deriv signed barrier being
@@ -359,11 +449,17 @@ export function TouchNoTouchBotView({ feed }) {
           // compatible with the model probability and reject extreme lottery
           // pricing unless the model has a genuinely strong probability edge.
           const pricingCompatible = quoteProbabilityGate && impliedProbability >= 0.08 && probabilityGap >= 0.02 && expectedValue >= 0;
+          const memory = getMemoryProfile({ symbol, setup, duration: tradeDuration, durationUnit, barrier });
+          const acceptanceRate = memory && memory.attempts > 0 ? memory.accepted / memory.attempts : 0.5;
+          const outcomeTotal = (memory?.wins || 0) + (memory?.losses || 0);
+          const historicalWinRate = outcomeTotal >= 3 ? memory.wins / outcomeTotal : 0.5;
+          const learningBonus = Math.max(0, Math.min(8, (acceptanceRate - 0.5) * 8 + (historicalWinRate - 0.5) * 12));
           const quoteScore = Math.round(
-            forcedAnalysis.entryScore * 0.60 +
-            quoteModelProbability * 25 +
-            Math.min(20, Math.max(0, probabilityGap * 100)) * 1.25 +
-            Math.min(8, Math.max(0, expectedValue / Math.max(ask, 0.01) * 100))
+            forcedAnalysis.entryScore * 0.52 +
+            quoteModelProbability * 24 +
+            Math.min(20, Math.max(0, probabilityGap * 100)) * 1.15 +
+            Math.min(8, Math.max(0, expectedValue / Math.max(ask, 0.01) * 100)) +
+            learningBonus
           );
           quotes.push({
             ...quote,
@@ -378,8 +474,12 @@ export function TouchNoTouchBotView({ feed }) {
             pricingCompatible,
             expectedValue,
             quoteScore,
+            derivAcceptanceRate: acceptanceRate,
+            derivHistoricalWinRate: historicalWinRate,
+            derivLearningBonus: learningBonus,
           });
         } else {
+          recordDerivObservation({ symbol, setup, duration: tradeDuration, durationUnit, barrier, accepted: false });
           errors.push(`invalid payout ${barrier}/${tradeDuration}${durationUnit}`);
         }
       }
@@ -418,11 +518,17 @@ export function TouchNoTouchBotView({ feed }) {
       }
       setLiveQuote(best);
       setMessage(
-        `AI BEST ENTRY • ${setup} • ${direction > 0 ? "ABOVE" : "BELOW"} • Barrier ${best.barrier} • Model ${(Number(best.modelProbability) * 100).toFixed(1)}% • Gap ${(Number(best.probabilityGap) * 100).toFixed(1)}% • Return ${best.returnPct.toFixed(1)}%`
+        `DERIV-FIRST • ${setup} • ${direction > 0 ? "ABOVE" : "BELOW"} • Barrier ${best.barrier} • Model ${(Number(best.modelProbability) * 100).toFixed(1)}% • Gap ${(Number(best.probabilityGap) * 100).toFixed(1)}% • Deriv memory ${(Number(best.derivHistoricalWinRate) * 100).toFixed(0)}% • Return ${best.returnPct.toFixed(1)}%`
       );
 
       const result = await placeQuotedTrade({ quote: best });
       const id = idOf(result);
+      if (id) {
+        rememberPendingTrade(id, {
+          key: memoryKey({ symbol, setup, duration: best.duration, durationUnit: best.durationUnit, barrier: best.barrier }),
+          symbol, setup, duration: best.duration, durationUnit: best.durationUnit, barrier: best.barrier,
+        });
+      }
       setTrades((v) => v + 1);
       lastEntryRef.current = Date.now();
       if (isRecovery) { setRecoveryUsed(true); recoveryPendingRef.current = false; }
@@ -478,6 +584,7 @@ export function TouchNoTouchBotView({ feed }) {
       processedRef.current.add(id);
       const pnl = pnlOf(c);
       const won = pnl >= 0;
+      recordDerivOutcome({ contractId: id, won });
       setSessionPnl((v) => v + pnl);
       if (won) { setWins((v) => v + 1); setRecoveryUsed(false); recoveryPendingRef.current = false; }
       else { setLosses((v) => v + 1); if (running && recoveryEnabled && !recoveryUsed && !recoveryPendingRef.current) recoveryPendingRef.current = true; }
@@ -514,7 +621,7 @@ export function TouchNoTouchBotView({ feed }) {
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • PROTECTED OPTIONS ENGINE</small><h1>Touch / No Touch Growth Desk</h1><p>Structure-first entries • fixed $0.35 stake • optional one-time recovery • hard session protection</p></div>
+        <div><small>ZENTORA • DERIV-FIRST ADAPTIVE ENGINE V10.4</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • exact broker-priced barriers • local outcome learning • hard session protection</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
@@ -657,6 +764,7 @@ export function TouchNoTouchBotView({ feed }) {
             <div><span>ASK / PAYOUT</span><b>{liveQuote ? `${money(liveQuote.askPrice, currency)} → ${money(liveQuote.payout, currency)}` : "—"}</b></div>
             <div><span>MODEL / GAP</span><b>{liveQuote ? `${(Number(liveQuote.modelProbability || 0) * 100).toFixed(1)}% / ${(Number(liveQuote.probabilityGap || 0) * 100).toFixed(1)}%` : "—"}</b></div>
             <div><span>EXPECTED RETURN</span><b>{liveQuote ? `${Number(liveQuote.returnPct || 0).toFixed(1)}%` : "—"}</b></div>
+            <div><span>DERIV MEMORY</span><b>{liveQuote ? `${(Number(liveQuote.derivHistoricalWinRate || 0.5) * 100).toFixed(0)}% historical • ${(Number(liveQuote.derivAcceptanceRate || 0.5) * 100).toFixed(0)}% accepted` : "LEARNING"}</b></div>
           </div>
           {quoteError && <div className="tntQuoteError">DERIV QUOTE: {quoteError}</div>}
           <div className="tntChecks"><div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Volatility</span><b>{analysis.volatility}</b></div><div><span>Confirmations</span><b>{analysis.confirmations}/6</b></div><div><span>Market quality</span><b>{analysis.marketQuality}/100</b></div><div><span>Timing</span><b>{analysis.timing || (analysis.noChase ? "NO CHASE OK" : "LATE / WAIT")}</b></div><div><span>Horizon</span><b>{analysis.duration} {analysis.durationUnit === "s" ? "SEC" : "TICKS"} · {analysis.horizonTicks || analysis.duration} TICKS</b></div><div><span>Model probability</span><b>{(Number(analysis.modelProbability || 0) * 100).toFixed(1)}%</b></div></div>
