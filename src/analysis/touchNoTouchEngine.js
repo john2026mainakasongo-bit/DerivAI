@@ -306,7 +306,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
       ? `${candidate} confirmed for ${duration} ${durationUnit === "s" ? "seconds" : "ticks"}; model probability ${(modelProbability * 100).toFixed(1)}%.`
       : !probabilityGate
         ? `Waiting: model probability ${(modelProbability * 100).toFixed(1)}% is below the 78% probability gate.`
-        : quality < 70
+        : quality < 60
           ? `Waiting: market quality ${Math.round(quality)}/100 is below the 60 safety gate.`
           : timing === "LATE / WAIT RETEST"
           ? `Entry is extended; waiting for a retest before ${candidate}.`

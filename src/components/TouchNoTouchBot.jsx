@@ -340,17 +340,18 @@ export function TouchNoTouchBotView({ feed }) {
           const impliedProbability = Math.max(0, Math.min(1, ask / payout));
           const modelProbability = Number(forcedAnalysis.modelProbability || 0);
           const probabilityGap = modelProbability - impliedProbability;
+          const expectedValue = modelProbability * payout - ask;
           // Do not reward huge payouts. A very high return normally means a
           // very low implied hit probability, which is the opposite of a
           // conservative winning-entry filter. Prefer quotes whose price is
           // compatible with the model probability and reject extreme lottery
           // pricing unless the model has a genuinely strong probability edge.
-          const pricingCompatible = impliedProbability >= 0.08 && probabilityGap >= 0.05;
+          const pricingCompatible = impliedProbability >= 0.08 && probabilityGap >= 0.02 && expectedValue >= 0;
           const quoteScore = Math.round(
             forcedAnalysis.entryScore * 0.72 +
             Math.min(20, Math.max(0, probabilityGap * 100)) * 1.4
           );
-          quotes.push({ ...quote, barrier, duration: tradeDuration, durationUnit, returnPct, impliedProbability, probabilityGap, pricingCompatible, quoteScore });
+          quotes.push({ ...quote, barrier, duration: tradeDuration, durationUnit, returnPct, impliedProbability, probabilityGap, pricingCompatible, expectedValue, quoteScore });
         } else {
           errors.push(`invalid payout ${barrier}/${tradeDuration}${durationUnit}`);
         }
@@ -395,12 +396,13 @@ export function TouchNoTouchBotView({ feed }) {
             const impliedProbability = Math.max(0, Math.min(1, ask / payout));
             const modelProbability = Number(forcedAnalysis.modelProbability || 0);
             const probabilityGap = modelProbability - impliedProbability;
-            const pricingCompatible = impliedProbability >= 0.08 && probabilityGap >= 0.05;
+            const expectedValue = modelProbability * payout - ask;
+            const pricingCompatible = impliedProbability >= 0.08 && probabilityGap >= 0.02 && expectedValue >= 0;
             const quoteScore = Math.round(
               forcedAnalysis.entryScore * 0.72 +
               Math.min(20, Math.max(0, probabilityGap * 100)) * 1.4
             );
-            quotes.push({ ...quote, barrier, duration: tradeDuration, durationUnit, returnPct, impliedProbability, probabilityGap, pricingCompatible, quoteScore });
+            quotes.push({ ...quote, barrier, duration: tradeDuration, durationUnit, returnPct, impliedProbability, probabilityGap, pricingCompatible, expectedValue, quoteScore });
           } else {
             errors.push(`invalid payout ${barrier}/${tradeDuration}${durationUnit}`);
           }
