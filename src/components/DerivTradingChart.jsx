@@ -10,6 +10,7 @@ const TIMEFRAMES = [
   { label: "1m", seconds: 60 },
   { label: "5m", seconds: 300 },
   { label: "15m", seconds: 900 },
+  { label: "1H", seconds: 3600 },
 ];
 
 const DRAW_TOOLS = [
@@ -302,8 +303,10 @@ function fibLevels(first, second) {
 
 export default function DerivTradingChart({
   values = [],
+  candleHistory = {},
   signal = "",
   confidence = 0,
+  analysis = null,
 }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
@@ -314,8 +317,9 @@ export default function DerivTradingChart({
   const supportRef = useRef(null);
   const resistanceRef = useRef(null);
   const markersRef = useRef(null);
+  const analysisLinesRef = useRef([]);
 
-  const [timeframe, setTimeframe] = useState(60);
+  const [timeframe, setTimeframe] = useState(3600);
   const [showEMA, setShowEMA] = useState(true);
   const [showLevels, setShowLevels] = useState(true);
 
@@ -324,10 +328,29 @@ export default function DerivTradingChart({
   const [pendingPoint, setPendingPoint] = useState(null);
   const [, forceOverlayUpdate] = useState(0);
 
-  const candles = useMemo(
-    () => buildCandles(values, timeframe),
-    [values, timeframe]
-  );
+  const candles = useMemo(() => {
+    const historical = Array.isArray(candleHistory?.[timeframe])
+      ? candleHistory[timeframe]
+      : [];
+
+    if (historical.length >= 50) {
+      return historical.slice(-260).map((candle) => ({
+        time: Number(candle.time ?? candle.epoch),
+        open: Number(candle.open),
+        high: Number(candle.high),
+        low: Number(candle.low),
+        close: Number(candle.close),
+      })).filter((candle) =>
+        Number.isFinite(candle.time) &&
+        Number.isFinite(candle.open) &&
+        Number.isFinite(candle.high) &&
+        Number.isFinite(candle.low) &&
+        Number.isFinite(candle.close)
+      );
+    }
+
+    return buildCandles(values, timeframe);
+  }, [candleHistory, values, timeframe]);
 
   const levels = useMemo(
     () => findLevels(candles),
@@ -526,24 +549,18 @@ export default function DerivTradingChart({
       resistanceRef.current?.setData([]);
     }
 
-    if (markersRef.current && candles.length && signal) {
+    if (markersRef.current && candles.length && signal && signal !== "WAIT") {
       const latest = candles[candles.length - 1];
+      const isTouch = signal === "TOUCH";
+      const isNoTouch = signal === "NO TOUCH";
+      const isRise = signal === "RISE";
 
       markersRef.current.setMarkers([
         {
           time: latest.time,
-          position:
-            signal === "RISE"
-              ? "belowBar"
-              : "aboveBar",
-          color:
-            signal === "RISE"
-              ? "#19c37d"
-              : "#ef476f",
-          shape:
-            signal === "RISE"
-              ? "arrowUp"
-              : "arrowDown",
+          position: isRise || isTouch ? "belowBar" : "aboveBar",
+          color: isRise || isTouch ? "#19c37d" : "#55a7ff",
+          shape: isRise || isTouch ? "arrowUp" : "arrowDown",
           text: `${signal} ${confidence || 0}%`,
         },
       ]);
@@ -560,6 +577,52 @@ export default function DerivTradingChart({
     showEMA,
     showLevels,
   ]);
+
+  useEffect(() => {
+    const series = candleRef.current;
+    if (!series) return;
+
+    for (const line of analysisLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // Lightweight Charts can already remove a line during chart teardown.
+      }
+    }
+    analysisLinesRef.current = [];
+
+    const lines = [
+      {
+        price: Number(analysis?.touchBarrier),
+        title: "AI TOUCH",
+        color: "#19c37d",
+      },
+      {
+        price: Number(analysis?.noTouchBarrier),
+        title: "AI NO TOUCH",
+        color: "#55a7ff",
+      },
+      {
+        price: Number(analysis?.current),
+        title: "SPOT",
+        color: "#f5c542",
+      },
+    ];
+
+    for (const item of lines) {
+      if (!Number.isFinite(item.price)) continue;
+      analysisLinesRef.current.push(
+        series.createPriceLine({
+          price: item.price,
+          color: item.color,
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: item.title,
+        })
+      );
+    }
+  }, [analysis?.current, analysis?.touchBarrier, analysis?.noTouchBarrier]);
 
   useEffect(() => {
     setPendingPoint(null);
@@ -840,6 +903,11 @@ export default function DerivTradingChart({
               {item.label}
             </button>
           ))}
+        </div>
+
+        <div className="chartHistoryStatus">
+          <strong>{candles.length}</strong> candles
+          <span>{timeframe === 3600 ? "1H OHLC" : `${timeframe / 60}M OHLC`}</span>
         </div>
 
         <div className="chartToolGroup">

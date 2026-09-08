@@ -8,41 +8,5 @@
 .tntMainBtn:disabled{opacity:.65;cursor:wait}
 @media (max-width:800px){.tntQuote{grid-template-columns:1fr}.tntQuote strong,.tntQuote b{white-space:normal}}
 
-.tntAvailability{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-top:10px;
-  padding:10px 13px;
-  border:1px solid #123d57;
-  border-radius:11px;
-  background:#05131e;
-}
-.tntAvailability span{
-  color:#7295a8;
-  font-size:8px;
-  font-weight:900;
-  letter-spacing:.12em;
-}
-.tntAvailability strong{
-  color:#ffca6b;
-  font-size:10px;
-}
-.tntAvailability.ready{
-  border-color:#175c48;
-}
-.tntAvailability.ready strong{
-  color:#5cefb0;
-}
-.tntAvailability.blocked{
-  border-color:#714342;
-}
-.tntAvailability.blocked strong{
-  color:#ff9a8d;
-}
-.tntAvailability small{
-  width:100%;
-  color:#7893a5;
-  font-size:9px;
-}
+/* Full Touch / No Touch terminal workspace */
+.tntShell{width:100%;box-sizing:border-box;padding:10px 12px 24px}.tntMainGrid{grid-template-columns:minmax(0,1fr) 330px;align-items:stretch}.tntChartCard{min-width:0}.tntAnalysis{min-width:0}.chartHistoryStatus{display:flex;align-items:center;gap:6px;margin-left:auto;padding:0 8px;color:#6e8ca0;font-size:9px;white-space:nowrap}.chartHistoryStatus strong{color:#65eeb0;font-size:11px}.chartHistoryStatus span{color:#8da7b8}.zentoraChartCanvas{min-height:620px}.tntChartCard .zentoraChart{min-height:670px}.tntChartCard .zentoraChartCanvas{height:620px}.tntChartCard .zentoraChartToolbar{overflow-x:auto;scrollbar-width:thin}@media(max-width:1200px){.tntMainGrid{grid-template-columns:minmax(0,1fr) 300px}.tntChartCard .zentoraChartCanvas{height:560px}.tntChartCard .zentoraChart{min-height:610px}}@media(max-width:900px){.tntMainGrid{grid-template-columns:1fr}.tntChartCard .zentoraChartCanvas{height:520px}.tntChartCard .zentoraChart{min-height:570px}}

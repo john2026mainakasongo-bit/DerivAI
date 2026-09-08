@@ -113,6 +113,7 @@ export default function useDerivTicks() {
     60: [],
     300: [],
     900: [],
+    3600: [],
   });
   const [openContracts, setOpenContracts] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -196,6 +197,7 @@ export default function useDerivTicks() {
       60: [],
       300: [],
       900: [],
+      3600: [],
     });
 
     // CRITICAL: the promise returned here resolves immediately after the
@@ -225,10 +227,14 @@ export default function useDerivTicks() {
           console.warn("[ZENTORA] Background tick history unavailable:", error);
         }
 
+        // Keep a deep, real OHLC history for the Touch / No Touch workspace.
+        // 240 hourly candles gives the chart enough structure for EMA/S-R and
+        // price-action context without fabricating candles from sparse ticks.
         const candleRequests = [
-          [60, 120],
-          [300, 120],
-          [900, 120],
+          [3600, 240],
+          [60, 240],
+          [300, 240],
+          [900, 240],
         ];
 
         for (const [granularity, count] of candleRequests) {
@@ -922,10 +928,6 @@ export default function useDerivTicks() {
     }
   }, []);
 
-  const getContractsFor = useCallback(async (nextSymbol = symbol) => {
-    return derivPublicClient.getContractsFor(nextSymbol);
-  }, [symbol]);
-
   const loadPortfolio = useCallback(async () => {
     await derivPublicClient.ensureTradingConnection();
     return derivPublicClient.getPortfolio();
@@ -998,7 +1000,6 @@ export default function useDerivTicks() {
     quoteTrade,
     placeTrade,
     placeQuotedTrade,
-    getContractsFor,
     refreshContract,
     sellContract,
     loadPortfolio,

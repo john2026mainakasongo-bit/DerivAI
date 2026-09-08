@@ -549,7 +549,7 @@ export function TouchNoTouchBotView({ feed }) {
       </div>
 
       <div className="tntMainGrid">
-        <div className="tntChartCard"><div className="tntCardHead"><div><b>{market?.label || "Market"}</b><span>● LIVE</span></div><strong>{Number.isFinite(Number(currentPrice)) ? Number(currentPrice).toFixed(market?.decimals ?? 3) : "—"}</strong></div><div className="tntTabs"><span className="active">TICKS</span><span>1M</span><span>5M</span><span>15M</span></div><DerivTradingChart values={chartTicks} candleHistory={feed.candleHistory} signal={analysis.signal} confidence={analysis.entryScore} />
+        <div className="tntChartCard"><div className="tntCardHead"><div><b>{market?.label || "Market"}</b><span>● LIVE</span></div><strong>{Number.isFinite(Number(currentPrice)) ? Number(currentPrice).toFixed(market?.decimals ?? 3) : "—"}</strong></div><div className="tntTabs"><span className="active">TICKS</span><span>1M</span><span>5M</span><span>15M</span></div><DerivTradingChart values={chartTicks} candleHistory={feed.candleHistory} signal={analysis.signal} confidence={analysis.entryScore} analysis={analysis} />
           <div className="tntProposalTest" style={{
             marginTop: 10,
             padding: 12,
