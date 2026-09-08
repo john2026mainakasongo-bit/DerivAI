@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
-import analyzeTouchNoTouch from "../analysis/touchNoTouchEngine";
+import analyzeTouchNoTouch, { estimateQuoteProbability } from "../analysis/touchNoTouchEngine";
 import DerivTradingChart from "./DerivTradingChart";
 import "../styles/TouchNoTouchBot.css";
 
@@ -196,8 +196,19 @@ export function TouchNoTouchBotView({ feed }) {
       if (requestId !== diagnosticRequestRef.current) return;
 
       const returnPct = ((payout - ask) / ask) * 100;
+      const quoteModelProbability = estimateQuoteProbability(analysisPrices, {
+        spot,
+        barrier: usedBarrier,
+        setup,
+        horizonTicks: analysis.horizonTicks,
+      });
+      const impliedProbability = Math.max(0, Math.min(1, ask / payout));
+      const probabilityGap = quoteModelProbability - impliedProbability;
       const result = {
         ...quote,
+        modelProbability: quoteModelProbability,
+        impliedProbability,
+        probabilityGap,
         side: setup,
         contractType,
         barrier: usedBarrier,
@@ -211,7 +222,7 @@ export function TouchNoTouchBotView({ feed }) {
       setLiveQuote(result);
       setQuoteError("");
       setMessage(
-        `${setup} PROPOSAL OK · ${contractType} · Ask ${ask.toFixed(2)} · Payout ${payout.toFixed(2)} · Return ${returnPct.toFixed(1)}%`
+        `${setup} PROPOSAL OK · ${contractType} · Ask ${ask.toFixed(2)} · Payout ${payout.toFixed(2)} · Model ${(quoteModelProbability * 100).toFixed(1)}% · Gap ${(probabilityGap * 100).toFixed(1)}% · Return ${returnPct.toFixed(1)}%`
       );
     } catch (error) {
       if (requestId !== diagnosticRequestRef.current) return;
@@ -236,6 +247,7 @@ export function TouchNoTouchBotView({ feed }) {
     quoteTrade,
     selectedAccountId,
     symbol,
+    analysisPrices,
   ]);
   const execute = useCallback(async (mode = "AUTO", forcedAnalysis = analysis, forcedStake = null) => {
     if (busyRef.current || !selectedAccountId || !forcedAnalysis?.ready) return;
@@ -330,20 +342,43 @@ export function TouchNoTouchBotView({ feed }) {
         if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask) {
           const returnPct = ((payout - ask) / ask) * 100;
           const impliedProbability = Math.max(0, Math.min(1, ask / payout));
-          const modelProbability = Number(forcedAnalysis.modelProbability || 0);
-          const probabilityGap = modelProbability - impliedProbability;
-          const expectedValue = modelProbability * payout - ask;
+          // V10.3: probability belongs to the exact Deriv signed barrier being
+          // priced. Never reuse the probability of the original model barrier.
+          const quoteModelProbability = estimateQuoteProbability(analysisPrices, {
+            spot,
+            barrier,
+            setup,
+            horizonTicks: forcedAnalysis.horizonTicks,
+          });
+          const probabilityGap = quoteModelProbability - impliedProbability;
+          const quoteProbabilityGate = quoteModelProbability >= 0.78;
+          const expectedValue = quoteModelProbability * payout - ask;
           // Do not reward huge payouts. A very high return normally means a
           // very low implied hit probability, which is the opposite of a
           // conservative winning-entry filter. Prefer quotes whose price is
           // compatible with the model probability and reject extreme lottery
           // pricing unless the model has a genuinely strong probability edge.
-          const pricingCompatible = impliedProbability >= 0.08 && probabilityGap >= 0.02 && expectedValue >= 0;
+          const pricingCompatible = quoteProbabilityGate && impliedProbability >= 0.08 && probabilityGap >= 0.02 && expectedValue >= 0;
           const quoteScore = Math.round(
-            forcedAnalysis.entryScore * 0.72 +
-            Math.min(20, Math.max(0, probabilityGap * 100)) * 1.4
+            forcedAnalysis.entryScore * 0.60 +
+            quoteModelProbability * 25 +
+            Math.min(20, Math.max(0, probabilityGap * 100)) * 1.25 +
+            Math.min(8, Math.max(0, expectedValue / Math.max(ask, 0.01) * 100))
           );
-          quotes.push({ ...quote, barrier, duration: tradeDuration, durationUnit, returnPct, impliedProbability, probabilityGap, pricingCompatible, expectedValue, quoteScore });
+          quotes.push({
+            ...quote,
+            barrier,
+            duration: tradeDuration,
+            durationUnit,
+            returnPct,
+            impliedProbability,
+            modelProbability: quoteModelProbability,
+            probabilityGap,
+            quoteProbabilityGate,
+            pricingCompatible,
+            expectedValue,
+            quoteScore,
+          });
         } else {
           errors.push(`invalid payout ${barrier}/${tradeDuration}${durationUnit}`);
         }
@@ -359,9 +394,12 @@ export function TouchNoTouchBotView({ feed }) {
         const bestPricingGap = quotes.length
           ? Math.max(...quotes.map((q) => Number(q.probabilityGap || 0)))
           : 0;
+        const bestQuoteProbability = quotes.length
+          ? Math.max(...quotes.map((q) => Number(q.modelProbability || 0)))
+          : 0;
         const diagnostic = [...new Set(errors)].slice(0, 3).join(" | ");
         setQuoteError(
-          `Deriv rejected/failed to price a conservative ${setup} barrier. Best model/pricing gap: ${(bestPricingGap * 100).toFixed(1)}%. ${diagnostic || "No valid Deriv proposal returned."}`
+          `No safe ${setup} proposal passed. Best barrier-model probability: ${(bestQuoteProbability * 100).toFixed(1)}%; best pricing gap: ${(bestPricingGap * 100).toFixed(1)}%. ${diagnostic || "Deriv returned no valid proposal."}`
         );
         throw new Error(`Skipped ${setup}: no Deriv-valid barrier/proposal passed the pricing safety filter.`);
       }
@@ -379,7 +417,9 @@ export function TouchNoTouchBotView({ feed }) {
         }
       }
       setLiveQuote(best);
-      setMessage(`AI BEST ENTRY • ${setup} • AUTO ${direction > 0 ? "ABOVE" : "BELOW"} • Barrier ${best.barrier} • ${forcedAnalysis.entryScore}/99 • Return ${best.returnPct.toFixed(1)}%`);
+      setMessage(
+        `AI BEST ENTRY • ${setup} • ${direction > 0 ? "ABOVE" : "BELOW"} • Barrier ${best.barrier} • Model ${(Number(best.modelProbability) * 100).toFixed(1)}% • Gap ${(Number(best.probabilityGap) * 100).toFixed(1)}% • Return ${best.returnPct.toFixed(1)}%`
+      );
 
       const result = await placeQuotedTrade({ quote: best });
       const id = idOf(result);
@@ -394,7 +434,7 @@ export function TouchNoTouchBotView({ feed }) {
       setQuoteBusy(false);
       busyRef.current = false;
     }
-  }, [allowReal, analysis, balance, barrierMultiplier, currency, currentPrice, duration, durationUnit, fixedStake, minScore, placeQuotedTrade, quoteTrade, selectedAccountId, selectedAccountType, sessionPnl, sessionStop, sessionTarget, stakeMode, symbol, trades]);
+  }, [allowReal, analysis, analysisPrices, balance, barrierMultiplier, currency, currentPrice, duration, durationUnit, fixedStake, minScore, placeQuotedTrade, quoteTrade, selectedAccountId, selectedAccountType, sessionPnl, sessionStop, sessionTarget, stakeMode, symbol, trades]);
 
   useEffect(() => {
     // A qualified setup is consumed once. Do not re-enter simply because the
@@ -570,6 +610,16 @@ export function TouchNoTouchBotView({ feed }) {
                 </div>
 
                 <div>
+                  Model probability:
+                  {" "}
+                  <b>{(Number(diagnosticQuote.modelProbability || 0) * 100).toFixed(1)}%</b>
+                  {" • "}
+                  Pricing gap:
+                  {" "}
+                  <b>{(Number(diagnosticQuote.probabilityGap || 0) * 100).toFixed(1)}%</b>
+                </div>
+
+                <div>
                   Return:
                   {" "}
                   <b>{Number(diagnosticQuote.returnPct || 0).toFixed(1)}%</b>
@@ -602,7 +652,12 @@ export function TouchNoTouchBotView({ feed }) {
           </div>
           <div className="tntDecision"><span>MASTER DECISION</span><strong>{analysis.signal}</strong><b>{analysis.entryScore}/99</b><p>{analysis.reason}</p></div>
           <div className="tntCards"><div className={`tntSide ${analysis.candidate === "TOUCH" ? "best" : ""}`}><span>TOUCH</span><strong>{analysis.touchScore}</strong><small>Barrier {analysis.touchBarrier ? analysis.touchBarrier.toFixed(market?.decimals ?? 3) : "—"}</small><em>{analysis.touchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div><div className={`tntSide ${analysis.candidate === "NO TOUCH" ? "best" : ""}`}><span>NO TOUCH</span><strong>{analysis.noTouchScore}</strong><small>Barrier {analysis.noTouchBarrier ? analysis.noTouchBarrier.toFixed(market?.decimals ?? 3) : "—"}</small><em>{analysis.noTouchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div></div>
-          <div className="tntQuote"><div><span>AI PROPOSAL</span><strong>{quoteBusy ? "SCANNING QUOTES…" : liveQuote ? `${typeOf(liveQuote)} • ${liveQuote.barrier}` : "WAITING"}</strong></div><div><span>ASK / PAYOUT</span><b>{liveQuote ? `${money(liveQuote.askPrice, currency)} → ${money(liveQuote.payout, currency)}` : "—"}</b></div><div><span>EXPECTED RETURN</span><b>{liveQuote ? `${liveQuote.returnPct.toFixed(1)}%` : "—"}</b></div></div>
+          <div className="tntQuote">
+            <div><span>AI PROPOSAL</span><strong>{quoteBusy ? "SCANNING QUOTES…" : liveQuote ? `${typeOf(liveQuote)} • ${liveQuote.barrier}` : "WAITING"}</strong></div>
+            <div><span>ASK / PAYOUT</span><b>{liveQuote ? `${money(liveQuote.askPrice, currency)} → ${money(liveQuote.payout, currency)}` : "—"}</b></div>
+            <div><span>MODEL / GAP</span><b>{liveQuote ? `${(Number(liveQuote.modelProbability || 0) * 100).toFixed(1)}% / ${(Number(liveQuote.probabilityGap || 0) * 100).toFixed(1)}%` : "—"}</b></div>
+            <div><span>EXPECTED RETURN</span><b>{liveQuote ? `${Number(liveQuote.returnPct || 0).toFixed(1)}%` : "—"}</b></div>
+          </div>
           {quoteError && <div className="tntQuoteError">DERIV QUOTE: {quoteError}</div>}
           <div className="tntChecks"><div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Volatility</span><b>{analysis.volatility}</b></div><div><span>Confirmations</span><b>{analysis.confirmations}/6</b></div><div><span>Market quality</span><b>{analysis.marketQuality}/100</b></div><div><span>Timing</span><b>{analysis.timing || (analysis.noChase ? "NO CHASE OK" : "LATE / WAIT")}</b></div><div><span>Horizon</span><b>{analysis.duration} {analysis.durationUnit === "s" ? "SEC" : "TICKS"} · {analysis.horizonTicks || analysis.duration} TICKS</b></div><div><span>Model probability</span><b>{(Number(analysis.modelProbability || 0) * 100).toFixed(1)}%</b></div></div>
         </div>

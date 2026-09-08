@@ -295,7 +295,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
     marketQuality: Math.round(quality),
     probabilityEdge: Number(probabilityEdge.toFixed(3)),
     highVolatilityAllowed,
-    strategy: "ADAPTIVE A+ V10",
+    strategy: "ADAPTIVE A+ V10.3",
     noChase,
     timing,
     duration,
@@ -312,6 +312,37 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
           ? `Entry is extended; waiting for a retest before ${candidate}.`
           : `Waiting for stronger ${candidate} evidence (${candidateScore}/99, ${(modelProbability * 100).toFixed(1)}% probability, ${confirmations}/6).`,
   };
+}
+
+
+/**
+ * Quote-specific probability for a Deriv Touch / No Touch proposal.
+ *
+ * The execution layer may test several signed barrier offsets. Each offset
+ * must get its own probability estimate; reusing the probability of the
+ * original model barrier would mis-price the expected value of wider/narrower
+ * candidates.
+ */
+export function estimateQuoteProbability(prices = [], { spot, barrier, setup = "NO TOUCH", horizonTicks = 5 } = {}) {
+  const items = normalizeTicks(prices);
+  const values = items.map((x) => x.quote);
+  const current = Number.isFinite(Number(spot)) ? Number(spot) : Number(values.at(-1));
+  const offset = Number(barrier);
+  const h = Math.max(2, Math.round(Number(horizonTicks) || 5));
+  if (!Number.isFinite(current) || !Number.isFinite(offset) || Math.abs(offset) <= 0 || values.length <= h + 20) return 0.5;
+
+  const distance = Math.abs(offset);
+  const direction = offset >= 0 ? 1 : -1;
+  const touchBase = historicalHitRate(values, distance, h, direction);
+  const touchRecent = weightedHistoricalHitRate(values.slice(-220), distance, h, direction);
+  const touchProbability = clamp(touchBase * 0.40 + touchRecent * 0.60, 0.01, 0.99);
+  const raw = String(setup).toUpperCase() === "TOUCH" ? touchProbability : 1 - touchProbability;
+
+  // Shrink estimates toward 50% when the available sample is small. This
+  // keeps a short live stream from manufacturing an unrealistically precise
+  // probability for a specific barrier.
+  const confidence = clamp((values.length - h * 2) / 260, 0.35, 1);
+  return clamp(0.5 + (raw - 0.5) * confidence, 0.01, 0.99);
 }
 
 export function evaluateTouchNoTouch({ touchQuote, noTouchQuote, barrier, duration } = {}) {
