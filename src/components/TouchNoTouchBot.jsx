@@ -27,7 +27,7 @@ export function TouchNoTouchBotView({ feed }) {
   const [duration, setDuration] = useState(5);
   const [durationUnit, setDurationUnit] = useState("t");
   const [barrierMultiplier, setBarrierMultiplier] = useState(1.8);
-  const [minScore, setMinScore] = useState(95);
+  const [minScore, setMinScore] = useState(80);
   const [sessionTPPct, setSessionTPPct] = useState(2);
   const [sessionSLPct, setSessionSLPct] = useState(1.5);
   const [recoveryEnabled, setRecoveryEnabled] = useState(false);
@@ -502,7 +502,7 @@ export function TouchNoTouchBotView({ feed }) {
     // Recovery also requires a fresh qualification. A loss must never cause the
     // same still-READY signal to be bought again immediately.
     if (!running || !recoveryPendingRef.current || recoveryUsed || !analysis.ready || analysis.signal === "WAIT") return;
-    if (analysis.entryScore < Math.max(minScore, 95) || analysis.confirmations < 5 || !analysis.noChase) return;
+    if (analysis.entryScore < Math.max(minScore, 80) || analysis.confirmations < 5 || !analysis.noChase) return;
     if (qualificationConsumedRef.current) return;
     qualificationConsumedRef.current = true;
     recoveryPendingRef.current = false;
@@ -544,7 +544,7 @@ export function TouchNoTouchBotView({ feed }) {
         <label>STAKE MODE<select value={stakeMode} onChange={(e) => setStakeMode(e.target.value)}><option value="FIXED">FIXED • $0.35</option><option value="ADAPTIVE">ADAPTIVE • capped $0.35</option></select></label>
         <label>STAKE<input type="number" min="0.35" max="0.35" step="0.05" value={0.35} disabled /></label>
         <label>DURATION<select value={`${durationUnit}:${duration}`} onChange={(e) => { const [unit, value] = e.target.value.split(":"); setDurationUnit(unit); setDuration(Number(value)); }}><option value="t:3">3 TICKS</option><option value="t:5">5 TICKS</option><option value="t:10">10 TICKS</option><option value="t:15">15 TICKS</option><option value="s:5">5 SECONDS</option><option value="s:10">10 SECONDS</option><option value="s:15">15 SECONDS</option><option value="s:30">30 SECONDS</option></select></label>
-        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="92">92 / 99</option><option value="95">95 / 99</option><option value="97">97 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
+        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="80">80 / 99</option><option value="85">85 / 99</option><option value="90">90 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
         <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START A+ BOT"}</button>
       </div>
 

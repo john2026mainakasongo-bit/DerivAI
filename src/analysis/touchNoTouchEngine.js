@@ -86,6 +86,31 @@ function historicalHitRate(values, distance, horizon, direction) {
   return total ? hits / total : 0.5;
 }
 
+function weightedHistoricalHitRate(values, distance, horizon, direction) {
+  const p = values.filter(Number.isFinite);
+  const h = Math.max(1, Math.round(horizon));
+  if (p.length <= h + 20 || !Number.isFinite(distance) || distance <= 0) return 0.5;
+
+  const end = p.length - h;
+  const start = Math.max(0, end - 360);
+  let weightedHits = 0;
+  let weightTotal = 0;
+
+  for (let i = start; i < end; i += 1) {
+    const entry = p[i];
+    let extreme = direction > 0 ? -Infinity : Infinity;
+    for (let j = i + 1; j <= i + h; j += 1) {
+      extreme = direction > 0 ? Math.max(extreme, p[j]) : Math.min(extreme, p[j]);
+    }
+    const moved = direction > 0 ? extreme - entry : entry - extreme;
+    const age = end - i;
+    const weight = Math.exp(-age / 150);
+    if (moved >= distance) weightedHits += weight;
+    weightTotal += weight;
+  }
+  return weightTotal ? weightedHits / weightTotal : 0.5;
+}
+
 function excursionSamples(values, horizon, direction) {
   const p = values.filter(Number.isFinite);
   const h = Math.max(1, Math.round(horizon));
@@ -127,7 +152,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
   const values = items.map((x) => x.quote);
   const minimumSamples = Math.max(60, Number(options.minimumSamples) || 120);
   const maxSamples = Math.max(minimumSamples, Number(options.maxSamples) || 900);
-  const entryThreshold = clamp(Number(options.minScore) || 95, 85, 99);
+  const entryThreshold = clamp(Number(options.minScore) || 80, 80, 99);
   const duration = Math.max(1, Number(options.duration) || 5);
   const durationUnit = String(options.durationUnit || "t").toLowerCase() === "s" ? "s" : "t";
   const sampleItems = items.slice(-maxSamples);
@@ -177,8 +202,13 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
 
   const touchBarrier = Number((current + direction * touchDistance).toFixed(decimals));
   const noTouchBarrier = Number((current - direction * noTouchDistance).toFixed(decimals));
-  const touchHit = historicalHitRate(sample, touchDistance, horizonTicks, direction);
-  const noTouchHit = 1 - historicalHitRate(sample, noTouchDistance, horizonTicks, -direction);
+  const touchBaseHit = historicalHitRate(sample, touchDistance, horizonTicks, direction);
+  const touchRecentHit = weightedHistoricalHitRate(sample.slice(-220), touchDistance, horizonTicks, direction);
+  const touchHit = clamp(touchBaseHit * 0.40 + touchRecentHit * 0.60, 0.01, 0.99);
+
+  const noTouchBaseHit = 1 - historicalHitRate(sample, noTouchDistance, horizonTicks, -direction);
+  const noTouchRecentHit = 1 - weightedHistoricalHitRate(sample.slice(-220), noTouchDistance, horizonTicks, -direction);
+  const noTouchHit = clamp(noTouchBaseHit * 0.40 + noTouchRecentHit * 0.60, 0.01, 0.99);
 
   const trendStrength = clamp(Math.abs(recentSlope) / Math.max(tickMove * 0.75, 10 ** -decimals), 0, 1);
   const momentumStrength = clamp(Math.abs(recentMove) / Math.max(tickMove * Math.max(5, horizonTicks), 10 ** -decimals), 0, 1);
@@ -214,28 +244,33 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
 
   // Touch needs evidence that the barrier is reachable inside the selected
   // horizon. No Touch needs evidence that the opposite barrier is rarely hit.
+  const probabilityEdge = Math.abs(touchHit - noTouchHit);
   const touchScore = Math.round(clamp(
-    touchHit * 100 * 0.82 + quality * 0.12 + stability * 5 + Math.min(2, confirmations),
+    touchHit * 70 + quality * 0.20 + stability * 6 + probabilityEdge * 18 + Math.min(5, confirmations),
     0, 99
   ));
   const noTouchScore = Math.round(clamp(
-    noTouchHit * 100 * 0.82 + quality * 0.12 + stability * 5 + Math.min(2, confirmations),
+    noTouchHit * 70 + quality * 0.20 + stability * 6 + probabilityEdge * 18 + Math.min(5, confirmations),
     0, 99
   ));
 
   const candidate = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
   const candidateScore = candidate === "TOUCH" ? touchScore : noTouchScore;
   const modelProbability = candidate === "TOUCH" ? touchHit : noTouchHit;
-  const probabilityGate = modelProbability >= 0.72;
+  const probabilityGate = modelProbability >= 0.78;
+  const edgeGate = probabilityEdge >= 0.08;
   const sampleReady = sample.length >= minimumSamples;
+  const highVolatilityAllowed = volatility === "HIGH" && modelProbability >= 0.80 && quality >= 65 && stability >= 0.35;
+  const volatilityGate = volatility !== "HIGH" || highVolatilityAllowed;
   const ready = Boolean(
     sampleReady &&
     confirmations >= 5 &&
     candidateScore >= entryThreshold &&
     probabilityGate &&
-    quality >= 70 &&
+    edgeGate &&
+    quality >= 60 &&
     noChase &&
-    volatility !== "HIGH"
+    volatilityGate
   );
   const signal = ready ? candidate : "WAIT";
 
@@ -258,6 +293,9 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
     volatility,
     confirmations,
     marketQuality: Math.round(quality),
+    probabilityEdge: Number(probabilityEdge.toFixed(3)),
+    highVolatilityAllowed,
+    strategy: "ADAPTIVE A+ V10",
     noChase,
     timing,
     duration,
@@ -267,12 +305,12 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
     reason: ready
       ? `${candidate} confirmed for ${duration} ${durationUnit === "s" ? "seconds" : "ticks"}; model probability ${(modelProbability * 100).toFixed(1)}%.`
       : !probabilityGate
-        ? `Waiting: model probability ${(modelProbability * 100).toFixed(1)}% is below the 72% safety gate.`
+        ? `Waiting: model probability ${(modelProbability * 100).toFixed(1)}% is below the 78% probability gate.`
         : quality < 70
-          ? `Waiting: market quality ${Math.round(quality)}/100 is below the 70 safety gate.`
+          ? `Waiting: market quality ${Math.round(quality)}/100 is below the 60 safety gate.`
           : timing === "LATE / WAIT RETEST"
           ? `Entry is extended; waiting for a retest before ${candidate}.`
-          : `Waiting for stronger ${candidate} evidence (${candidateScore}/99, ${confirmations}/6).`,
+          : `Waiting for stronger ${candidate} evidence (${candidateScore}/99, ${(modelProbability * 100).toFixed(1)}% probability, ${confirmations}/6).`,
   };
 }
 
