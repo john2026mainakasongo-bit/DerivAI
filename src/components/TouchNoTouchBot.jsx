@@ -49,6 +49,8 @@ export function TouchNoTouchBotView({ feed }) {
   const processedRef = useRef(new Set());
   const lastSignalRef = useRef("");
   const lastEntryRef = useRef(0);
+  const qualificationConsumedRef = useRef(false);
+  const latestAnalysisRef = useRef(null);
   const sessionStartBalanceRef = useRef(Number(selectedAccount?.balance) || 0);
   const recoveryPendingRef = useRef(false);
   const audioRef = useRef(null);
@@ -59,6 +61,10 @@ export function TouchNoTouchBotView({ feed }) {
     return ticks.map((tick) => Number(tick?.quote)).filter(Number.isFinite);
   }, [prices, ticks]);
   const analysis = useMemo(() => analyzeTouchNoTouch(analysisPrices, { minimumSamples: 120, maxSamples: 700, minScore }), [analysisPrices, minScore]);
+
+  useEffect(() => {
+    latestAnalysisRef.current = analysis;
+  }, [analysis]);
   const balance = Number(selectedAccount?.balance) || 0;
   const sessionTarget = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionTPPct / 100) : 0;
   const sessionStop = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionSLPct / 100) : 0;
@@ -236,6 +242,17 @@ export function TouchNoTouchBotView({ feed }) {
     if (busyRef.current || !selectedAccountId || !forcedAnalysis?.ready) return;
     if (String(selectedAccountType).toLowerCase() === "real" && !allowReal) { setMessage("REAL ACCOUNT LOCKED â€” enable Allow Real first."); return; }
     if (forcedAnalysis.signal === "WAIT" || forcedAnalysis.entryScore < minScore) return;
+    if (forcedAnalysis.confirmations < 5 || forcedAnalysis.noChase === false) return;
+
+    // AUTO execution must use the latest qualified analysis, never a stale
+    // signal captured by an earlier render. A trade is only allowed when the
+    // current engine is still ready for the same side and score threshold.
+    if (mode === "AUTO") {
+      const latest = latestAnalysisRef.current;
+      if (!latest?.ready || latest.signal !== forcedAnalysis.signal) return;
+      if (latest.entryScore < minScore || latest.confirmations < 5 || latest.noChase === false) return;
+    }
+
     if (Date.now() - lastEntryRef.current < 9000) return;
     if (trades >= 10) { setRunning(false); setMessage("MAX 10 TRADES â€” session protected."); return; }
     if (sessionStop > 0 && sessionPnl <= -sessionStop) { setRunning(false); setMessage(`SESSION STOP â€¢ ${money(sessionPnl, currency)}`); return; }
@@ -398,9 +415,31 @@ export function TouchNoTouchBotView({ feed }) {
   }, [allowReal, analysis, balance, barrierMultiplier, currency, currentPrice, duration, fixedStake, minScore, placeQuotedTrade, quoteTrade, selectedAccountId, selectedAccountType, sessionPnl, sessionStop, sessionTarget, stakeMode, symbol, trades]);
 
   useEffect(() => {
-    if (!running || !analysis.ready || analysis.signal === "WAIT" || analysis.entryScore < minScore) return;
-    const key = `${symbol}:${analysis.signal}:${analysis.entryScore}`;
-    if (key === lastSignalRef.current) return;
+    // A qualified setup is consumed once. Do not re-enter simply because the
+    // score/barrier changes on every tick while the same setup remains READY.
+    // The engine must first leave READY/WAIT, then form a fresh qualification.
+    if (!running) {
+      qualificationConsumedRef.current = false;
+      return;
+    }
+
+    const qualified = Boolean(
+      analysis.ready &&
+      analysis.signal !== "WAIT" &&
+      analysis.entryScore >= minScore &&
+      analysis.confirmations >= 5 &&
+      analysis.noChase
+    );
+
+    if (!qualified) {
+      qualificationConsumedRef.current = false;
+      return;
+    }
+
+    if (qualificationConsumedRef.current) return;
+    qualificationConsumedRef.current = true;
+    const key = `${symbol}:${analysis.signal}:${Number(analysis.current).toFixed(8)}`;
+    lastSignalRef.current = key;
     void execute("AUTO", analysis);
   }, [analysis, execute, minScore, running, symbol]);
 
@@ -426,8 +465,12 @@ export function TouchNoTouchBotView({ feed }) {
   }, [currency, touchContracts, recoveryEnabled, recoveryUsed, running, sound]);
 
   useEffect(() => {
+    // Recovery also requires a fresh qualification. A loss must never cause the
+    // same still-READY signal to be bought again immediately.
     if (!running || !recoveryPendingRef.current || recoveryUsed || !analysis.ready || analysis.signal === "WAIT") return;
-    if (analysis.entryScore < Math.max(minScore, 95)) return;
+    if (analysis.entryScore < Math.max(minScore, 95) || analysis.confirmations < 5 || !analysis.noChase) return;
+    if (qualificationConsumedRef.current) return;
+    qualificationConsumedRef.current = true;
     recoveryPendingRef.current = false;
     void execute("RECOVERY", analysis);
   }, [analysis, execute, minScore, recoveryUsed, running]);
