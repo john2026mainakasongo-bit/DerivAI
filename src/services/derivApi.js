@@ -1061,6 +1061,58 @@ class DerivTradingClient {
       );
   }
 
+  async getCandleHistory(
+    symbol,
+    granularity = 60,
+    count = 120
+  ) {
+    const message = await this.request({
+      ticks_history: symbol,
+      count,
+      end: "latest",
+      style: "candles",
+      granularity,
+    });
+
+    const history =
+      message.history ||
+      message.data?.history ||
+      message.result ||
+      {};
+
+    const candles =
+      history.candles ||
+      history.ohlc ||
+      message.candles ||
+      message.data?.candles ||
+      [];
+
+    if (!Array.isArray(candles)) {
+      return [];
+    }
+
+    return candles
+      .map((candle) => ({
+        epoch: Number(
+          candle.epoch ??
+            candle.time ??
+            candle.timestamp
+        ),
+        open: Number(candle.open),
+        high: Number(candle.high),
+        low: Number(candle.low),
+        close: Number(candle.close),
+      }))
+      .filter(
+        (candle) =>
+          Number.isFinite(candle.epoch) &&
+          Number.isFinite(candle.open) &&
+          Number.isFinite(candle.high) &&
+          Number.isFinite(candle.low) &&
+          Number.isFinite(candle.close)
+      );
+  }
+
   async subscribeTicks(symbol) {
     await this.forgetCurrentSubscription();
 
