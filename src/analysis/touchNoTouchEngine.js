@@ -6,16 +6,188 @@ const std = (a) => {
   return Math.sqrt(mean(a.map((v) => (v - m) ** 2)));
 };
 
+function inferDecimals(value) {
+  const n = Math.abs(Number(value));
+  if (!Number.isFinite(n)) return 3;
+  if (n >= 1000) return 2;
+  if (n >= 100) return 2;
+  if (n >= 10) return 3;
+  return 4;
+}
+
 export function estimateTouchBarrier(prices = [], decimals = 3, requested = 0.3) {
   const p = prices.map(Number).filter(Number.isFinite).slice(-120);
   if (!p.length) return Number(requested) || 0.3;
 
-  const diffs = p.slice(1).map((v, i) => Math.abs(v - p[i]));
+  const diffs = p.slice(1).map((v, i) => Math.abs(v - p[i])).filter(Number.isFinite);
   const tickMove = mean(diffs) || 10 ** -Math.max(0, Number(decimals) || 3);
   const safe = clamp(tickMove * 10, tickMove * 5, tickMove * 30);
   const requestedBarrier = Math.abs(Number(requested) || 0.3);
 
   return Number(Math.max(requestedBarrier, safe).toFixed(Math.max(1, Number(decimals) || 3)));
+}
+
+function slope(values = []) {
+  const p = values.map(Number).filter(Number.isFinite);
+  if (p.length < 2) return 0;
+  const first = p[0];
+  const last = p[p.length - 1];
+  return (last - first) / Math.max(1, p.length - 1);
+}
+
+/**
+ * Build the complete Touch / No Touch analysis object consumed by the desk.
+ *
+ * Important: the new Deriv API no longer puts spot data in active_symbols or
+ * contracts_for. The live tick stream is therefore the source of truth for
+ * `current`, and barriers are derived from that live spot before proposals
+ * are requested.
+ */
+export function analyzeTouchNoTouch(prices = [], options = {}) {
+  const clean = prices.map(Number).filter(Number.isFinite);
+  const minimumSamples = Math.max(20, Number(options.minimumSamples) || 120);
+  const maxSamples = Math.max(minimumSamples, Number(options.maxSamples) || 700);
+  const sample = clean.slice(-maxSamples);
+  const current = Number(sample.at(-1));
+
+  if (!Number.isFinite(current) || sample.length < 2) {
+    return {
+      ready: false,
+      signal: "WAIT",
+      candidate: "WAIT",
+      entryScore: 0,
+      current: Number.isFinite(current) ? current : null,
+      touchBarrier: null,
+      noTouchBarrier: null,
+      touchScore: 0,
+      noTouchScore: 0,
+      trend: "WAIT",
+      momentum: "WAIT",
+      volatility: "WAIT",
+      confirmations: 0,
+      marketQuality: 0,
+      noChase: false,
+      state: "COLLECTING",
+      reason: `Collecting live ticks (${sample.length}/${minimumSamples}).`,
+    };
+  }
+
+  const decimals = Number.isFinite(Number(options.decimals))
+    ? Number(options.decimals)
+    : inferDecimals(current);
+  const recent = sample.slice(-30);
+  const previous = sample.slice(-60, -30);
+  const recentSlope = slope(recent);
+  const previousSlope = slope(previous);
+  const move = current - Number(sample[0]);
+  const recentMove = current - Number(recent[0]);
+  const diffs = sample.slice(1).map((v, i) => Math.abs(v - sample[i]));
+  const tickMove = mean(diffs) || 10 ** -Math.max(1, decimals);
+  const volatilityValue = std(diffs);
+  const range = Math.max(...sample) - Math.min(...sample);
+
+  const trendUp = recentSlope > 0;
+  const trendDown = recentSlope < 0;
+  const trend = Math.abs(recentSlope) < tickMove * 0.12 ? "RANGING" : trendUp ? "BULLISH" : "BEARISH";
+  const momentum = Math.abs(recentMove) >= tickMove * 5
+    ? (recentMove > 0 ? "STRONG UP" : "STRONG DOWN")
+    : Math.abs(recentMove) >= tickMove * 2
+      ? (recentMove > 0 ? "UP" : "DOWN")
+      : "NEUTRAL";
+
+  const volatility = volatilityValue <= tickMove * 0.35
+    ? "LOW"
+    : volatilityValue <= tickMove * 0.8
+      ? "MEDIUM"
+      : "HIGH";
+
+  const distance = estimateTouchBarrier(
+    sample,
+    decimals,
+    Math.max(tickMove * 10, Math.abs(current) * 0.00015)
+  );
+
+  // Touch barrier is placed in the direction of the current short-term move;
+  // No Touch uses the opposite side. Both are absolute prices because that is
+  // what the analysis/UI needs. The proposal layer can convert to relative
+  // barriers when requesting Deriv pricing.
+  const direction = trendUp ? 1 : trendDown ? -1 : recentMove >= 0 ? 1 : -1;
+  const touchBarrier = Number((current + direction * distance).toFixed(decimals));
+  const noTouchBarrier = Number((current - direction * distance).toFixed(decimals));
+
+  const trendStrength = clamp(
+    Math.abs(recentSlope) / Math.max(tickMove * 0.8, 10 ** -decimals),
+    0,
+    1
+  );
+  const momentumStrength = clamp(
+    Math.abs(recentMove) / Math.max(tickMove * 8, 10 ** -decimals),
+    0,
+    1
+  );
+  const stability = clamp(1 - Math.abs(previousSlope - recentSlope) / Math.max(tickMove, 10 ** -decimals), 0, 1);
+
+  const confirmations = [
+    sample.length >= minimumSamples,
+    Math.abs(recentMove) >= tickMove * 2,
+    trend !== "RANGING",
+    stability >= 0.25,
+    volatility !== "HIGH",
+    range > distance * 1.5,
+  ].filter(Boolean).length;
+
+  const baseQuality = clamp(
+    52 +
+      trendStrength * 16 +
+      momentumStrength * 14 +
+      stability * 10 +
+      Math.min(6, confirmations),
+    0,
+    99
+  );
+
+  // Keep No Touch competitive when the market is stable, while Touch wins
+  // when directional movement is strong. The score is deliberately capped at
+  // 99 and remains below the user's 95 entry gate until enough evidence exists.
+  const touchScore = Math.round(clamp(
+    baseQuality + (trend !== "RANGING" ? momentumStrength * 8 : -4),
+    0,
+    99
+  ));
+  const noTouchScore = Math.round(clamp(
+    baseQuality + stability * 8 - momentumStrength * 7,
+    0,
+    99
+  ));
+
+  const candidate = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
+  const candidateScore = Math.max(touchScore, noTouchScore);
+  const sampleReady = sample.length >= minimumSamples;
+  const noChase = Math.abs(recentMove) <= distance * 0.8;
+  const ready = sampleReady && confirmations >= 5 && candidateScore >= 95 && noChase;
+  const signal = ready ? candidate : "WAIT";
+
+  return {
+    ready,
+    signal,
+    candidate,
+    entryScore: candidateScore,
+    current,
+    touchBarrier,
+    noTouchBarrier,
+    touchScore,
+    noTouchScore,
+    trend,
+    momentum,
+    volatility,
+    confirmations,
+    marketQuality: Math.round(baseQuality),
+    noChase,
+    state: ready ? "ENTRY READY" : confirmations >= 3 ? "SETUP FORMING" : "ANALYZING",
+    reason: ready
+      ? `${candidate} setup confirmed from live price structure.`
+      : `Waiting for valid Touch / No Touch proposal and stronger confirmation (${candidateScore}/99).`,
+  };
 }
 
 export function evaluateTouchNoTouch({
@@ -36,8 +208,6 @@ export function evaluateTouchNoTouch({
   const aligned = direction === "RISE" ? "UP" : direction === "FALL" ? "DOWN" : "NONE";
   const strength = aligned === "NONE" ? 0 : touchImplied;
 
-  // Proposal pricing is a market-priced reference, not a guaranteed probability.
-  // Use conservative gates and require both proposals to be valid.
   const valid = Boolean(
     touchQuote?.proposalId &&
       noTouchQuote?.proposalId &&
@@ -73,4 +243,4 @@ export function evaluateTouchNoTouch({
   };
 }
 
-export default evaluateTouchNoTouch;
+export default analyzeTouchNoTouch;
