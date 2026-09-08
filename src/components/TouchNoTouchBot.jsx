@@ -149,13 +149,14 @@ export function TouchNoTouchBotView({ feed }) {
       return;
     }
 
-    const distance = Math.max(
-      Math.abs(Number(rawBarrier) - spot) * Math.max(0.35, Number(barrierMultiplier) || 1.8),
-      Math.abs(spot) * 0.0001
-    );
+    // Deriv Touch/No Touch uses signed barrier OFFSETS such as +1.37/-1.37.
+    // Never convert the model barrier into an absolute spot price.
+    const modelDistance = Math.abs(Number(rawBarrier) - spot);
+    const pip = 10 ** (-decimals);
+    const minimumOffset = Math.max(pip * 5, Math.abs(spot) * 0.00005);
+    const distance = Math.max(modelDistance * Math.max(0.35, Number(barrierMultiplier) || 1.8), minimumOffset);
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
     const relativeBarrier = `${direction >= 0 ? "+" : "-"}${distance.toFixed(decimals)}`;
-    const absoluteBarrier = (spot + direction * distance).toFixed(decimals);
 
     setDiagnosticBusy(true);
     setMessage(`TESTING ${setup} · ${contractType} PROPOSAL — NO BUY…`);
@@ -180,21 +181,9 @@ export function TouchNoTouchBotView({ feed }) {
       }
 
       if (!quote) {
-        usedBarrier = absoluteBarrier;
-        quote = await quoteTrade({
-          symbol,
-          contractType,
-          amount: Number(fixedStake) || 0.35,
-          basis: "stake",
-          duration: Number(duration),
-          durationUnit,
-          barrier: absoluteBarrier,
-        }).catch((error) => {
-          const secondError = error instanceof Error ? error.message : String(error);
-          throw new Error(
-            `${setup} proposal rejected. Relative: ${firstError || "failed"} | Absolute: ${secondError || "failed"}`
-          );
-        });
+        throw new Error(
+          `${setup} proposal rejected by Deriv for barrier ${relativeBarrier}. ${firstError || "No valid proposal returned."}`
+        );
       }
 
       const ask = Number(quote?.askPrice);
@@ -277,12 +266,11 @@ export function TouchNoTouchBotView({ feed }) {
     const contractType = setup === "TOUCH" ? "ONETOUCH" : "NOTOUCH";
     const rawBarrier = setup === "TOUCH" ? forcedAnalysis.touchBarrier : forcedAnalysis.noTouchBarrier;
     const spot = Number(forcedAnalysis.current || currentPrice);
-    const baseOffset = Math.max(
-      Math.abs(rawBarrier - spot) * Math.max(0.35, Number(barrierMultiplier) || 1),
-      Math.abs(spot) * 0.0001
-    );
-    const direction = rawBarrier >= spot ? 1 : -1;
     const decimals = Math.max(2, market?.decimals ?? 3);
+    const pip = 10 ** (-decimals);
+    const minimumOffset = Math.max(pip * 5, Math.abs(spot) * 0.00005);
+    const modelOffset = Math.max(Math.abs(Number(rawBarrier) - spot), minimumOffset);
+    const direction = Number(rawBarrier) >= spot ? 1 : -1;
     const durations = [Number(duration)];
 
     busyRef.current = true;
@@ -304,10 +292,14 @@ export function TouchNoTouchBotView({ feed }) {
         candidates.push({ barrier, tradeDuration });
       };
 
-      const primaryMultipliers = setup === "NO TOUCH" ? [Math.max(1.35, Number(barrierMultiplier) || 1.8), 2.2, 2.8] : [0.75, 1, Math.min(1.35, Number(barrierMultiplier) || 1.35)];
+      // Deriv-native barrier ladder. Every candidate is a signed OFFSET;
+      // only proposals that Deriv actually prices can reach the BUY stage.
+      const multipliers = setup === "NO TOUCH"
+        ? [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4]
+        : [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
       for (const tradeDuration of durations) {
-        for (const multiplier of primaryMultipliers) {
-          const offset = Math.max(baseOffset * multiplier, Math.abs(spot) * 0.0001);
+        for (const multiplier of multipliers) {
+          const offset = Math.max(modelOffset * multiplier, minimumOffset);
           const relativeBarrier = `${direction >= 0 ? "+" : "-"}${offset.toFixed(decimals)}`;
           addCandidate(relativeBarrier, tradeDuration);
         }
@@ -357,57 +349,9 @@ export function TouchNoTouchBotView({ feed }) {
         }
       }
 
-      // If relative barriers do not produce a conservative quote, make a short
-      // absolute-barrier fallback before giving up.
-      if (!quotes.some((q) => q.pricingCompatible)) {
-        const fallbackCandidates = [];
-        for (const tradeDuration of durations) {
-          for (const multiplier of [0.75, 1.5]) {
-            const offset = Math.max(baseOffset * multiplier, Math.abs(spot) * 0.0001);
-            const absoluteBarrier = (spot + direction * offset).toFixed(decimals);
-            fallbackCandidates.push({ barrier: absoluteBarrier, tradeDuration });
-          }
-        }
-
-        const fallbackResults = await Promise.allSettled(
-          fallbackCandidates.map(({ barrier, tradeDuration }) =>
-            quoteTrade({
-              symbol,
-              contractType,
-              amount: tradeStake,
-              basis: "stake",
-              duration: tradeDuration,
-              durationUnit,
-              barrier,
-            }).then((quote) => ({ quote, barrier, tradeDuration }))
-          )
-        );
-
-        for (const result of fallbackResults) {
-          if (result.status === "rejected") {
-            errors.push(result.reason instanceof Error ? result.reason.message : String(result.reason));
-            continue;
-          }
-          const { quote, barrier, tradeDuration } = result.value;
-          const ask = Number(quote?.askPrice);
-          const payout = Number(quote?.payout);
-          if (Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask) {
-            const returnPct = ((payout - ask) / ask) * 100;
-            const impliedProbability = Math.max(0, Math.min(1, ask / payout));
-            const modelProbability = Number(forcedAnalysis.modelProbability || 0);
-            const probabilityGap = modelProbability - impliedProbability;
-            const expectedValue = modelProbability * payout - ask;
-            const pricingCompatible = impliedProbability >= 0.08 && probabilityGap >= 0.02 && expectedValue >= 0;
-            const quoteScore = Math.round(
-              forcedAnalysis.entryScore * 0.72 +
-              Math.min(20, Math.max(0, probabilityGap * 100)) * 1.4
-            );
-            quotes.push({ ...quote, barrier, duration: tradeDuration, durationUnit, returnPct, impliedProbability, probabilityGap, pricingCompatible, expectedValue, quoteScore });
-          } else {
-            errors.push(`invalid payout ${barrier}/${tradeDuration}${durationUnit}`);
-          }
-        }
-      }
+      // No absolute-barrier fallback. If Deriv does not return a valid,
+      // priceable proposal for these native offsets, we WAIT rather than
+      // inventing a barrier that the broker cannot accept.
 
       const pricedQuotes = quotes.filter((q) => q.pricingCompatible);
       if (!pricedQuotes.length) {
@@ -417,19 +361,21 @@ export function TouchNoTouchBotView({ feed }) {
           : 0;
         const diagnostic = [...new Set(errors)].slice(0, 3).join(" | ");
         setQuoteError(
-          `No conservative ${setup} proposal matched the model probability. Best model/pricing gap: ${(bestPricingGap * 100).toFixed(1)}%. ${diagnostic}`
+          `Deriv rejected/failed to price a conservative ${setup} barrier. Best model/pricing gap: ${(bestPricingGap * 100).toFixed(1)}%. ${diagnostic || "No valid Deriv proposal returned."}`
         );
-        throw new Error(`Skipped ${setup}: proposal pricing did not pass the probability safety filter.`);
+        throw new Error(`Skipped ${setup}: no Deriv-valid barrier/proposal passed the pricing safety filter.`);
       }
 
       pricedQuotes.sort((a, b) => b.quoteScore - a.quoteScore);
       const best = pricedQuotes[0];
-      const bestBarrier = Number(best?.barrier);
-      const bestSpot = Number(best?.spot ?? spot);
-      if (Number.isFinite(bestBarrier) && Number.isFinite(bestSpot)) {
-        const minDistance = Math.max(Math.abs(bestSpot) * 0.00008, 0.01);
-        if (Math.abs(bestBarrier - bestSpot) < minDistance) {
-          throw new Error("Barrier too close to spot — skipping trade for risk protection.");
+      // IMPORTANT: best.barrier is a Deriv signed OFFSET (+/-), not an absolute
+      // market price. Comparing it directly with spot (e.g. 0.59 vs 926.97)
+      // would incorrectly reject every valid proposal.
+      const bestBarrierOffset = Number(best?.barrier);
+      if (Number.isFinite(bestBarrierOffset)) {
+        const minOffset = Math.max(Math.abs(spot) * 0.00005, pip * 5, 0.01);
+        if (Math.abs(bestBarrierOffset) < minOffset) {
+          throw new Error("Barrier offset too close to spot — skipping trade for risk protection.");
         }
       }
       setLiveQuote(best);
