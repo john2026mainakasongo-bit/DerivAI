@@ -641,6 +641,17 @@ export function TouchNoTouchBotView({ feed }) {
             )}
           </div></div>
         <div className="tntAnalysis">
+          <div className={`tntEntryRadar ${analysis.ready ? "ready" : ""}`}>
+            <div className="tntEntryRadarHead"><span>A+ ENTRY RADAR</span><b>{analysis.ready ? "ENTRY READY" : "WAITING FOR A+"}</b></div>
+            <h3>{analysis.ready ? analysis.candidate : "NO ENTRY"}</h3>
+            <p>{analysis.ready ? `Fresh ${analysis.candidate} setup passed the engine gates. Execute only with the live proposal shown below.` : analysis.reason}</p>
+            <div className="tntEntryGrid">
+              <div><span>Score</span><strong>{analysis.entryScore}/99</strong></div>
+              <div><span>Probability</span><strong>{(Number(analysis.modelProbability || 0) * 100).toFixed(1)}%</strong></div>
+              <div><span>Barrier</span><strong>{analysis.candidate === "TOUCH" ? (analysis.touchBarrier ?? "—") : (analysis.noTouchBarrier ?? "—")}</strong></div>
+              <div><span>Horizon</span><strong>{analysis.duration} {analysis.durationUnit === "s" ? "SEC" : "TICKS"}</strong></div>
+            </div>
+          </div>
           <div className="tntDecision"><span>MASTER DECISION</span><strong>{analysis.signal}</strong><b>{analysis.entryScore}/99</b><p>{analysis.reason}</p></div>
           <div className="tntCards"><div className={`tntSide ${analysis.candidate === "TOUCH" ? "best" : ""}`}><span>TOUCH</span><strong>{analysis.touchScore}</strong><small>Barrier {analysis.touchBarrier ? analysis.touchBarrier.toFixed(market?.decimals ?? 3) : "—"}</small><em>{analysis.touchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div><div className={`tntSide ${analysis.candidate === "NO TOUCH" ? "best" : ""}`}><span>NO TOUCH</span><strong>{analysis.noTouchScore}</strong><small>Barrier {analysis.noTouchBarrier ? analysis.noTouchBarrier.toFixed(market?.decimals ?? 3) : "—"}</small><em>{analysis.noTouchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div></div>
           <div className="tntQuote"><div><span>AI PROPOSAL</span><strong>{quoteBusy ? "SCANNING QUOTES…" : liveQuote ? `${typeOf(liveQuote)} • ${liveQuote.barrier}` : "WAITING"}</strong></div><div><span>ASK / PAYOUT</span><b>{liveQuote ? `${money(liveQuote.askPrice, currency)} → ${money(liveQuote.payout, currency)}` : "—"}</b></div><div><span>EXPECTED RETURN</span><b>{liveQuote ? `${liveQuote.returnPct.toFixed(1)}%` : "—"}</b></div></div>
@@ -650,6 +661,20 @@ export function TouchNoTouchBotView({ feed }) {
       </div>
 
       <div className="tntProtection"><div><span>SESSION TAKE PROFIT</span><strong>+{sessionTPPct}%</strong><input type="range" min="1" max="5" step="0.5" value={sessionTPPct} onChange={(e) => setSessionTPPct(Number(e.target.value))}/></div><div><span>SESSION STOP LOSS</span><strong>-{sessionSLPct}%</strong><input type="range" min="0.5" max="3" step="0.5" value={sessionSLPct} onChange={(e) => setSessionSLPct(Number(e.target.value))}/></div><div><span>RECOVERY</span><strong>{recoveryEnabled ? "X2 • ONE TIME" : "OFF"}</strong><input type="checkbox" checked={recoveryEnabled} onChange={(e) => setRecoveryEnabled(e.target.checked)}/></div><div><span>REAL TRADING</span><strong>{allowReal ? "UNLOCKED" : "LOCKED"}</strong><input type="checkbox" checked={allowReal} onChange={(e) => setAllowReal(e.target.checked)}/></div><button onClick={resetSession}>RESET SESSION</button></div>
+
+      <section className="tntBottomDash">
+        <div className="tntBottomDashHead"><strong>TOUCH / NO TOUCH ANALYSIS DASHBOARD</strong><span>LIVE • CHART-SYNCHRONIZED</span></div>
+        <div className="tntBottomGrid">
+          <article><span>STRUCTURE</span><b>{analysis.trend}</b><small>Live directional structure</small></article>
+          <article><span>MOMENTUM</span><b>{analysis.momentum}</b><small>Current tick impulse</small></article>
+          <article><span>VOLATILITY</span><b>{analysis.volatility}</b><small>Execution environment</small></article>
+          <article><span>CONFIRMATIONS</span><b>{analysis.confirmations}/6</b><small>Independent gates passed</small></article>
+          <article><span>MARKET QUALITY</span><b>{analysis.marketQuality}/100</b><small>Quality safety gate</small></article>
+          <article><span>TOUCH</span><b>{analysis.touchScore}/99</b><small>{(Number(analysis.touchProbability || 0)*100).toFixed(1)}% model probability</small></article>
+          <article><span>NO TOUCH</span><b>{analysis.noTouchScore}/99</b><small>{(Number(analysis.noTouchProbability || 0)*100).toFixed(1)}% model probability</small></article>
+          <article><span>TIMING</span><b>{analysis.timing}</b><small>{analysis.horizonTicks || analysis.duration} tick horizon</small></article>
+        </div>
+      </section>
 
       <div className="tntTables"><div className="tntTableCard"><div className="tntTableTitle">OPEN TRADES <small>{open.length}</small></div>{open.length ? open.map((c) => <div className="tntRow" key={idOf(c)}><b>{typeOf(c)}</b><span>{money(c?.buy_price ?? c?.stake ?? 0, currency)}</span><strong className={pnlOf(c) >= 0 ? "positive" : "negative"}>{money(pnlOf(c), currency)}</strong></div>) : <div className="empty">No open trades</div>}</div><div className="tntTableCard"><div className="tntTableTitle">RECENT TRADES</div>{recent.map((c) => <div className="tntRow" key={idOf(c)}><span>{timeOf(c)}</span><b>{typeOf(c)}</b><span>{idOf(c) ? `#${idOf(c)}` : "—"}</span><strong className={pnlOf(c) >= 0 ? "positive" : "negative"}>{pnlOf(c) >= 0 ? "+" : ""}{money(pnlOf(c), currency)}</strong></div>)}{!recent.length && <div className="empty">No settled trades yet</div>}</div></div>
 

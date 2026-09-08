@@ -411,3 +411,15 @@
     flex-direction:column;
   }
 }
+
+/* V9 Touch/No Touch page: this desk owns the available main viewport. */
+.touchDeskViewport .appMain {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+.touchDeskViewport .appHeader {
+  width: 100% !important;
+  max-width: none !important;
+}
+

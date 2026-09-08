@@ -3,7 +3,8 @@ import TouchNoTouchBot from "../components/TouchNoTouchBot";
 
 export default function TouchNoTouchPage() {
   return (
-    <BotLayout eyebrow="TOUCH / NO TOUCH TRADING DESK">
+    <div className="touchDeskViewport">
+      <BotLayout eyebrow="TOUCH / NO TOUCH TRADING DESK">
       <section className="deskPageIntro touchIntro">
         <div>
           <span>DEDICATED DESK</span>
@@ -16,6 +17,7 @@ export default function TouchNoTouchPage() {
         <strong>TOUCH / NO TOUCH</strong>
       </section>
       <TouchNoTouchBot />
-    </BotLayout>
+      </BotLayout>
+    </div>
   );
 }

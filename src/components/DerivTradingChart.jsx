@@ -549,21 +549,33 @@ export default function DerivTradingChart({
       resistanceRef.current?.setData([]);
     }
 
-    if (markersRef.current && candles.length && signal && signal !== "WAIT") {
-      const latest = candles[candles.length - 1];
-      const isTouch = signal === "TOUCH";
-      const isNoTouch = signal === "NO TOUCH";
-      const isRise = signal === "RISE";
-
-      markersRef.current.setMarkers([
-        {
+    if (markersRef.current && candles.length) {
+      const markers = [];
+      const recentEvents = structureEvents.slice(-8);
+      for (const event of recentEvents) {
+        const candle = candles.find((item) => item.time === event.time);
+        if (!candle) continue;
+        const up = event.direction === "UP";
+        markers.push({
+          time: candle.time,
+          position: up ? "belowBar" : "aboveBar",
+          color: event.type === "retest" ? "#f5c542" : event.type === "fake" ? "#ef476f" : "#55a7ff",
+          shape: event.type === "breakout" ? "arrowUp" : event.type === "fake" ? "arrowDown" : "circle",
+          text: event.type === "retest" ? "RETEST" : event.type === "fake" ? "REJECT" : "BREAK",
+        });
+      }
+      if (signal && signal !== "WAIT") {
+        const latest = candles[candles.length - 1];
+        const isTouch = signal === "TOUCH";
+        markers.push({
           time: latest.time,
-          position: isRise || isTouch ? "belowBar" : "aboveBar",
-          color: isRise || isTouch ? "#19c37d" : "#55a7ff",
-          shape: isRise || isTouch ? "arrowUp" : "arrowDown",
+          position: isTouch ? "belowBar" : "aboveBar",
+          color: isTouch ? "#19c37d" : "#55a7ff",
+          shape: isTouch ? "arrowUp" : "arrowDown",
           text: `${signal} ${confidence || 0}%`,
-        },
-      ]);
+        });
+      }
+      markersRef.current.setMarkers(markers.slice(-10));
     } else {
       markersRef.current?.setMarkers([]);
     }
@@ -576,6 +588,7 @@ export default function DerivTradingChart({
     confidence,
     showEMA,
     showLevels,
+    structureEvents,
   ]);
 
   useEffect(() => {
