@@ -47,6 +47,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
   const clean = prices.map(Number).filter(Number.isFinite);
   const minimumSamples = Math.max(20, Number(options.minimumSamples) || 120);
   const maxSamples = Math.max(minimumSamples, Number(options.maxSamples) || 700);
+  const entryThreshold = clamp(Number(options.minScore) || 95, 80, 99);
   const sample = clean.slice(-maxSamples);
   const current = Number(sample.at(-1));
 
@@ -162,9 +163,40 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
 
   const candidate = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
   const candidateScore = Math.max(touchScore, noTouchScore);
+  const candidateBarrier = candidate === "TOUCH" ? touchBarrier : noTouchBarrier;
   const sampleReady = sample.length >= minimumSamples;
-  const noChase = Math.abs(recentMove) <= distance * 0.8;
-  const ready = sampleReady && confirmations >= 5 && candidateScore >= 95 && noChase;
+
+  // Timing / no-chase should measure whether price is currently extending into
+  // the proposed barrier, not whether the whole 30-tick window moved a lot.
+  // A strong trend can legitimately travel more than the barrier distance while
+  // still offering a clean entry after a pause/retest.
+  const micro = sample.slice(-8);
+  const microStart = Number(micro[0]);
+  const microMove = Number.isFinite(microStart) ? current - microStart : 0;
+  const priorMicro = sample.slice(-16, -8);
+  const priorMicroStart = Number(priorMicro[0]);
+  const priorMicroEnd = Number(priorMicro.at(-1));
+  const priorMicroMove = Number.isFinite(priorMicroStart) && Number.isFinite(priorMicroEnd)
+    ? priorMicroEnd - priorMicroStart
+    : 0;
+  const barrierDirection = Math.sign(candidateBarrier - current) || direction;
+  const directionalMove = barrierDirection * recentMove;
+  const directionalMicroMove = barrierDirection * microMove;
+  const directionalPriorMicroMove = barrierDirection * priorMicroMove;
+  const microCooling = directionalMicroMove <= directionalPriorMicroMove * 0.85;
+  const microRetrace = directionalMicroMove < 0;
+  const extended = directionalMove > distance * 1.25;
+  const noChase = !extended || microCooling || microRetrace;
+  const timing = !sampleReady
+    ? "WARMING UP"
+    : noChase
+      ? (microRetrace || microCooling ? "RETEST / IDEAL" : "EARLY / OK")
+      : "LATE — WAIT RETEST";
+
+  // Keep the entry gate strict: score, confirmations and timing must all pass.
+  // The selected MIN ENTRY value is now the actual threshold used by the
+  // engine, so the UI control and execution gate cannot disagree.
+  const ready = sampleReady && confirmations >= 5 && candidateScore >= entryThreshold && noChase;
   const signal = ready ? candidate : "WAIT";
 
   return {
@@ -172,6 +204,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
     signal,
     candidate,
     entryScore: candidateScore,
+    entryThreshold,
     current,
     touchBarrier,
     noTouchBarrier,
@@ -183,10 +216,13 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
     confirmations,
     marketQuality: Math.round(baseQuality),
     noChase,
+    timing,
     state: ready ? "ENTRY READY" : confirmations >= 3 ? "SETUP FORMING" : "ANALYZING",
     reason: ready
       ? `${candidate} setup confirmed from live price structure.`
-      : `Waiting for valid Touch / No Touch proposal and stronger confirmation (${candidateScore}/99).`,
+      : timing === "LATE — WAIT RETEST"
+        ? `Entry timing is late; waiting for a retest/cooldown (${candidateScore}/99).`
+        : `Waiting for valid Touch / No Touch proposal and stronger confirmation (${candidateScore}/99).`,
   };
 }
 

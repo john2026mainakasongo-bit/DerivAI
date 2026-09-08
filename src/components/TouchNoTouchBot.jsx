@@ -58,7 +58,7 @@ export function TouchNoTouchBotView({ feed }) {
     if (prices.length) return prices;
     return ticks.map((tick) => Number(tick?.quote)).filter(Number.isFinite);
   }, [prices, ticks]);
-  const analysis = useMemo(() => analyzeTouchNoTouch(analysisPrices, { minimumSamples: 120, maxSamples: 700 }), [analysisPrices]);
+  const analysis = useMemo(() => analyzeTouchNoTouch(analysisPrices, { minimumSamples: 120, maxSamples: 700, minScore }), [analysisPrices, minScore]);
   const balance = Number(selectedAccount?.balance) || 0;
   const sessionTarget = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionTPPct / 100) : 0;
   const sessionStop = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionSLPct / 100) : 0;
@@ -568,7 +568,7 @@ export function TouchNoTouchBotView({ feed }) {
           <div className="tntCards"><div className={`tntSide ${analysis.candidate === "TOUCH" ? "best" : ""}`}><span>TOUCH</span><strong>{analysis.touchScore}</strong><small>Barrier {analysis.touchBarrier ? analysis.touchBarrier.toFixed(market?.decimals ?? 3) : "â€”"}</small><em>{analysis.touchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div><div className={`tntSide ${analysis.candidate === "NO TOUCH" ? "best" : ""}`}><span>NO TOUCH</span><strong>{analysis.noTouchScore}</strong><small>Barrier {analysis.noTouchBarrier ? analysis.noTouchBarrier.toFixed(market?.decimals ?? 3) : "â€”"}</small><em>{analysis.noTouchScore >= minScore ? "QUALIFIED" : "WAIT"}</em></div></div>
           <div className="tntQuote"><div><span>AI PROPOSAL</span><strong>{quoteBusy ? "SCANNING QUOTESâ€¦" : liveQuote ? `${typeOf(liveQuote)} â€¢ ${liveQuote.barrier}` : "WAITING"}</strong></div><div><span>ASK / PAYOUT</span><b>{liveQuote ? `${money(liveQuote.askPrice, currency)} â†’ ${money(liveQuote.payout, currency)}` : "â€”"}</b></div><div><span>EXPECTED RETURN</span><b>{liveQuote ? `${liveQuote.returnPct.toFixed(1)}%` : "â€”"}</b></div></div>
           {quoteError && <div className="tntQuoteError">DERIV QUOTE: {quoteError}</div>}
-          <div className="tntChecks"><div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Volatility</span><b>{analysis.volatility}</b></div><div><span>Confirmations</span><b>{analysis.confirmations}/6</b></div><div><span>Market quality</span><b>{analysis.marketQuality}/100</b></div><div><span>Timing</span><b>{analysis.noChase ? "NO CHASE OK" : "LATE â€” WAIT"}</b></div></div>
+          <div className="tntChecks"><div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Volatility</span><b>{analysis.volatility}</b></div><div><span>Confirmations</span><b>{analysis.confirmations}/6</b></div><div><span>Market quality</span><b>{analysis.marketQuality}/100</b></div><div><span>Timing</span><b>{analysis.timing || (analysis.noChase ? "NO CHASE OK" : "LATE — WAIT")}</b></div></div>
         </div>
       </div>
 
