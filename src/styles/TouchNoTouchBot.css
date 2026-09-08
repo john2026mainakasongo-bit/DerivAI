@@ -189,3 +189,103 @@ body:has(.touchDeskViewport),
   .tntChartCard .zentoraChart { min-height: 570px !important; }
   .tntBottomGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ================================================================
+   V9 CLEAN FINAL — FULL VIEWPORT TERMINAL
+   ================================================================ */
+.touchDeskViewport .sidebar {
+  display: none !important;
+}
+.touchDeskViewport .mainContent {
+  width: 100vw !important;
+  max-width: none !important;
+  flex: 1 1 100vw !important;
+  margin: 0 !important;
+}
+.touchDeskViewport .appMain {
+  width: 100% !important;
+  max-width: none !important;
+  padding: 0 14px 22px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+.touchDeskViewport .tntShell {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 370px !important;
+  grid-template-areas:
+    "header header"
+    "top top"
+    "chart controls"
+    "chart analysis"
+    "protect protect"
+    "dash dash"
+    "tables tables"
+    "footer footer" !important;
+  gap: 10px !important;
+  width: 100% !important;
+  max-width: none !important;
+  padding: 10px 0 24px !important;
+}
+.touchDeskViewport .tntHero,
+.touchDeskViewport .touchIntro {
+  display: none !important;
+}
+.touchDeskViewport .tntTopGrid { grid-area: top; margin-top: 0 !important; }
+.touchDeskViewport .tntControls {
+  grid-area: controls;
+  align-self: start;
+  margin-top: 0 !important;
+  grid-template-columns: 1fr 1fr !important;
+}
+.touchDeskViewport .tntMainGrid {
+  display: contents !important;
+}
+.touchDeskViewport .tntChartCard {
+  grid-area: chart;
+  min-width: 0 !important;
+  align-self: stretch !important;
+}
+.touchDeskViewport .tntAnalysis {
+  grid-area: analysis;
+  min-width: 0 !important;
+  align-self: stretch !important;
+}
+.touchDeskViewport .tntProtection { grid-area: protect; margin-top: 0 !important; }
+.touchDeskViewport .tntBottomDash { grid-area: dash; }
+.touchDeskViewport .tntTables { grid-area: tables; }
+.touchDeskViewport .tntFooter { grid-area: footer; }
+.touchDeskViewport .tntChartCard .zentoraChart {
+  min-height: 700px !important;
+}
+.touchDeskViewport .tntChartCard .zentoraChartCanvas {
+  height: 650px !important;
+  min-height: 650px !important;
+}
+.touchDeskViewport .tntAnalysis {
+  padding: 12px !important;
+}
+.touchDeskViewport .tntEntryRadar h3 {
+  font-size: 26px !important;
+}
+@media (max-width: 1050px) {
+  .touchDeskViewport .tntShell {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "header"
+      "top"
+      "controls"
+      "chart"
+      "analysis"
+      "protect"
+      "dash"
+      "tables"
+      "footer" !important;
+  }
+  .touchDeskViewport .tntControls { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 650px) {
+  .touchDeskViewport .appMain { padding: 0 7px 18px !important; }
+  .touchDeskViewport .tntShell { grid-template-columns: 1fr !important; }
+  .touchDeskViewport .tntControls { grid-template-columns: 1fr 1fr !important; }
+  .touchDeskViewport .tntChartCard .zentoraChartCanvas { height: 520px !important; min-height: 520px !important; }
+}
