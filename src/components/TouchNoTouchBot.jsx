@@ -194,18 +194,35 @@ export function TouchNoTouchBotView({ feed }) {
   // probability is higher, but this desk intentionally waits for a usable
   // TOUCH setup instead of trading NO TOUCH. Keep the gate conservative enough
   // to avoid random entries while allowing valid Touch opportunities through.
+  // V174 PRECISION TOUCH gate: prefer fewer, stronger entries over frequent
+  // trades.  The desk remains TOUCH-FIRST, but weak/high-risk setups are skipped.
   const touchFirstReady = useMemo(() => {
     const score = Number(analysis?.touchScore || 0);
     const probability = Number(analysis?.touchProbability || 0);
     const quality = Number(analysis?.marketQuality || 0);
     const confirmations = Number(analysis?.confirmations || 0);
     const barrier = Number(analysis?.touchBarrier);
+    const spot = Number(analysis?.current);
+    const trend = String(analysis?.trend || '').toUpperCase();
+    const momentum = String(analysis?.momentum || '').toUpperCase();
+    const timing = String(analysis?.timing || '').toUpperCase();
+    const above = Number.isFinite(spot) && Number.isFinite(barrier) && barrier > spot;
+    const directionalAlignment = above
+      ? trend.includes('BULL') && momentum.includes('UP')
+      : trend.includes('BEAR') && momentum.includes('DOWN');
+    const highVolatility = String(analysis?.volatility || '').toUpperCase() === 'HIGH';
+    const highVolatilitySafe = !highVolatility || (score >= 80 && probability >= 0.65 && quality >= 75 && confirmations >= 6);
+    const timingOk = timing.includes('RETEST') || timing.includes('IDEAL');
     return (
-      score >= minScore &&
-      probability >= 0.30 &&
-      quality >= 45 &&
-      confirmations >= 3 &&
-      Number.isFinite(barrier)
+      score >= Math.max(70, minScore) &&
+      probability >= 0.55 &&
+      quality >= 65 &&
+      confirmations >= 5 &&
+      Number.isFinite(barrier) &&
+      Number.isFinite(spot) &&
+      directionalAlignment &&
+      timingOk &&
+      highVolatilitySafe
     );
   }, [analysis, minScore]);
 
@@ -561,14 +578,22 @@ export function TouchNoTouchBotView({ feed }) {
       // priceable proposal for these native offsets, we WAIT rather than
       // inventing a barrier that the broker cannot accept.
 
-      const pricedQuotes = quotes.filter((q) => q.pricingCompatible);
+      // V174: broker-valid is necessary but not sufficient. Require a positive
+      // model edge before risking another stake; this is deliberately stricter
+      // than V170/V173 to reduce low-quality Touch entries.
+      const pricedQuotes = quotes.filter((q) =>
+        q.pricingCompatible &&
+        q.quoteProbabilityGate &&
+        Number(q.probabilityGap) >= 0.03 &&
+        Number(q.expectedValue) >= 0
+      );
       if (!pricedQuotes.length) {
         setLiveQuote(null);
         const diagnostic = [...new Set(errors)].slice(0, 3).join(" | ");
         setQuoteError(
-          `Deriv returned no usable ${setup} proposal. ${diagnostic || "Retry when the selected account session and market are ready."}`
+          `No precision ${setup} proposal passed the model-edge safety gate. ${diagnostic || "Waiting for a stronger Touch setup."}`
         );
-        throw new Error(`Skipped ${setup}: Deriv did not return a usable proposal.`);
+        throw new Error(`Skipped ${setup}: no precision Touch proposal passed the safety gate.`);
       }
 
       pricedQuotes.sort((a, b) => b.quoteScore - a.quoteScore);
@@ -671,7 +696,7 @@ export function TouchNoTouchBotView({ feed }) {
       qualificationConsumedRef.current = false;
       lastSignalRef.current = "";
       setExecutionPulse((v) => v + 1);
-      setMessage(`${won ? "✓ WIN" : "✕ LOSS"} • ${typeOf(c)} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)} • SCANNING NEXT TOUCH`);
+      setMessage(`${won ? "✓ WIN" : "✕ LOSS"} • ${typeOf(c)} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)} • PRECISION RESCAN`);
     }
   }, [currency, touchContracts, recoveryEnabled, recoveryUsed, running, sound]);
 
@@ -692,13 +717,13 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • TOUCH-FIRST continuous mode • fixed $0.35 stake.");
+    resetSession(); setRunning(true); setMessage("SCANNING • TOUCH-FIRST PRECISION mode • fixed $0.35 stake.");
   };
 
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V13.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • exact broker-priced barriers • local outcome learning • hard session protection</p></div>
+        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V13.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • stronger Touch confirmation • broker-priced barriers • precision risk filter</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
