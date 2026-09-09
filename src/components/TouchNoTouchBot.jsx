@@ -145,7 +145,7 @@ export function TouchNoTouchBotView({ feed }) {
   const [duration, setDuration] = useState(5);
   const [durationUnit, setDurationUnit] = useState("t");
   const [barrierMultiplier, setBarrierMultiplier] = useState(1.8);
-  const [minScore, setMinScore] = useState(60);
+  const [minScore, setMinScore] = useState(55);
   const [sessionTPPct, setSessionTPPct] = useState(2);
   const [sessionSLPct, setSessionSLPct] = useState(1.5);
   const [recoveryEnabled, setRecoveryEnabled] = useState(false);
@@ -188,9 +188,41 @@ export function TouchNoTouchBotView({ feed }) {
     decimals: market?.decimals,
   }), [analysisPrices, duration, durationUnit, minScore, market?.decimals]);
 
+  // TOUCH-FIRST qualification: the master engine may prefer NO TOUCH when its
+  // probability is higher, but this desk intentionally waits for a usable
+  // TOUCH setup instead of trading NO TOUCH. Keep the gate conservative enough
+  // to avoid random entries while allowing valid Touch opportunities through.
+  const touchFirstReady = useMemo(() => {
+    const score = Number(analysis?.touchScore || 0);
+    const probability = Number(analysis?.touchProbability || 0);
+    const quality = Number(analysis?.marketQuality || 0);
+    const confirmations = Number(analysis?.confirmations || 0);
+    const barrier = Number(analysis?.touchBarrier);
+    return (
+      score >= minScore &&
+      probability >= 0.30 &&
+      quality >= 45 &&
+      confirmations >= 3 &&
+      Number.isFinite(barrier)
+    );
+  }, [analysis, minScore]);
+
+  const touchFirstAnalysis = useMemo(() => {
+    if (!touchFirstReady) return analysis;
+    return {
+      ...analysis,
+      ready: true,
+      signal: "TOUCH",
+      candidate: "TOUCH",
+      entryScore: Number(analysis.touchScore || 0),
+      modelProbability: Number(analysis.touchProbability || 0),
+      reason: `TOUCH-FIRST setup qualified: ${analysis.touchScore}/99 score, ${(Number(analysis.touchProbability || 0) * 100).toFixed(1)}% model probability, ${analysis.confirmations}/6 confirmations.`,
+    };
+  }, [analysis, touchFirstReady]);
+
   useEffect(() => {
-    latestAnalysisRef.current = analysis;
-  }, [analysis]);
+    latestAnalysisRef.current = touchFirstAnalysis;
+  }, [touchFirstAnalysis]);
   const balance = Number(selectedAccount?.balance) || 0;
   const winRate = wins + losses ? (wins / (wins + losses)) * 100 : 0;
   const chartTicks = ticks.slice(-500);
@@ -584,9 +616,9 @@ export function TouchNoTouchBotView({ feed }) {
     }
 
     const qualified = Boolean(
-      analysis.ready &&
-      analysis.signal === "TOUCH" &&
-      analysis.entryScore >= minScore
+      touchFirstAnalysis.ready &&
+      touchFirstAnalysis.signal === "TOUCH" &&
+      touchFirstAnalysis.entryScore >= minScore
     );
 
     if (!qualified) {
@@ -596,10 +628,10 @@ export function TouchNoTouchBotView({ feed }) {
 
     if (qualificationConsumedRef.current) return;
     qualificationConsumedRef.current = true;
-    const key = `${symbol}:${analysis.signal}:${Number(analysis.current).toFixed(8)}`;
+    const key = `${symbol}:${touchFirstAnalysis.signal}:${Number(touchFirstAnalysis.current).toFixed(8)}`;
     lastSignalRef.current = key;
-    void execute("AUTO", analysis);
-  }, [analysis, execute, minScore, running, symbol]);
+    void execute("AUTO", touchFirstAnalysis);
+  }, [execute, minScore, running, symbol, touchFirstAnalysis]);
 
   // Fixed-duration Touch/No Touch contracts are protected by session-level
   // entry limits and settlement monitoring. Do not force a sell here: some
@@ -628,13 +660,13 @@ export function TouchNoTouchBotView({ feed }) {
   useEffect(() => {
     // Recovery also requires a fresh qualification. A loss must never cause the
     // same still-READY signal to be bought again immediately.
-    if (!running || !recoveryPendingRef.current || recoveryUsed || !analysis.ready || analysis.signal !== "TOUCH") return;
-    if (analysis.entryScore < minScore) return;
+    if (!running || !recoveryPendingRef.current || recoveryUsed || !touchFirstAnalysis.ready || touchFirstAnalysis.signal !== "TOUCH") return;
+    if (touchFirstAnalysis.entryScore < minScore) return;
     if (qualificationConsumedRef.current) return;
     qualificationConsumedRef.current = true;
     recoveryPendingRef.current = false;
-    void execute("RECOVERY", analysis);
-  }, [analysis, execute, minScore, recoveryUsed, running]);
+    void execute("RECOVERY", touchFirstAnalysis);
+  }, [execute, minScore, recoveryUsed, running, touchFirstAnalysis]);
 
 
   const recent = useMemo(() => touchContracts.filter(settled).sort((a,b) => Number(b?.date_start || b?.transaction_time || 0) - Number(a?.date_start || a?.transaction_time || 0)).slice(0, 8), [openContracts]);
@@ -694,7 +726,7 @@ export function TouchNoTouchBotView({ feed }) {
             )}
           </select>
         </div>
-        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="60">60 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option><option value="80">80 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
+        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="50">50 / 99</option><option value="55">55 / 99</option><option value="60">60 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
         <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START BOT"}</button>
       </div>
 
