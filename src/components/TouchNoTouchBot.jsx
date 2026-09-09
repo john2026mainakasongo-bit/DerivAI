@@ -145,7 +145,7 @@ export function TouchNoTouchBotView({ feed }) {
   const [duration, setDuration] = useState(5);
   const [durationUnit, setDurationUnit] = useState("t");
   const [barrierMultiplier, setBarrierMultiplier] = useState(1.8);
-  const [minScore, setMinScore] = useState(55);
+  const [minScore, setMinScore] = useState(63);
   const [sessionTPPct, setSessionTPPct] = useState(2);
   const [sessionSLPct, setSessionSLPct] = useState(1.5);
   const [recoveryEnabled, setRecoveryEnabled] = useState(false);
@@ -211,7 +211,7 @@ export function TouchNoTouchBotView({ feed }) {
       ? trend.includes('BULL') && momentum.includes('UP')
       : trend.includes('BEAR') && momentum.includes('DOWN');
     const highVolatility = String(analysis?.volatility || '').toUpperCase() === 'HIGH';
-    const highVolatilitySafe = !highVolatility || (score >= 80 && probability >= 0.65 && quality >= 75 && confirmations >= 6);
+    const highVolatilitySafe = !highVolatility || (score >= 72 && probability >= 0.50 && quality >= 70 && confirmations >= 5);
     const timingOk = timing.includes('RETEST') || timing.includes('IDEAL');
     return (
       score >= Math.max(70, minScore) &&
@@ -769,7 +769,7 @@ export function TouchNoTouchBotView({ feed }) {
             )}
           </select>
         </div>
-        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="50">50 / 99</option><option value="55">55 / 99</option><option value="60">60 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
+        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="60">60 / 99</option><option value="63">63 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
         <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START BOT"}</button>
       </div>
 
