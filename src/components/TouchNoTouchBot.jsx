@@ -17,8 +17,25 @@ const safeJson = (value, fallback) => {
   try { return JSON.parse(value); } catch { return fallback; }
 };
 const readDerivMemory = () => {
-  if (typeof window === "undefined") return { profiles: {}, pending: {} };
-  return safeJson(window.localStorage.getItem(DERIV_MEMORY_KEY), { profiles: {}, pending: {} });
+  const fallback = { profiles: {}, pending: {} };
+  if (typeof window === "undefined") return fallback;
+
+  const parsed = safeJson(window.localStorage.getItem(DERIV_MEMORY_KEY), null);
+
+  // Old/corrupt localStorage can contain `null`, an array, or another
+  // unexpected value. Never let local learning memory break proposal flow.
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return fallback;
+  }
+
+  return {
+    profiles: parsed.profiles && typeof parsed.profiles === "object" && !Array.isArray(parsed.profiles)
+      ? parsed.profiles
+      : {},
+    pending: parsed.pending && typeof parsed.pending === "object" && !Array.isArray(parsed.pending)
+      ? parsed.pending
+      : {},
+  };
 };
 const writeDerivMemory = (memory) => {
   if (typeof window === "undefined") return;
