@@ -51,18 +51,33 @@ function slope(values = []) {
 
 function estimateHorizonTicks(items, duration, durationUnit) {
   const d = Math.max(1, Number(duration) || 5);
-  if (String(durationUnit).toLowerCase() !== "s") return Math.round(d);
+  const unit = String(durationUnit || "t").toLowerCase();
+  if (unit === "t") return Math.round(d);
 
   const intervals = [];
   for (let i = 1; i < items.length; i += 1) {
     const a = Number(items[i - 1].epoch);
     const b = Number(items[i].epoch);
-    if (Number.isFinite(a) && Number.isFinite(b) && b > a && b - a <= 10) {
+    if (Number.isFinite(a) && Number.isFinite(b) && b > a && b - a <= 120) {
       intervals.push(b - a);
     }
   }
   const secondsPerTick = median(intervals) || 1;
-  return Math.max(2, Math.round(d / secondsPerTick));
+  const seconds = unit === "m" ? d * 60 : d;
+  return Math.max(2, Math.round(seconds / secondsPerTick));
+}
+
+function normalizeDurationUnit(value) {
+  const unit = String(value || "t").toLowerCase();
+  if (unit === "m") return "m";
+  if (unit === "s") return "s";
+  return "t";
+}
+
+function durationLabel(unit) {
+  if (unit === "m") return "minutes";
+  if (unit === "s") return "seconds";
+  return "ticks";
 }
 
 function historicalHitRate(values, distance, horizon, direction) {
@@ -154,7 +169,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
   const maxSamples = Math.max(minimumSamples, Number(options.maxSamples) || 900);
   const entryThreshold = clamp(Number(options.minScore) || 60, 60, 99);
   const duration = Math.max(1, Number(options.duration) || 5);
-  const durationUnit = String(options.durationUnit || "t").toLowerCase() === "s" ? "s" : "t";
+  const durationUnit = normalizeDurationUnit(options.durationUnit);
   const sampleItems = items.slice(-maxSamples);
   const sample = sampleItems.map((x) => x.quote);
   const current = Number(sample.at(-1));
@@ -302,7 +317,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
     horizonTicks,
     state: ready ? "ENTRY READY" : confirmations >= 4 ? "SETUP FORMING" : "ANALYZING",
     reason: ready
-      ? `${candidate} confirmed for ${duration} ${durationUnit === "s" ? "seconds" : "ticks"}; model probability ${(modelProbability * 100).toFixed(1)}%.`
+      ? `${candidate} confirmed for ${duration} ${durationLabel(durationUnit)}; model probability ${(modelProbability * 100).toFixed(1)}%.`
       : !probabilityGate
         ? `Waiting: model probability ${(modelProbability * 100).toFixed(1)}% is below the 55% execution gate.`
         : quality < 60

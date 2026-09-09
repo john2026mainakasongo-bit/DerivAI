@@ -289,3 +289,35 @@ body:has(.touchDeskViewport),
   .touchDeskViewport .tntControls { grid-template-columns: 1fr 1fr !important; }
   .touchDeskViewport .tntChartCard .zentoraChartCanvas { height: 520px !important; min-height: 520px !important; }
 }
+
+/* Deriv-style Touch / No Touch duration control */
+.tntDurationControl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tntDurationControl .tntControlLabel {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  opacity: .82;
+}
+.tntDurationMode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.tntDurationMode button {
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.035);
+  color: inherit;
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.tntDurationMode button.active {
+  background: rgba(0,160,255,.18);
+  border-color: rgba(0,190,255,.45);
+}

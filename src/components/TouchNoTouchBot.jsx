@@ -623,7 +623,7 @@ export function TouchNoTouchBotView({ feed }) {
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • DERIV-FIRST ADAPTIVE ENGINE V10.4</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • exact broker-priced barriers • local outcome learning • hard session protection</p></div>
+        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V11.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • exact broker-priced barriers • local outcome learning • hard session protection</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
@@ -640,7 +640,35 @@ export function TouchNoTouchBotView({ feed }) {
         <label>MARKET<select value={symbol} disabled={!connected} onChange={(e) => void changeSymbol(e.target.value)}>{markets.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
         <label>STAKE MODE<select value={stakeMode} onChange={(e) => setStakeMode(e.target.value)}><option value="FIXED">FIXED • $0.35</option><option value="ADAPTIVE">ADAPTIVE • capped $0.35</option></select></label>
         <label>STAKE<input type="number" min="0.35" max="0.35" step="0.05" value={0.35} disabled /></label>
-        <label>DURATION<select value={`${durationUnit}:${duration}`} onChange={(e) => { const [unit, value] = e.target.value.split(":"); setDurationUnit(unit); setDuration(Number(value)); }}><option value="t:3">3 TICKS</option><option value="t:5">5 TICKS</option><option value="t:10">10 TICKS</option><option value="t:15">15 TICKS</option><option value="s:5">5 SECONDS</option><option value="s:10">10 SECONDS</option><option value="s:15">15 SECONDS</option><option value="s:30">30 SECONDS</option></select></label>
+        <div className="tntDurationControl">
+          <span className="tntControlLabel">DURATION</span>
+          <div className="tntDurationMode">
+            <button type="button" className={durationUnit === "t" ? "active" : ""} onClick={() => setDurationUnit("t")}>TICKS</button>
+            <button type="button" className={durationUnit === "m" ? "active" : ""} onClick={() => setDurationUnit("m")}>TIME</button>
+          </div>
+          <select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+            {durationUnit === "t" ? (
+              <>
+                <option value="2">2 TICKS</option>
+                <option value="3">3 TICKS</option>
+                <option value="5">5 TICKS</option>
+                <option value="10">10 TICKS</option>
+                <option value="15">15 TICKS</option>
+                <option value="20">20 TICKS</option>
+                <option value="30">30 TICKS</option>
+              </>
+            ) : (
+              <>
+                <option value="1">1 MINUTE</option>
+                <option value="5">5 MINUTES</option>
+                <option value="10">10 MINUTES</option>
+                <option value="15">15 MINUTES</option>
+                <option value="30">30 MINUTES</option>
+                <option value="60">60 MINUTES</option>
+              </>
+            )}
+          </select>
+        </div>
         <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="60">60 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option><option value="80">80 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
         <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START BOT"}</button>
       </div>
@@ -705,7 +733,7 @@ export function TouchNoTouchBotView({ feed }) {
                   {" • "}
                   Duration:
                   {" "}
-                  <b>{diagnosticQuote.duration} {String(diagnosticQuote.durationUnit || durationUnit).toLowerCase() === "s" ? "seconds" : "ticks"}</b>
+                  <b>{diagnosticQuote.duration} {String(diagnosticQuote.durationUnit || durationUnit).toLowerCase() === "m" ? "minutes" : String(diagnosticQuote.durationUnit || durationUnit).toLowerCase() === "s" ? "seconds" : "ticks"}</b>
                 </div>
 
                 <div>
@@ -756,7 +784,7 @@ export function TouchNoTouchBotView({ feed }) {
               <div><span>Score</span><strong>{analysis.entryScore}/99</strong></div>
               <div><span>Probability</span><strong>{(Number(analysis.modelProbability || 0) * 100).toFixed(1)}%</strong></div>
               <div><span>Barrier</span><strong>{analysis.candidate === "TOUCH" ? (analysis.touchBarrier ?? "—") : (analysis.noTouchBarrier ?? "—")}</strong></div>
-              <div><span>Horizon</span><strong>{analysis.duration} {analysis.durationUnit === "s" ? "SEC" : "TICKS"}</strong></div>
+              <div><span>Horizon</span><strong>{analysis.duration} {analysis.durationUnit === "m" ? "MIN" : analysis.durationUnit === "s" ? "SEC" : "TICKS"}</strong></div>
             </div>
           </div>
           <div className="tntDecision"><span>MASTER DECISION</span><strong>{analysis.signal}</strong><b>{analysis.entryScore}/99</b><p>{analysis.reason}</p></div>
@@ -769,7 +797,7 @@ export function TouchNoTouchBotView({ feed }) {
             <div><span>DERIV MEMORY</span><b>{liveQuote ? `${(Number(liveQuote.derivHistoricalWinRate || 0.5) * 100).toFixed(0)}% historical • ${(Number(liveQuote.derivAcceptanceRate || 0.5) * 100).toFixed(0)}% accepted` : "LEARNING"}</b></div>
           </div>
           {quoteError && <div className="tntQuoteError">DERIV QUOTE: {quoteError}</div>}
-          <div className="tntChecks"><div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Volatility</span><b>{analysis.volatility}</b></div><div><span>Confirmations</span><b>{analysis.confirmations}/6</b></div><div><span>Market quality</span><b>{analysis.marketQuality}/100</b></div><div><span>Timing</span><b>{analysis.timing || (analysis.noChase ? "NO CHASE OK" : "LATE / WAIT")}</b></div><div><span>Horizon</span><b>{analysis.duration} {analysis.durationUnit === "s" ? "SEC" : "TICKS"} · {analysis.horizonTicks || analysis.duration} TICKS</b></div><div><span>Model probability</span><b>{(Number(analysis.modelProbability || 0) * 100).toFixed(1)}%</b></div></div>
+          <div className="tntChecks"><div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Volatility</span><b>{analysis.volatility}</b></div><div><span>Confirmations</span><b>{analysis.confirmations}/6</b></div><div><span>Market quality</span><b>{analysis.marketQuality}/100</b></div><div><span>Timing</span><b>{analysis.timing || (analysis.noChase ? "NO CHASE OK" : "LATE / WAIT")}</b></div><div><span>Horizon</span><b>{analysis.duration} {analysis.durationUnit === "m" ? "MIN" : analysis.durationUnit === "s" ? "SEC" : "TICKS"} · {analysis.horizonTicks || analysis.duration} TICKS</b></div><div><span>Model probability</span><b>{(Number(analysis.modelProbability || 0) * 100).toFixed(1)}%</b></div></div>
         </div>
       </div>
 
