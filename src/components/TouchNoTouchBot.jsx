@@ -479,12 +479,12 @@ export function TouchNoTouchBotView({ feed }) {
           const probabilityGap = quoteModelProbability - impliedProbability;
           const quoteProbabilityGate = quoteModelProbability >= 0.55;
           const expectedValue = quoteModelProbability * payout - ask;
-          // Do not reward huge payouts. A very high return normally means a
-          // very low implied hit probability, which is the opposite of a
-          // conservative winning-entry filter. Prefer quotes whose price is
-          // compatible with the model probability and reject extreme lottery
-          // pricing unless the model has a genuinely strong probability edge.
-          const pricingCompatible = quoteProbabilityGate && impliedProbability >= 0.02 && probabilityGap >= -0.05 && expectedValue >= 0;
+          // V170: Deriv is the pricing authority. Once Deriv has returned a
+          // valid proposal with a positive payout, do not discard the quote
+          // because of a second local pricing gate. The analysis engine already
+          // decides whether the market setup is ready; this layer only chooses
+          // the best broker-valid quote from the candidates Deriv accepted.
+          const pricingCompatible = Number.isFinite(ask) && ask > 0 && Number.isFinite(payout) && payout > ask;
           const memory = getMemoryProfile({ symbol, setup, duration: tradeDuration, durationUnit, barrier });
           const acceptanceRate = memory && memory.attempts > 0 ? memory.accepted / memory.attempts : 0.5;
           const outcomeTotal = (memory?.wins || 0) + (memory?.losses || 0);
@@ -527,17 +527,11 @@ export function TouchNoTouchBotView({ feed }) {
       const pricedQuotes = quotes.filter((q) => q.pricingCompatible);
       if (!pricedQuotes.length) {
         setLiveQuote(null);
-        const bestPricingGap = quotes.length
-          ? Math.max(...quotes.map((q) => Number(q.probabilityGap || 0)))
-          : 0;
-        const bestQuoteProbability = quotes.length
-          ? Math.max(...quotes.map((q) => Number(q.modelProbability || 0)))
-          : 0;
         const diagnostic = [...new Set(errors)].slice(0, 3).join(" | ");
         setQuoteError(
-          `No safe ${setup} proposal passed. Best barrier-model probability: ${(bestQuoteProbability * 100).toFixed(1)}%; best pricing gap: ${(bestPricingGap * 100).toFixed(1)}%. ${diagnostic || "Deriv returned no valid proposal."}`
+          `Deriv returned no usable ${setup} proposal. ${diagnostic || "Retry when the selected account session and market are ready."}`
         );
-        throw new Error(`Skipped ${setup}: no Deriv-valid barrier/proposal passed the pricing safety filter.`);
+        throw new Error(`Skipped ${setup}: Deriv did not return a usable proposal.`);
       }
 
       pricedQuotes.sort((a, b) => b.quoteScore - a.quoteScore);
@@ -650,7 +644,7 @@ export function TouchNoTouchBotView({ feed }) {
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V11.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • exact broker-priced barriers • local outcome learning • hard session protection</p></div>
+        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V12.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • exact broker-priced barriers • local outcome learning • hard session protection</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
