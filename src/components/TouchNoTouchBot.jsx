@@ -94,6 +94,22 @@ const buildDerivNativeCandidates = ({ prices, decimals, direction, setup, modelO
     .map((offset) => `${direction >= 0 ? "+" : "-"}${offset.toFixed(Math.max(2, Number(decimals) || 2))}`);
 };
 
+function readableError(error) {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const text = raw.toLowerCase();
+
+  if (
+    text.includes("profiles") &&
+    (text.includes("null") ||
+      text.includes("undefined") ||
+      text.includes("reading"))
+  ) {
+    return "Deriv account profile is unavailable. Reconnect the selected account, then retry the proposal.";
+  }
+
+  return raw || "Deriv proposal request failed.";
+}
+
 export function TouchNoTouchBotView({ feed }) {
   const auth = useDerivAuth();
   const { markets = [], market, symbol, connected, authenticatedFeed, status, ticks = [], prices = [], currentPrice, openContracts = [], transactions = [], changeSymbol, quoteTrade, placeTrade, placeQuotedTrade, sellContract, selectedAccount, selectedAccountType, selectedAccountId, tradeBusy } = feed;
@@ -304,14 +320,14 @@ export function TouchNoTouchBotView({ feed }) {
       setLiveQuote(result);
       setQuoteError("");
       setMessage(
-        `${setup} PROPOSAL OK · ${contractType} · Ask ${ask.toFixed(2)} · Payout ${payout.toFixed(2)} · Model ${(quoteModelProbability * 100).toFixed(1)}% · Gap ${(probabilityGap * 100).toFixed(1)}% · Return ${returnPct.toFixed(1)}%`
+        `${setup} PROPOSAL OK · ${contractType} · Ask ${ask.toFixed(2)} · Payout ${payout.toFixed(2)} · Model ${(quoteModelProbability * 100).toFixed(1)}% · Gap ${(probabilityGap * 100).toFixed(1)}% · Net return ${returnPct.toFixed(1)}%`
       );
     } catch (error) {
       if (requestId !== diagnosticRequestRef.current) return;
       setDiagnosticSide(setup);
       setDiagnosticQuote(null);
       setLiveQuote(null);
-      setQuoteError(error instanceof Error ? error.message : String(error));
+      setQuoteError(readableError(error));
       setMessage(`${setup} proposal test failed.`);
     } finally {
       if (requestId === diagnosticRequestRef.current) setDiagnosticBusy(false);
@@ -535,7 +551,7 @@ export function TouchNoTouchBotView({ feed }) {
       lastSignalRef.current = `${symbol}:${setup}:${forcedAnalysis.entryScore}:${best.barrier}`;
       setMessage(`${setup} OPEN • ${id ? `#${id}` : "contract active"} • Stake ${money(tradeStake, currency)}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Trade failed.");
+      setMessage(readableError(error));
     } finally {
       setQuoteBusy(false);
       busyRef.current = false;
@@ -763,7 +779,7 @@ export function TouchNoTouchBotView({ feed }) {
             <div><span>AI PROPOSAL</span><strong>{quoteBusy ? "SCANNING QUOTES…" : liveQuote ? `${typeOf(liveQuote)} • ${liveQuote.barrier}` : "WAITING"}</strong></div>
             <div><span>ASK / PAYOUT</span><b>{liveQuote ? `${money(liveQuote.askPrice, currency)} → ${money(liveQuote.payout, currency)}` : "—"}</b></div>
             <div><span>MODEL / GAP</span><b>{liveQuote ? `${(Number(liveQuote.modelProbability || 0) * 100).toFixed(1)}% / ${(Number(liveQuote.probabilityGap || 0) * 100).toFixed(1)}%` : "—"}</b></div>
-            <div><span>EXPECTED RETURN</span><b>{liveQuote ? `${Number(liveQuote.returnPct || 0).toFixed(1)}%` : "—"}</b></div>
+            <div><span>NET RETURN</span><b>{liveQuote ? `${Number(liveQuote.returnPct || 0).toFixed(1)}%` : "—"}</b></div>
             <div><span>DERIV MEMORY</span><b>{liveQuote ? `${(Number(liveQuote.derivHistoricalWinRate || 0.5) * 100).toFixed(0)}% historical • ${(Number(liveQuote.derivAcceptanceRate || 0.5) * 100).toFixed(0)}% accepted` : "LEARNING"}</b></div>
           </div>
           {quoteError && <div className="tntQuoteError">DERIV QUOTE: {quoteError}</div>}
