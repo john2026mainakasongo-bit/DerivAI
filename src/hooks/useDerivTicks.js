@@ -293,6 +293,22 @@ export default function useDerivTicks() {
     const nextKey = accountKey(config);
     derivPublicClient.configureAccount(config);
 
+    // If a public market socket is already open, do not mistake it for the
+    // authenticated trading connection. Upgrade it to the selected account
+    // before any proposal request. This avoids the stale-public-socket state
+    // where the UI can show live ticks while trading auth is still missing.
+    if (
+      auth.authenticated &&
+      selectedAccountId &&
+      derivPublicClient.socket?.readyState === WebSocket.OPEN &&
+      !derivPublicClient.socketAuthenticated
+    ) {
+      derivPublicClient.disconnect({
+        preserveAccount: true,
+        preserveSymbol: true,
+      });
+    }
+
     if (nextKey !== sharedAccountKey) {
       sharedAccountKey = nextKey;
       resetSharedSubscriptions();

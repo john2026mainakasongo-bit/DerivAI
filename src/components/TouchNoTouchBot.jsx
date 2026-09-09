@@ -98,13 +98,16 @@ function readableError(error) {
   const raw = error instanceof Error ? error.message : String(error ?? "");
   const text = raw.toLowerCase();
 
-  if (
-    text.includes("profiles") &&
-    (text.includes("null") ||
-      text.includes("undefined") ||
-      text.includes("reading"))
-  ) {
-    return "Deriv account profile is unavailable. Reconnect the selected account, then retry the proposal.";
+  if (text.includes("profiles") && (text.includes("null") || text.includes("undefined") || text.includes("reading"))) {
+    return "Deriv account session is incomplete. Reconnect the selected account, then retry the proposal.";
+  }
+
+  if (text.includes("401") || text.includes("unauthorized") || text.includes("authentication credentials")) {
+    return "Deriv authorization expired or is invalid. Reconnect the selected account, then retry.";
+  }
+
+  if (text.includes("invalid account id")) {
+    return "The selected Deriv account ID is invalid. Reconnect and select the account again.";
   }
 
   return raw || "Deriv proposal request failed.";
@@ -112,7 +115,7 @@ function readableError(error) {
 
 export function TouchNoTouchBotView({ feed }) {
   const auth = useDerivAuth();
-  const { markets = [], market, symbol, connected, authenticatedFeed, status, ticks = [], prices = [], currentPrice, openContracts = [], transactions = [], changeSymbol, quoteTrade, placeTrade, placeQuotedTrade, sellContract, selectedAccount, selectedAccountType, selectedAccountId, tradeBusy } = feed;
+  const { markets = [], market, symbol, connected, authenticatedFeed, status, ticks = [], prices = [], currentPrice, openContracts = [], transactions = [], changeSymbol, connect, quoteTrade, placeTrade, placeQuotedTrade, sellContract, selectedAccount, selectedAccountType, selectedAccountId, tradeBusy } = feed;
   const touchContracts = openContracts.filter((contract) => {
     const type = String(contract?.contract_type || contract?.contractType || contract?.type || "").toUpperCase();
     return type === "ONETOUCH" || type === "NOTOUCH" || type === "TOUCH" || type === "NO TOUCH";
@@ -227,8 +230,14 @@ export function TouchNoTouchBotView({ feed }) {
       return;
     }
     if (!authenticatedFeed) {
-      setQuoteError("Trading feed is not authenticated yet.");
-      return;
+      setMessage("RECONNECTING DERIV ACCOUNT · NO BUY…");
+      try {
+        await connect?.();
+      } catch (error) {
+        setQuoteError(readableError(error));
+        setMessage("Deriv account connection failed.");
+        return;
+      }
     }
 
     const spot = Number(analysis.current ?? currentPrice);
@@ -335,6 +344,7 @@ export function TouchNoTouchBotView({ feed }) {
     authenticatedFeed,
     barrierMultiplier,
     currentPrice,
+    connect,
     diagnosticBusy,
     duration,
     durationUnit,
@@ -690,6 +700,12 @@ export function TouchNoTouchBotView({ feed }) {
             }}>
               <strong>TOUCH / NO TOUCH PROPOSAL</strong>
               <span style={{fontSize: 10, opacity: .6}}>NO BUY TEST</span>
+              <button
+                type="button"
+                onClick={() => void connect?.()}
+                disabled={diagnosticBusy || !selectedAccountId}
+                style={{ marginLeft: "auto" }}
+              >RECONNECT ACCOUNT</button>
             </div>
 
             <div style={{
@@ -700,7 +716,7 @@ export function TouchNoTouchBotView({ feed }) {
               <button
                 type="button"
                 onClick={() => void checkProposal("TOUCH")}
-                disabled={diagnosticBusy || !authenticatedFeed}
+                disabled={diagnosticBusy || !selectedAccountId}
               >
                 {diagnosticBusy ? "TESTING…" : "CHECK TOUCH"}
               </button>
@@ -708,7 +724,7 @@ export function TouchNoTouchBotView({ feed }) {
               <button
                 type="button"
                 onClick={() => void checkProposal("NO TOUCH")}
-                disabled={diagnosticBusy || !authenticatedFeed}
+                disabled={diagnosticBusy || !selectedAccountId}
               >
                 {diagnosticBusy ? "TESTING…" : "CHECK NO TOUCH"}
               </button>
