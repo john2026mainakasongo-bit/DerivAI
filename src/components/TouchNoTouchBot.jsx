@@ -374,11 +374,13 @@ export function TouchNoTouchBotView({ feed }) {
   ]);
   const execute = useCallback(async (mode = "AUTO", forcedAnalysis = analysis, forcedStake = null) => {
     if (busyRef.current || !selectedAccountId || !forcedAnalysis?.ready) return;
+    if (forcedAnalysis.signal !== "TOUCH") return;
     if (forcedAnalysis.signal === "WAIT" || forcedAnalysis.entryScore < minScore) return;
 
     // AUTO execution must use the latest qualified analysis, never a stale
     // signal captured by an earlier render. A trade is only allowed when the
     // current engine is still ready for the same side and score threshold.
+    if (mode === "AUTO" && touchContracts.some((c) => !settled(c))) return;
     if (mode === "AUTO") {
       const latest = latestAnalysisRef.current;
       if (!latest?.ready || latest.signal !== forcedAnalysis.signal) return;
@@ -583,7 +585,7 @@ export function TouchNoTouchBotView({ feed }) {
 
     const qualified = Boolean(
       analysis.ready &&
-      analysis.signal !== "WAIT" &&
+      analysis.signal === "TOUCH" &&
       analysis.entryScore >= minScore
     );
 
@@ -617,14 +619,16 @@ export function TouchNoTouchBotView({ feed }) {
       if (won) { setWins((v) => v + 1); setRecoveryUsed(false); recoveryPendingRef.current = false; }
       else { setLosses((v) => v + 1); if (running && recoveryEnabled && !recoveryUsed && !recoveryPendingRef.current) recoveryPendingRef.current = true; }
       setFlash({ won, pnl, type: typeOf(c) }); sound(won);
-      setMessage(`${won ? "✓ WIN" : "✕ LOSS"} • ${typeOf(c)} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)}`);
+      qualificationConsumedRef.current = false;
+      lastSignalRef.current = "";
+      setMessage(`${won ? "✓ WIN" : "✕ LOSS"} • ${typeOf(c)} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)} • SCANNING NEXT TOUCH`);
     }
   }, [currency, touchContracts, recoveryEnabled, recoveryUsed, running, sound]);
 
   useEffect(() => {
     // Recovery also requires a fresh qualification. A loss must never cause the
     // same still-READY signal to be bought again immediately.
-    if (!running || !recoveryPendingRef.current || recoveryUsed || !analysis.ready || analysis.signal === "WAIT") return;
+    if (!running || !recoveryPendingRef.current || recoveryUsed || !analysis.ready || analysis.signal !== "TOUCH") return;
     if (analysis.entryScore < minScore) return;
     if (qualificationConsumedRef.current) return;
     qualificationConsumedRef.current = true;
@@ -638,13 +642,13 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • duration-matched Touch / No Touch • fixed $0.35 stake.");
+    resetSession(); setRunning(true); setMessage("SCANNING • TOUCH-FIRST continuous mode • fixed $0.35 stake.");
   };
 
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V12.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • exact broker-priced barriers • local outcome learning • hard session protection</p></div>
+        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V13.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • exact broker-priced barriers • local outcome learning • hard session protection</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
