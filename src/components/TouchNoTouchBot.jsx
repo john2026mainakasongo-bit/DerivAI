@@ -97,7 +97,9 @@ const buildDerivNativeCandidates = ({ prices, decimals, direction, setup, modelO
     Math.max(Number(modelOffset) || 0, tickMove * 2),
   ];
   const unique = new Map();
-  const multipliers = setup === "NO TOUCH" ? [0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4] : [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4];
+  const multipliers = setup === "NO TOUCH"
+    ? [0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4]
+    : [0.35, 0.5, 0.65, 0.8, 1, 1.15, 1.3, 1.5, 1.8, 2.2, 2.8, 3.5];
   for (const seed of seeds) {
     for (const multiplier of multipliers) {
       const offset = Math.max(seed * multiplier, pip * 5);
@@ -107,7 +109,7 @@ const buildDerivNativeCandidates = ({ prices, decimals, direction, setup, modelO
   }
   return [...unique.values()]
     .sort((a,b) => a-b)
-    .slice(0, 14)
+    .slice(0, 20)
     .map((offset) => `${direction >= 0 ? "+" : "-"}${offset.toFixed(Math.max(2, Number(decimals) || 2))}`);
 };
 
@@ -211,12 +213,12 @@ export function TouchNoTouchBotView({ feed }) {
       ? trend.includes('BULL') && momentum.includes('UP')
       : trend.includes('BEAR') && momentum.includes('DOWN');
     const highVolatility = String(analysis?.volatility || '').toUpperCase() === 'HIGH';
-    const highVolatilitySafe = !highVolatility || (score >= 72 && probability >= 0.50 && quality >= 70 && confirmations >= 5);
+    const highVolatilitySafe = !highVolatility || (score >= 68 && probability >= 0.55 && quality >= 65 && confirmations >= 5);
     const timingOk = timing.includes('RETEST') || timing.includes('IDEAL');
     return (
-      score >= Math.max(70, minScore) &&
-      probability >= 0.55 &&
-      quality >= 65 &&
+      score >= Math.max(60, minScore) &&
+      probability >= 0.48 &&
+      quality >= 60 &&
       confirmations >= 5 &&
       Number.isFinite(barrier) &&
       Number.isFinite(spot) &&
@@ -531,7 +533,7 @@ export function TouchNoTouchBotView({ feed }) {
             horizonTicks: forcedAnalysis.horizonTicks,
           });
           const probabilityGap = quoteModelProbability - impliedProbability;
-          const quoteProbabilityGate = quoteModelProbability >= 0.55;
+          const quoteProbabilityGate = quoteModelProbability >= 0.50;
           const expectedValue = quoteModelProbability * payout - ask;
           // V170: Deriv is the pricing authority. Once Deriv has returned a
           // valid proposal with a positive payout, do not discard the quote
@@ -584,7 +586,7 @@ export function TouchNoTouchBotView({ feed }) {
       const pricedQuotes = quotes.filter((q) =>
         q.pricingCompatible &&
         q.quoteProbabilityGate &&
-        Number(q.probabilityGap) >= 0.03 &&
+        Number(q.probabilityGap) >= 0 &&
         Number(q.expectedValue) >= 0
       );
       if (!pricedQuotes.length) {
@@ -596,7 +598,11 @@ export function TouchNoTouchBotView({ feed }) {
         throw new Error(`Skipped ${setup}: no precision Touch proposal passed the safety gate.`);
       }
 
-      pricedQuotes.sort((a, b) => b.quoteScore - a.quoteScore);
+      pricedQuotes.sort((a, b) => {
+        const probabilityDelta = Number(b.modelProbability || 0) - Number(a.modelProbability || 0);
+        if (Math.abs(probabilityDelta) > 0.01) return probabilityDelta;
+        return Number(b.quoteScore || 0) - Number(a.quoteScore || 0);
+      });
       const best = pricedQuotes[0];
       // IMPORTANT: best.barrier is a Deriv signed OFFSET (+/-), not an absolute
       // market price. Comparing it directly with spot (e.g. 0.59 vs 926.97)
@@ -769,7 +775,7 @@ export function TouchNoTouchBotView({ feed }) {
             )}
           </select>
         </div>
-        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="60">60 / 99</option><option value="63">63 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
+        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="58">58 / 99</option><option value="60">60 / 99</option><option value="63">63 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
         <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START BOT"}</button>
       </div>
 
