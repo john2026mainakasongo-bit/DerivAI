@@ -152,7 +152,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
   const values = items.map((x) => x.quote);
   const minimumSamples = Math.max(60, Number(options.minimumSamples) || 120);
   const maxSamples = Math.max(minimumSamples, Number(options.maxSamples) || 900);
-  const entryThreshold = clamp(Number(options.minScore) || 80, 80, 99);
+  const entryThreshold = clamp(Number(options.minScore) || 60, 60, 99);
   const duration = Math.max(1, Number(options.duration) || 5);
   const durationUnit = String(options.durationUnit || "t").toLowerCase() === "s" ? "s" : "t";
   const sampleItems = items.slice(-maxSamples);
@@ -257,19 +257,18 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
   const candidate = touchScore >= noTouchScore ? "TOUCH" : "NO TOUCH";
   const candidateScore = candidate === "TOUCH" ? touchScore : noTouchScore;
   const modelProbability = candidate === "TOUCH" ? touchHit : noTouchHit;
-  const probabilityGate = modelProbability >= 0.78;
-  const edgeGate = probabilityEdge >= 0.08;
+  const probabilityGate = modelProbability >= 0.55;
+  const edgeGate = probabilityEdge >= 0.02;
   const sampleReady = sample.length >= minimumSamples;
-  const highVolatilityAllowed = volatility === "HIGH" && modelProbability >= 0.80 && quality >= 65 && stability >= 0.35;
+  const highVolatilityAllowed = volatility === "HIGH" && modelProbability >= 0.60 && quality >= 45 && stability >= 0.20;
   const volatilityGate = volatility !== "HIGH" || highVolatilityAllowed;
   const ready = Boolean(
     sampleReady &&
-    confirmations >= 5 &&
+    confirmations >= 3 &&
     candidateScore >= entryThreshold &&
     probabilityGate &&
     edgeGate &&
-    quality >= 60 &&
-    noChase &&
+    quality >= 45 &&
     volatilityGate
   );
   const signal = ready ? candidate : "WAIT";
@@ -295,7 +294,7 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
     marketQuality: Math.round(quality),
     probabilityEdge: Number(probabilityEdge.toFixed(3)),
     highVolatilityAllowed,
-    strategy: "ADAPTIVE A+ V10.3",
+    strategy: "EXECUTION-FIRST V11.0",
     noChase,
     timing,
     duration,
@@ -305,12 +304,10 @@ export function analyzeTouchNoTouch(prices = [], options = {}) {
     reason: ready
       ? `${candidate} confirmed for ${duration} ${durationUnit === "s" ? "seconds" : "ticks"}; model probability ${(modelProbability * 100).toFixed(1)}%.`
       : !probabilityGate
-        ? `Waiting: model probability ${(modelProbability * 100).toFixed(1)}% is below the 78% probability gate.`
+        ? `Waiting: model probability ${(modelProbability * 100).toFixed(1)}% is below the 55% execution gate.`
         : quality < 60
-          ? `Waiting: market quality ${Math.round(quality)}/100 is below the 60 safety gate.`
-          : timing === "LATE / WAIT RETEST"
-          ? `Entry is extended; waiting for a retest before ${candidate}.`
-          : `Waiting for stronger ${candidate} evidence (${candidateScore}/99, ${(modelProbability * 100).toFixed(1)}% probability, ${confirmations}/6).`,
+          ? `Waiting: market quality ${Math.round(quality)}/100 is below the 45 execution gate.`
+          : `Waiting for a valid ${candidate} setup (${candidateScore}/99, ${(modelProbability * 100).toFixed(1)}% probability, ${confirmations}/6).`,
   };
 }
 

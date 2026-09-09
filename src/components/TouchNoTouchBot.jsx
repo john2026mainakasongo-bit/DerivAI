@@ -125,12 +125,12 @@ export function TouchNoTouchBotView({ feed }) {
   const [duration, setDuration] = useState(5);
   const [durationUnit, setDurationUnit] = useState("t");
   const [barrierMultiplier, setBarrierMultiplier] = useState(1.8);
-  const [minScore, setMinScore] = useState(80);
+  const [minScore, setMinScore] = useState(60);
   const [sessionTPPct, setSessionTPPct] = useState(2);
   const [sessionSLPct, setSessionSLPct] = useState(1.5);
   const [recoveryEnabled, setRecoveryEnabled] = useState(false);
   const [recoveryUsed, setRecoveryUsed] = useState(false);
-  const [allowReal, setAllowReal] = useState(false);
+  const [allowReal, setAllowReal] = useState(true);
   const [sessionPnl, setSessionPnl] = useState(0);
   const [wins, setWins] = useState(0);
   const [losses, setLosses] = useState(0);
@@ -160,7 +160,7 @@ export function TouchNoTouchBotView({ feed }) {
     return prices;
   }, [prices, ticks]);
   const analysis = useMemo(() => analyzeTouchNoTouch(analysisPrices, {
-    minimumSamples: 120,
+    minimumSamples: 80,
     maxSamples: 900,
     minScore,
     duration,
@@ -172,8 +172,6 @@ export function TouchNoTouchBotView({ feed }) {
     latestAnalysisRef.current = analysis;
   }, [analysis]);
   const balance = Number(selectedAccount?.balance) || 0;
-  const sessionTarget = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionTPPct / 100) : 0;
-  const sessionStop = sessionStartBalanceRef.current > 0 ? sessionStartBalanceRef.current * (sessionSLPct / 100) : 0;
   const winRate = wins + losses ? (wins / (wins + losses)) * 100 : 0;
   const chartTicks = ticks.slice(-500);
 
@@ -204,7 +202,7 @@ export function TouchNoTouchBotView({ feed }) {
   }, []);
 
   const resetSession = useCallback(() => {
-    setSessionPnl(0); setWins(0); setLosses(0); setTrades(0); setRecoveryUsed(false); recoveryPendingRef.current = false; lastSignalRef.current = ""; processedRef.current.clear(); exitRequestedRef.current.clear(); setFlash(null); sessionStartBalanceRef.current = balance; setMessage("Session reset. Waiting for a fresh A+ setup.");
+    setSessionPnl(0); setWins(0); setLosses(0); setTrades(0); setRecoveryUsed(false); recoveryPendingRef.current = false; lastSignalRef.current = ""; processedRef.current.clear(); exitRequestedRef.current.clear(); setFlash(null); sessionStartBalanceRef.current = balance; setMessage("Session reset. Execution-first scanner is ready.");
   }, [balance]);
 
   // V5.3 TOUCH / NO TOUCH PROPOSAL DIAGNOSTIC
@@ -349,9 +347,7 @@ export function TouchNoTouchBotView({ feed }) {
   ]);
   const execute = useCallback(async (mode = "AUTO", forcedAnalysis = analysis, forcedStake = null) => {
     if (busyRef.current || !selectedAccountId || !forcedAnalysis?.ready) return;
-    if (String(selectedAccountType).toLowerCase() === "real" && !allowReal) { setMessage("REAL ACCOUNT LOCKED — enable Allow Real first."); return; }
     if (forcedAnalysis.signal === "WAIT" || forcedAnalysis.entryScore < minScore) return;
-    if (forcedAnalysis.confirmations < 5 || forcedAnalysis.noChase === false) return;
 
     // AUTO execution must use the latest qualified analysis, never a stale
     // signal captured by an earlier render. A trade is only allowed when the
@@ -359,13 +355,10 @@ export function TouchNoTouchBotView({ feed }) {
     if (mode === "AUTO") {
       const latest = latestAnalysisRef.current;
       if (!latest?.ready || latest.signal !== forcedAnalysis.signal) return;
-      if (latest.entryScore < minScore || latest.confirmations < 5 || latest.noChase === false) return;
+      if (latest.entryScore < minScore) return;
     }
 
-    if (Date.now() - lastEntryRef.current < 9000) return;
-    if (trades >= 10) { setRunning(false); setMessage("MAX 10 TRADES — session protected."); return; }
-    if (sessionStop > 0 && sessionPnl <= -sessionStop) { setRunning(false); setMessage(`SESSION STOP • ${money(sessionPnl, currency)}`); return; }
-    if (sessionTarget > 0 && sessionPnl >= sessionTarget) { setRunning(false); setMessage(`SESSION TARGET • ${money(sessionPnl, currency)}`); return; }
+
 
     const base = stakeMode === "FIXED"
       ? 0.35
@@ -457,14 +450,14 @@ export function TouchNoTouchBotView({ feed }) {
             horizonTicks: forcedAnalysis.horizonTicks,
           });
           const probabilityGap = quoteModelProbability - impliedProbability;
-          const quoteProbabilityGate = quoteModelProbability >= 0.78;
+          const quoteProbabilityGate = quoteModelProbability >= 0.55;
           const expectedValue = quoteModelProbability * payout - ask;
           // Do not reward huge payouts. A very high return normally means a
           // very low implied hit probability, which is the opposite of a
           // conservative winning-entry filter. Prefer quotes whose price is
           // compatible with the model probability and reject extreme lottery
           // pricing unless the model has a genuinely strong probability edge.
-          const pricingCompatible = quoteProbabilityGate && impliedProbability >= 0.08 && probabilityGap >= 0.02 && expectedValue >= 0;
+          const pricingCompatible = quoteProbabilityGate && impliedProbability >= 0.02 && probabilityGap >= -0.05 && expectedValue >= 0;
           const memory = getMemoryProfile({ symbol, setup, duration: tradeDuration, durationUnit, barrier });
           const acceptanceRate = memory && memory.attempts > 0 ? memory.accepted / memory.attempts : 0.5;
           const outcomeTotal = (memory?.wins || 0) + (memory?.losses || 0);
@@ -527,9 +520,9 @@ export function TouchNoTouchBotView({ feed }) {
       // would incorrectly reject every valid proposal.
       const bestBarrierOffset = Number(best?.barrier);
       if (Number.isFinite(bestBarrierOffset)) {
-        const minOffset = Math.max(Math.abs(spot) * 0.00005, pip * 5, 0.01);
+        const minOffset = Math.max(pip * 2, 0.01);
         if (Math.abs(bestBarrierOffset) < minOffset) {
-          throw new Error("Barrier offset too close to spot — skipping trade for risk protection.");
+          throw new Error("Deriv barrier offset is too close to spot.");
         }
       }
       setLiveQuote(best);
@@ -556,7 +549,7 @@ export function TouchNoTouchBotView({ feed }) {
       setQuoteBusy(false);
       busyRef.current = false;
     }
-  }, [allowReal, analysis, analysisPrices, balance, barrierMultiplier, currency, currentPrice, duration, durationUnit, fixedStake, minScore, placeQuotedTrade, quoteTrade, selectedAccountId, selectedAccountType, sessionPnl, sessionStop, sessionTarget, stakeMode, symbol, trades]);
+  }, [analysis, analysisPrices, balance, barrierMultiplier, currency, currentPrice, duration, durationUnit, fixedStake, minScore, placeQuotedTrade, quoteTrade, selectedAccountId, stakeMode, symbol]);
 
   useEffect(() => {
     // A qualified setup is consumed once. Do not re-enter simply because the
@@ -570,9 +563,7 @@ export function TouchNoTouchBotView({ feed }) {
     const qualified = Boolean(
       analysis.ready &&
       analysis.signal !== "WAIT" &&
-      analysis.entryScore >= minScore &&
-      analysis.confirmations >= 5 &&
-      analysis.noChase
+      analysis.entryScore >= minScore
     );
 
     if (!qualified) {
@@ -613,18 +604,13 @@ export function TouchNoTouchBotView({ feed }) {
     // Recovery also requires a fresh qualification. A loss must never cause the
     // same still-READY signal to be bought again immediately.
     if (!running || !recoveryPendingRef.current || recoveryUsed || !analysis.ready || analysis.signal === "WAIT") return;
-    if (analysis.entryScore < Math.max(minScore, 80) || analysis.confirmations < 5 || !analysis.noChase) return;
+    if (analysis.entryScore < minScore) return;
     if (qualificationConsumedRef.current) return;
     qualificationConsumedRef.current = true;
     recoveryPendingRef.current = false;
     void execute("RECOVERY", analysis);
   }, [analysis, execute, minScore, recoveryUsed, running]);
 
-  useEffect(() => {
-    if (!running) return;
-    if (sessionTarget > 0 && sessionPnl >= sessionTarget) { setRunning(false); setMessage(`TAKE PROFIT • ${money(sessionPnl, currency)}`); }
-    if (sessionStop > 0 && sessionPnl <= -sessionStop) { setRunning(false); setMessage(`STOP LOSS • ${money(sessionPnl, currency)}`); }
-  }, [currency, running, sessionPnl, sessionStop, sessionTarget]);
 
   const recent = useMemo(() => touchContracts.filter(settled).sort((a,b) => Number(b?.date_start || b?.transaction_time || 0) - Number(a?.date_start || a?.transaction_time || 0)).slice(0, 8), [openContracts]);
   const open = touchContracts.filter((c) => !settled(c)).slice(0, 8);
@@ -647,7 +633,7 @@ export function TouchNoTouchBotView({ feed }) {
         <div className="tntBalance"><span>ACCOUNT</span><strong>{selectedAccountType === "real" ? "REAL" : "DEMO"}</strong><small>{selectedAccount?.displayLabel || selectedAccountId || "Not connected"}</small><em>{money(balance, currency)}</em></div>
         <div className="tntMetric"><span>ENTRY ENGINE</span><strong>{analysis.signal}</strong><small>{analysis.state}</small><b>{analysis.entryScore}/99</b></div>
         <div className="tntMetric"><span>SESSION P/L</span><strong className={sessionPnl >= 0 ? "positive" : "negative"}>{sessionPnl >= 0 ? "+" : ""}{money(sessionPnl, currency)}</strong><small>Target +{sessionTPPct}% / Stop -{sessionSLPct}%</small><b>{wins}W • {losses}L • {winRate.toFixed(0)}%</b></div>
-        <div className="tntMetric"><span>PROTECTION</span><strong>{recoveryPendingRef.current ? "RECOVERY READY" : "ARMED"}</strong><small>Max 10 trades • one recovery</small><b>{recoveryUsed ? "Recovery used" : "Recovery available"}</b></div>
+        <div className="tntMetric"><span>PROTECTION</span><strong>{recoveryPendingRef.current ? "RECOVERY READY" : "ARMED"}</strong><small>Execution mode • no local trade cap</small><b>{recoveryUsed ? "Recovery used" : "Recovery available"}</b></div>
       </div>
 
       <div className="tntControls">
@@ -655,8 +641,8 @@ export function TouchNoTouchBotView({ feed }) {
         <label>STAKE MODE<select value={stakeMode} onChange={(e) => setStakeMode(e.target.value)}><option value="FIXED">FIXED • $0.35</option><option value="ADAPTIVE">ADAPTIVE • capped $0.35</option></select></label>
         <label>STAKE<input type="number" min="0.35" max="0.35" step="0.05" value={0.35} disabled /></label>
         <label>DURATION<select value={`${durationUnit}:${duration}`} onChange={(e) => { const [unit, value] = e.target.value.split(":"); setDurationUnit(unit); setDuration(Number(value)); }}><option value="t:3">3 TICKS</option><option value="t:5">5 TICKS</option><option value="t:10">10 TICKS</option><option value="t:15">15 TICKS</option><option value="s:5">5 SECONDS</option><option value="s:10">10 SECONDS</option><option value="s:15">15 SECONDS</option><option value="s:30">30 SECONDS</option></select></label>
-        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="80">80 / 99</option><option value="85">85 / 99</option><option value="90">90 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
-        <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START A+ BOT"}</button>
+        <label>MIN ENTRY<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="60">60 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option><option value="80">80 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
+        <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START BOT"}</button>
       </div>
 
       <div className="tntMainGrid">
@@ -763,9 +749,9 @@ export function TouchNoTouchBotView({ feed }) {
           </div></div>
         <div className="tntAnalysis">
           <div className={`tntEntryRadar ${analysis.ready ? "ready" : ""}`}>
-            <div className="tntEntryRadarHead"><span>A+ ENTRY RADAR</span><b>{analysis.ready ? "ENTRY READY" : "WAITING FOR A+"}</b></div>
+            <div className="tntEntryRadarHead"><span>ENTRY RADAR</span><b>{analysis.ready ? "ENTRY READY" : "WAITING FOR A+"}</b></div>
             <h3>{analysis.ready ? analysis.candidate : "NO ENTRY"}</h3>
-            <p>{analysis.ready ? `Fresh ${analysis.candidate} setup passed the engine gates. Execute only with the live proposal shown below.` : analysis.reason}</p>
+            <p>{analysis.ready ? `${analysis.candidate} setup detected. Execute using the live Deriv proposal shown below.` : analysis.reason}</p>
             <div className="tntEntryGrid">
               <div><span>Score</span><strong>{analysis.entryScore}/99</strong></div>
               <div><span>Probability</span><strong>{(Number(analysis.modelProbability || 0) * 100).toFixed(1)}%</strong></div>
@@ -787,7 +773,7 @@ export function TouchNoTouchBotView({ feed }) {
         </div>
       </div>
 
-      <div className="tntProtection"><div><span>SESSION TAKE PROFIT</span><strong>+{sessionTPPct}%</strong><input type="range" min="1" max="5" step="0.5" value={sessionTPPct} onChange={(e) => setSessionTPPct(Number(e.target.value))}/></div><div><span>SESSION STOP LOSS</span><strong>-{sessionSLPct}%</strong><input type="range" min="0.5" max="3" step="0.5" value={sessionSLPct} onChange={(e) => setSessionSLPct(Number(e.target.value))}/></div><div><span>RECOVERY</span><strong>{recoveryEnabled ? "X2 • ONE TIME" : "OFF"}</strong><input type="checkbox" checked={recoveryEnabled} onChange={(e) => setRecoveryEnabled(e.target.checked)}/></div><div><span>REAL TRADING</span><strong>{allowReal ? "UNLOCKED" : "LOCKED"}</strong><input type="checkbox" checked={allowReal} onChange={(e) => setAllowReal(e.target.checked)}/></div><button onClick={resetSession}>RESET SESSION</button></div>
+      <div className="tntProtection"><div><span>SESSION TAKE PROFIT</span><strong>+{sessionTPPct}%</strong><input type="range" min="1" max="5" step="0.5" value={sessionTPPct} onChange={(e) => setSessionTPPct(Number(e.target.value))}/></div><div><span>SESSION STOP LOSS</span><strong>-{sessionSLPct}%</strong><input type="range" min="0.5" max="3" step="0.5" value={sessionSLPct} onChange={(e) => setSessionSLPct(Number(e.target.value))}/></div><div><span>RECOVERY</span><strong>{recoveryEnabled ? "X2 • ONE TIME" : "OFF"}</strong><input type="checkbox" checked={recoveryEnabled} onChange={(e) => setRecoveryEnabled(e.target.checked)}/></div><div><span>REAL TRADING</span><strong>READY</strong><input type="checkbox" checked={allowReal} onChange={(e) => setAllowReal(e.target.checked)}/></div><button onClick={resetSession}>RESET SESSION</button></div>
 
       <section className="tntBottomDash">
         <div className="tntBottomDashHead"><strong>TOUCH / NO TOUCH ANALYSIS DASHBOARD</strong><span>LIVE • CHART-SYNCHRONIZED</span></div>
