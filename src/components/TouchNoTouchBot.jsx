@@ -162,6 +162,7 @@ export function TouchNoTouchBotView({ feed }) {
   const [diagnosticQuote, setDiagnosticQuote] = useState(null);
   const [diagnosticBusy, setDiagnosticBusy] = useState(false);
   const [diagnosticSide, setDiagnosticSide] = useState("");
+  const [executionPulse, setExecutionPulse] = useState(0);
   const diagnosticRequestRef = useRef(0);
   const [flash, setFlash] = useState(null);
   const busyRef = useRef(false);
@@ -174,6 +175,7 @@ export function TouchNoTouchBotView({ feed }) {
   const recoveryPendingRef = useRef(false);
   const audioRef = useRef(null);
   const exitRequestedRef = useRef(new Set());
+  const rescanTimerRef = useRef(null);
 
   const analysisPrices = useMemo(() => {
     if (ticks.length) return ticks.map((tick) => ({ quote: Number(tick?.quote), epoch: Number(tick?.epoch) }));
@@ -437,6 +439,7 @@ export function TouchNoTouchBotView({ feed }) {
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
     const durations = [Number(duration)];
 
+    let opened = false;
     busyRef.current = true;
     setQuoteBusy(true);
     setQuoteError("");
@@ -597,12 +600,26 @@ export function TouchNoTouchBotView({ feed }) {
       lastEntryRef.current = Date.now();
       if (isRecovery) { setRecoveryUsed(true); recoveryPendingRef.current = false; }
       lastSignalRef.current = `${symbol}:${setup}:${forcedAnalysis.entryScore}:${best.barrier}`;
+      opened = true;
       setMessage(`${setup} OPEN • ${id ? `#${id}` : "contract active"} • Stake ${money(tradeStake, currency)}`);
     } catch (error) {
-      setMessage(readableError(error));
+      // Never leave the continuous scanner locked after a proposal/quote error.
+      // A failed attempt is not a completed entry, so the qualification must be
+      // released and the scanner gets another chance shortly.
+      if (mode === "AUTO") {
+        qualificationConsumedRef.current = false;
+        lastSignalRef.current = "";
+        if (rescanTimerRef.current) clearTimeout(rescanTimerRef.current);
+        rescanTimerRef.current = setTimeout(() => {
+          rescanTimerRef.current = null;
+          setExecutionPulse((v) => v + 1);
+        }, 1200);
+      }
+      setMessage(`${readableError(error)} • RESCANNING TOUCH`);
     } finally {
       setQuoteBusy(false);
       busyRef.current = false;
+      if (!opened && mode === "AUTO") qualificationConsumedRef.current = false;
     }
   }, [analysis, analysisPrices, balance, barrierMultiplier, currency, currentPrice, duration, durationUnit, fixedStake, minScore, placeQuotedTrade, quoteTrade, selectedAccountId, stakeMode, symbol]);
 
@@ -631,7 +648,7 @@ export function TouchNoTouchBotView({ feed }) {
     const key = `${symbol}:${touchFirstAnalysis.signal}:${Number(touchFirstAnalysis.current).toFixed(8)}`;
     lastSignalRef.current = key;
     void execute("AUTO", touchFirstAnalysis);
-  }, [execute, minScore, running, symbol, touchFirstAnalysis]);
+  }, [execute, executionPulse, minScore, running, symbol, touchFirstAnalysis]);
 
   // Fixed-duration Touch/No Touch contracts are protected by session-level
   // entry limits and settlement monitoring. Do not force a sell here: some
@@ -653,6 +670,7 @@ export function TouchNoTouchBotView({ feed }) {
       setFlash({ won, pnl, type: typeOf(c) }); sound(won);
       qualificationConsumedRef.current = false;
       lastSignalRef.current = "";
+      setExecutionPulse((v) => v + 1);
       setMessage(`${won ? "✓ WIN" : "✕ LOSS"} • ${typeOf(c)} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)} • SCANNING NEXT TOUCH`);
     }
   }, [currency, touchContracts, recoveryEnabled, recoveryUsed, running, sound]);
