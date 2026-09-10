@@ -304,6 +304,7 @@ export function TouchNoTouchBotView({ feed }) {
   // V5.3 TOUCH / NO TOUCH PROPOSAL DIAGNOSTIC
   // This function ONLY requests a proposal. It NEVER buys.
   const checkProposal = useCallback(async (requestedSide) => {
+    if (side !== "TOUCH") return;
     const setup = String(requestedSide || "").trim().toUpperCase() === "NO TOUCH" ? "NO TOUCH" : "TOUCH";
     const contractType = setup === "NO TOUCH" ? "NOTOUCH" : "ONETOUCH";
     const requestId = diagnosticRequestRef.current + 1;
@@ -471,8 +472,8 @@ export function TouchNoTouchBotView({ feed }) {
     const isRecovery = mode === "RECOVERY";
     const tradeStake = isRecovery ? Math.min(0.70, base * 2) : 0.35;
     const setup = forcedAnalysis.signal;
-    const contractType = setup === "TOUCH" ? "ONETOUCH" : "NOTOUCH";
-    const rawBarrier = setup === "TOUCH" ? forcedAnalysis.touchBarrier : forcedAnalysis.noTouchBarrier;
+    const contractType = "ONETOUCH";
+    const rawBarrier = forcedAnalysis.touchBarrier;
     const spot = Number(forcedAnalysis.current || currentPrice);
     const decimals = Math.max(2, market?.decimals ?? 3);
     const pip = 10 ** (-decimals);
@@ -817,8 +818,8 @@ export function TouchNoTouchBotView({ feed }) {
               alignItems: "center",
               marginBottom: 8
             }}>
-              <strong>TOUCH / NO TOUCH PROPOSAL</strong>
-              <span style={{fontSize: 10, opacity: .6}}>NO BUY TEST</span>
+              <strong>TOUCH PROPOSAL</strong>
+              <span style={{fontSize: 10, opacity: .6}}>TOUCH • NO BUY TEST</span>
               <button
                 type="button"
                 onClick={() => void connect?.()}
@@ -840,13 +841,6 @@ export function TouchNoTouchBotView({ feed }) {
                 {diagnosticBusy ? "TESTING…" : "CHECK TOUCH"}
               </button>
 
-              <button
-                type="button"
-                onClick={() => void checkProposal("NO TOUCH")}
-                disabled={diagnosticBusy || !selectedAccountId}
-              >
-                {diagnosticBusy ? "TESTING…" : "CHECK NO TOUCH"}
-              </button>
             </div>
 
             {diagnosticQuote && (
