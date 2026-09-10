@@ -88,6 +88,74 @@ const medianTickMove = (prices = []) => {
   const m = Math.floor(diffs.length / 2);
   return diffs.length % 2 ? diffs[m] : (diffs[m-1] + diffs[m]) / 2;
 };
+
+const deriveTouchAnalysis = ({ prices = [], analysis, spot, barrier, decimals = 3 }) => {
+  const values = prices.map((x) => Number(x?.quote ?? x)).filter(Number.isFinite);
+  const recent = values.slice(-60);
+  const deltas = recent.slice(1).map((v, i) => v - recent[i]).filter(Number.isFinite);
+  const last12 = deltas.slice(-12);
+  const last6 = deltas.slice(-6);
+  const meanAbs = (arr) => arr.length ? arr.reduce((s, v) => s + Math.abs(v), 0) / arr.length : 0;
+
+  const up12 = last12.length ? last12.filter((v) => v > 0).length / last12.length : 0.5;
+  const down12 = last12.length ? last12.filter((v) => v < 0).length / last12.length : 0.5;
+  const direction = Number(barrier) >= Number(spot) ? 1 : -1;
+  const directionalConsistency = direction > 0 ? up12 : down12;
+
+  let slope = 0;
+  if (recent.length >= 12) {
+    const n = recent.length;
+    const xMean = (n - 1) / 2;
+    const yMean = recent.reduce((s, v) => s + v, 0) / n;
+    let num = 0;
+    let den = 0;
+    for (let i = 0; i < n; i++) {
+      const dx = i - xMean;
+      num += dx * (recent[i] - yMean);
+      den += dx * dx;
+    }
+    slope = den ? num / den : 0;
+  }
+
+  const pip = 10 ** (-Math.max(2, Number(decimals) || 3));
+  const typicalMove = Math.max(meanAbs(last12), pip);
+  const fastMove = meanAbs(last6);
+  const slopeStrength = Math.min(1, Math.abs(slope) / Math.max(typicalMove, pip));
+  const slopeAligned = direction > 0 ? slope > 0 : slope < 0;
+  const accelerationAligned = fastMove >= typicalMove * 0.85 &&
+    last6.reduce((s, v) => s + v, 0) * direction > 0;
+
+  const barrierDistance = Math.abs(Number(barrier) - Number(spot));
+  const reachability = Number.isFinite(barrierDistance)
+    ? Math.max(0, Math.min(1, 1 - barrierDistance / Math.max(typicalMove * 4, pip * 8)))
+    : 0;
+
+  const engineScore = Math.max(0, Math.min(1, Number(analysis?.touchScore || 0) / 99));
+  const engineProbability = Math.max(0, Math.min(1, Number(analysis?.touchProbability || 0)));
+  const marketQuality = Math.max(0, Math.min(1, Number(analysis?.marketQuality || 0) / 100));
+  const confidence = (
+    engineScore * 0.24 +
+    engineProbability * 0.24 +
+    marketQuality * 0.16 +
+    directionalConsistency * 0.18 +
+    slopeStrength * 0.08 +
+    reachability * 0.10
+  );
+
+  return {
+    confidence,
+    directionalConsistency,
+    slopeStrength,
+    accelerationAligned,
+    slopeAligned,
+    reachability,
+    typicalMove,
+    engineScore,
+    engineProbability,
+    marketQuality,
+  };
+};
+
 const buildDerivNativeCandidates = ({ prices, decimals, direction, setup, modelOffset }) => {
   const pip = 10 ** (-Math.max(0, Number(decimals) || 2));
   const tickMove = Math.max(medianTickMove(prices), pip);
@@ -192,13 +260,17 @@ export function TouchNoTouchBotView({ feed }) {
     decimals: market?.decimals,
   }), [analysisPrices, duration, durationUnit, minScore, market?.decimals]);
 
-  // TOUCH-FIRST qualification: the master engine may prefer NO TOUCH when its
-  // probability is higher, but this desk intentionally waits for a usable
-  // TOUCH setup instead of trading NO TOUCH. Keep the gate conservative enough
-  // to avoid random entries while allowing valid Touch opportunities through.
-  // V178 BALANCED-ADAPTIVE TOUCH gate: allow usable Touch opportunities
-  // through, but require several independent protections so the bot does not
-  // fall back to the over-trading behavior of the earlier loose versions.
+  // DERIV-NATIVE TOUCH ANALYSIS:
+  // Analysis decides whether the market is worth considering. Deriv's proposal
+  // decides the actual executable contract.
+  const tickAnalysis = useMemo(() => deriveTouchAnalysis({
+    prices: analysisPrices,
+    analysis,
+    spot: Number(analysis?.current),
+    barrier: Number(analysis?.touchBarrier),
+    decimals: market?.decimals,
+  }), [analysis, analysisPrices, market?.decimals]);
+
   const touchFirstReady = useMemo(() => {
     const score = Number(analysis?.touchScore || 0);
     const probability = Number(analysis?.touchProbability || 0);
@@ -206,50 +278,39 @@ export function TouchNoTouchBotView({ feed }) {
     const confirmations = Number(analysis?.confirmations || 0);
     const barrier = Number(analysis?.touchBarrier);
     const spot = Number(analysis?.current);
-    const trend = String(analysis?.trend || '').toUpperCase();
-    const momentum = String(analysis?.momentum || '').toUpperCase();
-    const timing = String(analysis?.timing || '').toUpperCase();
+    const trend = String(analysis?.trend || "").toUpperCase();
+    const momentum = String(analysis?.momentum || "").toUpperCase();
+    const timing = String(analysis?.timing || "").toUpperCase();
+    const timingOk = timing.includes("RETEST") || timing.includes("IDEAL");
     const above = Number.isFinite(spot) && Number.isFinite(barrier) && barrier > spot;
     const directionalAlignment = above
-      ? trend.includes('BULL') && momentum.includes('UP')
-      : trend.includes('BEAR') && momentum.includes('DOWN');
-    const pip = 10 ** (-Math.max(2, Number(market?.decimals) || 3));
-    const tickMove = Math.max(medianTickMove(analysisPrices), pip);
-    const barrierDistance = Number.isFinite(barrier) && Number.isFinite(spot) ? Math.abs(barrier - spot) : Infinity;
-    const barrierIsReachable = barrierDistance <= Math.max(tickMove * 3.5, pip * 8);
-    const timingOk = timing.includes('RETEST') || timing.includes('IDEAL');
-    const highVolatility = String(analysis?.volatility || '').toUpperCase() === 'HIGH';
+      ? trend.includes("BULL") && momentum.includes("UP")
+      : trend.includes("BEAR") && momentum.includes("DOWN");
 
-    // Three independent strength signals. At least two must be strong in a
-    // normal market: direction alignment, Touch probability, and barrier reachability.
-    const strengthSignals = [
-      directionalAlignment,
-      probability >= 0.42,
-      barrierIsReachable,
-    ].filter(Boolean).length;
+    const highVolatility = String(analysis?.volatility || "").toUpperCase() === "HIGH";
 
-    const baseGate = (
-      score >= Math.max(55, minScore) &&
+    const normalReady =
+      score >= Math.max(55, Number(minScore) || 55) &&
+      probability >= 0.38 &&
       quality >= 55 &&
       confirmations >= 4 &&
-      Number.isFinite(barrier) &&
-      Number.isFinite(spot) &&
       timingOk &&
-      strengthSignals >= 2
-    );
-
-    // High volatility remains deliberately stricter.
-    const highVolatilitySafe = !highVolatility || (
-      score >= 65 &&
-      probability >= 0.45 &&
-      quality >= 65 &&
-      confirmations >= 5 &&
       directionalAlignment &&
-      barrierIsReachable
-    );
+      tickAnalysis.directionalConsistency >= 0.58 &&
+      tickAnalysis.confidence >= 0.56;
 
-    return baseGate && highVolatilitySafe;
-  }, [analysis, analysisPrices, minScore, market?.decimals]);
+    const highVolatilityReady =
+      score >= 62 &&
+      probability >= 0.45 &&
+      quality >= 60 &&
+      confirmations >= 5 &&
+      timingOk &&
+      directionalAlignment &&
+      tickAnalysis.directionalConsistency >= 0.62 &&
+      tickAnalysis.confidence >= 0.61;
+
+    return highVolatility ? highVolatilityReady : normalReady;
+  }, [analysis, minScore, tickAnalysis]);
 
   const touchFirstAnalysis = useMemo(() => {
     if (!touchFirstReady) return analysis;
@@ -304,9 +365,8 @@ export function TouchNoTouchBotView({ feed }) {
   // V5.3 TOUCH / NO TOUCH PROPOSAL DIAGNOSTIC
   // This function ONLY requests a proposal. It NEVER buys.
   const checkProposal = useCallback(async (requestedSide) => {
-    if (side !== "TOUCH") return;
-    const setup = String(requestedSide || "").trim().toUpperCase() === "NO TOUCH" ? "NO TOUCH" : "TOUCH";
-    const contractType = setup === "NO TOUCH" ? "NOTOUCH" : "ONETOUCH";
+    const setup = "TOUCH";
+    const contractType = "ONETOUCH";
     const requestId = diagnosticRequestRef.current + 1;
     diagnosticRequestRef.current = requestId;
 
@@ -358,7 +418,7 @@ export function TouchNoTouchBotView({ feed }) {
     const relativeBarrier = `${direction >= 0 ? "+" : "-"}${distance.toFixed(decimals)}`;
 
     setDiagnosticBusy(true);
-    setMessage(`TESTING ${setup} · ${contractType} PROPOSAL — NO BUY…`);
+    setMessage(`TESTING TOUCH · ONETOUCH PROPOSAL — NO BUY…`);
 
     try {
       let quote = null;
@@ -471,16 +531,19 @@ export function TouchNoTouchBotView({ feed }) {
       : Math.max(0.35, Math.min(0.35, balance * 0.0025));
     const isRecovery = mode === "RECOVERY";
     const tradeStake = isRecovery ? Math.min(0.70, base * 2) : 0.35;
-    const setup = forcedAnalysis.signal;
+    const setup = "TOUCH";
     const contractType = "ONETOUCH";
-    const rawBarrier = forcedAnalysis.touchBarrier;
+    const rawBarrier = setup === "TOUCH" ? forcedAnalysis.touchBarrier : forcedAnalysis.noTouchBarrier;
     const spot = Number(forcedAnalysis.current || currentPrice);
     const decimals = Math.max(2, market?.decimals ?? 3);
     const pip = 10 ** (-decimals);
     const minimumOffset = Math.max(pip * 2, Math.abs(spot) * 0.00003);
     const modelOffset = Math.max(Math.abs(Number(rawBarrier) - spot), minimumOffset);
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
-    const durations = [Number(duration)];
+    const durationCandidates = String(durationUnit).toLowerCase() === "t"
+      ? [Number(duration), 10, 15, 30]
+      : [Number(duration), 5, 10, 15];
+    const durations = [...new Set(durationCandidates.filter((v) => Number.isFinite(v) && v > 0))];
 
     let opened = false;
     busyRef.current = true;
@@ -604,27 +667,33 @@ export function TouchNoTouchBotView({ feed }) {
       // priceable proposal for these native offsets, we WAIT rather than
       // inventing a barrier that the broker cannot accept.
 
-      // V174: broker-valid is necessary but not sufficient. Require a positive
+      // V179: broker-valid is necessary; market analysis remains the ranking/filter layer. Require a positive
       // model edge before risking another stake; this is deliberately stricter
       // than V170/V173 to reduce low-quality Touch entries.
+      // Deriv is the pricing authority. Our analysis gate above decides whether
+      // the market is worth considering; here we only reject unusable broker
+      // quotes. Exact-barrier model probability ranks the quotes instead of
+      // creating another artificial hard gate.
       const pricedQuotes = quotes.filter((q) =>
         q.pricingCompatible &&
-        q.quoteProbabilityGate &&
-        Number(q.probabilityGap) >= -0.03 &&
-        Number(q.expectedValue) >= 0
+        Number(q.modelProbability) >= 0.30
       );
       if (!pricedQuotes.length) {
         setLiveQuote(null);
         const diagnostic = [...new Set(errors)].slice(0, 3).join(" | ");
         setQuoteError(
-          `No balanced ${setup} proposal passed the broker/model safety gate. ${diagnostic || "Waiting for a stronger Touch setup."}`
+          `No Deriv-valid ${setup} proposal passed the current Touch selection gate. ${diagnostic || "Waiting for a stronger Touch setup."}`
         );
-        throw new Error(`Skipped ${setup}: no balanced Touch proposal passed the safety gate.`);
+        throw new Error(`Skipped ${setup}: no Deriv-valid Touch proposal passed the selection gate.`);
       }
 
       pricedQuotes.sort((a, b) => {
         const probabilityDelta = Number(b.modelProbability || 0) - Number(a.modelProbability || 0);
-        if (Math.abs(probabilityDelta) > 0.01) return probabilityDelta;
+        if (Math.abs(probabilityDelta) > 0.015) return probabilityDelta;
+        const edgeDelta = Number(b.probabilityGap || 0) - Number(a.probabilityGap || 0);
+        if (Math.abs(edgeDelta) > 0.01) return edgeDelta;
+        const returnDelta = Number(b.returnPct || 0) - Number(a.returnPct || 0);
+        if (Math.abs(returnDelta) > 2) return returnDelta;
         return Number(b.quoteScore || 0) - Number(a.quoteScore || 0);
       });
       const best = pricedQuotes[0];
@@ -747,7 +816,7 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • TOUCH-FIRST BALANCED mode • fixed $0.35 stake.");
+    resetSession(); setRunning(true); setMessage("SCANNING • DERIV-NATIVE TOUCH mode • live proposal discovery • fixed $0.35 stake.");
   };
 
   return (
@@ -761,7 +830,7 @@ export function TouchNoTouchBotView({ feed }) {
 
       <div className="tntTopGrid">
         <div className="tntBalance"><span>ACCOUNT</span><strong>{selectedAccountType === "real" ? "REAL" : "DEMO"}</strong><small>{selectedAccount?.displayLabel || selectedAccountId || "Not connected"}</small><em>{money(balance, currency)}</em></div>
-        <div className="tntMetric"><span>ENTRY ENGINE</span><strong>{analysis.signal}</strong><small>{analysis.state}</small><b>{analysis.entryScore}/99</b></div>
+        <div className="tntMetric"><span>TOUCH ENGINE</span><strong>{analysis.signal === "TOUCH" ? "TOUCH" : "WAIT"}</strong><small>Tick confidence {Math.round(Number(tickAnalysis.confidence || 0) * 100)}% • {analysis.state}</small><b>{analysis.touchScore}/99</b></div>
         <div className="tntMetric"><span>SESSION P/L</span><strong className={sessionPnl >= 0 ? "positive" : "negative"}>{sessionPnl >= 0 ? "+" : ""}{money(sessionPnl, currency)}</strong><small>Target +{sessionTPPct}% / Stop -{sessionSLPct}%</small><b>{wins}W • {losses}L • {winRate.toFixed(0)}%</b></div>
         <div className="tntMetric"><span>PROTECTION</span><strong>{recoveryPendingRef.current ? "RECOVERY READY" : "ARMED"}</strong><small>Execution mode • no local trade cap</small><b>{recoveryUsed ? "Recovery used" : "Recovery available"}</b></div>
       </div>
@@ -819,7 +888,7 @@ export function TouchNoTouchBotView({ feed }) {
               marginBottom: 8
             }}>
               <strong>TOUCH PROPOSAL</strong>
-              <span style={{fontSize: 10, opacity: .6}}>TOUCH • NO BUY TEST</span>
+              <span style={{fontSize: 10, opacity: .6}}>ONETOUCH • NO BUY TEST</span>
               <button
                 type="button"
                 onClick={() => void connect?.()}
@@ -840,7 +909,16 @@ export function TouchNoTouchBotView({ feed }) {
               >
                 {diagnosticBusy ? "TESTING…" : "CHECK TOUCH"}
               </button>
+            </div>
 
+
+            <div style={{ marginTop: 10, fontSize: 11, opacity: .86 }}>
+              <b>LIVE TOUCH ANALYSIS</b>
+              {" • "}Direction {String(analysis?.trend || "—")}
+              {" • "}Momentum {String(analysis?.momentum || "—")}
+              {" • "}Consistency {(Number(tickAnalysis.directionalConsistency || 0) * 100).toFixed(0)}%
+              {" • "}Confidence {(Number(tickAnalysis.confidence || 0) * 100).toFixed(0)}%
+              {" • "}Quality {Number(analysis?.marketQuality || 0)}/100
             </div>
 
             {diagnosticQuote && (
