@@ -99,7 +99,7 @@ const buildDerivNativeCandidates = ({ prices, decimals, direction, setup, modelO
   const unique = new Map();
   const multipliers = setup === "NO TOUCH"
     ? [0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4]
-    : [0.35, 0.5, 0.65, 0.8, 1, 1.15, 1.3, 1.5, 1.8, 2.2, 2.8, 3.5];
+    : [0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.8, 2.2, 2.8, 3.5];
   for (const seed of seeds) {
     for (const multiplier of multipliers) {
       const offset = Math.max(seed * multiplier, pip * 5);
@@ -147,7 +147,7 @@ export function TouchNoTouchBotView({ feed }) {
   const [duration, setDuration] = useState(5);
   const [durationUnit, setDurationUnit] = useState("t");
   const [barrierMultiplier, setBarrierMultiplier] = useState(1.8);
-  const [minScore, setMinScore] = useState(58);
+  const [minScore, setMinScore] = useState(55);
   const [sessionTPPct, setSessionTPPct] = useState(2);
   const [sessionSLPct, setSessionSLPct] = useState(1.5);
   const [recoveryEnabled, setRecoveryEnabled] = useState(false);
@@ -196,8 +196,9 @@ export function TouchNoTouchBotView({ feed }) {
   // probability is higher, but this desk intentionally waits for a usable
   // TOUCH setup instead of trading NO TOUCH. Keep the gate conservative enough
   // to avoid random entries while allowing valid Touch opportunities through.
-  // V174 PRECISION TOUCH gate: prefer fewer, stronger entries over frequent
-  // trades.  The desk remains TOUCH-FIRST, but weak/high-risk setups are skipped.
+  // V178 BALANCED-ADAPTIVE TOUCH gate: allow usable Touch opportunities
+  // through, but require several independent protections so the bot does not
+  // fall back to the over-trading behavior of the earlier loose versions.
   const touchFirstReady = useMemo(() => {
     const score = Number(analysis?.touchScore || 0);
     const probability = Number(analysis?.touchProbability || 0);
@@ -212,21 +213,43 @@ export function TouchNoTouchBotView({ feed }) {
     const directionalAlignment = above
       ? trend.includes('BULL') && momentum.includes('UP')
       : trend.includes('BEAR') && momentum.includes('DOWN');
-    const highVolatility = String(analysis?.volatility || '').toUpperCase() === 'HIGH';
-    const highVolatilitySafe = !highVolatility || (score >= 65 && probability >= 0.50 && quality >= 65 && confirmations >= 5);
+    const pip = 10 ** (-Math.max(2, Number(market?.decimals) || 3));
+    const tickMove = Math.max(medianTickMove(analysisPrices), pip);
+    const barrierDistance = Number.isFinite(barrier) && Number.isFinite(spot) ? Math.abs(barrier - spot) : Infinity;
+    const barrierIsReachable = barrierDistance <= Math.max(tickMove * 3.5, pip * 8);
     const timingOk = timing.includes('RETEST') || timing.includes('IDEAL');
-    return (
-      score >= Math.max(58, minScore) &&
-      probability >= 0.45 &&
-      quality >= 60 &&
-      confirmations >= 5 &&
+    const highVolatility = String(analysis?.volatility || '').toUpperCase() === 'HIGH';
+
+    // Three independent strength signals. At least two must be strong in a
+    // normal market: direction alignment, Touch probability, and barrier reachability.
+    const strengthSignals = [
+      directionalAlignment,
+      probability >= 0.42,
+      barrierIsReachable,
+    ].filter(Boolean).length;
+
+    const baseGate = (
+      score >= Math.max(55, minScore) &&
+      quality >= 55 &&
+      confirmations >= 4 &&
       Number.isFinite(barrier) &&
       Number.isFinite(spot) &&
-      directionalAlignment &&
       timingOk &&
-      highVolatilitySafe
+      strengthSignals >= 2
     );
-  }, [analysis, minScore]);
+
+    // High volatility remains deliberately stricter.
+    const highVolatilitySafe = !highVolatility || (
+      score >= 65 &&
+      probability >= 0.45 &&
+      quality >= 65 &&
+      confirmations >= 5 &&
+      directionalAlignment &&
+      barrierIsReachable
+    );
+
+    return baseGate && highVolatilitySafe;
+  }, [analysis, analysisPrices, minScore, market?.decimals]);
 
   const touchFirstAnalysis = useMemo(() => {
     if (!touchFirstReady) return analysis;
@@ -328,7 +351,7 @@ export function TouchNoTouchBotView({ feed }) {
     // Never convert the model barrier into an absolute spot price.
     const modelDistance = Math.abs(Number(rawBarrier) - spot);
     const pip = 10 ** (-decimals);
-    const minimumOffset = Math.max(pip * 5, Math.abs(spot) * 0.00005);
+    const minimumOffset = Math.max(pip * 2, Math.abs(spot) * 0.00003);
     const distance = Math.max(modelDistance * Math.max(0.35, Number(barrierMultiplier) || 1.8), minimumOffset);
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
     const relativeBarrier = `${direction >= 0 ? "+" : "-"}${distance.toFixed(decimals)}`;
@@ -453,7 +476,7 @@ export function TouchNoTouchBotView({ feed }) {
     const spot = Number(forcedAnalysis.current || currentPrice);
     const decimals = Math.max(2, market?.decimals ?? 3);
     const pip = 10 ** (-decimals);
-    const minimumOffset = Math.max(pip * 5, Math.abs(spot) * 0.00005);
+    const minimumOffset = Math.max(pip * 2, Math.abs(spot) * 0.00003);
     const modelOffset = Math.max(Math.abs(Number(rawBarrier) - spot), minimumOffset);
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
     const durations = [Number(duration)];
@@ -533,7 +556,7 @@ export function TouchNoTouchBotView({ feed }) {
             horizonTicks: forcedAnalysis.horizonTicks,
           });
           const probabilityGap = quoteModelProbability - impliedProbability;
-          const quoteProbabilityGate = quoteModelProbability >= 0.45;
+          const quoteProbabilityGate = quoteModelProbability >= 0.38;
           const expectedValue = quoteModelProbability * payout - ask;
           // V170: Deriv is the pricing authority. Once Deriv has returned a
           // valid proposal with a positive payout, do not discard the quote
@@ -586,16 +609,16 @@ export function TouchNoTouchBotView({ feed }) {
       const pricedQuotes = quotes.filter((q) =>
         q.pricingCompatible &&
         q.quoteProbabilityGate &&
-        Number(q.probabilityGap) >= -0.01 &&
+        Number(q.probabilityGap) >= -0.03 &&
         Number(q.expectedValue) >= 0
       );
       if (!pricedQuotes.length) {
         setLiveQuote(null);
         const diagnostic = [...new Set(errors)].slice(0, 3).join(" | ");
         setQuoteError(
-          `No precision ${setup} proposal passed the model-edge safety gate. ${diagnostic || "Waiting for a stronger Touch setup."}`
+          `No balanced ${setup} proposal passed the broker/model safety gate. ${diagnostic || "Waiting for a stronger Touch setup."}`
         );
-        throw new Error(`Skipped ${setup}: no precision Touch proposal passed the safety gate.`);
+        throw new Error(`Skipped ${setup}: no balanced Touch proposal passed the safety gate.`);
       }
 
       pricedQuotes.sort((a, b) => {
@@ -723,13 +746,13 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • TOUCH-FIRST ADAPTIVE mode • fixed $0.35 stake.");
+    resetSession(); setRunning(true); setMessage("SCANNING • TOUCH-FIRST BALANCED mode • fixed $0.35 stake.");
   };
 
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V13.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • stronger Touch confirmation • broker-priced barriers • precision risk filter</p></div>
+        <div><small>ZENTORA • DERIV-FIRST EXECUTION-FIRST V14.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • stronger Touch confirmation • broker-priced barriers • precision risk filter</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
