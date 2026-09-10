@@ -272,18 +272,23 @@ export function TouchNoTouchBotView({ feed }) {
   }), [analysis, analysisPrices, market?.decimals]);
 
   const touchFirstReady = useMemo(() => {
-    // V181 FAST TOUCH: local analysis is deliberately lightweight and no longer
-    // waits for a high score before asking Deriv to price the exact contract. It only needs
-    // enough live data to produce a candidate barrier. Deriv's ONETOUCH
-    // proposal becomes the execution authority, so entry can happen early.
-    const sampleReady = analysisPrices.length >= 35;
+    // V182 FAST TOUCH: keep the detector responsive, but never bypass the
+    // basic Touch-vs-No-Touch direction check. Deriv remains the pricing authority.
+    const sampleReady = analysisPrices.length >= 30;
     const barrier = Number(analysis?.touchBarrier);
     const spot = Number(analysis?.current);
     const marketQuality = Number(analysis?.marketQuality || 0);
     const hasCandidate = Number.isFinite(barrier) && Number.isFinite(spot);
-    const qualityFloor = marketQuality >= 45;
+    const touchProbability = Number(analysis?.touchProbability || 0);
+    const noTouchProbability = Number(analysis?.noTouchProbability || 0);
+    // FAST but directional: do not enter a Touch trade while the model is
+    // overwhelmingly saying NO TOUCH. We only need a modest Touch edge to
+    // ask Deriv for proposals quickly.
+    const probabilityFloor = touchProbability >= 0.28;
+    const relativeTouchEdge = touchProbability >= Math.max(0.28, noTouchProbability * 0.55);
+    const qualityFloor = marketQuality >= 48;
 
-    return Boolean(sampleReady && hasCandidate && qualityFloor);
+    return Boolean(sampleReady && hasCandidate && qualityFloor && probabilityFloor && relativeTouchEdge);
   }, [analysis, analysisPrices.length]);
 
   const touchFirstAnalysis = useMemo(() => {
@@ -486,7 +491,7 @@ export function TouchNoTouchBotView({ feed }) {
   const execute = useCallback(async (mode = "AUTO", forcedAnalysis = analysis, forcedStake = null) => {
     if (busyRef.current || !selectedAccountId || !forcedAnalysis?.ready) return;
     if (forcedAnalysis.signal !== "TOUCH") return;
-    // V181 FAST TOUCH: never block AUTO on the UI score. The local model
+    // V182 FAST TOUCH: never block AUTO on the UI score. The local model
     // ranks candidates; a broker-valid Deriv proposal decides execution.
     if (forcedAnalysis.signal === "WAIT") return;
 
@@ -515,7 +520,7 @@ export function TouchNoTouchBotView({ feed }) {
     const minimumOffset = Math.max(pip * 2, Math.abs(spot) * 0.00003);
     const modelOffset = Math.max(Math.abs(Number(rawBarrier) - spot), minimumOffset);
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
-    // V181 FAST TOUCH: keep proposal discovery deliberately small and parallel.
+    // V182 FAST TOUCH: keep proposal discovery deliberately small and parallel.
     // The goal is to reach a broker-priced Touch quickly, not to wait for a
     // large matrix of barriers/durations to finish.
     const durationCandidates = String(durationUnit).toLowerCase() === "t"
@@ -527,7 +532,7 @@ export function TouchNoTouchBotView({ feed }) {
     busyRef.current = true;
     setQuoteBusy(true);
     setQuoteError("");
-    setMessage(`${isRecovery ? "RECOVERY X2" : "FAST TOUCH"} • FINDING DERIV PROPOSAL…`);
+    setMessage(`${isRecovery ? "RECOVERY X2" : "FAST TOUCH"} • FINDING QUALITY TOUCH PROPOSAL…`);
     try {
       const quotes = [];
       const errors = [];
@@ -645,19 +650,24 @@ export function TouchNoTouchBotView({ feed }) {
       // priceable proposal for these native offsets, we WAIT rather than
       // inventing a barrier that the broker cannot accept.
 
-      // V179: broker-valid is necessary; market analysis remains the ranking/filter layer. Require a positive
-      // model edge before risking another stake; this is deliberately stricter
-      // than V170/V173 to reduce low-quality Touch entries.
-      // Deriv is the pricing authority. Our analysis gate above decides whether
-      // the market is worth considering; here we only reject unusable broker
-      // quotes. Exact-barrier model probability ranks the quotes instead of
-      // creating another artificial hard gate.
-      const pricedQuotes = quotes.filter((q) => q.pricingCompatible);
+      // V182: broker-valid is necessary, but a valid price alone is NOT enough.
+      // Fast entry still needs the exact signed barrier to have a reasonable
+      // Touch probability and to avoid buying when the model strongly favors
+      // No Touch. This is the minimum quality gate that V181 removed.
+      const pricedQuotes = quotes.filter((q) => {
+        if (!q.pricingCompatible) return false;
+        const p = Number(q.modelProbability || 0);
+        const noTouchP = Number(forcedAnalysis.noTouchProbability || 0);
+        const minimumTouchProbability = forcedAnalysis.volatility === "HIGH" ? 0.34 : 0.30;
+        const relativeEdge = p >= Math.max(minimumTouchProbability, noTouchP * 0.55);
+        const mildGap = Number(q.probabilityGap || 0) >= -0.05;
+        return p >= minimumTouchProbability && relativeEdge && mildGap;
+      });
       if (!pricedQuotes.length) {
         setLiveQuote(null);
         const diagnostic = [...new Set(errors)].slice(0, 3).join(" | ");
         setQuoteError(
-          `No Deriv-valid ${setup} proposal returned. ${diagnostic || "Deriv is not pricing a usable Touch candidate yet."}`
+          `No quality ${setup} proposal returned. ${diagnostic || "Waiting for a Touch-favorable Deriv proposal."}`
         );
         throw new Error(`Skipped ${setup}: Deriv returned no usable Touch proposal.`);
       }
@@ -791,13 +801,13 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • FAST TOUCH • early proposal discovery • fixed $0.35 stake.");
+    resetSession(); setRunning(true); setMessage("SCANNING • FAST TOUCH • quality-filtered early entry • fixed $0.35 stake.");
   };
 
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • FAST TOUCH V18.1</small><h1>Touch / No Touch Growth Desk</h1><p>Early Touch entries • broker-priced barriers • local AI ranks, Deriv pricing decides</p></div>
+        <div><small>ZENTORA • FAST TOUCH V18.2</small><h1>Touch / No Touch Growth Desk</h1><p>Fast Touch entries • minimum direction filter • broker-priced barriers</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
