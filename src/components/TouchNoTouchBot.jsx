@@ -272,23 +272,22 @@ export function TouchNoTouchBotView({ feed }) {
   }), [analysis, analysisPrices, market?.decimals]);
 
   const touchFirstReady = useMemo(() => {
-    // V182 FAST TOUCH: keep the detector responsive, but never bypass the
-    // basic Touch-vs-No-Touch direction check. Deriv remains the pricing authority.
+    // V183 EARLY QUALITY: let the detector reach the proposal stage earlier.
+    // The final exact-barrier quality gate below still decides whether to buy. Deriv remains the pricing authority.
     const sampleReady = analysisPrices.length >= 30;
     const barrier = Number(analysis?.touchBarrier);
     const spot = Number(analysis?.current);
     const marketQuality = Number(analysis?.marketQuality || 0);
     const hasCandidate = Number.isFinite(barrier) && Number.isFinite(spot);
     const touchProbability = Number(analysis?.touchProbability || 0);
-    const noTouchProbability = Number(analysis?.noTouchProbability || 0);
-    // FAST but directional: do not enter a Touch trade while the model is
-    // overwhelmingly saying NO TOUCH. We only need a modest Touch edge to
-    // ask Deriv for proposals quickly.
-    const probabilityFloor = touchProbability >= 0.28;
-    const relativeTouchEdge = touchProbability >= Math.max(0.28, noTouchProbability * 0.55);
-    const qualityFloor = marketQuality >= 48;
+    // EARLY QUALITY: do not require the base barrier probability to be high.
+    // A low base probability can still produce a better exact-barrier quote
+    // after candidate discovery. The final quote gate remains strict enough
+    // to stop a bad Touch buy.
+    const probabilityFloor = touchProbability >= 0.20;
+    const qualityFloor = marketQuality >= 45;
 
-    return Boolean(sampleReady && hasCandidate && qualityFloor && probabilityFloor && relativeTouchEdge);
+    return Boolean(sampleReady && hasCandidate && qualityFloor && probabilityFloor);
   }, [analysis, analysisPrices.length]);
 
   const touchFirstAnalysis = useMemo(() => {
@@ -491,7 +490,7 @@ export function TouchNoTouchBotView({ feed }) {
   const execute = useCallback(async (mode = "AUTO", forcedAnalysis = analysis, forcedStake = null) => {
     if (busyRef.current || !selectedAccountId || !forcedAnalysis?.ready) return;
     if (forcedAnalysis.signal !== "TOUCH") return;
-    // V182 FAST TOUCH: never block AUTO on the UI score. The local model
+    // V183 EARLY QUALITY TOUCH: never block AUTO on the UI score. The local model
     // ranks candidates; a broker-valid Deriv proposal decides execution.
     if (forcedAnalysis.signal === "WAIT") return;
 
@@ -520,7 +519,7 @@ export function TouchNoTouchBotView({ feed }) {
     const minimumOffset = Math.max(pip * 2, Math.abs(spot) * 0.00003);
     const modelOffset = Math.max(Math.abs(Number(rawBarrier) - spot), minimumOffset);
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
-    // V182 FAST TOUCH: keep proposal discovery deliberately small and parallel.
+    // V183 EARLY QUALITY TOUCH: keep proposal discovery deliberately small and parallel.
     // The goal is to reach a broker-priced Touch quickly, not to wait for a
     // large matrix of barriers/durations to finish.
     const durationCandidates = String(durationUnit).toLowerCase() === "t"
@@ -650,17 +649,18 @@ export function TouchNoTouchBotView({ feed }) {
       // priceable proposal for these native offsets, we WAIT rather than
       // inventing a barrier that the broker cannot accept.
 
-      // V182: broker-valid is necessary, but a valid price alone is NOT enough.
-      // Fast entry still needs the exact signed barrier to have a reasonable
-      // Touch probability and to avoid buying when the model strongly favors
-      // No Touch. This is the minimum quality gate that V181 removed.
+      // V183: broker-valid is necessary, but a valid price alone is NOT enough.
+      // Discovery is fast, while the exact candidate being bought must still
+      // have enough Touch probability. This separates early scanning from
+      // final execution quality.
       const pricedQuotes = quotes.filter((q) => {
         if (!q.pricingCompatible) return false;
         const p = Number(q.modelProbability || 0);
         const noTouchP = Number(forcedAnalysis.noTouchProbability || 0);
-        const minimumTouchProbability = forcedAnalysis.volatility === "HIGH" ? 0.34 : 0.30;
-        const relativeEdge = p >= Math.max(minimumTouchProbability, noTouchP * 0.55);
-        const mildGap = Number(q.probabilityGap || 0) >= -0.05;
+        const minimumTouchProbability = forcedAnalysis.volatility === "HIGH" ? 0.32 : 0.28;
+        const relativeFloor = forcedAnalysis.volatility === "HIGH" ? 0.34 : 0.30;
+        const relativeEdge = noTouchP > 0 ? p >= Math.max(relativeFloor, noTouchP * 0.40) : p >= relativeFloor;
+        const mildGap = Number(q.probabilityGap || 0) >= -0.08;
         return p >= minimumTouchProbability && relativeEdge && mildGap;
       });
       if (!pricedQuotes.length) {
@@ -801,13 +801,13 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • FAST TOUCH • quality-filtered early entry • fixed $0.35 stake.");
+    resetSession(); setRunning(true); setMessage("SCANNING • EARLY QUALITY TOUCH • fast proposal discovery • fixed $0.35 stake.");
   };
 
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • FAST TOUCH V18.2</small><h1>Touch / No Touch Growth Desk</h1><p>Fast Touch entries • minimum direction filter • broker-priced barriers</p></div>
+        <div><small>ZENTORA • EARLY QUALITY TOUCH V18.3</small><h1>Touch / No Touch Growth Desk</h1><p>Early proposal discovery • exact-barrier quality filter • broker-priced Touch</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
