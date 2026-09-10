@@ -11,31 +11,87 @@ const profit=x=>{const n=Number(x?.profit??x?.profit_loss??x?.pnl);return Number
 
 export default function AdaptiveTrendBot(){
  const auth=useDerivAuth();
- const {symbol,market,prices,currentPrice,openContracts,selectedAccount,selectedAccountType="demo",selectedAccountId,connected,status,statusDetail,placeTrade}=useDerivTicks();
+ const {symbol,market,prices,currentPrice,openContracts,selectedAccount,selectedAccountType="demo",selectedAccountId,connected,status,statusDetail,placeTrade,tradeBusy,tradeError}=useDerivTicks();
  const [running,setRunning]=useState(false),[stake,setStake]=useState(.35),[duration,setDuration]=useState(5),[allowReal,setAllowReal]=useState(false);
  const [tp,setTp]=useState(2),[sl,setSl]=useState(1.5),[maxLosses,setMaxLosses]=useState(2),[cooldown,setCooldown]=useState(8);
  const [pnl,setPnl]=useState(0),[losses,setLosses]=useState(0),[message,setMessage]=useState("Scanner ready — demo first.");
  const busy=useRef(false),lastEntry=useRef(0),done=useRef(new Set());
  const analysis=useMemo(()=>analyzeAdaptiveTrend(prices),[prices]),currency=String(selectedAccount?.currency||"USD").toUpperCase();
  const active=openContracts?.find(x=>!settled(x)),real=String(selectedAccountType).toLowerCase()==="real";
+ const tradingAccountId=selectedAccountId||auth?.selectedAccount?.id||"";
 
  useEffect(()=>{for(const c of openContracts||[]){const id=idOf(c);if(!id||!settled(c)||done.current.has(id))continue;done.current.add(id);const p=profit(c);setPnl(x=>x+p);if(p<0)setLosses(x=>x+1);setMessage(`${p>=0?"WON":"LOST"} ${id} • ${p>=0?"+":""}${money(p,currency)}`)}},[openContracts,currency]);
 
- useEffect(()=>{if(!running)return;const t=setInterval(async()=>{if(busy.current||active||!selectedAccountId||!symbol)return;
+ useEffect(()=>{if(!running)return;const t=setInterval(async()=>{if(busy.current||tradeBusy||active||!tradingAccountId||!symbol)return;
+   if(!connected)return;
    if(pnl>=Number(tp)){setRunning(false);setMessage(`TAKE PROFIT reached • ${money(pnl,currency)}`);return}
    if(pnl<=-Number(sl)){setRunning(false);setMessage(`STOP LOSS reached • ${money(pnl,currency)}`);return}
    if(losses>=Number(maxLosses)){setRunning(false);setMessage(`MAX LOSSES reached • ${losses}`);return}
    if(real&&!allowReal)return;
-   if(analysis.signal==="WAIT"||analysis.grade!=="A+")return;
+
+   const aPlusReady=Boolean(
+     analysis.ready &&
+     analysis.grade==="A+" &&
+     analysis.signal!=="WAIT"
+   );
+
+   if(!aPlusReady)return;
    if(Date.now()-lastEntry.current<Number(cooldown)*1000)return;
-   busy.current=true;lastEntry.current=Date.now();setMessage(`A+ setup found • requesting ${analysis.signal} proposal...`);
-   try{await placeTrade({contractType:analysis.signal==="RISE"?"CALL":"PUT",amount:Math.max(.35,Number(stake)||.35),basis:"stake",duration:Math.max(2,Number(duration)||5),durationUnit:"t",symbol});setMessage(`${analysis.signal} opened • monitoring contract...`)}
-   catch(e){setMessage(e instanceof Error?e.message:"Entry rejected.")}finally{busy.current=false}
- },1200);return()=>clearInterval(t)},[active,allowReal,analysis,cooldown,currency,duration,losses,maxLosses,pnl,placeTrade,real,running,selectedAccountId,sl,stake,symbol,tp]);
+
+   busy.current=true;
+   lastEntry.current=Date.now();
+
+   const contractType=analysis.signal==="RISE"?"CALL":"PUT";
+   const amount=Math.max(.35,Number(stake)||.35);
+   const tradeArgs={
+     contractType,
+     amount,
+     basis:"stake",
+     duration:Math.max(2,Number(duration)||5),
+     durationUnit:"t",
+     symbol
+   };
+
+   setMessage(`A+ CONFIRMED • ${analysis.signal} • requesting live proposal...`);
+
+   try{
+     let result=null;
+     let lastError=null;
+
+     for(let attempt=1;attempt<=2;attempt++){
+       try{
+         result=await placeTrade(tradeArgs);
+         if(result!==false)break;
+       }catch(e){
+         lastError=e;
+         if(attempt<2){
+           setMessage(`A+ ${analysis.signal} • proposal retry ${attempt+1}/2...`);
+           await new Promise(r=>setTimeout(r,400));
+         }
+       }
+     }
+
+     if(lastError && !result)throw lastError;
+
+     const returnedId=idOf(result);
+     setMessage(
+       returnedId
+         ? `A+ ${analysis.signal} OPENED • Contract ${returnedId} • monitoring...`
+         : `A+ ${analysis.signal} EXECUTION ACCEPTED • monitoring contract...`
+     );
+   }catch(e){
+     const detail=e instanceof Error?e.message:String(e||tradeError||"Entry rejected.");
+     setMessage(`A+ EXECUTION FAILED • ${detail}`);
+   }finally{
+     busy.current=false;
+   }
+ },1200);
+ return()=>clearInterval(t)
+ },[active,allowReal,analysis,cooldown,currency,duration,losses,maxLosses,pnl,placeTrade,real,running,tradingAccountId,sl,stake,symbol,tp,connected,tradeBusy,tradeError]);
 
  const reset=()=>{setRunning(false);setPnl(0);setLosses(0);done.current.clear();lastEntry.current=0;setMessage("Session reset — scanner ready.")};
  return <section className="adaptiveBot">
-  <div className="adaptiveHeader"><div><span className="adaptiveEyebrow">ZENTORA • ADAPTIVE TREND V1</span><h2>Trend → Pullback → Proposal</h2><p>A+ setups only. The bot waits instead of forcing entries.</p></div><div className={`adaptiveRunState ${running?"on":""}`}>{running?"SCANNING":"STOPPED"}</div></div>
+  <div className="adaptiveHeader"><div><span className="adaptiveEyebrow">ZENTORA • ADAPTIVE TREND V2</span><h2>Trend → Pullback → Proposal</h2><p>A+ setups only. Confirmed A+ signals execute through the live proposal pipeline.</p></div><div className={`adaptiveRunState ${running?"on":""}`}>{running?"SCANNING":"STOPPED"}</div></div>
   <div className="adaptiveGrid">
    <div className="adaptivePanel"><div className="adaptivePanelTitle">LIVE STRATEGY</div><div className="adaptiveMetrics">
     <div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Pullback</span><b>{analysis.pullback}</b></div><div><span>RSI</span><b>{Number(analysis.rsi||50).toFixed(1)}</b></div>
@@ -52,7 +108,7 @@ export default function AdaptiveTrendBot(){
   </div>
   <div className="adaptiveActionBar"><div><b>{analysis.signal==="WAIT"?"WAITING FOR A+":`READY: ${analysis.signal}`}</b><small>{message}</small></div><div className="adaptiveActions">
    <label className="realArm"><input type="checkbox" checked={allowReal} onChange={e=>setAllowReal(e.target.checked)} disabled={!real}/>Arm REAL trading</label>
-   <button className="secondary" onClick={reset}>RESET</button><button className={running?"danger":"primary"} onClick={()=>{if(running){setRunning(false);setMessage("Bot stopped. Protection remains active.")}else{setRunning(true);setMessage(real?(allowReal?"REAL scanner armed. A+ only.":"REAL selected but not armed."):"DEMO scanner armed. A+ only.")}}}>{running?"STOP BOT":"START BOT"}</button>
+   <button className="secondary" onClick={reset}>RESET</button><button className={running?"danger":"primary"} onClick={()=>{if(running){setRunning(false);setMessage("Bot stopped. Protection remains active.")}else{setRunning(true);setMessage(real?(allowReal?"REAL scanner armed. A+ execution enabled.":"REAL selected but not armed."):"DEMO scanner armed. A+ execution enabled.")}}}>{running?"STOP BOT":"START BOT"}</button>
   </div></div>
   <div className="adaptiveFooter"><span>Price: {Number(currentPrice||0).toFixed(market?.decimals??3)}</span><span>Symbol: {symbol||"—"}</span><span>Open: {active?idOf(active):"0"}</span><span>Account: {auth?.selectedAccount?.id||selectedAccountId||"—"}</span></div>
  </section>;
