@@ -246,6 +246,8 @@ export function TouchNoTouchBotView({ feed }) {
   const audioRef = useRef(null);
   const exitRequestedRef = useRef(new Set());
   const rescanTimerRef = useRef(null);
+  const heartbeatTimerRef = useRef(null);
+  const lastHeartbeatScanRef = useRef(0);
 
   const analysisPrices = useMemo(() => {
     if (ticks.length) return ticks.map((tick) => ({ quote: Number(tick?.quote), epoch: Number(tick?.epoch) }));
@@ -490,7 +492,7 @@ export function TouchNoTouchBotView({ feed }) {
   const execute = useCallback(async (mode = "AUTO", forcedAnalysis = analysis, forcedStake = null) => {
     if (busyRef.current || !selectedAccountId || !forcedAnalysis?.ready) return;
     if (forcedAnalysis.signal !== "TOUCH") return;
-    // V183 EARLY QUALITY TOUCH: never block AUTO on the UI score. The local model
+    // V184 CONTINUOUS TOUCH: never block AUTO on the UI score. The local model
     // ranks candidates; a broker-valid Deriv proposal decides execution.
     if (forcedAnalysis.signal === "WAIT") return;
 
@@ -519,12 +521,12 @@ export function TouchNoTouchBotView({ feed }) {
     const minimumOffset = Math.max(pip * 2, Math.abs(spot) * 0.00003);
     const modelOffset = Math.max(Math.abs(Number(rawBarrier) - spot), minimumOffset);
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
-    // V183 EARLY QUALITY TOUCH: keep proposal discovery deliberately small and parallel.
+    // V184 CONTINUOUS TOUCH: keep proposal discovery deliberately small and parallel.
     // The goal is to reach a broker-priced Touch quickly, not to wait for a
     // large matrix of barriers/durations to finish.
     const durationCandidates = String(durationUnit).toLowerCase() === "t"
-      ? [Number(duration), 10, 15]
-      : [Number(duration), 5, 10];
+      ? [Number(duration), 10]
+      : [Number(duration), 5];
     const durations = [...new Set(durationCandidates.filter((v) => Number.isFinite(v) && v > 0))];
 
     let opened = false;
@@ -557,8 +559,12 @@ export function TouchNoTouchBotView({ feed }) {
         setup,
         modelOffset,
       });
+      // V184 CONTINUOUS TOUCH: keep each scan small enough to avoid a burst of
+      // proposal requests that can make the UI look frozen or trigger broker
+      // throttling. Prefer the closest native offsets first.
+      const scanBarriers = nativeBarriers.slice(0, 6);
       for (const tradeDuration of durations) {
-        for (const relativeBarrier of nativeBarriers) addCandidate(relativeBarrier, tradeDuration);
+        for (const relativeBarrier of scanBarriers) addCandidate(relativeBarrier, tradeDuration);
       }
 
       const primaryResults = await Promise.allSettled(
@@ -649,7 +655,7 @@ export function TouchNoTouchBotView({ feed }) {
       // priceable proposal for these native offsets, we WAIT rather than
       // inventing a barrier that the broker cannot accept.
 
-      // V183: broker-valid is necessary, but a valid price alone is NOT enough.
+      // V184: broker-valid is necessary, but a valid price alone is NOT enough.
       // Discovery is fast, while the exact candidate being bought must still
       // have enough Touch probability. This separates early scanning from
       // final execution quality.
@@ -733,6 +739,32 @@ export function TouchNoTouchBotView({ feed }) {
   }, [analysis, analysisPrices, balance, barrierMultiplier, currency, currentPrice, duration, durationUnit, fixedStake, minScore, placeQuotedTrade, quoteTrade, selectedAccountId, stakeMode, symbol]);
 
   useEffect(() => {
+    // V184 CONTINUOUS TOUCH: the scanner must keep moving even when the market
+    // remains in the same READY state and no proposal passes the exact-barrier
+    // quality filter. A lightweight heartbeat re-pulses the execution effect
+    // instead of waiting indefinitely for a React analysis dependency to change.
+    if (!running) {
+      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+      return;
+    }
+
+    if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+    heartbeatTimerRef.current = setInterval(() => {
+      if (busyRef.current || touchContracts.some((c) => !settled(c))) return;
+      const now = Date.now();
+      if (now - lastHeartbeatScanRef.current < 1700) return;
+      lastHeartbeatScanRef.current = now;
+      setExecutionPulse((v) => v + 1);
+    }, 1800);
+
+    return () => {
+      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    };
+  }, [running, touchContracts]);
+
+  useEffect(() => {
     // A qualified setup is consumed once. Do not re-enter simply because the
     // score/barrier changes on every tick while the same setup remains READY.
     // The engine must first leave READY/WAIT, then form a fresh qualification.
@@ -801,13 +833,13 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • EARLY QUALITY TOUCH • fast proposal discovery • fixed $0.35 stake.");
+    resetSession(); setRunning(true); setMessage("SCANNING • CONTINUOUS QUALITY TOUCH • 1.8s heartbeat • fixed $0.35 stake.");
   };
 
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • EARLY QUALITY TOUCH V18.3</small><h1>Touch / No Touch Growth Desk</h1><p>Early proposal discovery • exact-barrier quality filter • broker-priced Touch</p></div>
+        <div><small>ZENTORA • CONTINUOUS QUALITY TOUCH V18.4</small><h1>Touch / No Touch Growth Desk</h1><p>Continuous proposal discovery • exact-barrier quality filter • broker-priced Touch</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
