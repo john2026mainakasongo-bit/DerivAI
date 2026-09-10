@@ -30,7 +30,6 @@ export default function AdaptiveTrendBot(){
    if(real&&!allowReal)return;
 
    const aPlusReady=Boolean(
-     analysis.ready &&
      analysis.grade==="A+" &&
      analysis.signal!=="WAIT"
    );
