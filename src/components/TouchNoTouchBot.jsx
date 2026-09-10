@@ -498,8 +498,7 @@ export function TouchNoTouchBotView({ feed }) {
     if (mode === "AUTO") {
       const latest = latestAnalysisRef.current;
       if (!latest?.ready || latest.signal !== forcedAnalysis.signal) return;
-      if (latest.entryScore < minScore) return;
-    }
+}
 
 
 
@@ -1010,6 +1009,7 @@ export default function TouchNoTouchBot() {
   const feed = useDerivTicks();
   return <TouchNoTouchBotView feed={feed} />;
 }
+
 
 
 
