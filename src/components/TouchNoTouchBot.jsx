@@ -177,7 +177,7 @@ const buildDerivNativeCandidates = ({ prices, decimals, direction, setup, modelO
   }
   return [...unique.values()]
     .sort((a,b) => a-b)
-    .slice(0, 20)
+    .slice(0, 12)
     .map((offset) => `${direction >= 0 ? "+" : "-"}${offset.toFixed(Math.max(2, Number(decimals) || 2))}`);
 };
 
@@ -215,7 +215,7 @@ export function TouchNoTouchBotView({ feed }) {
   const [duration, setDuration] = useState(5);
   const [durationUnit, setDurationUnit] = useState("t");
   const [barrierMultiplier, setBarrierMultiplier] = useState(1.8);
-  const [minScore, setMinScore] = useState(55);
+  const [minScore, setMinScore] = useState(50);
   const [sessionTPPct, setSessionTPPct] = useState(2);
   const [sessionSLPct, setSessionSLPct] = useState(1.5);
   const [recoveryEnabled, setRecoveryEnabled] = useState(false);
@@ -272,16 +272,16 @@ export function TouchNoTouchBotView({ feed }) {
   }), [analysis, analysisPrices, market?.decimals]);
 
   const touchFirstReady = useMemo(() => {
-    // V180 PROPOSAL-FIRST: local analysis no longer has authority to veto a
-    // Touch trade before Deriv has priced the exact contract. It only needs
+    // V181 FAST TOUCH: local analysis is deliberately lightweight and no longer
+    // waits for a high score before asking Deriv to price the exact contract. It only needs
     // enough live data to produce a candidate barrier. Deriv's ONETOUCH
-    // proposal becomes the execution authority.
-    const sampleReady = analysisPrices.length >= 40;
+    // proposal becomes the execution authority, so entry can happen early.
+    const sampleReady = analysisPrices.length >= 35;
     const barrier = Number(analysis?.touchBarrier);
     const spot = Number(analysis?.current);
     const marketQuality = Number(analysis?.marketQuality || 0);
     const hasCandidate = Number.isFinite(barrier) && Number.isFinite(spot);
-    const qualityFloor = marketQuality >= 35;
+    const qualityFloor = marketQuality >= 45;
 
     return Boolean(sampleReady && hasCandidate && qualityFloor);
   }, [analysis, analysisPrices.length]);
@@ -486,19 +486,18 @@ export function TouchNoTouchBotView({ feed }) {
   const execute = useCallback(async (mode = "AUTO", forcedAnalysis = analysis, forcedStake = null) => {
     if (busyRef.current || !selectedAccountId || !forcedAnalysis?.ready) return;
     if (forcedAnalysis.signal !== "TOUCH") return;
-    // V180: do not block AUTO because the local score is below the UI's
-    // preferred threshold. The local model ranks candidates; Deriv proposal
-    // validity decides whether an executable Touch exists.
+    // V181 FAST TOUCH: never block AUTO on the UI score. The local model
+    // ranks candidates; a broker-valid Deriv proposal decides execution.
     if (forcedAnalysis.signal === "WAIT") return;
 
     // AUTO execution must use the latest qualified analysis, never a stale
-    // signal captured by an earlier render. A trade is only allowed when the
-    // current engine is still ready for the same side and score threshold.
+    // signal captured by an earlier render. The current engine only needs to
+    // remain Touch-ready; score is ranking information, not an execution veto.
     if (mode === "AUTO" && touchContracts.some((c) => !settled(c))) return;
     if (mode === "AUTO") {
       const latest = latestAnalysisRef.current;
       if (!latest?.ready || latest.signal !== forcedAnalysis.signal) return;
-}
+    }
 
 
 
@@ -516,16 +515,19 @@ export function TouchNoTouchBotView({ feed }) {
     const minimumOffset = Math.max(pip * 2, Math.abs(spot) * 0.00003);
     const modelOffset = Math.max(Math.abs(Number(rawBarrier) - spot), minimumOffset);
     const direction = Number(rawBarrier) >= spot ? 1 : -1;
+    // V181 FAST TOUCH: keep proposal discovery deliberately small and parallel.
+    // The goal is to reach a broker-priced Touch quickly, not to wait for a
+    // large matrix of barriers/durations to finish.
     const durationCandidates = String(durationUnit).toLowerCase() === "t"
-      ? [Number(duration), 10, 15, 30]
-      : [Number(duration), 5, 10, 15];
+      ? [Number(duration), 10, 15]
+      : [Number(duration), 5, 10];
     const durations = [...new Set(durationCandidates.filter((v) => Number.isFinite(v) && v > 0))];
 
     let opened = false;
     busyRef.current = true;
     setQuoteBusy(true);
     setQuoteError("");
-    setMessage(`${isRecovery ? "RECOVERY X2" : "AI"} • FINDING BEST ${setup} PROPOSAL…`);
+    setMessage(`${isRecovery ? "RECOVERY X2" : "FAST TOUCH"} • FINDING DERIV PROPOSAL…`);
     try {
       const quotes = [];
       const errors = [];
@@ -768,7 +770,7 @@ export function TouchNoTouchBotView({ feed }) {
       qualificationConsumedRef.current = false;
       lastSignalRef.current = "";
       setExecutionPulse((v) => v + 1);
-      setMessage(`${won ? "✓ WIN" : "✕ LOSS"} • ${typeOf(c)} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)} • PRECISION RESCAN`);
+      setMessage(`${won ? "✓ WIN" : "✕ LOSS"} • ${typeOf(c)} • ${pnl >= 0 ? "+" : ""}${money(pnl, currency)} • FAST RESCAN`);
     }
   }, [currency, touchContracts, recoveryEnabled, recoveryUsed, running, sound]);
 
@@ -789,13 +791,13 @@ export function TouchNoTouchBotView({ feed }) {
 
   const toggle = () => {
     if (running) { setRunning(false); setMessage("Bot stopped — protection remains active."); return; }
-    resetSession(); setRunning(true); setMessage("SCANNING • PROPOSAL-FIRST TOUCH • Deriv pricing authority • fixed $0.35 stake.");
+    resetSession(); setRunning(true); setMessage("SCANNING • FAST TOUCH • early proposal discovery • fixed $0.35 stake.");
   };
 
   return (
     <section className="tntShell">
       <header className="tntHero">
-        <div><small>ZENTORA • DERIV-NATIVE TOUCH V15.0</small><h1>Touch / No Touch Growth Desk</h1><p>Deriv proposal-first entries • broker-priced barriers • local AI used for ranking, not veto</p></div>
+        <div><small>ZENTORA • FAST TOUCH V18.1</small><h1>Touch / No Touch Growth Desk</h1><p>Early Touch entries • broker-priced barriers • local AI ranks, Deriv pricing decides</p></div>
         <div className="tntLive"><span className={connected ? "liveDot on" : "liveDot"} />{connected ? (authenticatedFeed ? "TRADING READY" : "LIVE FEED") : status}</div>
       </header>
 
@@ -841,7 +843,7 @@ export function TouchNoTouchBotView({ feed }) {
             )}
           </select>
         </div>
-        <label>AI RANKING<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="55">55 / 99</option><option value="58">58 / 99</option><option value="60">60 / 99</option><option value="63">63 / 99</option><option value="65">65 / 99</option><option value="70">70 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
+        <label>AI RANKING<select value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}><option value="45">45 / 99</option><option value="50">50 / 99</option><option value="55">55 / 99</option><option value="60">60 / 99</option><option value="65">65 / 99</option></select></label><label>BARRIER<select value={barrierMultiplier} onChange={(e) => setBarrierMultiplier(Number(e.target.value))}><option value="1.5">AUTO • 1.5×</option><option value="1.8">AUTO • 1.8×</option><option value="2.2">AUTO • 2.2×</option><option value="2.5">AUTO • 2.5× SAFE</option></select></label>
         <button className={`tntMainBtn ${running ? "stop" : "start"}`} disabled={quoteBusy} onClick={toggle}>{running ? "STOP BOT" : "START BOT"}</button>
       </div>
 
@@ -1009,7 +1011,6 @@ export default function TouchNoTouchBot() {
   const feed = useDerivTicks();
   return <TouchNoTouchBotView feed={feed} />;
 }
-
 
 
 
