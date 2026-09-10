@@ -709,13 +709,60 @@ class DerivTradingClient {
     }
   }
   async connect({ allowPublicFallback = true } = {}) {
-    if (
-      this.socket?.readyState === WebSocket.OPEN
-    ) {
-      return {
-        authenticated: this.socketAuthenticated,
-        fallback: !this.socketAuthenticated,
-      };
+    /*
+     * V2 CONNECTION FIX:
+     * An OPEN WebSocket is not automatically a valid trading socket.
+     * When a logged-in Demo/Real account is selected, the socket must:
+     *   1. be OPEN
+     *   2. be authenticated
+     *   3. belong to the currently selected account credentials.
+     *
+     * A public market socket may remain OPEN while trading authentication
+     * is unavailable. Never return that socket as a valid trading connection.
+     */
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      const expectedAuthKey =
+        this.authenticated
+          ? `${this.auth.appId}|${this.auth.accessToken}|${this.auth.accountId}`
+          : "";
+
+      const socketMatchesAccount =
+        Boolean(
+          this.socketAuthenticated &&
+          this.socketAuthKey &&
+          this.socketAuthKey === expectedAuthKey
+        );
+
+      if (this.authenticated) {
+        if (socketMatchesAccount) {
+          return {
+            authenticated: true,
+            fallback: false,
+          };
+        }
+
+        /*
+         * We have an OPEN socket, but it is either:
+         * - public/unauthenticated, or
+         * - authenticated for a different account.
+         *
+         * Close it before requesting the correct authenticated socket.
+         */
+        this.disconnect({
+          preserveAccount: true,
+          preserveSymbol: true,
+        });
+      } else if (allowPublicFallback) {
+        return {
+          authenticated: false,
+          fallback: true,
+        };
+      } else {
+        this.disconnect({
+          preserveAccount: true,
+          preserveSymbol: true,
+        });
+      }
     }
 
     if (this.connectPromise) {
