@@ -14,7 +14,7 @@ export default function AdaptiveTrendBot(){
  const {symbol,market,prices,currentPrice,openContracts,selectedAccount,selectedAccountType="demo",selectedAccountId,connected,status,statusDetail,quoteTrade,placeQuotedTrade,tradeBusy,tradeError}=useDerivTicks();
  const [running,setRunning]=useState(false),[stake,setStake]=useState(.35),[duration,setDuration]=useState(5),[allowReal,setAllowReal]=useState(false);
  const [tp,setTp]=useState(2),[sl,setSl]=useState(1.5),[maxLosses,setMaxLosses]=useState(2),[cooldown,setCooldown]=useState(8);
- const [pnl,setPnl]=useState(0),[losses,setLosses]=useState(0),[message,setMessage]=useState("Scanner ready - demo first."),[executionState,setExecutionState]=useState(""),[tradeJournal,setTradeJournal]=useState([]);
+ const [pnl,setPnl]=useState(0),[losses,setLosses]=useState(0),[message,setMessage]=useState("Scanner ready - demo first."),[executionState,setExecutionState]=useState(""),[tradeHistory,setTradeHistory]=useState([]);
  const busy=useRef(false),lastEntry=useRef(0),done=useRef(new Set()),analysisRef=useRef(null);
  const analysis=useMemo(()=>analyzeAdaptiveTrend(prices),[prices]),currency=String(selectedAccount?.currency||"USD").toUpperCase();
 
@@ -24,7 +24,7 @@ useEffect(()=>{
  const active=openContracts?.find(x=>!settled(x)),real=String(selectedAccountType).toLowerCase()==="real";
  const tradingAccountId=selectedAccountId||auth?.selectedAccount?.id||"";
 
- useEffect(()=>{for(const c of openContracts||[]){const id=idOf(c);if(!id||!settled(c)||done.current.has(id))continue;done.current.add(id);const p=profit(c);setPnl(x=>x+p);if(p<0)setLosses(x=>x+1);setExecutionState(p>=0?"WON":"LOST");setTradeJournal(j=>[{id,type:"RESULT",signal:c?.contract_type||c?.contractType||"-",pnl:p,time:new Date().toLocaleTimeString()} ,...j].slice(0,8));setMessage(`${p>=0?"WON":"LOST"} ${id} - ${p>=0?"+":""}${money(p,currency)}`)}},[openContracts,currency]);
+ useEffect(()=>{for(const c of openContracts||[]){const id=idOf(c);if(!id||!settled(c)||done.current.has(id))continue;done.current.add(id);const p=profit(c);setPnl(x=>x+p);if(p<0)setLosses(x=>x+1);setExecutionState(p>=0?"WON":"LOST");setMessage(`${p>=0?"WON":"LOST"} ${id} - ${p>=0?"+":""}${money(p,currency)}`);setTradeHistory(prev=>prev.map(t=>t.id===id?{...t,result:p>=0?"WON":"LOST",pnl:p}:t))}},[openContracts,currency]);
 
  useEffect(()=>{if(!running)return;const t=setInterval(async()=>{if(busy.current||tradeBusy||active||!tradingAccountId||!symbol)return;
    if(!connected)return;
@@ -90,9 +90,24 @@ result=await placeQuotedTrade({quote});
      if(lastError && !result)throw lastError;
 
      const returnedId=idOf(result);
+     if(returnedId){
+       const entryPrice=Number(quote?.spot||currentPrice||0);
+       const journalEntry={
+         id:returnedId,
+         side:latestAnalysis.signal,
+         score:Number(latestAnalysis.score||0),
+         confidence:Number(latestAnalysis.confidence||0),
+         rsi:Number(latestAnalysis.rsi||50),
+         entryPrice,
+         result:"OPEN",
+         pnl:null,
+         time:new Date().toLocaleTimeString(),
+       };
+       setTradeHistory(prev=>[journalEntry,...prev.filter(t=>t.id!==returnedId)].slice(0,8));
+     }
      setMessage(
        returnedId
-         ? (setExecutionState("OPENED"),setTradeJournal(j=>[{id:returnedId,type:"OPEN",signal:latestAnalysis.signal,score:latestAnalysis.score,rsi:latestAnalysis.rsi,price:currentPrice,time:new Date().toLocaleTimeString()},...j].slice(0,8)),`A+ ${latestAnalysis.signal} OPENED - Contract ${returnedId} - monitoring...`)
+         ? (setExecutionState("OPENED"),`A+ ${latestAnalysis.signal} OPENED - Contract ${returnedId} - monitoring...`)
          : `A+ ${latestAnalysis.signal} EXECUTION ACCEPTED - monitoring contract...`
      );
    }catch(e){
@@ -105,7 +120,7 @@ result=await placeQuotedTrade({quote});
  return()=>clearInterval(t)
  },[active,allowReal,cooldown,currency,duration,losses,maxLosses,pnl,quoteTrade,placeQuotedTrade,real,running,tradingAccountId,sl,stake,symbol,tp,connected,tradeBusy,tradeError]);
 
- const reset=()=>{setRunning(false);setPnl(0);setLosses(0);setExecutionState("");setTradeJournal([]);done.current.clear();lastEntry.current=0;setMessage("Session reset - scanner ready.")};
+ const reset=()=>{setRunning(false);setPnl(0);setLosses(0);setExecutionState("");setTradeHistory([]);done.current.clear();lastEntry.current=0;setMessage("Session reset - scanner ready.")};
  return <section className="adaptiveBot">
   <div className="adaptiveHeader"><div><span className="adaptiveEyebrow">ZENTORA - ADAPTIVE TREND V2</span><h2>Trend ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Pullback ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Proposal</h2><p>A+ setups only. Confirmed A+ signals execute through the live proposal pipeline.</p></div><div className={`adaptiveRunState ${running?"on":""}`}>{running?"SCANNING":"STOPPED"}</div></div>
   <div className="adaptiveGrid">
@@ -127,32 +142,10 @@ result=await placeQuotedTrade({quote});
    <button className="secondary" onClick={reset}>RESET</button><button className={running?"danger":"primary"} onClick={()=>{if(running){setRunning(false);setMessage("Bot stopped. Protection remains active.")}else{setRunning(true);setMessage(real?(allowReal?"REAL scanner armed. A+ execution enabled.":"REAL selected but not armed."):"DEMO scanner armed. A+ execution enabled.")}}}>{running?"STOP BOT":"START BOT"}</button>
   </div></div>
   <div className="adaptiveJournal">
-   <div className="adaptiveJournalHead">
-    <div>
-     <span className="adaptivePanelTitle">TRADE JOURNAL</span>
-     <small>Latest 8 Adaptive Trend executions</small>
-    </div>
-    <strong>{tradeJournal.length}/8</strong>
-   </div>
-   {tradeJournal.length===0 ? (
-    <div className="adaptiveJournalEmpty">No trades recorded in this session.</div>
-   ) : (
-    <div className="adaptiveJournalList">
-     {tradeJournal.map((t,i)=>(
-      <div className="adaptiveJournalRow" key={`${t.id}-${i}`}>
-       <b className={t.type==="RESULT"?(Number(t.pnl)>=0?"win":"loss"):"open"}>
-        {t.type==="RESULT"?(Number(t.pnl)>=0?"WON":"LOST"):"OPEN"}
-       </b>
-       <span>{t.signal}</span>
-       <span>{t.id}</span>
-       <span>{t.score?`Score ${t.score}`:"-"}</span>
-       <span>{t.rsi?`RSI ${Number(t.rsi).toFixed(1)}`:"-"}</span>
-       <span>{t.price?`@ ${Number(t.price).toFixed(2)}`:""}</span>
-       <span>{t.pnl!==undefined?`${Number(t.pnl)>=0?"+":""}${money(t.pnl,currency)}`:t.time}</span>
-      </div>
-     ))}
-    </div>
-   )}
+   <div className="adaptiveJournalHead"><div><b>TRADE JOURNAL</b><small>Latest {tradeHistory.length} Adaptive Trend executions</small></div><strong>{tradeHistory.length}/8</strong></div>
+   <div className="adaptiveJournalList">{tradeHistory.length===0?<div className="adaptiveJournalEmpty">No executions yet.</div>:tradeHistory.map(t=><div className="adaptiveJournalRow" key={t.id}>
+    <span className={t.result==="WON"?"journalWon":t.result==="LOST"?"journalLost":"journalOpen"}>{t.result}</span><span>{t.side}</span><span>C {t.id}</span><span>Score {Number(t.score).toFixed(0)}</span><span>Conf {Number(t.confidence).toFixed(1)}%</span><span>RSI {Number(t.rsi).toFixed(1)}</span><span>Entry {Number(t.entryPrice||0).toFixed(market?.decimals??3)}</span><span>{t.pnl===null?"-":`${t.pnl>=0?"+":""}${money(t.pnl,currency)}`}</span>
+   </div>)}</div>
   </div>
   <div className="adaptiveFooter"><span>Price: {Number(currentPrice||0).toFixed(market?.decimals??3)}</span><span>Symbol: {symbol||"-"}</span><span>Open: {active?idOf(active):"0"}</span><span>Account: {auth?.selectedAccount?.id||selectedAccountId||"-"}</span></div>
  </section>;
