@@ -14,7 +14,7 @@ export default function AdaptiveTrendBot(){
  const {symbol,market,prices,currentPrice,openContracts,selectedAccount,selectedAccountType="demo",selectedAccountId,connected,status,statusDetail,quoteTrade,placeQuotedTrade,tradeBusy,tradeError}=useDerivTicks();
  const [running,setRunning]=useState(false),[stake,setStake]=useState(.35),[duration,setDuration]=useState(5),[allowReal,setAllowReal]=useState(false);
  const [tp,setTp]=useState(2),[sl,setSl]=useState(1.5),[maxLosses,setMaxLosses]=useState(2),[cooldown,setCooldown]=useState(8);
- const [pnl,setPnl]=useState(0),[losses,setLosses]=useState(0),[message,setMessage]=useState("Scanner ready Ã¢â‚¬â€ demo first.");
+ const [pnl,setPnl]=useState(0),[losses,setLosses]=useState(0),[message,setMessage]=useState("Scanner ready ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â demo first.");
  const busy=useRef(false),lastEntry=useRef(0),done=useRef(new Set()),analysisRef=useRef(null);
  const analysis=useMemo(()=>analyzeAdaptiveTrend(prices),[prices]),currency=String(selectedAccount?.currency||"USD").toUpperCase();
 
@@ -24,16 +24,16 @@ useEffect(()=>{
  const active=openContracts?.find(x=>!settled(x)),real=String(selectedAccountType).toLowerCase()==="real";
  const tradingAccountId=selectedAccountId||auth?.selectedAccount?.id||"";
 
- useEffect(()=>{for(const c of openContracts||[]){const id=idOf(c);if(!id||!settled(c)||done.current.has(id))continue;done.current.add(id);const p=profit(c);setPnl(x=>x+p);if(p<0)setLosses(x=>x+1);setMessage(`${p>=0?"WON":"LOST"} ${id} Ã¢â‚¬Â¢ ${p>=0?"+":""}${money(p,currency)}`)}},[openContracts,currency]);
+ useEffect(()=>{for(const c of openContracts||[]){const id=idOf(c);if(!id||!settled(c)||done.current.has(id))continue;done.current.add(id);const p=profit(c);setPnl(x=>x+p);if(p<0)setLosses(x=>x+1);setMessage(`${p>=0?"WON":"LOST"} ${id} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${p>=0?"+":""}${money(p,currency)}`)}},[openContracts,currency]);
 
  useEffect(()=>{if(!running)return;const t=setInterval(async()=>{if(busy.current||tradeBusy||active||!tradingAccountId||!symbol)return;
    if(!connected)return;
 
    const latestAnalysis=analysisRef.current;
    if(!latestAnalysis)return;
-   if(pnl>=Number(tp)){setRunning(false);setMessage(`TAKE PROFIT reached Ã¢â‚¬Â¢ ${money(pnl,currency)}`);return}
-   if(pnl<=-Number(sl)){setRunning(false);setMessage(`STOP LOSS reached Ã¢â‚¬Â¢ ${money(pnl,currency)}`);return}
-   if(losses>=Number(maxLosses)){setRunning(false);setMessage(`MAX LOSSES reached Ã¢â‚¬Â¢ ${losses}`);return}
+   if(pnl>=Number(tp)){setRunning(false);setMessage(`TAKE PROFIT reached ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${money(pnl,currency)}`);return}
+   if(pnl<=-Number(sl)){setRunning(false);setMessage(`STOP LOSS reached ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${money(pnl,currency)}`);return}
+   if(losses>=Number(maxLosses)){setRunning(false);setMessage(`MAX LOSSES reached ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${losses}`);return}
    if(real&&!allowReal)return;
 
    const aPlusReady=Boolean(
@@ -58,7 +58,7 @@ useEffect(()=>{
      symbol
    };
 
-   setMessage(`A+ CONFIRMED Ã¢â‚¬Â¢ ${analysis.signal} Ã¢â‚¬Â¢ requesting live proposal...`);
+   setMessage(`A+ CONFIRMED ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${analysis.signal} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ requesting live proposal...`);
 
    try{
      let result=null;
@@ -73,7 +73,7 @@ if(!quote?.proposalId){
 }
 
 setMessage(
-  `A+ ${analysis.signal} â€¢ proposal confirmed â€¢ ${quote.proposalId} â€¢ buying...`
+  `A+ ${analysis.signal} Ã¢â‚¬Â¢ proposal confirmed Ã¢â‚¬Â¢ ${quote.proposalId} Ã¢â‚¬Â¢ buying...`
 );
 
 result=await placeQuotedTrade({quote});
@@ -81,7 +81,7 @@ result=await placeQuotedTrade({quote});
        }catch(e){
          lastError=e;
          if(attempt<2){
-           setMessage(`A+ ${analysis.signal} Ã¢â‚¬Â¢ proposal retry ${attempt+1}/2...`);
+           setMessage(`A+ ${analysis.signal} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ proposal retry ${attempt+1}/2...`);
            await new Promise(r=>setTimeout(r,400));
          }
        }
@@ -92,22 +92,22 @@ result=await placeQuotedTrade({quote});
      const returnedId=idOf(result);
      setMessage(
        returnedId
-         ? `A+ ${analysis.signal} OPENED Ã¢â‚¬Â¢ Contract ${returnedId} Ã¢â‚¬Â¢ monitoring...`
-         : `A+ ${analysis.signal} EXECUTION ACCEPTED Ã¢â‚¬Â¢ monitoring contract...`
+         ? `A+ ${analysis.signal} OPENED ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Contract ${returnedId} ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ monitoring...`
+         : `A+ ${analysis.signal} EXECUTION ACCEPTED ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ monitoring contract...`
      );
    }catch(e){
      const detail=e instanceof Error?e.message:String(e||tradeError||"Entry rejected.");
-     setMessage(`A+ EXECUTION FAILED Ã¢â‚¬Â¢ ${detail}`);
+     setMessage(`A+ EXECUTION FAILED ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${detail}`);
    }finally{
      busy.current=false;
    }
  },1200);
  return()=>clearInterval(t)
- },[active,allowReal,analysis,cooldown,currency,duration,losses,maxLosses,pnl,quoteTrade,placeQuotedTrade,real,running,tradingAccountId,sl,stake,symbol,tp,connected,tradeBusy,tradeError]);
+ },[active,allowReal,cooldown,currency,duration,losses,maxLosses,pnl,quoteTrade,placeQuotedTrade,real,running,tradingAccountId,sl,stake,symbol,tp,connected,tradeBusy,tradeError]);
 
- const reset=()=>{setRunning(false);setPnl(0);setLosses(0);done.current.clear();lastEntry.current=0;setMessage("Session reset Ã¢â‚¬â€ scanner ready.")};
+ const reset=()=>{setRunning(false);setPnl(0);setLosses(0);done.current.clear();lastEntry.current=0;setMessage("Session reset ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â scanner ready.")};
  return <section className="adaptiveBot">
-  <div className="adaptiveHeader"><div><span className="adaptiveEyebrow">ZENTORA Ã¢â‚¬Â¢ ADAPTIVE TREND V2</span><h2>Trend Ã¢â€ â€™ Pullback Ã¢â€ â€™ Proposal</h2><p>A+ setups only. Confirmed A+ signals execute through the live proposal pipeline.</p></div><div className={`adaptiveRunState ${running?"on":""}`}>{running?"SCANNING":"STOPPED"}</div></div>
+  <div className="adaptiveHeader"><div><span className="adaptiveEyebrow">ZENTORA ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ADAPTIVE TREND V2</span><h2>Trend ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Pullback ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Proposal</h2><p>A+ setups only. Confirmed A+ signals execute through the live proposal pipeline.</p></div><div className={`adaptiveRunState ${running?"on":""}`}>{running?"SCANNING":"STOPPED"}</div></div>
   <div className="adaptiveGrid">
    <div className="adaptivePanel"><div className="adaptivePanelTitle">LIVE STRATEGY</div><div className="adaptiveMetrics">
     <div><span>Trend</span><b>{analysis.trend}</b></div><div><span>Momentum</span><b>{analysis.momentum}</b></div><div><span>Pullback</span><b>{analysis.pullback}</b></div><div><span>RSI</span><b>{Number(analysis.rsi||50).toFixed(1)}</b></div>
@@ -126,6 +126,6 @@ result=await placeQuotedTrade({quote});
    <label className="realArm"><input type="checkbox" checked={allowReal} onChange={e=>setAllowReal(e.target.checked)} disabled={!real}/>Arm REAL trading</label>
    <button className="secondary" onClick={reset}>RESET</button><button className={running?"danger":"primary"} onClick={()=>{if(running){setRunning(false);setMessage("Bot stopped. Protection remains active.")}else{setRunning(true);setMessage(real?(allowReal?"REAL scanner armed. A+ execution enabled.":"REAL selected but not armed."):"DEMO scanner armed. A+ execution enabled.")}}}>{running?"STOP BOT":"START BOT"}</button>
   </div></div>
-  <div className="adaptiveFooter"><span>Price: {Number(currentPrice||0).toFixed(market?.decimals??3)}</span><span>Symbol: {symbol||"Ã¢â‚¬â€"}</span><span>Open: {active?idOf(active):"0"}</span><span>Account: {auth?.selectedAccount?.id||selectedAccountId||"Ã¢â‚¬â€"}</span></div>
+  <div className="adaptiveFooter"><span>Price: {Number(currentPrice||0).toFixed(market?.decimals??3)}</span><span>Symbol: {symbol||"ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}</span><span>Open: {active?idOf(active):"0"}</span><span>Account: {auth?.selectedAccount?.id||selectedAccountId||"ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}</span></div>
  </section>;
 }
