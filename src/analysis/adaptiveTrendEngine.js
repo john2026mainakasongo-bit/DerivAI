@@ -19,7 +19,7 @@ export function analyzeAdaptiveTrend(prices=[]){
  if(ss>=.7){if(sl>0)rise+=8;if(sl<0)fall+=8} if(ms>=.7){if(mom>0)rise+=6;if(mom<0)fall+=6}
  const gap=Math.abs(rise-fall),best=rise>=fall?"RISE":"FALL",score=Math.max(rise,fall);
  const grade=score>=86&&gap>=18?"A+":score>=78&&gap>=12?"A":score>=68&&gap>=9?"B":"WAIT";
- const valid=grade==="A+"&&ss>=.45&&ms>=.35&&pb;
+ const valid=grade==="A+"&&gap>=18&&pb;
  return{ready:true,signal:valid?best:"WAIT",grade,score,confidence:Math.min(99,Math.round(score+Math.min(gap,18)*.7)),gap,
  trend:bull?"BULLISH":bear?"BEARISH":"MIXED",momentum:up?"UP":down?"DOWN":"FLAT",pullback:pb?"READY":"WAITING",
  volatility:ms>1.8?"HIGH":ms<.45?"LOW":"NORMAL",reason:valid?`${best} A+ trend + momentum + pullback alignment`:`Waiting: ${grade} setup / gap ${gap.toFixed(0)}pp`,emaFast:fast,emaSlow:slow,rsi:rv};
