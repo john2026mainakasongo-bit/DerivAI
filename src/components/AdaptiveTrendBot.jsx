@@ -36,8 +36,8 @@ export default function AdaptiveTrendBot(){
 
  useEffect(()=>{analysisRef.current=analysis},[analysis]);
 
- // Shadow-book a candidate only when the signal/key changes or its horizon is complete.
- // This reduces overlapping, highly-correlated samples and gives cleaner per-key evidence.
+ // Shadow-book exactly one candidate for a key until its horizon completes.
+ // This prevents duplicate/unkeyed samples from inflating aggregate evidence and keeps per-key telemetry valid.
  useEffect(()=>{
    if(!shadowEnabled||prices.length<analysis.horizon+2||analysis.rawDirection==="WAIT") return;
    const tickIndex=prices.length-1;
@@ -51,15 +51,6 @@ export default function AdaptiveTrendBot(){
    shadowRef.current=shadowRef.current.slice(-200);
  },[analysis,currentPrice,prices.length,shadowEnabled,symbol]);
 
- useEffect(()=>{
-   if(!shadowEnabled||prices.length<analysis.horizon+2||analysis.rawDirection==="WAIT") return;
-   const tickIndex=prices.length-1;
-   if(lastShadowTick.current===tickIndex) return;
-   lastShadowTick.current=tickIndex;
-   const horizon=Math.max(2,Number(analysis.horizon)||5);
-   shadowRef.current.push({index:tickIndex,entry:Number(currentPrice),direction:analysis.rawDirection,horizon,model:Number(analysis.probability||.5)});
-   shadowRef.current=shadowRef.current.slice(-200);
- },[analysis,currentPrice,prices.length,shadowEnabled]);
 
  useEffect(()=>{
    if(!prices.length||!shadowRef.current.length)return;
