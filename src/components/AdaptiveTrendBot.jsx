@@ -13,10 +13,10 @@ export default function AdaptiveTrendBot(){
  const auth=useDerivAuth();
  const {symbol,market,prices,currentPrice,openContracts,selectedAccount,selectedAccountType="demo",selectedAccountId,connected,status,statusDetail,quoteTrade,placeQuotedTrade,tradeBusy,tradeError}=useDerivTicks();
  const [running,setRunning]=useState(false),[stake,setStake]=useState(.35),[duration,setDuration]=useState(5),[allowReal,setAllowReal]=useState(false);
- const [tp,setTp]=useState(2),[sl,setSl]=useState(1.5),[maxLosses,setMaxLosses]=useState(2),[cooldown,setCooldown]=useState(8);
+ const [tp,setTp]=useState(2),[sl,setSl]=useState(1.5),[maxLosses,setMaxLosses]=useState(2),[cooldown,setCooldown]=useState(10),[minEdge,setMinEdge]=useState(0.05);
  const [pnl,setPnl]=useState(0),[losses,setLosses]=useState(0),[message,setMessage]=useState("Scanner ready - demo first."),[executionState,setExecutionState]=useState(""),[tradeHistory,setTradeHistory]=useState([]);
  const busy=useRef(false),lastEntry=useRef(0),done=useRef(new Set()),analysisRef=useRef(null);
- const analysis=useMemo(()=>analyzeAdaptiveTrend(prices),[prices]),currency=String(selectedAccount?.currency||"USD").toUpperCase();
+ const analysis=useMemo(()=>analyzeAdaptiveTrend(prices,{duration}),[prices,duration]),currency=String(selectedAccount?.currency||"USD").toUpperCase();
 
 useEffect(()=>{
   analysisRef.current=analysis;
@@ -45,7 +45,6 @@ useEffect(()=>{
    if(Date.now()-lastEntry.current<Number(cooldown)*1000)return;
 
    busy.current=true;
-   lastEntry.current=Date.now();
 
    const contractType=latestAnalysis.signal==="RISE"?"CALL":"PUT";
    const amount=Math.max(.35,Number(stake)||.35);
@@ -58,36 +57,61 @@ useEffect(()=>{
      symbol
    };
 
-   setMessage(`A+ CONFIRMED - ${latestAnalysis.signal} - requesting live proposal...`);
+   setMessage(`A+ CONFIRMED - ${latestAnalysis.signal} - pricing proposal before any buy...`);
 
    try{
      let result=null;
+     let quote=null;
      let lastError=null;
 
      for(let attempt=1;attempt<=2;attempt++){
        try{
-         const quote=await quoteTrade(tradeArgs);
+         quote=await quoteTrade(tradeArgs);
+         if(!quote?.proposalId) throw new Error("Deriv returned no valid proposal ID.");
 
-if(!quote?.proposalId){
-  throw new Error("Deriv returned no valid proposal ID.");
-}
+         const ask=Number(quote.askPrice);
+         const payout=Number(quote.payout);
+         const implied=ask/payout;
+         const model=Number(latestAnalysis.probability||0.5);
+         const edge=model-implied;
+         const expectedValue=(model*payout)-ask;
 
-setMessage(
-  `A+ ${latestAnalysis.signal} - proposal confirmed - ${quote.proposalId} - buying...`
-);
+         if(!Number.isFinite(ask)||!Number.isFinite(payout)||payout<=ask){
+           throw new Error("Invalid Deriv proposal pricing.");
+         }
 
-result=await placeQuotedTrade({quote});
+         // PROFITABILITY GATE:
+         // Never buy merely because the chart says A+. The quoted contract
+         // price determines the break-even probability. We only trade when
+         // the model has a real edge over that break-even level.
+         if(model < 0.56 || edge < Number(minEdge) || expectedValue <= 0){
+           setMessage(
+             `A+ ${latestAnalysis.signal} FILTERED · model ${(model*100).toFixed(1)}% · break-even ${(implied*100).toFixed(1)}% · edge ${(edge*100).toFixed(1)}% · EV ${expectedValue.toFixed(3)}`
+           );
+           busy.current=false;
+           return;
+         }
+
+         setMessage(
+           `A+ ${latestAnalysis.signal} VALUE CONFIRMED · model ${(model*100).toFixed(1)}% · break-even ${(implied*100).toFixed(1)}% · edge ${(edge*100).toFixed(1)}% · buying...`
+         );
+
+         result=await placeQuotedTrade({quote});
          if(result!==false)break;
        }catch(e){
          lastError=e;
          if(attempt<2){
-           setMessage(`A+ ${latestAnalysis.signal} - proposal retry ${attempt+1}/2...`);
+           setMessage(`Proposal retry ${attempt+1}/2...`);
            await new Promise(r=>setTimeout(r,400));
          }
        }
      }
 
      if(lastError && !result)throw lastError;
+
+     // Cooldown starts only after an accepted purchase, not after a rejected
+     // proposal or a value filter.
+     lastEntry.current=Date.now();
 
      const returnedId=idOf(result);
      if(returnedId){
@@ -118,7 +142,7 @@ result=await placeQuotedTrade({quote});
    }
  },1200);
  return()=>clearInterval(t)
- },[active,allowReal,cooldown,currency,duration,losses,maxLosses,pnl,quoteTrade,placeQuotedTrade,real,running,tradingAccountId,sl,stake,symbol,tp,connected,tradeBusy,tradeError]);
+ },[active,allowReal,cooldown,currency,duration,losses,maxLosses,pnl,quoteTrade,placeQuotedTrade,real,running,tradingAccountId,sl,stake,symbol,tp,connected,tradeBusy,tradeError,minEdge]);
 
  const reset=()=>{setRunning(false);setPnl(0);setLosses(0);setExecutionState("");setTradeHistory([]);done.current.clear();lastEntry.current=0;setMessage("Session reset - scanner ready.")};
  return <section className="adaptiveBot">
@@ -139,6 +163,7 @@ result=await placeQuotedTrade({quote});
   </div>
   <div className="adaptiveActionBar"><div><b>{active?`TRADE OPEN: ${idOf(active)}`:executionState==="OPENED"?"TRADE OPENED":executionState==="WON"?"LAST TRADE: WON":executionState==="LOST"?"LAST TRADE: LOST":analysis.signal==="WAIT"?"WAITING FOR A+":`READY: ${analysis.signal}`}</b><small>{message}</small></div><div className="adaptiveActions">
    <label className="realArm"><input type="checkbox" checked={allowReal} onChange={e=>setAllowReal(e.target.checked)} disabled={!real}/>Arm REAL trading</label>
+   <label className="realArm">Min edge <input type="number" min=".02" max=".15" step=".01" value={minEdge} onChange={e=>setMinEdge(e.target.value)}/></label>
    <button className="secondary" onClick={reset}>RESET</button><button className={running?"danger":"primary"} onClick={()=>{if(running){setRunning(false);setMessage("Bot stopped. Protection remains active.")}else{setRunning(true);setMessage(real?(allowReal?"REAL scanner armed. A+ execution enabled.":"REAL selected but not armed."):"DEMO scanner armed. A+ execution enabled.")}}}>{running?"STOP BOT":"START BOT"}</button>
   </div></div>
   <div className="adaptiveJournal">
