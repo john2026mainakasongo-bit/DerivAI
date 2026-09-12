@@ -136,11 +136,13 @@ export function analyzeDigitOver(rawDigits = [], options = {}) {
   // The engine deliberately requires a meaningful edge over the theoretical
   // base rate AND a stable/noisy-regime check. It does not assume that a hot
   // digit predicts the next tick; hot-digit pressure is only one feature.
+  // V2 is intentionally easier to enter than V1, but it still refuses
+  // noisy conditions. The final Deriv proposal/EV gate remains mandatory.
   const signal =
     regime !== "NOISY" &&
-    probability >= (barrier === 2 ? 0.72 : 0.63) &&
-    edgeVsBaseline >= 0.035 &&
-    stability >= 0.45
+    probability >= (barrier === 2 ? 0.71 : 0.62) &&
+    edgeVsBaseline >= 0.01 &&
+    stability >= 0.35
       ? `OVER ${barrier}`
       : "WAIT";
 
@@ -166,6 +168,33 @@ export function analyzeDigitOver(rawDigits = [], options = {}) {
       signal !== "WAIT"
         ? `Hot digit ${hotDigit} (${hotCount}/60), over-${barrier} rate ${(empirical * 100).toFixed(1)}%, tail ${(tail * 100).toFixed(1)}%, transition ${transition == null ? "n/a" : `${(transition * 100).toFixed(1)}%`}.`
         : `No clean entry: over-${barrier} ${(probability * 100).toFixed(1)}%, stability ${(stability * 100).toFixed(0)}%, regime ${regime}.`,
+  };
+}
+
+export function selectBestDigitOver(rawDigits = []) {
+  const over2 = analyzeDigitOver(rawDigits, { barrier: 2 });
+  const over3 = analyzeDigitOver(rawDigits, { barrier: 3 });
+  const candidates = [over2, over3].filter((item) => item.ready);
+
+  if (!candidates.length) {
+    return {
+      barrier: 2,
+      analysis: over2,
+      alternatives: { 2: over2, 3: over3 },
+    };
+  }
+
+  const ranked = [...candidates].sort((a, b) => {
+    const aEdge = Number(a.edgeVsBaseline || a.probability - (10 - (a.barrier + 1)) / 10);
+    const bEdge = Number(b.edgeVsBaseline || b.probability - (10 - (b.barrier + 1)) / 10);
+    return (bEdge + b.stability * 0.25 + b.score / 500) -
+      (aEdge + a.stability * 0.25 + a.score / 500);
+  });
+
+  return {
+    barrier: ranked[0].barrier,
+    analysis: ranked[0],
+    alternatives: { 2: over2, 3: over3 },
   };
 }
 

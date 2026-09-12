@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
-import { analyzeDigitOver, digitPathString } from "../analysis/digitOverEngine";
+import { analyzeDigitOver, digitPathString, selectBestDigitOver } from "../analysis/digitOverEngine";
 import "../styles/DigitOverRecoveryBot.css";
 
-const STORAGE_KEY = "zentora_digit_over_recovery_v1";
-const BARRIERS = [2, 3];
+const STORAGE_KEY = "zentora_digit_over_recovery_v2";
 const MIN_STAKE = 0.35;
 const money = (value, currency = "USD") =>
   `${Number(value || 0) >= 0 ? "+" : "-"}$${Math.abs(Number(value || 0)).toFixed(2)} ${String(currency).toUpperCase()}`;
@@ -50,12 +49,12 @@ export default function DigitOverRecoveryBot() {
     tradeError,
   } = useDerivTicks();
 
-  const [barrier, setBarrier] = useState(2);
+  const [barrier, setBarrier] = useState("AUTO");
   const [running, setRunning] = useState(false);
   const [stake, setStake] = useState(0.35);
   const [duration, setDuration] = useState(5);
   const [scanEvery, setScanEvery] = useState(10);
-  const [minEdge, setMinEdge] = useState(0.03);
+  const [minEdge, setMinEdge] = useState(0.015);
   const [recoveryEnabled, setRecoveryEnabled] = useState(true);
   const [recoveryMultiplier, setRecoveryMultiplier] = useState(1.5);
   const [maxRecoverySteps, setMaxRecoverySteps] = useState(2);
@@ -102,7 +101,17 @@ export default function DigitOverRecoveryBot() {
     }
   }, [buffers]);
 
-  const analysis = useMemo(() => analyzeDigitOver(currentDigits, { barrier }), [currentDigits, barrier]);
+  const selection = useMemo(
+    () => selectBestDigitOver(currentDigits),
+    [currentDigits]
+  );
+  const effectiveBarrier = barrier === "AUTO" ? selection.barrier : Number(barrier);
+  const analysis = useMemo(
+    () => barrier === "AUTO"
+      ? selection.analysis
+      : analyzeDigitOver(currentDigits, { barrier: effectiveBarrier }),
+    [currentDigits, barrier, effectiveBarrier, selection]
+  );
   analysisRef.current = analysis;
 
   const currency = String(selectedAccount?.currency || "USD").toUpperCase();
@@ -115,7 +124,7 @@ export default function DigitOverRecoveryBot() {
   const recoveryStake = recoveryEnabled ? baseStake * Math.pow(Number(recoveryMultiplier) || 1.5, recoveryStep) : baseStake;
   const amount = Math.min(recoveryStake, riskCap);
   const safeAmount = Math.max(MIN_STAKE, amount);
-  const contractKey = `${symbol}|${barrier}|${duration}|${currency}`;
+  const contractKey = `${symbol}|${effectiveBarrier}|${duration}|${currency}`;
 
   useEffect(() => {
     for (const contract of openContracts) {
@@ -190,12 +199,12 @@ export default function DigitOverRecoveryBot() {
         currency,
         duration: Math.max(1, Math.min(20, Number(duration) || 5)),
         durationUnit: "t",
-        barrier: String(barrier),
+        barrier: String(effectiveBarrier),
         symbol,
       };
 
       try {
-        setMessage(`PROPOSAL · OVER ${barrier} · ${symbol} · ${args.duration}t · ${real ? "REAL" : "DEMO"}`);
+        setMessage(`PROPOSAL · OVER ${effectiveBarrier} · ${symbol} · ${args.duration}t · ${real ? "REAL" : "DEMO"}`);
         const quote = await quoteTrade(args);
         const ask = Number(quote?.askPrice);
         const payout = Number(quote?.payout);
@@ -223,7 +232,7 @@ export default function DigitOverRecoveryBot() {
             id: contractId || `pending-${Date.now()}`,
             result: "OPEN",
             contractType: "DIGITOVER",
-            barrier,
+            barrier: effectiveBarrier,
             symbol,
             duration: args.duration,
             stake: safeAmount,
@@ -238,7 +247,7 @@ export default function DigitOverRecoveryBot() {
           },
           ...rows,
         ].slice(0, 8));
-        setMessage(`${real ? "REAL" : "DEMO"} EXECUTED · OVER ${barrier} · C ${contractId || "accepted"}`);
+        setMessage(`${real ? "REAL" : "DEMO"} EXECUTED · OVER ${effectiveBarrier} · C ${contractId || "accepted"}`);
       } catch (error) {
         setMessage(`EXECUTION FAILED · ${error instanceof Error ? error.message : String(error || tradeError || "unknown error")}`);
       } finally {
@@ -246,7 +255,7 @@ export default function DigitOverRecoveryBot() {
       }
     }, Math.max(3000, Number(scanEvery) * 1000));
     return () => window.clearInterval(timer);
-  }, [accountId, active, allowReal, balance, barrier, connected, currency, duration, losses, maxLosses, minEdge, pnl, placeQuotedTrade, quoteTrade, real, safeAmount, scanEvery, sessionStop, symbol, tradeBusy, tradeError, running]);
+  }, [accountId, active, allowReal, balance, barrier, effectiveBarrier, connected, currency, duration, losses, maxLosses, minEdge, pnl, placeQuotedTrade, quoteTrade, real, safeAmount, scanEvery, sessionStop, symbol, tradeBusy, tradeError, running]);
 
   const resetSession = () => {
     setRunning(false);
@@ -268,9 +277,9 @@ export default function DigitOverRecoveryBot() {
     <section className="digitBot">
       <div className="digitHero">
         <div>
-          <span>ZENTORA · DIGIT OVER RECOVERY V1</span>
+          <span>ZENTORA · DIGIT OVER RECOVERY V2</span>
           <h2>60 Digits → Cursor Path → Proposal → Execution</h2>
-          <p>Separate rolling 60-digit data per market. OVER 2 and OVER 3 scan every 10 seconds and skip when volatility or proposal value is not clean.</p>
+          <p>Separate rolling 60-digit data per market. AUTO compares OVER 2 vs OVER 3 every scan, then checks volatility, history, and the live Deriv proposal before execution.</p>
         </div>
         <div className={`digitRun ${running ? "on" : ""}`}>{running ? "SCANNING" : "STOPPED"}</div>
       </div>
@@ -280,7 +289,11 @@ export default function DigitOverRecoveryBot() {
           <div className="digitCardTitle">DERIV MARKET</div>
           <div className="digitControls">
             <label>Market<select value={symbol} onChange={(e) => changeSymbol(e.target.value)}>{markets.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
-            <label>Strategy<select value={barrier} onChange={(e) => setBarrier(Number(e.target.value))}><option value={2}>OVER 2</option><option value={3}>OVER 3</option></select></label>
+            <label>Strategy<select value={barrier} onChange={(e) => setBarrier(e.target.value)}>
+              <option value="AUTO">AUTO · BEST EDGE</option>
+              <option value={2}>OVER 2</option>
+              <option value={3}>OVER 3</option>
+            </select></label>
             <label>Duration<input type="number" min="1" max="20" value={duration} onChange={(e) => setDuration(e.target.value)} /></label>
             <label>Stake<input type="number" min="0.35" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
           </div>
@@ -300,13 +313,20 @@ export default function DigitOverRecoveryBot() {
             <div><span>Volatility</span><b>{analysis.regime}</b></div>
             <div><span>Signal</span><b className={analysis.signal === "WAIT" ? "wait" : "good"}>{analysis.signal}</b></div>
           </div>
-          <div className="digitReason">{analysis.reason}</div>
+          <div className="digitReason">
+            {analysis.reason}
+            {barrier === "AUTO" && analysis.ready ? (
+              <span className="digitAutoPick">
+                AUTO PICK: OVER {effectiveBarrier} · O2 {(selection.alternatives[2].probability * 100).toFixed(1)}% · O3 {(selection.alternatives[3].probability * 100).toFixed(1)}%
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 
       <div className="digitCard digitPathCard">
         <div className="digitCardTitle">CURSOR / DIGIT PATH · LAST 20 OF 60</div>
-        <div className="digitPath">{analysis.path.length ? analysis.path.map((digit, index) => <span key={`${index}-${digit}`} className={digit > barrier ? "over" : "under"}>{digit}</span>) : <em>Waiting for digits…</em>}</div>
+        <div className="digitPath">{analysis.path.length ? analysis.path.map((digit, index) => <span key={`${index}-${digit}`} className={digit > effectiveBarrier ? "over" : "under"}>{digit}</span>) : <em>Waiting for digits…</em>}</div>
         <div className="digitPathText">{digitPathString(analysis.path)}</div>
       </div>
 
@@ -327,7 +347,7 @@ export default function DigitOverRecoveryBot() {
 
         <div className="digitCard">
           <div className="digitCardTitle">PROPOSAL GATE</div>
-          <div className="digitGate"><span>Contract</span><b>DIGITOVER · {barrier}</b></div>
+          <div className="digitGate"><span>Contract</span><b>DIGITOVER · {effectiveBarrier}</b></div>
           <div className="digitGate"><span>Current key</span><b>{contractKey}</b></div>
           <div className="digitGate"><span>Real trading</span><b>{real ? (allowReal ? "ARMED" : "LOCKED") : "OFF · DEMO"}</b></div>
           <div className="digitGate"><span>Execution</span><b>{active ? `OPEN · ${idOf(active)}` : "NO OPEN CONTRACT"}</b></div>
@@ -347,7 +367,7 @@ export default function DigitOverRecoveryBot() {
         {tradeHistory.length === 0 ? <div className="digitEmpty">No executions yet. Scanner will skip until a clean setup + positive Deriv proposal appears.</div> : tradeHistory.map((row) => <div className="digitJournalRow" key={row.id}><b className={row.result === "WON" ? "profit" : row.result === "LOST" ? "loss" : "open"}>{row.result}</b><span>OVER {row.barrier}</span><span>{row.symbol}</span><span>{row.duration}t</span><span>Model {(Number(row.model || 0) * 100).toFixed(1)}%</span><span>Edge {(Number(row.edge || 0) * 100).toFixed(1)}%</span><span>{row.pnl == null ? "—" : money(row.pnl, currency)}</span></div>)}
       </div>
 
-      <div className="digitFooter"><span>Markets: {Object.keys(buffers).length}</span><span>Current 60: {currentDigits.length}/60</span><span>Barrier: OVER {barrier}</span><span>Last scan: {lastScanAt ? new Date(lastScanAt).toLocaleTimeString() : "—"}</span><span className="spacer">{real ? "REAL" : "DEMO"} · {currency}</span></div>
+      <div className="digitFooter"><span>Markets: {Object.keys(buffers).length}</span><span>Current 60: {currentDigits.length}/60</span><span>Strategy: {barrier === "AUTO" ? `AUTO → OVER ${effectiveBarrier}` : `OVER ${effectiveBarrier}`}</span><span>Last scan: {lastScanAt ? new Date(lastScanAt).toLocaleTimeString() : "—"}</span><span className="spacer">{real ? "REAL" : "DEMO"} · {currency}</span></div>
     </section>
   );
 }
