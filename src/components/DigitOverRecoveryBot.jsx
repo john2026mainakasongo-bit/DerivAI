@@ -53,7 +53,7 @@ export default function DigitOverRecoveryBot() {
   const [running, setRunning] = useState(false);
   const [stake, setStake] = useState(0.35);
   const [duration, setDuration] = useState(5);
-  const [scanEvery, setScanEvery] = useState(10);
+  const [scanEvery, setScanEvery] = useState(1);
   const [minEdge, setMinEdge] = useState(0.015);
   const [recoveryEnabled, setRecoveryEnabled] = useState(true);
   const [recoveryMultiplier, setRecoveryMultiplier] = useState(1.5);
@@ -118,6 +118,13 @@ export default function DigitOverRecoveryBot() {
   const real = String(selectedAccountType).toLowerCase() === "real";
   const balance = Number(selectedAccount?.balance);
   const accountId = String(selectedAccountId || selectedAccount?.id || "");
+  const accounts = Array.isArray(auth.accounts) ? auth.accounts : [];
+  const realAccounts = accounts.filter((account) => {
+    const id = String(account?.id || account?.account_id || account?.loginid || "").toUpperCase();
+    const type = String(account?.accountType || account?.account_type || account?.type || "").toLowerCase();
+    return type.includes("real") || type.includes("financial") || (!id.startsWith("VRTC") && !id.startsWith("VR") && !id.includes("DEMO"));
+  });
+  const realAccount = realAccounts[0] || null;
   const active = openContracts.find((contract) => !settled(contract));
   const riskCap = Number.isFinite(balance) && balance > 0 ? balance * 0.01 : Infinity;
   const baseStake = Math.max(MIN_STAKE, Number(stake) || MIN_STAKE);
@@ -182,7 +189,7 @@ export default function DigitOverRecoveryBot() {
         setMessage("RISK LOCK · calculated stake is below the Deriv minimum.");
         return;
       }
-      if (Date.now() - lastEntryRef.current < Math.max(3, Number(scanEvery)) * 1000) return;
+      if (Date.now() - lastEntryRef.current < Math.max(1, Number(scanEvery)) * 1000) return;
 
       // No forcing: if the regime/score/probability is not clean, the cycle is
       // intentionally skipped and the next 10-second scan starts fresh.
@@ -253,7 +260,7 @@ export default function DigitOverRecoveryBot() {
       } finally {
         busyRef.current = false;
       }
-    }, Math.max(3000, Number(scanEvery) * 1000));
+    }, Math.max(1000, Number(scanEvery) * 1000));
     return () => window.clearInterval(timer);
   }, [accountId, active, allowReal, balance, barrier, effectiveBarrier, connected, currency, duration, losses, maxLosses, minEdge, pnl, placeQuotedTrade, quoteTrade, real, safeAmount, scanEvery, sessionStop, symbol, tradeBusy, tradeError, running]);
 
@@ -277,9 +284,9 @@ export default function DigitOverRecoveryBot() {
     <section className="digitBot">
       <div className="digitHero">
         <div>
-          <span>ZENTORA · DIGIT OVER RECOVERY V2</span>
+          <span>ZENTORA · DIGIT OVER RECOVERY V3</span>
           <h2>60 Digits → Cursor Path → Proposal → Execution</h2>
-          <p>Separate rolling 60-digit data per market. AUTO compares OVER 2 vs OVER 3 every scan, then checks volatility, history, and the live Deriv proposal before execution.</p>
+          <p>Separate rolling 60-digit data per market. AUTO compares OVER 2 vs OVER 3 every fast scan, uses the live tick stream, then checks volatility, history and the live Deriv proposal before execution.</p>
         </div>
         <div className={`digitRun ${running ? "on" : ""}`}>{running ? "SCANNING" : "STOPPED"}</div>
       </div>
@@ -334,7 +341,7 @@ export default function DigitOverRecoveryBot() {
         <div className="digitCard">
           <div className="digitCardTitle">RECOVERY + RISK</div>
           <div className="digitControls compact">
-            <label>Scan seconds<input type="number" min="3" max="30" value={scanEvery} onChange={(e) => setScanEvery(e.target.value)} /></label>
+            <label>Scan seconds<input type="number" min="1" max="10" value={scanEvery} onChange={(e) => setScanEvery(e.target.value)} /></label>
             <label>Min edge<input type="number" min="0.01" max="0.15" step="0.01" value={minEdge} onChange={(e) => setMinEdge(e.target.value)} /></label>
             <label>Recovery<input type="checkbox" checked={recoveryEnabled} onChange={(e) => setRecoveryEnabled(e.target.checked)} /></label>
             <label>Multiplier<input type="number" min="1" max="2" step="0.1" value={recoveryMultiplier} onChange={(e) => setRecoveryMultiplier(e.target.value)} /></label>
@@ -342,20 +349,23 @@ export default function DigitOverRecoveryBot() {
             <label>Max losses<input type="number" min="1" max="5" value={maxLosses} onChange={(e) => setMaxLosses(e.target.value)} /></label>
           </div>
           <div className="digitStats"><span>Recovery step <b>{recoveryStep}/{maxRecoverySteps}</b></span><span>Current stake <b>${safeAmount.toFixed(2)}</b></span><span>Session P/L <b className={pnl >= 0 ? "profit" : "loss"}>{money(pnl, currency)}</b></span><span>Losses <b>{losses}/{maxLosses}</b></span></div>
-          <p className="digitNote">Recovery is capped and never forces an entry. If the next 10-second scan has no clean setup, the bot skips it.</p>
+          <p className="digitNote">Recovery is capped and never forces an entry. If the next scan has no clean setup, the bot skips it and immediately waits for the next opportunity.</p>
         </div>
 
         <div className="digitCard">
           <div className="digitCardTitle">PROPOSAL GATE</div>
           <div className="digitGate"><span>Contract</span><b>DIGITOVER · {effectiveBarrier}</b></div>
           <div className="digitGate"><span>Current key</span><b>{contractKey}</b></div>
-          <div className="digitGate"><span>Real trading</span><b>{real ? (allowReal ? "ARMED" : "LOCKED") : "OFF · DEMO"}</b></div>
+          <div className="digitGate"><span>Selected account</span><b>{real ? "REAL" : "DEMO"} · {accountId || "NOT CONNECTED"}</b></div>
+          <div className="digitGate"><span>Trading connection</span><b>{connected ? (real ? "REAL CONNECTED" : "DEMO CONNECTED") : "NOT CONNECTED"}</b></div>
+          <div className="digitGate"><span>Real trading</span><b>{real ? (allowReal ? "ARMED" : "LOCKED · ARM REQUIRED") : "DEMO MODE"}</b></div>
           <div className="digitGate"><span>Execution</span><b>{active ? `OPEN · ${idOf(active)}` : "NO OPEN CONTRACT"}</b></div>
           <div className="digitMessage">{message}</div>
         </div>
       </div>
 
       <div className="digitActions">
+        {!real && realAccount ? <button onClick={() => { auth.selectAccount(realAccount.id || realAccount.account_id || realAccount.loginid); setMessage("REAL account selected · waiting for authenticated trading connection…"); }}>USE REAL ACCOUNT</button> : null}
         <label><input type="checkbox" checked={allowReal} onChange={(e) => setAllowReal(e.target.checked)} disabled={!real} /> Arm REAL trading</label>
         <button onClick={resetSession}>RESET SESSION</button>
         <button onClick={resetDigitBooks}>RESET 60-DIGIT BOOKS</button>
