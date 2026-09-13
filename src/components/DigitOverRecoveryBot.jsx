@@ -53,7 +53,7 @@ export default function DigitOverRecoveryBot() {
 
   const [barrier, setBarrier] = useState("AUTO");
   const [running, setRunning] = useState(false);
-  const [stake, setStake] = useState(0.10);
+  const [stake, setStake] = useState(STANDARD_MIN_STAKE);
   const [duration, setDuration] = useState(5);
   const [scanEvery, setScanEvery] = useState(1);
   const [minEdge, setMinEdge] = useState(0.015);
