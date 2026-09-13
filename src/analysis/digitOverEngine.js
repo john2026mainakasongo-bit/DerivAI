@@ -26,8 +26,6 @@ const entropy = (digits) => {
 const overProbability = (digits, barrier) => {
   if (!digits.length) return 0.5;
   const wins = digits.filter((digit) => digit > barrier).length;
-  // Mild Bayesian smoothing prevents a 60-tick window from producing 0%/100%
-  // probabilities from a small count fluctuation.
   return (wins + 1) / (digits.length + 2);
 };
 
@@ -36,22 +34,27 @@ const transitionProbability = (digits, barrier) => {
   const last = digits.at(-1);
   let total = 0;
   let wins = 0;
+
   for (let i = 0; i < digits.length - 1; i += 1) {
     if (digits[i] !== last) continue;
     total += 1;
     if (digits[i + 1] > barrier) wins += 1;
   }
+
   if (total < 3) return null;
   return (wins + 1) / (total + 2);
 };
 
 const windowStability = (digits, barrier) => {
   if (digits.length < 40) return 0;
+
   const windows = [];
   for (let end = 20; end <= digits.length; end += 10) {
     windows.push(overProbability(digits.slice(end - 20, end), barrier));
   }
+
   if (!windows.length) return 0;
+
   const center = mean(windows);
   const dispersion = mean(windows.map((value) => Math.abs(value - center)));
   return clamp(1 - dispersion * 5);
@@ -59,10 +62,12 @@ const windowStability = (digits, barrier) => {
 
 const volatilityRegime = (digits, barrier) => {
   if (digits.length < 60) return "BUILDING";
+
   const recent = digits.slice(-20);
   const e = entropy(recent);
   const p = overProbability(recent, barrier);
-  const distance = Math.abs(p - (10 - (barrier + 1)) / 10);
+  const baseline = (10 - (barrier + 1)) / 10;
+  const distance = Math.abs(p - baseline);
   const transition = transitionProbability(digits, barrier);
   const transitionDistance =
     transition == null ? 0 : Math.abs(transition - p);
@@ -91,6 +96,7 @@ export function analyzeDigitOver(rawDigits = [], options = {}) {
       transition: null,
       tail: 0.5,
       stability: 0,
+      edgeVsBaseline: 0,
       score: 0,
       samples: digits.length,
       hotDigit: null,
@@ -104,14 +110,18 @@ export function analyzeDigitOver(rawDigits = [], options = {}) {
   }
 
   const counts = countsFor(digits);
-  const hotDigit = DIGITS.reduce((best, digit) =>
-    counts[digit] > counts[best] ? digit : best, 0);
+  const hotDigit = DIGITS.reduce(
+    (best, digit) => (counts[digit] > counts[best] ? digit : best),
+    0
+  );
   const hotCount = counts[hotDigit];
+
   const empirical = overProbability(digits, barrier);
   const tail = overProbability(digits.slice(-15), barrier);
   const transition = transitionProbability(digits, barrier);
   const stability = windowStability(digits, barrier);
   const hotSupport = hotDigit > barrier ? Math.min(1, hotCount / 10) : 0;
+
   const model =
     empirical * 0.45 +
     tail * 0.25 +
@@ -122,7 +132,9 @@ export function analyzeDigitOver(rawDigits = [], options = {}) {
   const baseline = (10 - (barrier + 1)) / 10;
   const edgeVsBaseline = probability - baseline;
   const regime = volatilityRegime(digits, barrier);
-  const regimePenalty = regime === "NOISY" ? 20 : regime === "BALANCED" ? 5 : 0;
+  const regimePenalty =
+    regime === "NOISY" ? 20 : regime === "BALANCED" ? 5 : 0;
+
   const score = Math.round(
     clamp(
       0.55 * probability +
@@ -130,17 +142,15 @@ export function analyzeDigitOver(rawDigits = [], options = {}) {
         0.20 * (0.5 + edgeVsBaseline * 2),
       0,
       1
-    ) * 100 - regimePenalty
+    ) *
+      100 -
+      regimePenalty
   );
 
-  // The engine deliberately requires a meaningful edge over the theoretical
-  // base rate AND a stable/noisy-regime check. It does not assume that a hot
-  // digit predicts the next tick; hot-digit pressure is only one feature.
-  // V2 is intentionally easier to enter than V1, but it still refuses
-  // noisy conditions. The final Deriv proposal/EV gate remains mandatory.
+  const threshold = barrier === 2 ? 0.71 : 0.81;
   const signal =
     regime !== "NOISY" &&
-    probability >= (barrier === 2 ? 0.71 : 0.62) &&
+    probability >= threshold &&
     edgeVsBaseline >= 0.01 &&
     stability >= 0.35
       ? `OVER ${barrier}`
@@ -150,12 +160,18 @@ export function analyzeDigitOver(rawDigits = [], options = {}) {
     ready: true,
     barrier,
     signal,
-    grade: signal !== "WAIT" && score >= 68 ? "A+" : signal !== "WAIT" ? "A" : "WAIT",
+    grade:
+      signal !== "WAIT" && score >= 68
+        ? "A+"
+        : signal !== "WAIT"
+          ? "A"
+          : "WAIT",
     probability,
     empirical,
     transition,
     tail,
     stability,
+    edgeVsBaseline,
     score: Math.max(0, Math.min(100, score)),
     samples: digits.length,
     hotDigit,
@@ -171,30 +187,26 @@ export function analyzeDigitOver(rawDigits = [], options = {}) {
   };
 }
 
+// V9.2: OVER 2 is primary; OVER 1 is the only fallback.
+// OVER 3 is intentionally not evaluated or returned.
 export function selectBestDigitOver(rawDigits = []) {
   const over2 = analyzeDigitOver(rawDigits, { barrier: 2 });
-  const over3 = analyzeDigitOver(rawDigits, { barrier: 3 });
-  const candidates = [over2, over3].filter((item) => item.ready);
+  const over1 = analyzeDigitOver(rawDigits, { barrier: 1 });
 
-  if (!candidates.length) {
-    return {
-      barrier: 2,
-      analysis: over2,
-      alternatives: { 2: over2, 3: over3 },
-    };
-  }
-
-  const ranked = [...candidates].sort((a, b) => {
-    const aEdge = Number(a.edgeVsBaseline || a.probability - (10 - (a.barrier + 1)) / 10);
-    const bEdge = Number(b.edgeVsBaseline || b.probability - (10 - (b.barrier + 1)) / 10);
-    return (bEdge + b.stability * 0.25 + b.score / 500) -
-      (aEdge + a.stability * 0.25 + a.score / 500);
-  });
+  const selected =
+    over2.ready && over2.signal === "OVER 2"
+      ? over2
+      : over1.ready && over1.signal === "OVER 1"
+        ? over1
+        : over2;
 
   return {
-    barrier: ranked[0].barrier,
-    analysis: ranked[0],
-    alternatives: { 2: over2, 3: over3 },
+    barrier: selected.barrier,
+    analysis: selected,
+    alternatives: {
+      1: over1,
+      2: over2,
+    },
   };
 }
 

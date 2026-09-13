@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useDerivTicks from "../hooks/useDerivTicks";
 import { useDerivAuth } from "../auth/DerivAuthContext";
 import { analyzeDigitOver, digitPathString, selectBestDigitOver } from "../analysis/digitOverEngine";
@@ -142,7 +142,7 @@ export default function DigitOverRecoveryBot() {
     [currentDigits, emptySelection]
   );
 
-  const safeSelection = selection?.analysis ? selection : emptySelection;
+  const safeSelection = selection?.analysis && selection?.alternatives ? selection : emptySelection;
 
   const effectiveBarrier = barrier === "AUTO"
     ? Number(safeSelection.barrier) || 2
@@ -344,7 +344,7 @@ export default function DigitOverRecoveryBot() {
     <section className="digitBot">
       <div className="digitHero">
         <div>
-          <span>ZENTORA · DIGIT OVER RECOVERY V9.1</span>
+          <span>ZENTORA · DIGIT OVER RECOVERY V9.2</span>
           <h2>60 Digits â†’ Cursor Path â†’ Proposal â†’ Execution</h2>
           <p>Separate rolling 60-digit data per market. OVER 2 is PRIMARY and OVER 1 is FALLBACK every fast scan, uses the live tick stream, then checks volatility, history and the live Deriv proposal before execution. REAL uses the live account balance with no artificial balance lock or percentage cap; proposal validation decides whether the requested stake is accepted.</p>
         </div>
@@ -401,7 +401,7 @@ export default function DigitOverRecoveryBot() {
             {analysis.reason}
             {barrier === "AUTO" && analysis.ready ? (
               <span className="digitAutoPick">
-                AUTO PICK: OVER {effectiveBarrier} · O2 {(safeSelection.alternatives[2].probability * 100).toFixed(1)}% · O1 {(safeSelection.alternatives[1].probability * 100).toFixed(1)}%
+                AUTO PICK: OVER {effectiveBarrier} · O2 {((safeSelection.alternatives?.[2]?.probability ?? 0.5) * 100).toFixed(1)}% · O1 {((safeSelection.alternatives?.[1]?.probability ?? 0.5) * 100).toFixed(1)}%
               </span>
             ) : null}
           </div>
@@ -426,7 +426,7 @@ export default function DigitOverRecoveryBot() {
             <label>Max losses<input type="number" min="1" max="5" value={maxLosses} onChange={(e) => setMaxLosses(e.target.value)} /></label>
           </div>
           <div className="digitStats"><span>Live balance <b>{real ? `$${liveBalance.toFixed(2)}` : "DEMO"}</b></span><span>Recovery step <b>{recoveryStep}/{maxRecoverySteps}</b></span><span>Current stake <b>${safeAmount.toFixed(2)}</b></span><span>Session P/L <b className={pnl >= 0 ? "profit" : "loss"}>{money(pnl, currency)}</b></span><span>Losses <b>{losses}/{maxLosses}</b></span></div>
-          <p className="digitNote">{real ? "REAL LIVE BALANCE MODE Â· no artificial balance lock and no percentage cap. The requested stake uses the available live balance, then Deriv proposal decides acceptance." : "DEMO MODE."} V9.1: OVER 2 PRIMARY → OVER 1 FALLBACK. Recovery is limited to one step and never forces an entry. If the next scan has no clean setup, the bot skips it and immediately waits for the next opportunity.</p>
+          <p className="digitNote">{real ? "REAL LIVE BALANCE MODE Â· no artificial balance lock and no percentage cap. The requested stake uses the available live balance, then Deriv proposal decides acceptance." : "DEMO MODE."} V9.2: OVER 2 PRIMARY → OVER 1 FALLBACK. Recovery is limited to one step and never forces an entry. If the next scan has no clean setup, the bot skips it and immediately waits for the next opportunity.</p>
         </div>
 
         <div className="digitCard">
