@@ -4,8 +4,8 @@ import { useDerivAuth } from "../auth/DerivAuthContext";
 import { analyzeDigitOver, digitPathString, selectBestDigitOver } from "../analysis/digitOverEngine";
 import "../styles/DigitOverRecoveryBot.css";
 
-const STORAGE_KEY = "zentora_digit_over_recovery_v5";
-const MIN_STAKE = 0.35;
+const STORAGE_KEY = "zentora_digit_over_recovery_v7";
+const STANDARD_MIN_STAKE = 0.35;
 const roundStakeDown = (value) => Math.floor((Number(value) + 1e-9) * 100) / 100;
 const money = (value, currency = "USD") =>
   `${Number(value || 0) >= 0 ? "+" : "-"}$${Math.abs(Number(value || 0)).toFixed(2)} ${String(currency).toUpperCase()}`;
@@ -53,7 +53,7 @@ export default function DigitOverRecoveryBot() {
 
   const [barrier, setBarrier] = useState("AUTO");
   const [running, setRunning] = useState(false);
-  const [stake, setStake] = useState(0.35);
+  const [stake, setStake] = useState(0.10);
   const [duration, setDuration] = useState(5);
   const [scanEvery, setScanEvery] = useState(1);
   const [minEdge, setMinEdge] = useState(0.015);
@@ -97,7 +97,7 @@ export default function DigitOverRecoveryBot() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 5, updatedAt: Date.now(), buffers }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 7, updatedAt: Date.now(), buffers }));
     } catch {
       // Local evidence is best-effort; the live Deriv stream remains authoritative.
     }
@@ -128,19 +128,16 @@ export default function DigitOverRecoveryBot() {
   });
   const realAccount = realAccounts[0] || null;
   const active = openContracts.find((contract) => !settled(contract));
-  const smallBalanceReal = real && Number.isFinite(balance) && balance > 0 && balance < 35;
-  // Small REAL accounts cannot satisfy the old $35 / 1% rule because Deriv
-  // minimum stake is $0.35. V5 allows an explicitly ARMED REAL account down
-  // to $7, using a clearly displayed 5% per-trade cap. Above $35 the cap is 1%.
-  const realRiskPercent = real ? (smallBalanceReal ? 0.05 : 0.01) : Infinity;
-  const minimumRealBalance = MIN_STAKE / 0.05;
-  const riskCap = Number.isFinite(balance) && balance > 0 ? balance * (real ? realRiskPercent : 1) : Infinity;
-  const baseStake = Math.max(MIN_STAKE, Number(stake) || MIN_STAKE);
+  // V7: no artificial REAL balance lock and no percentage balance cap.
+  // REAL uses the live account balance that is currently available. The bot
+  // never invents a minimum balance; it requests a proposal using the actual
+  // usable amount, and Deriv remains the final authority for acceptance.
+  const liveBalance = Number.isFinite(balance) && balance > 0 ? balance : 0;
+  const baseStake = Math.max(0.01, Number(stake) || 0.01);
   const recoveryStake = recoveryEnabled ? baseStake * Math.pow(Number(recoveryMultiplier) || 1.5, recoveryStep) : baseStake;
-  const amount = Math.min(recoveryStake, riskCap);
-  // Deriv accepts stake amounts with max 2 decimal places. Round DOWN so
-  // the REAL 1% risk cap is never exceeded by rounding.
-  const safeAmount = roundStakeDown(Math.min(amount, riskCap));
+  const usableAmount = real ? Math.min(recoveryStake, liveBalance) : recoveryStake;
+  // Keep two decimal places without creating money that is not in the account.
+  const safeAmount = roundStakeDown(usableAmount);
   const contractKey = `${symbol}|${effectiveBarrier}|${duration}|${currency}`;
 
   useEffect(() => {
@@ -191,12 +188,12 @@ export default function DigitOverRecoveryBot() {
         setMessage("REAL selected · Arm REAL trading to permit execution.");
         return;
       }
-      if (real && (!Number.isFinite(balance) || balance < minimumRealBalance)) {
-        setMessage(`REAL LOCK · balance must be at least $${minimumRealBalance.toFixed(2)} for the $0.35 minimum stake.`);
+      if (real && liveBalance <= 0) {
+        setMessage("REAL waiting · live balance unavailable. Reconnect or refresh the account balance.");
         return;
       }
-      if (!Number.isFinite(safeAmount) || safeAmount < MIN_STAKE) {
-        setMessage("RISK LOCK · calculated stake is below the Deriv minimum.");
+      if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
+        setMessage("NO USABLE STAKE · waiting for a positive live balance.");
         return;
       }
       if (Date.now() - lastEntryRef.current < Math.max(1, Number(scanEvery)) * 1000) return;
@@ -226,7 +223,7 @@ export default function DigitOverRecoveryBot() {
         const ask = Number(quote?.askPrice);
         const payout = Number(quote?.payout);
         if (!quote?.proposalId || !Number.isFinite(ask) || !Number.isFinite(payout) || payout <= ask) {
-          throw new Error("Invalid Deriv DIGITOVER proposal.");
+          throw new Error(`Invalid Deriv DIGITOVER proposal for $${safeAmount.toFixed(2)} stake. Deriv may require a higher minimum for this contract/account.`);
         }
 
         const implied = ask / payout;
@@ -236,11 +233,6 @@ export default function DigitOverRecoveryBot() {
           setMessage(`SKIP · proposal BE ${(implied * 100).toFixed(1)}% · model ${(a.probability * 100).toFixed(1)}% · edge ${(edge * 100).toFixed(1)}% · EV ${ev.toFixed(3)}`);
           return;
         }
-        if (real && safeAmount > balance * realRiskPercent + 1e-9) {
-          setMessage(`REAL RISK SKIP · ${money(safeAmount, currency)} exceeds ${(realRiskPercent * 100).toFixed(0)}% balance cap.`);
-          return;
-        }
-
         const result = await placeQuotedTrade({ quote });
         const contractId = idOf(result);
         lastEntryRef.current = Date.now();
@@ -294,9 +286,9 @@ export default function DigitOverRecoveryBot() {
     <section className="digitBot">
       <div className="digitHero">
         <div>
-          <span>ZENTORA · DIGIT OVER RECOVERY V5</span>
+          <span>ZENTORA · DIGIT OVER RECOVERY V7</span>
           <h2>60 Digits → Cursor Path → Proposal → Execution</h2>
-          <p>Separate rolling 60-digit data per market. AUTO compares OVER 2 vs OVER 3 every fast scan, uses the live tick stream, then checks volatility, history and the live Deriv proposal before execution.</p>
+          <p>Separate rolling 60-digit data per market. AUTO compares OVER 2 vs OVER 3 every fast scan, uses the live tick stream, then checks volatility, history and the live Deriv proposal before execution. REAL uses the live account balance with no artificial balance lock or percentage cap; proposal validation decides whether the requested stake is accepted.</p>
         </div>
         <div className={`digitRun ${running ? "on" : ""}`}>{running ? "SCANNING" : "STOPPED"}</div>
       </div>
@@ -312,7 +304,7 @@ export default function DigitOverRecoveryBot() {
               <option value={3}>OVER 3</option>
             </select></label>
             <label>Duration<input type="number" min="1" max="20" value={duration} onChange={(e) => setDuration(e.target.value)} /></label>
-            <label>Stake<input type="number" min="0.35" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
+            <label>Stake<input type="number" min="0.01" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
           </div>
           <div className="digitStatus"><span className={connected ? "liveDot" : "deadDot"}></span><b>{status}</b><small>{statusDetail || "Waiting for Deriv"}</small></div>
           {realAccounts.length > 0 && !real ? (
@@ -375,8 +367,8 @@ export default function DigitOverRecoveryBot() {
             <label>Max recovery<input type="number" min="0" max="2" value={maxRecoverySteps} onChange={(e) => setMaxRecoverySteps(e.target.value)} /></label>
             <label>Max losses<input type="number" min="1" max="5" value={maxLosses} onChange={(e) => setMaxLosses(e.target.value)} /></label>
           </div>
-          <div className="digitStats"><span>Risk cap <b>{real ? `${(realRiskPercent * 100).toFixed(0)}%` : "DEMO"}</b></span><span>Recovery step <b>{recoveryStep}/{maxRecoverySteps}</b></span><span>Current stake <b>${safeAmount.toFixed(2)}</b></span><span>Session P/L <b className={pnl >= 0 ? "profit" : "loss"}>{money(pnl, currency)}</b></span><span>Losses <b>{losses}/{maxLosses}</b></span></div>
-          <p className="digitNote">{real && smallBalanceReal ? "SMALL REAL MODE · $0.35 minimum requires up to 5% per trade on balances below $35. REAL remains explicitly armed and risk-capped." : ""} {real && !smallBalanceReal ? "REAL risk cap: 1% per trade." : ""} Recovery is capped and never forces an entry. If the next scan has no clean setup, the bot skips it and immediately waits for the next opportunity.</p>
+          <div className="digitStats"><span>Live balance <b>{real ? `$${liveBalance.toFixed(2)}` : "DEMO"}</b></span><span>Recovery step <b>{recoveryStep}/{maxRecoverySteps}</b></span><span>Current stake <b>${safeAmount.toFixed(2)}</b></span><span>Session P/L <b className={pnl >= 0 ? "profit" : "loss"}>{money(pnl, currency)}</b></span><span>Losses <b>{losses}/{maxLosses}</b></span></div>
+          <p className="digitNote">{real ? "REAL LIVE BALANCE MODE · no artificial balance lock and no percentage cap. The requested stake uses the available live balance, then Deriv proposal decides acceptance." : "DEMO MODE."} Recovery is capped and never forces an entry. If the next scan has no clean setup, the bot skips it and immediately waits for the next opportunity.</p>
         </div>
 
         <div className="digitCard">
@@ -385,7 +377,7 @@ export default function DigitOverRecoveryBot() {
           <div className="digitGate"><span>Current key</span><b>{contractKey}</b></div>
           <div className="digitGate"><span>Selected account</span><b>{real ? "REAL" : "DEMO"} · {accountId || "NOT CONNECTED"}</b></div>
           <div className="digitGate"><span>Trading connection</span><b>{connected ? (real ? "REAL CONNECTED" : "DEMO CONNECTED") : "NOT CONNECTED"}</b></div>
-          <div className="digitGate"><span>Real trading</span><b>{real ? (allowReal ? (smallBalanceReal ? "ARMED · SMALL REAL 5%" : "ARMED · 1%") : "LOCKED · ARM REQUIRED") : "DEMO MODE"}</b></div>
+          <div className="digitGate"><span>Real trading</span><b>{real ? (allowReal ? "ARMED · LIVE BALANCE" : "LOCKED · ARM REQUIRED") : "DEMO MODE"}</b></div>
           <div className="digitGate"><span>Execution</span><b>{active ? `OPEN · ${idOf(active)}` : "NO OPEN CONTRACT"}</b></div>
           <div className="digitMessage">{message}</div>
         </div>
