@@ -4,7 +4,7 @@ import {useDerivAuth} from "../auth/DerivAuthContext";
 import analyzeAdaptiveTrend from "../analysis/adaptiveTrendEngine";
 import "../styles/AdaptiveTrendBot.css";
 
-const STORAGE_KEY="zentora_adaptive_trend_deriv_v7_performance";
+const STORAGE_KEY="zentora_adaptive_trend_deriv_v6_performance";
 const money=(v,c="USD")=>`$${Number(v||0).toFixed(2)} ${String(c).toUpperCase()}`;
 const idOf=x=>String(x?.contract_id||x?.contractId||x?.id||x?.proposal_open_contract?.contract_id||"");
 const settled=x=>Boolean(x?.is_sold||x?.is_expired||x?.is_settled||["won","lost","sold","expired","settled"].includes(String(x?.status||x?.contract_status||"").toLowerCase()));
@@ -39,13 +39,11 @@ export default function AdaptiveTrendBot(){
  const minKeySamples=50;
  const realKeySamples=100;
  const keyEvidenceReady=keyStats.samples>=minKeySamples&&keyStats.winRate>=.56;
- const strictRealEvidence=keyStats.samples>=realKeySamples&&keyStats.winRate>=.58&&Number(analysis.lowerProbability||0)>=.54;
- const balanceCanSupportMinStake=!Number.isFinite(balance)||balance>=35;
+ const strictRealEvidence=keyStats.samples>=realKeySamples&&keyStats.winRate>=.56;
  const maxStakeByBalance=Number.isFinite(balance)&&balance>0?balance*.01:Infinity;
- const requestedStake=Math.max(.35,Number(stake)||.35);
- const riskCappedStake=Math.min(requestedStake,maxStakeByBalance);
+ const riskCappedStake=Math.min(Math.max(.35,Number(stake)||.35),maxStakeByBalance);
 
- useEffect(()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify({version:7,source:"deriv",updatedAt:Date.now(),performance}))}catch{}},[performance]);
+ useEffect(()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify({version:6,source:"deriv",updatedAt:Date.now(),performance}))}catch{}},[performance]);
  useEffect(()=>{analysisRef.current=analysis},[analysis]);
 
  // Deriv-native shadow book: one hypothetical CALL/PUT outcome per exact
@@ -98,15 +96,12 @@ export default function AdaptiveTrendBot(){
    if(losses>=Number(maxLosses)){setRunning(false);setMessage(`MAX LOSSES reached - ${losses}`);return}
    if(real&&!allowReal)return;
    if(a.grade!=="A+"||a.signal==="WAIT")return;
-   if(a.edgeQuality!=="ROBUST"||Number(a.lowerProbability||0)<.54){setMessage(`ROBUST EDGE FILTER · model ${(Number(a.probability||.5)*100).toFixed(1)}% · lower bound ${(Number(a.lowerProbability||.5)*100).toFixed(1)}% · ${a.samples||0} walk-forward matches`);return;}
    if(!keyEvidenceReady){setMessage(`DERIV KEY EVIDENCE · ${keyStats.samples}/${minKeySamples} · ${(keyStats.winRate*100).toFixed(1)}% · ${symbol} ${horizon}t ${direction}`);return;}
    if(real&&!strictRealEvidence){setMessage(`REAL LOCK · ${keyStats.samples}/${realKeySamples} ${symbol} ${horizon}t ${direction} · ${(keyStats.winRate*100).toFixed(1)}%`);return;}
    if(a.samples<12){setMessage(`HISTORICAL FILTER · ${a.samples} comparable states`);return;}
    if(Date.now()-lastEntry.current<Number(cooldown)*1000)return;
    busy.current=true;
-   if(!balanceCanSupportMinStake){setMessage(`DERIV RISK LOCK · $0.35 minimum stake requires at least $35 balance for 1% risk.`);return;}
-   const amount=Number(riskCappedStake);
-   if(!Number.isFinite(amount)||amount<.35){setMessage(`DERIV RISK LOCK · requested stake is above the 1% balance limit.`);return;}
+   const amount=Math.max(.35,Number(riskCappedStake)||.35);
    const tradeArgs={contractType,amount,basis:"stake",duration:horizon,durationUnit:"t",symbol};
    setMessage(`DERIV PROPOSAL · ${contractType} ${symbol} · ${horizon}t · model ${(a.probability*100).toFixed(1)}%`);
    try{
@@ -118,12 +113,10 @@ export default function AdaptiveTrendBot(){
          const ask=Number(quote.askPrice),payout=Number(quote.payout),model=Number(a.probability||.5);
          if(!Number.isFinite(ask)||!Number.isFinite(payout)||ask<=0||payout<=ask)throw new Error("Invalid Deriv proposal pricing.");
          const implied=ask/payout,edge=model-implied,ev=model*payout-ask;
-         const lower=Number(a.lowerProbability||model);
-         const robustEdge=lower-implied;
-         if(model<.57||lower<.54||robustEdge<Number(minEdge)||edge<Number(minEdge)||ev<=0){setMessage(`DERIV VALUE FILTER · model ${(model*100).toFixed(1)}% · lower ${(lower*100).toFixed(1)}% · BE ${(implied*100).toFixed(1)}% · robust edge ${(robustEdge*100).toFixed(1)}% · EV ${ev.toFixed(3)}`);busy.current=false;return;}
+         if(model<.56||edge<Number(minEdge)||ev<=0){setMessage(`DERIV VALUE FILTER · model ${(model*100).toFixed(1)}% · BE ${(implied*100).toFixed(1)}% · edge ${(edge*100).toFixed(1)}% · EV ${ev.toFixed(3)}`);busy.current=false;return;}
          if(real&&(!Number.isFinite(balance)||balance<35)){setMessage("DERIV RISK LOCK · REAL requires at least $35 for $0.35 to stay within 1%.");busy.current=false;return;}
          if(real&&amount>balance*.01){setMessage(`DERIV RISK FILTER · ${money(amount,currency)} exceeds 1% balance.`);busy.current=false;return;}
-         setMessage(`${real?"REAL":"DEMO"} DERIV VALUE CONFIRMED · ${contractType} · robust edge ${(robustEdge*100).toFixed(1)}% · EV ${ev.toFixed(3)} · buying...`);
+         setMessage(`${real?"REAL":"DEMO"} DERIV VALUE CONFIRMED · ${contractType} · edge ${(edge*100).toFixed(1)}% · EV ${ev.toFixed(3)} · buying...`);
          result=await placeQuotedTrade({quote});if(result!==false)break;
        }catch(e){lastError=e;if(attempt<2){setMessage(`Deriv proposal retry ${attempt+1}/2...`);await new Promise(r=>setTimeout(r,400));}}
      }
@@ -134,16 +127,16 @@ export default function AdaptiveTrendBot(){
      setMessage(returnedId?`DERIV ${contractType} OPENED · Contract ${returnedId}`:`DERIV ${contractType} EXECUTION ACCEPTED`);
    }catch(e){const detail=e instanceof Error?e.message:String(e||tradeError||"Deriv execution rejected.");setMessage(`DERIV EXECUTION FAILED · ${detail}`)}finally{busy.current=false}
  },1200);return()=>clearInterval(t)
- },[active,allowReal,balance,balanceCanSupportMinStake,connected,contractType,cooldown,currency,direction,duration,horizon,keyEvidenceReady,keyStats.samples,keyStats.winRate,losses,maxLosses,minEdge,pnl,quoteTrade,placeQuotedTrade,real,riskCappedStake,running,sl,symbol,tp,tradeBusy,tradeError,tradingAccountId,strictRealEvidence]);
+ },[active,allowReal,balance,connected,contractType,cooldown,currency,direction,duration,horizon,keyEvidenceReady,keyStats.samples,keyStats.winRate,losses,maxLosses,minEdge,pnl,quoteTrade,placeQuotedTrade,real,riskCappedStake,running,sl,symbol,tp,tradeBusy,tradeError,tradingAccountId,strictRealEvidence]);
 
  const reset=()=>{setRunning(false);setPnl(0);setLosses(0);setExecutionState("");setTradeHistory([]);done.current.clear();lastEntry.current=0;pendingRef.current=[];setMessage("Session reset - Deriv scanner ready.")};
  const clearEvidence=()=>{try{localStorage.removeItem(STORAGE_KEY)}catch{};setPerformance({});pendingRef.current=[];setMessage("Deriv evidence reset. Building fresh key statistics.")};
  return <section className="adaptiveBot">
-  <div className="adaptiveHeader"><div><span className="adaptiveEyebrow">ZENTORA - ADAPTIVE TREND V7</span><h2>Deriv → Regime → Evidence → Proposal → Execution</h2><p>Walk-forward probability, regime gating, payout-aware EV, exact-key evidence and strict REAL unlock.</p></div><div className={`adaptiveRunState ${running?"on":""}`}>{running?"SCANNING":"STOPPED"}</div></div>
+  <div className="adaptiveHeader"><div><span className="adaptiveEyebrow">ZENTORA - ADAPTIVE TREND V6</span><h2>Deriv → Regime → Evidence → Proposal → Execution</h2><p>Deriv-native CALL/PUT proposal pricing, exact-key evidence and strict REAL unlock.</p></div><div className={`adaptiveRunState ${running?"on":""}`}>{running?"SCANNING":"STOPPED"}</div></div>
   <div className="adaptiveGrid">
    <div className="adaptivePanel"><div className="adaptivePanelTitle">LIVE DERIV STRATEGY</div><div className="adaptiveMetrics">
     <div><span>Symbol</span><b>{symbol||"-"}</b></div><div><span>Contract</span><b>{contractType||"WAIT"}</b></div><div><span>Duration</span><b>{horizon}t</b></div><div><span>RSI</span><b>{Number(analysis.rsi||50).toFixed(1)}</b></div>
-    <div><span>Grade</span><b className={analysis.grade==="A+"?"good":""}>{analysis.grade}</b></div><div><span>Score</span><b>{analysis.score}/100</b></div><div><span>Model</span><b>{(Number(analysis.probability||.5)*100).toFixed(1)}%</b></div><div><span>Lower</span><b>{(Number(analysis.lowerProbability||.5)*100).toFixed(1)}%</b></div><div><span>Matches</span><b>{analysis.samples||0}</b></div>
+    <div><span>Grade</span><b className={analysis.grade==="A+"?"good":""}>{analysis.grade}</b></div><div><span>Score</span><b>{analysis.score}/100</b></div><div><span>Model</span><b>{(Number(analysis.probability||.5)*100).toFixed(1)}%</b></div><div><span>Matches</span><b>{analysis.samples||0}</b></div>
    </div><div className="adaptiveReason">{analysis.reason}</div><div className="adaptiveStatus"><span className={connected?"liveDot":"deadDot"}/><b>{status}</b><small>{statusDetail||"Waiting for Deriv feed"}</small></div></div>
    <div className="adaptivePanel"><div className="adaptivePanelTitle">DERIV RISK + EVIDENCE</div><div className="adaptiveControls">
     <label>Stake<input type="number" min=".35" step=".01" value={stake} onChange={e=>setStake(e.target.value)}/></label>
@@ -152,7 +145,7 @@ export default function AdaptiveTrendBot(){
     <label>Stop loss<input type="number" min=".5" step=".5" value={sl} onChange={e=>setSl(e.target.value)}/></label>
     <label>Max losses<input type="number" min="1" max="5" value={maxLosses} onChange={e=>setMaxLosses(e.target.value)}/></label>
     <label>Cooldown<input type="number" min="3" value={cooldown} onChange={e=>setCooldown(e.target.value)}/></label>
-   </div><div className="adaptivePnl"><span>Exact key</span><strong>{keyStats.samples} · {(keyStats.winRate*100).toFixed(1)}%</strong></div><div className="adaptivePnl"><span>Key gate</span><strong>{keyEvidenceReady?"READY":"BUILDING"}</strong></div><div className="adaptivePnl"><span>Walk-forward</span><strong>{analysis.edgeQuality||"BUILDING"}</strong></div><div className="adaptivePnl"><span>Aggregate</span><strong>{total.samples} · {(aggregateWinRate*100).toFixed(1)}%</strong></div><div className="adaptivePnl"><span>REAL gate</span><strong>{strictRealEvidence?"UNLOCKED":"LOCKED · 100 exact-key samples"}</strong></div><div className="adaptivePnl"><span>Session P/L</span><strong className={pnl>=0?"profit":"loss"}>{pnl>=0?"+":""}{money(pnl,currency)}</strong></div><div className="adaptivePnl"><span>Loss count</span><strong>{losses}/{maxLosses}</strong></div></div>
+   </div><div className="adaptivePnl"><span>Exact key</span><strong>{keyStats.samples} · {(keyStats.winRate*100).toFixed(1)}%</strong></div><div className="adaptivePnl"><span>Key gate</span><strong>{keyStats.samples>=minKeySamples&&keyStats.winRate>=.56?"READY":"BUILDING"}</strong></div><div className="adaptivePnl"><span>Aggregate</span><strong>{total.samples} · {(aggregateWinRate*100).toFixed(1)}%</strong></div><div className="adaptivePnl"><span>REAL gate</span><strong>{strictRealEvidence?"UNLOCKED":"LOCKED · 100 exact-key samples"}</strong></div><div className="adaptivePnl"><span>Session P/L</span><strong className={pnl>=0?"profit":"loss"}>{pnl>=0?"+":""}{money(pnl,currency)}</strong></div><div className="adaptivePnl"><span>Loss count</span><strong>{losses}/{maxLosses}</strong></div></div>
   </div>
   <div className="adaptiveActionBar"><div><b>{active?`DERIV TRADE OPEN: ${idOf(active)}`:executionState==="OPENED"?"DERIV TRADE OPENED":executionState==="WON"?"LAST DERIV TRADE: WON":executionState==="LOST"?"LAST DERIV TRADE: LOST":analysis.signal==="WAIT"?"WAITING FOR DERIV EVIDENCE":`READY: ${analysis.signal}`}</b><small>{message}</small></div><div className="adaptiveActions">
    <label className="realArm"><input type="checkbox" checked={allowReal} onChange={e=>setAllowReal(e.target.checked)} disabled={!real}/>Arm REAL trading</label>
