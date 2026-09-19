@@ -49,7 +49,7 @@ export default function AdaptiveTrendBot(){
  useEffect(()=>{
    if(!shadowEnabled||!connected||!symbol||!Number.isFinite(Number(currentPrice))||prices.length<horizon+2||!contractType)return;
    const tickIndex=prices.length-1;
-   if(analysis.grade!=="A+"||analysis.signal==="WAIT"||Number(analysis.probability||.5)<.56||Number(analysis.samples||0)<12)return;
+   if(!analysis.entryReady||analysis.signal==="WAIT"||Number(analysis.probability||.5)<.55||Number(analysis.samples||0)<12)return;
    const sameKey=pendingRef.current.filter(x=>x.key===currentKey);
    if(sameKey.some(x=>tickIndex-x.index<horizon))return;
    pendingRef.current.push({index:tickIndex,entry:Number(currentPrice),direction,horizon,key:currentKey,contractType,model:Number(analysis.probability||.5)});
@@ -93,7 +93,7 @@ export default function AdaptiveTrendBot(){
    if(pnl<=-Number(sl)){setRunning(false);setMessage(`STOP LOSS reached - ${money(pnl,currency)}`);return}
    if(losses>=Number(maxLosses)){setRunning(false);setMessage(`MAX LOSSES reached - ${losses}`);return}
    if(real&&!allowReal)return;
-   if(a.grade!=="A+"||a.signal==="WAIT")return;
+   if(!a.entryReady||a.signal==="WAIT")return;
    if(real&&!strictRealEvidence){setMessage(`REAL LOCK · ${keyStats.samples}/${realKeySamples} ${symbol} ${horizon}t ${direction} · ${(keyStats.winRate*100).toFixed(1)}%`);return;}
    if(a.samples<12){setMessage(`HISTORICAL FILTER · ${a.samples} comparable states`);return;}
    if(Date.now()-lastEntry.current<Number(cooldown)*1000)return;

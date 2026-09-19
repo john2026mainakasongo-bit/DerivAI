@@ -72,8 +72,11 @@ export function analyzeAdaptiveTrend(prices = [], options = {}) {
   let score=45+Math.min(18,Math.abs(gap)*3)+Math.min(12,Math.abs(m20)*4)+(momentum?9:-8)+(pullback?9:-7)+(rsiAligned?6:-4)+(calm?5:-7)+(stable?5:-5);
   score=Math.round(clamp(score,0,100));
   const grade=rawDirection!=="WAIT"&&score>=82&&confirmations>=5&&probability>=.56?"A+":rawDirection!=="WAIT"&&score>=74&&confirmations>=4?"A":"WAIT";
-  const signal=grade==="A+"?rawDirection:"WAIT";
+  // Entry qualification is deliberately a little broader than the display grade.
+  // The proposal payout/EV gate remains the final execution gate for both DEMO and REAL.
+  const entryReady=rawDirection!=="WAIT"&&score>=74&&confirmations>=4&&probability>=.55;
+  const signal=entryReady?rawDirection:"WAIT";
   const confidence=Math.round(clamp(50+(score-50)*.9+(probability-.5)*100,50,95));
-  return {ready:true,signal,rawDirection,grade,score,confidence,probability:Number(probability.toFixed(4)),samples:hist.samples,trend:bull?"BULLISH":bear?"BEARISH":"MIXED",momentum:m8>.2?"UP":m8<-.2?"DOWN":"FLAT",pullback:pullback?"READY":"WAITING",volatility:vol>1.85?"HIGH":vol<.35?"LOW":"NORMAL",rsi:rv,emaFast:e9,emaSlow:e21,persistence,confirmations,horizon,reason:grade==="A+"?`${rawDirection} A+ · ${confirmations}/6 confirmations · ${(probability*100).toFixed(1)}% model · ${hist.samples} historical matches.`:`Waiting · ${confirmations}/6 confirmations · ${(probability*100).toFixed(1)}% model.`};
+  return {ready:true,signal,entryReady,rawDirection,grade,score,confidence,probability:Number(probability.toFixed(4)),samples:hist.samples,trend:bull?"BULLISH":bear?"BEARISH":"MIXED",momentum:m8>.2?"UP":m8<-.2?"DOWN":"FLAT",pullback:pullback?"READY":"WAITING",volatility:vol>1.85?"HIGH":vol<.35?"LOW":"NORMAL",rsi:rv,emaFast:e9,emaSlow:e21,persistence,confirmations,horizon,reason:grade==="A+"?`${rawDirection} A+ · ${confirmations}/6 confirmations · ${(probability*100).toFixed(1)}% model · ${hist.samples} historical matches.`:`Waiting · ${confirmations}/6 confirmations · ${(probability*100).toFixed(1)}% model.`};
 }
 export default analyzeAdaptiveTrend;
