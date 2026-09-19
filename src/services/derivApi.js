@@ -1,4 +1,4 @@
-const PUBLIC_SOCKET_URLS = [
+﻿const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -606,27 +606,71 @@ class DerivTradingClient {
         reject(new Error(`Unable to connect: ${url}`));
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         window.clearTimeout(timeout);
+
+        const closeCode = Number(event?.code || 0);
+        const closeReason = String(event?.reason || "").trim();
+        const wasClean = Boolean(event?.wasClean);
+
+        console.warn(
+          "[Deriv WS] CLOSED",
+          {
+            generation,
+            authenticatedSocket,
+            closeCode,
+            closeReason,
+            wasClean,
+            manualClose: this.manualClose,
+            authenticated: this.authenticated,
+            accountId: this.auth.accountId,
+          }
+        );
 
         // A stale socket must NEVER clear state belonging to a newer socket.
         if (
           generation !== this.socketGeneration ||
           this.socket !== socket
         ) {
+          console.warn(
+            "[Deriv WS] Ignoring stale socket close",
+            {
+              generation,
+              currentGeneration: this.socketGeneration,
+              closeCode,
+              closeReason,
+            }
+          );
           return;
         }
 
         this.clearConnectionState();
 
         if (this.manualClose) {
-          this.emitStatus("DISCONNECTED");
+          this.emitStatus(
+            "DISCONNECTED",
+            `Manual close · code ${closeCode}${
+              closeReason ? ` · ${closeReason}` : ""
+            }`
+          );
         } else if (settled) {
+          const detail =
+            authenticatedSocket
+              ? `Deriv authenticated trading connection closed · code ${closeCode}${
+                  closeReason ? ` · ${closeReason}` : ""
+                }`
+              : `Deriv live feed closed · code ${closeCode}${
+                  closeReason ? ` · ${closeReason}` : ""
+                }`;
+
+          console.warn(
+            "[Deriv WS] OFFLINE",
+            detail
+          );
+
           this.emitStatus(
             "OFFLINE",
-            authenticatedSocket
-              ? "Deriv authenticated trading connection closed."
-              : "Deriv live feed closed."
+            detail
           );
 
           if (authenticatedSocket) {
