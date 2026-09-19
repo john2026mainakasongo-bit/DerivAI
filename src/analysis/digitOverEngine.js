@@ -100,8 +100,10 @@ export function analyzeDigitContract(rawDigits = [], options = {}) {
   const score = Math.max(0, Math.min(100, Math.round(
     (0.55 * probability + 0.25 * stable + 0.20 * (0.5 + edgeVsBaseline * 2)) * 100 - regimePenalty
   )));
-  const threshold = barrier === 2 ? 0.55 : 0.58;
-  const signal = regime !== "NOISY" && probability >= threshold && edgeVsBaseline >= 0.01 && stable >= 0.25
+  const threshold = Number(options.minProbability ?? (barrier === 2 ? 0.55 : 0.58));
+  const minEdge = Number(options.minEdge ?? 0.01);
+  const minScore = Number(options.minScore ?? 60);
+  const signal = regime !== "NOISY" && probability >= threshold && score >= minScore && edgeVsBaseline >= minEdge && stable >= 0.25
     ? `${direction} ${barrier}`
     : "WAIT";
 
@@ -132,11 +134,19 @@ export function selectBestDigitContract(rawDigits = [], options = {}) {
   const candidates = [];
   barriers.forEach((barrier) => {
     ["OVER", "UNDER"].forEach((direction) => {
-      candidates.push(analyzeDigitContract(rawDigits, { barrier, direction }));
+      candidates.push(analyzeDigitContract(rawDigits, {
+      barrier, direction,
+      minProbability: options.minProbability,
+      minEdge: options.minEdge,
+      minScore: options.minScore,
+    }));
     });
   });
-  const ready = candidates.filter((a) => a.ready && a.signal !== "WAIT");
-  const best = ready.sort((a, b) => (b.probability + b.edgeVsBaseline + b.stability * 0.25) - (a.probability + a.edgeVsBaseline + a.stability * 0.25))[0];
+  const ready = candidates.filter((a) => a.ready);
+  const best = ready.sort((a, b) => {
+    const rank = (x) => x.probability * 0.55 + x.stability * 0.20 + Math.max(0, x.edgeVsBaseline) * 2 + (x.signal !== "WAIT" ? 0.20 : 0);
+    return rank(b) - rank(a);
+  })[0];
   const byKey = Object.fromEntries(candidates.map((a) => [`${a.direction}-${a.barrier}`, a]));
   return {
     analysis: best || candidates[0],

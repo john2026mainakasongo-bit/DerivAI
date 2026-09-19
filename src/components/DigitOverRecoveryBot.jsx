@@ -47,7 +47,8 @@ export default function DigitOverRecoveryBot() {
   const [duration, setDuration] = useState(5);
   const [scanEvery, setScanEvery] = useState(1);
   const [minEdge, setMinEdge] = useState(0.015);
-  const [minProbability, setMinProbability] = useState(0.72);
+  const [minProbability, setMinProbability] = useState(0.65);
+  const [minScore, setMinScore] = useState(60);
   const [recoveryEnabled, setRecoveryEnabled] = useState(true);
   const [recoveryMultiplier, setRecoveryMultiplier] = useState(1.5);
   const [maxRecoverySteps, setMaxRecoverySteps] = useState(3);
@@ -99,15 +100,15 @@ export default function DigitOverRecoveryBot() {
   }), [currentDigits]);
 
   const selection = useMemo(() => {
-    if (barrierMode === "AUTO") return selectBestDigitContract(currentDigits, { barriers: [2, 1] });
+    if (barrierMode === "AUTO") return selectBestDigitContract(currentDigits, { barriers: [2, 1], minProbability, minEdge, minScore });
     const barrier = Number(barrierMode) || 2;
-    const over = analyzeDigitContract(currentDigits, { barrier, direction: "OVER" });
-    const under = analyzeDigitContract(currentDigits, { barrier, direction: "UNDER" });
+    const over = analyzeDigitContract(currentDigits, { barrier, direction: "OVER", minProbability, minEdge, minScore });
+    const under = analyzeDigitContract(currentDigits, { barrier, direction: "UNDER", minProbability, minEdge, minScore });
     const best = [over, under].filter((x) => x.signal !== "WAIT").sort((a, b) => b.probability - a.probability)[0] || over;
     return { analysis: best, candidates: [over, under], barrier, direction: best.direction, alternatives: {
       [`OVER-${barrier}`]: over, [`UNDER-${barrier}`]: under
     }};
-  }, [barrierMode, currentDigits]);
+  }, [barrierMode, currentDigits, minProbability, minEdge, minScore]);
 
   const analysis = selection?.analysis || empty;
   analysisRef.current = analysis;
@@ -138,10 +139,10 @@ export default function DigitOverRecoveryBot() {
   const setupChecks = [
     analysis.ready,
     analysis.probability >= Number(minProbability),
-    analysis.score >= 72,
+    analysis.score >= Number(minScore),
     analysis.stability >= 0.25,
     analysis.regime !== "NOISY",
-    analysis.edgeVsBaseline >= 0.01,
+    analysis.edgeVsBaseline >= Number(minEdge),
   ];
   const setupCount = setupChecks.filter(Boolean).length;
 
@@ -228,7 +229,7 @@ export default function DigitOverRecoveryBot() {
         return;
       }
 
-      if (a.signal === "WAIT" || a.probability < Number(minProbability) || a.score < 72 || a.stability < 0.25 || a.edgeVsBaseline < 0.01) {
+      if (a.signal === "WAIT" || a.probability < Number(minProbability) || a.score < Number(minScore) || a.stability < 0.25 || a.regime === "NOISY" || a.edgeVsBaseline < Number(minEdge)) {
         setMessage(`WAIT · ${a.regime} · ${setupCount}/6 setup checks · ${(a.probability * 100).toFixed(1)}% model.`);
         return;
       }
@@ -354,6 +355,7 @@ export default function DigitOverRecoveryBot() {
             <label>Duration (ticks)<input type="number" min="1" max="20" value={duration} onChange={(e) => setDuration(e.target.value)} /></label>
             <label>Stake (USD)<input type="number" min="0.01" step="0.01" value={stake} onChange={(e) => setStake(e.target.value)} /></label>
             <label>Prediction threshold (%)<input type="number" min="50" max="95" value={Math.round(Number(minProbability) * 100)} onChange={(e) => setMinProbability(Number(e.target.value) / 100)} /></label>
+            <label>Min score<input type="number" min="0" max="100" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} /></label>
             <label>Min edge (%)<input type="number" min="0.5" max="15" step="0.1" value={(Number(minEdge) * 100).toFixed(1)} onChange={(e) => setMinEdge(Number(e.target.value) / 100)} /></label>
             <label>Auto trade<input type="checkbox" checked={running} onChange={() => setRunning((v) => !v)} /></label>
             <label>Use recovery<input type="checkbox" checked={recoveryEnabled} onChange={(e) => setRecoveryEnabled(e.target.checked)} /></label>
@@ -387,10 +389,10 @@ export default function DigitOverRecoveryBot() {
           <div className="signalChecks">
             {[
               [`Probability ≥ ${Math.round(Number(minProbability)*100)}%`, analysis.probability >= Number(minProbability)],
-              ["Score ≥ 72", analysis.score >= 72],
+              [`Score ≥ ${Number(minScore)}`, analysis.score >= Number(minScore)],
               ["Stability ≥ 25%", analysis.stability >= 0.25],
               ["Regime safe", analysis.regime !== "NOISY"],
-              ["Edge baseline ≥ 1%", analysis.edgeVsBaseline >= 0.01],
+              [`Edge baseline ≥ ${(Number(minEdge) * 100).toFixed(1)}%`, analysis.edgeVsBaseline >= Number(minEdge)],
               ["Cooldown clear", !(blockedKeyRef.current === currentKey && Date.now() < blockedUntilRef.current)]
             ].map(([label, ok]) => <div key={label}><span className={ok ? "check on" : "check"}>✓</span><span>{label}</span><b>{ok ? "PASS" : "WAIT"}</b></div>)}
           </div>
