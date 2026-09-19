@@ -99,7 +99,7 @@ async function ensureTransactions() {
   return sharedTransactionPromise;
 }
 
-export default function useDerivTicks() {
+export default function useDerivTicks({ multiMarket = false } = {}) {
   const auth = useDerivAuth();
 
   const [markets, setMarkets] = useState([]);
@@ -109,6 +109,7 @@ export default function useDerivTicks() {
   const [connected, setConnected] = useState(false);
   const [loadingMarket, setLoadingMarket] = useState(false);
   const [ticks, setTicks] = useState([]);
+  const [marketTicks, setMarketTicks] = useState({});
   const [candleHistory, setCandleHistory] = useState({
     60: [],
     300: [],
@@ -147,18 +148,32 @@ export default function useDerivTicks() {
   );
 
   const addTick = useCallback((tick) => {
-    if (!tick || tick.symbol !== symbolRef.current) return;
+    if (!tick) return;
+    const tickSymbol = String(tick.symbol || "");
+    if (!tickSymbol) return;
+
+    const normalized = {
+      quote: Number(tick.quote),
+      epoch: Number(tick.epoch),
+    };
+    if (!Number.isFinite(normalized.quote)) return;
+
+    if (multiMarket) {
+      setMarketTicks((current) => ({
+        ...current,
+        [tickSymbol]: [
+          ...(Array.isArray(current[tickSymbol]) ? current[tickSymbol] : []),
+          normalized,
+        ].slice(-5000),
+      }));
+    }
+
+    if (tickSymbol !== symbolRef.current) return;
 
     setTicks((current) =>
-      [
-        ...current,
-        {
-          quote: Number(tick.quote),
-          epoch: Number(tick.epoch),
-        },
-      ].slice(-5000)
+      [...current, normalized].slice(-5000)
     );
-  }, []);
+  }, [multiMarket]);
 
   const loadSymbol = useCallback(async (nextSymbol) => {
     if (!nextSymbol) {
@@ -278,6 +293,44 @@ export default function useDerivTicks() {
     return promise;
   }, []);
 
+  const loadMultiMarkets = useCallback(async (liveMarkets = []) => {
+    if (!multiMarket) return;
+
+    const wanted = [100, 75, 25, 10];
+    const selectedMarkets = wanted.map((value) =>
+      liveMarkets.find((item) => {
+        const label = String(item?.label || "");
+        return new RegExp(`Volatility\\s*${value}\\s*Index$`, "i").test(label);
+      })
+    ).filter(Boolean);
+
+    const symbols = [...new Set(selectedMarkets.map((item) => item.id))];
+    if (!symbols.length) return;
+
+    await derivPublicClient.subscribeTicksMulti(symbols);
+
+    const historyResults = await Promise.all(
+      selectedMarkets.map(async (item) => {
+        try {
+          const history = await derivPublicClient.getHistory(item.id, 100);
+          return [item.id, history.slice(-60)];
+        } catch {
+          return [item.id, []];
+        }
+      })
+    );
+
+    if (!mountedRef.current) return;
+
+    setMarketTicks((current) => {
+      const next = { ...current };
+      for (const [marketId, history] of historyResults) {
+        next[marketId] = history;
+      }
+      return next;
+    });
+  }, [multiMarket]);
+
   const connect = useCallback(async () => {
     manuallyDisconnectedRef.current = false;
     setTradeError("");
@@ -336,6 +389,10 @@ export default function useDerivTicks() {
 
       await loadSymbol(selected.id);
 
+      if (multiMarket) {
+        await loadMultiMarkets(liveMarkets);
+      }
+
       if (
         auth.authenticated &&
         selectedAccountId &&
@@ -385,6 +442,8 @@ export default function useDerivTicks() {
     auth.session?.accessToken,
     loadSymbol,
     selectedAccountId,
+    multiMarket,
+    loadMultiMarkets,
   ]);
 
   useEffect(() => {
@@ -535,7 +594,10 @@ export default function useDerivTicks() {
           liveMarkets.find((item) => item.id === symbolRef.current) ||
           chooseDefaultMarket(liveMarkets);
 
-        if (selected) await loadSymbol(selected.id);
+        if (selected) {
+          await loadSymbol(selected.id);
+          if (multiMarket) await loadMultiMarkets(liveMarkets);
+        }
       } catch (error) {
         setStatus("ERROR");
         setConnected(false);
@@ -551,6 +613,8 @@ export default function useDerivTicks() {
     auth.session?.accessToken,
     loadSymbol,
     selectedAccountId,
+    multiMarket,
+    loadMultiMarkets,
   ]);
 
   // One connection path only: when the selected account credentials are
@@ -962,6 +1026,20 @@ export default function useDerivTicks() {
     [ticks]
   );
 
+  const digitHistoryBySymbol = useMemo(() => {
+    if (!multiMarket) return {};
+    const output = {};
+    for (const item of markets) {
+      const marketId = item.id;
+      const rows = Array.isArray(marketTicks[marketId]) ? marketTicks[marketId] : [];
+      output[marketId] = rows
+        .map((row) => extractLastDigit(row.quote, item.decimals))
+        .filter(Number.isInteger)
+        .slice(-60);
+    }
+    return output;
+  }, [markets, marketTicks, multiMarket]);
+
   const currentPrice = prices.length ? prices.at(-1) : null;
 
   const lastDigit = useMemo(
@@ -991,6 +1069,9 @@ export default function useDerivTicks() {
     currentPrice,
     lastDigit,
     digitHistory,
+    marketTicks,
+    digitHistoryBySymbol,
+    multiMarket,
 
     authenticatedFeed:
       connected &&

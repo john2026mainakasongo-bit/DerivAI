@@ -8,7 +8,7 @@ import {
 } from "../analysis/digitOverEngine";
 import "../styles/DigitOverRecoveryBot.css";
 
-const STORAGE_KEY = "zentora_digit_over_under_v10";
+const STORAGE_KEY = "zentora_digit_over_under_v12";
 const roundStakeDown = (value) => Math.floor((Number(value) + 1e-9) * 100) / 100;
 const money = (value, currency = "USD") =>
   `${Number(value || 0) >= 0 ? "+" : "-"}$${Math.abs(Number(value || 0)).toFixed(2)} ${String(currency).toUpperCase()}`;
@@ -39,7 +39,8 @@ export default function DigitOverRecoveryBot() {
     openContracts = [], selectedAccount, selectedAccountType = "demo",
     selectedAccountId, connected, status, statusDetail, changeSymbol,
     quoteTrade, placeQuotedTrade, tradeBusy, tradeError,
-  } = useDerivTicks();
+    digitHistoryBySymbol = {}, marketTicks = {},
+  } = useDerivTicks({ multiMarket: true });
 
   const [barrierMode, setBarrierMode] = useState("AUTO");
   const [running, setRunning] = useState(false);
@@ -71,6 +72,9 @@ export default function DigitOverRecoveryBot() {
   const blockedUntilRef = useRef(0);
   const lastEntryRef = useRef(0);
   const analysisRef = useRef(null);
+  const candidateRef = useRef([]);
+  const lastTradeEpochBySymbolRef = useRef({});
+  const marketCycleRef = useRef(0);
 
   const currentDigits = useMemo(() => {
     const incoming = digitHistory.slice(-60).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 9);
@@ -87,7 +91,7 @@ export default function DigitOverRecoveryBot() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 10, updatedAt: Date.now(), buffers }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 12, updatedAt: Date.now(), buffers }));
     } catch {}
   }, [buffers]);
 
@@ -99,20 +103,75 @@ export default function DigitOverRecoveryBot() {
     path: currentDigits.slice(-20), reason: "Waiting for the 60-digit model to initialize."
   }), [currentDigits]);
 
-  const selection = useMemo(() => {
-    if (barrierMode === "AUTO") return selectBestDigitContract(currentDigits, { barriers: [2, 1], minProbability, minEdge, minScore });
-    const barrier = Number(barrierMode) || 2;
-    const over = analyzeDigitContract(currentDigits, { barrier, direction: "OVER", minProbability, minEdge, minScore });
-    const under = analyzeDigitContract(currentDigits, { barrier, direction: "UNDER", minProbability, minEdge, minScore });
-    const best = [over, under].filter((x) => x.signal !== "WAIT").sort((a, b) => b.probability - a.probability)[0] || over;
-    return { analysis: best, candidates: [over, under], barrier, direction: best.direction, alternatives: {
-      [`OVER-${barrier}`]: over, [`UNDER-${barrier}`]: under
-    }};
-  }, [barrierMode, currentDigits, minProbability, minEdge, minScore]);
+  const targetMarkets = useMemo(() => {
+    const wanted = [100, 75, 25, 10];
+    return wanted.map((value) => markets.find((item) => {
+      const label = String(item?.label || "");
+      return new RegExp(`Volatility\\s*${value}\\s*Index$`, "i").test(label);
+    })).filter(Boolean);
+  }, [markets]);
+
+  const marketAnalyses = useMemo(() => targetMarkets.map((marketItem) => {
+    const digits = Array.isArray(digitHistoryBySymbol[marketItem.id])
+      ? digitHistoryBySymbol[marketItem.id].slice(-60)
+      : [];
+    const selected = selectBestDigitContract(digits, {
+      barriers: [2, 1],
+      minProbability,
+      minEdge,
+      minScore,
+    });
+    return {
+      market: marketItem,
+      symbol: marketItem.id,
+      digits,
+      analysis: selected.analysis,
+      candidates: selected.candidates,
+    };
+  }), [targetMarkets, digitHistoryBySymbol, minProbability, minEdge, minScore]);
+
+  const allCandidates = useMemo(() => marketAnalyses
+    .flatMap((item) => item.candidates.map((candidate) => ({
+      ...candidate,
+      symbol: item.symbol,
+      market: item.market,
+      latestEpoch: Number(marketTicks[item.symbol]?.at?.(-1)?.epoch || 0),
+      latestDigit: item.digits.at(-1),
+    })))
+    .filter((candidate) => candidate.ready)
+    .sort((a, b) => {
+      const rank = (x) =>
+        (x.signal !== "WAIT" ? 0.35 : 0) +
+        Number(x.probability || 0) * 0.40 +
+        Number(x.stability || 0) * 0.10 +
+        Math.max(0, Number(x.edgeVsBaseline || 0)) * 2 +
+        Number(x.score || 0) / 100 * 0.15;
+      return rank(b) - rank(a);
+    }), [marketAnalyses, marketTicks]);
+
+  candidateRef.current = allCandidates;
+
+  const preferredCandidate = allCandidates.find((candidate) =>
+    candidate.signal !== "WAIT"
+  ) || allCandidates[0] || {
+    ...empty,
+    symbol: symbol || "",
+    market: market,
+    latestEpoch: 0,
+    latestDigit: currentDigits.at(-1),
+  };
+
+  const selection = {
+    analysis: preferredCandidate,
+    candidates: allCandidates,
+    direction: preferredCandidate.direction,
+    barrier: preferredCandidate.barrier,
+  };
 
   const analysis = selection?.analysis || empty;
   analysisRef.current = analysis;
 
+  const tradeSymbol = String(analysis.symbol || symbol || "");
   const currency = String(selectedAccount?.currency || "USD").toUpperCase();
   const real = String(selectedAccountType).toLowerCase() === "real";
   const accountId = String(selectedAccountId || selectedAccount?.id || "");
@@ -126,7 +185,7 @@ export default function DigitOverRecoveryBot() {
   }) || null;
   const active = openContracts.find((contract) => !settled(contract));
 
-  const currentKey = `${symbol}|${analysis.direction}|${analysis.barrier}|${duration}`;
+  const currentKey = `${tradeSymbol}|${analysis.direction}|${analysis.barrier}|${duration}`;
   const baseStake = Math.max(0.01, Number(stake) || 0.01);
   const recoveryStake = recoveryEnabled
     ? baseStake * Math.pow(Number(recoveryMultiplier) || 1.5, recoveryStep)
@@ -188,15 +247,27 @@ export default function DigitOverRecoveryBot() {
   useEffect(() => {
     if (!running) return undefined;
 
-    const timer = window.setInterval(async () => {
+    let disposed = false;
+
+    const scanAndTrade = async () => {
+      if (disposed) return;
       const now = Date.now();
       setLastScanAt(now);
 
-      if (busyRef.current || tradeBusy || active || !connected || !accountId || !symbol) return;
-      if (!analysisRef.current?.ready) {
-        setMessage(`BUILDING 60-DIGIT WINDOW · ${analysisRef.current?.samples || 0}/60`);
+      if (busyRef.current || tradeBusy || active || !connected || !accountId) return;
+
+      if (!targetMarkets.length) {
+        setMessage("SCANNING · waiting for Volatility 100/75/25/10 markets.");
         return;
       }
+
+      const readyBooks = marketAnalyses.filter((item) => item.digits.length >= 60);
+      if (readyBooks.length < 1) {
+        const samples = Math.max(...marketAnalyses.map((item) => item.digits.length), 0);
+        setMessage(`BUILDING MARKET BOOKS · ${samples}/60 · loading V100/V75/V25/V10 in parallel.`);
+        return;
+      }
+
       if (pnl <= -Math.abs(Number(stake) * Number(maxLosses))) {
         setRunning(false);
         setMessage(`SESSION STOP · ${money(pnl, currency)}`);
@@ -219,93 +290,158 @@ export default function DigitOverRecoveryBot() {
         setMessage("NO USABLE STAKE · waiting for a positive balance.");
         return;
       }
-      if (Date.now() - lastEntryRef.current < Math.max(1, Number(scanEvery)) * 1000) return;
 
-      const a = analysisRef.current;
-      const key = `${symbol}|${a.direction}|${a.barrier}|${duration}`;
-
-      if (blockedKeyRef.current === key && Date.now() < blockedUntilRef.current) {
-        setMessage(`COOLDOWN · closed ${a.direction} ${a.barrier} · waiting for a different/fresh setup.`);
-        return;
+      // A 10-second cycle is only for rotation/visibility. The engine continuously
+      // evaluates all four books between cycles, so it does not wait 10 seconds
+      // to discover an entry.
+      if (now - marketCycleRef.current >= 10_000) {
+        marketCycleRef.current = now;
+        setMessage(`SCANNING ALL · ${targetMarkets.map((item) => item.short || item.label).join(" · ")}`);
       }
 
-      if (a.signal === "WAIT" || a.probability < Number(minProbability) || a.score < Number(minScore) || a.stability < 0.25 || a.regime === "NOISY" || a.edgeVsBaseline < Number(minEdge)) {
-        setMessage(`WAIT · ${a.regime} · ${setupCount}/6 setup checks · ${(a.probability * 100).toFixed(1)}% model.`);
+      const candidates = [...candidateRef.current];
+
+      // Try every currently valid candidate in rank order. If one proposal fails
+      // the live quote/EV gate, immediately try the next market instead of waiting
+      // for the next timer cycle.
+      const usable = candidates.filter((a) => {
+        if (a.signal === "WAIT") return false;
+        const candidateKey = `${a.symbol}|${a.direction}|${a.barrier}|${duration}`;
+        if (candidateKey === blockedKeyRef.current && now < blockedUntilRef.current) return false;
+
+        const lastTradeEpoch = Number(lastTradeEpochBySymbolRef.current[a.symbol] || 0);
+        if (Number(a.latestEpoch || 0) <= lastTradeEpoch) return false;
+
+        return (
+          a.probability >= Number(minProbability) &&
+          a.score >= Number(minScore) &&
+          a.stability >= 0.25 &&
+          a.regime !== "NOISY" &&
+          a.edgeVsBaseline >= Number(minEdge)
+        );
+      });
+
+      if (!usable.length) {
+        const best = candidates[0];
+        if (best) {
+          setMessage(
+            `SCAN · ${best.market?.short || best.symbol} · ${best.direction} ${best.barrier} · `
+            + `${(best.probability * 100).toFixed(1)}% · ${best.score}/100 · ${best.regime}`
+          );
+        }
         return;
       }
 
       busyRef.current = true;
-      const contractType = a.direction === "UNDER" ? "DIGITUNDER" : "DIGITOVER";
-      const args = {
-        contractType,
-        amount: safeAmount,
-        basis: "stake",
-        currency,
-        duration: Math.max(1, Math.min(20, Number(duration) || 5)),
-        durationUnit: "t",
-        barrier: String(a.barrier),
-        symbol,
-      };
 
       try {
-        setMessage(`PROPOSAL · ${a.direction} ${a.barrier} · ${args.duration}t · ${real ? "REAL" : "DEMO"}`);
-        const quote = await quoteTrade(args);
-        const ask = Number(quote?.askPrice);
-        const payout = Number(quote?.payout);
-        if (!quote?.proposalId || !Number.isFinite(ask) || !Number.isFinite(payout) || payout <= ask) {
-          throw new Error("Invalid Deriv proposal.");
+        for (const a of usable) {
+          if (disposed) break;
+
+          const key = `${a.symbol}|${a.direction}|${a.barrier}|${duration}`;
+          if (blockedKeyRef.current === key && now < blockedUntilRef.current) continue;
+
+          const contractType = a.direction === "UNDER" ? "DIGITUNDER" : "DIGITOVER";
+          const args = {
+            contractType,
+            amount: safeAmount,
+            basis: "stake",
+            currency,
+            duration: Math.max(1, Math.min(20, Number(duration) || 5)),
+            durationUnit: "t",
+            barrier: String(a.barrier),
+            symbol: a.symbol,
+          };
+
+          try {
+            setMessage(
+              `PROPOSAL · ${a.market?.short || a.symbol} · ${a.direction} ${a.barrier} · ${args.duration}t`
+            );
+
+            const quote = await quoteTrade(args);
+            const ask = Number(quote?.askPrice);
+            const payout = Number(quote?.payout);
+
+            if (!quote?.proposalId || !Number.isFinite(ask) || !Number.isFinite(payout) || payout <= ask) {
+              continue;
+            }
+
+            const implied = ask / payout;
+            const edge = Number(a.probability) - implied;
+            const ev = Number(a.probability) * payout - ask;
+
+            if (edge < Number(minEdge) || ev <= 0) {
+              continue;
+            }
+
+            const result = await placeQuotedTrade({ quote });
+            const contractId = idOf(result);
+            lastEntryRef.current = Date.now();
+            lastTradeEpochBySymbolRef.current[a.symbol] = Number(a.latestEpoch || Date.now() / 1000);
+
+            setTradeHistory((rows) => [{
+              id: contractId || `pending-${Date.now()}`,
+              result: "OPEN",
+              contractType,
+              direction: a.direction,
+              barrier: a.barrier,
+              symbol: a.symbol,
+              duration: args.duration,
+              stake: safeAmount,
+              model: a.probability,
+              implied,
+              edge,
+              ev,
+              score: a.score,
+              regime: a.regime,
+              path: digitPathString(a.path),
+              key,
+              pnl: null,
+            }, ...rows].slice(0, 8));
+
+            setLastDecision({
+              direction: a.direction,
+              barrier: a.barrier,
+              probability: a.probability,
+              payout,
+              edge,
+              ev,
+              score: a.score,
+              valid: true,
+              at: Date.now(),
+              symbol: a.symbol,
+            });
+
+            setMessage(
+              `${real ? "REAL" : "DEMO"} EXECUTED · ${a.market?.short || a.symbol} · `
+              + `${a.direction} ${a.barrier} · ${contractId || "accepted"}`
+            );
+            break;
+          } catch (error) {
+            // One market/proposal failing must not stall the scanner.
+            setMessage(
+              `RETRY · ${a.market?.short || a.symbol} · `
+              + `${error instanceof Error ? error.message : "proposal failed"}`
+            );
+          }
         }
-
-        const implied = ask / payout;
-        const edge = Number(a.probability) - implied;
-        const ev = Number(a.probability) * payout - ask;
-        if (edge < Number(minEdge) || ev <= 0) {
-          setMessage(`SKIP · payout ${(payout / ask * 100).toFixed(1)}% · model ${(a.probability * 100).toFixed(1)}% · edge ${(edge * 100).toFixed(1)}% · EV ${ev.toFixed(3)}`);
-          return;
-        }
-
-        const result = await placeQuotedTrade({ quote });
-        const contractId = idOf(result);
-        lastEntryRef.current = Date.now();
-
-        setTradeHistory((rows) => [{
-          id: contractId || `pending-${Date.now()}`,
-          result: "OPEN",
-          contractType,
-          direction: a.direction,
-          barrier: a.barrier,
-          symbol,
-          duration: args.duration,
-          stake: safeAmount,
-          model: a.probability,
-          implied,
-          edge,
-          ev,
-          score: a.score,
-          regime: a.regime,
-          path: digitPathString(a.path),
-          key,
-          pnl: null,
-        }, ...rows].slice(0, 8));
-
-        setLastDecision({
-          direction: a.direction, barrier: a.barrier, probability: a.probability,
-          payout, edge, ev, score: a.score, valid: true, at: Date.now()
-        });
-        setMessage(`${real ? "REAL" : "DEMO"} EXECUTED · ${a.direction} ${a.barrier} · ${contractId || "accepted"}`);
-      } catch (error) {
-        setMessage(`EXECUTION FAILED · ${error instanceof Error ? error.message : String(error || tradeError || "unknown error")}`);
       } finally {
         busyRef.current = false;
       }
-    }, Math.max(1000, Number(scanEvery) * 1000));
+    };
 
-    return () => window.clearInterval(timer);
+    void scanAndTrade();
+    const timer = window.setInterval(() => { void scanAndTrade(); }, 250);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
   }, [
-    running, active, connected, accountId, symbol, tradeBusy, tradeError, quoteTrade,
-    placeQuotedTrade, real, allowReal, liveBalance, safeAmount, duration, currency,
-    minProbability, minEdge, scanEvery, pnl, losses, maxLosses, stake, currentKey,
-    setupCount, cooldownSeconds
+    running, active, connected, accountId, tradeBusy, tradeError, quoteTrade,
+    placeQuotedTrade, real, allowReal, liveBalance, safeAmount, duration,
+    currency, minProbability, minEdge, minScore, pnl, losses, maxLosses, stake,
+    cooldownSeconds, targetMarkets, marketAnalyses, marketTicks
   ]);
 
   const resetSession = () => {
@@ -329,9 +465,9 @@ export default function DigitOverRecoveryBot() {
     <section className="digitBot digitV10">
       <header className="digitHero">
         <div>
-          <span>ZENTORA · DIGIT OVER / UNDER V10</span>
-          <h2>Analyze → Validate → Execute → Settle → Re-analyze</h2>
-          <p>One decision engine for DEMO and REAL. OVER and UNDER compete from the same 60-digit history, live proposal, probability, payout and risk gates.</p>
+          <span>ZENTORA · DIGIT OVER / UNDER V12</span>
+          <h2>Scan 4 Markets → Validate → Execute → Settle → Re-scan</h2>
+          <p>V100, V75, V25 and V10 maintain separate 60-digit books and are evaluated continuously. The scanner rotates every 10 seconds for visibility but does not wait between scans.</p>
         </div>
         <div className={`digitRun ${running ? "on" : ""}`}><i />{statusLabel}</div>
       </header>
@@ -443,7 +579,7 @@ export default function DigitOverRecoveryBot() {
       </div>
 
       <footer className="digitFooter">
-        <span>Markets: {Object.keys(buffers).length}</span><span>Current: {currentDigits.length}/60</span>
+        <span>Markets: {targetMarkets.length}/4</span><span>Books ready: {marketAnalyses.filter((item) => item.digits.length >= 60).length}/4</span>
         <span>Strategy: AUTO OVER / UNDER</span><span>Last scan: {lastScanAt ? new Date(lastScanAt).toLocaleTimeString() : "—"}</span>
         <span className="spacer">{real ? "REAL" : "DEMO"} · {currency}</span>
       </footer>
