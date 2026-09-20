@@ -138,6 +138,8 @@ export default function usePublicDerivTicks({
 } = {}) {
   const [markets, setMarkets] = useState([]);
   const [marketTicks, setMarketTicks] = useState({});
+  // Full OHLC history for every scanner market, keyed by symbol and timeframe seconds.
+  const [marketCandleHistory, setMarketCandleHistory] = useState({});
   const [candleHistory, setCandleHistory] = useState(() => {
     const initial = {};
 
@@ -454,6 +456,36 @@ export default function usePublicDerivTicks({
           )
         );
 
+      // The scanner needs real OHLC history, not only the last 500 ticks.
+      // Load every desk timeframe for each watched market so V100/V75/V25/V10
+      // and BTCUSD can be analysed consistently even when they are not selected.
+      const candleHistories = {};
+      for (const market of selectedMarkets) {
+        const marketId = String(market?.id || market?.symbol || "").trim();
+        if (!marketId) continue;
+
+        const tfRows = await Promise.all(
+          Object.entries(TF_SECONDS).map(async ([, seconds]) => {
+            try {
+              const rows = await derivPublicClient.getCandleHistory(
+                marketId,
+                Number(seconds),
+                Number(seconds) >= 28800 ? 180 : 240
+              );
+              return [Number(seconds), normalizeCandles(rows)];
+            } catch (error) {
+              console.warn(
+                `[MT5 PUBLIC] Scanner candles failed for ${marketId} ${seconds}s:`,
+                error
+              );
+              return [Number(seconds), []];
+            }
+          })
+        );
+
+        candleHistories[marketId] = Object.fromEntries(tfRows);
+      }
+
       if (!mountedRef.current) {
         return;
       }
@@ -469,6 +501,11 @@ export default function usePublicDerivTicks({
 
         return next;
       });
+
+      setMarketCandleHistory((current) => ({
+        ...current,
+        ...candleHistories,
+      }));
     },
     [multiMarket]
   );
@@ -733,6 +770,7 @@ export default function usePublicDerivTicks({
     market: selectedMarket,
 
     marketTicks,
+    marketCandleHistory,
     candleHistory,
 
     candleDataByTf,

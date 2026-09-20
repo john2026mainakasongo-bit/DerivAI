@@ -239,3 +239,10 @@
 .mt5Right{display:flex;flex-direction:column;gap:0}.mt5Right>.mt5Panel,.mt5Right>.mt5SignalCard{margin-top:10px}.mt5Right>.mt5HeadingCard{margin-top:0}
 @media(max-width:1200px){.mt5Grid{grid-template-columns:165px minmax(0,1fr) 300px!important}.mt5LowerDeck{grid-template-columns:1fr 1fr}.mt5LowerDeck .mt5ScenarioSummary{grid-column:1/-1}}
 @media(max-width:850px){.mt5Grid{grid-template-columns:1fr!important}.mt5LowerDeck{grid-template-columns:1fr}.mt5LowerDeck .mt5ScenarioSummary{grid-column:auto}.mt5ChartWrap .mt5Chart{height:470px;min-height:470px}}
+
+/* MT5 V11 — deeper scanner history + cleaner price-axis presentation */
+.mt5WatchRow span{line-height:1.2;min-width:0}
+.mt5WatchRow strong{letter-spacing:.03em}
+.mt5MiniRow span{line-height:1.25;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.mt5ChartToolsLeft b{max-width:520px}
+.mt5ChartWrap{background:#03111d}

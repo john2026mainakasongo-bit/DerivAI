@@ -818,24 +818,24 @@ function Chart({candles,analysis,chartKey}) {
     }
     priceLinesRef.current=[];
 
+    // Keep the chart readable: only structural levels and actionable lines
+    // stay on the price axis. The full indicator set remains in the dashboard.
     const levels=[
       ["Support",analysis.support,"#27b9e7",1],
       ["Resistance",analysis.resistance,"#f39b62",1],
       ["EMA20",analysis.ema20,"#55a8ff",2],
       ["EMA50",analysis.ema50,"#f3a64b",2],
-      ["Entry",analysis.entry,"#20dfb1",2],
-      ["SL",analysis.stop,"#ff6685",2],
-      ["TP",analysis.target,"#2bd6a3",2],
-      ["Fib 38.2",analysis.fib?.level382,"#7b9cff",1],
-      ["Fib 50",analysis.fib?.level50,"#8d7bff",1],
-      ["Fib 61.8",analysis.fib?.level618,"#a76cff",1],
       ["Bull trigger",analysis.bullTrigger,"#27dfb1",1],
       ["Bear trigger",analysis.bearTrigger,"#ff6685",1],
-      ["BB Upper",analysis.bollinger?.upper,"#59758a",1],
-      ["BB Mid",analysis.bollinger?.mid,"#4c6577",1],
-      ["BB Lower",analysis.bollinger?.lower,"#59758a",1],
-      [analysis.orderBlock?.type||"OB",analysis.orderBlock?.low,"#ffb454",1],
-      [analysis.orderBlock?.type?`${analysis.orderBlock.type} TOP`:"OB TOP",analysis.orderBlock?.high,"#ffb454",1]
+      ...(analysis.signal!=="WAIT" ? [
+        ["Entry",analysis.entry,"#20dfb1",2],
+        ["SL",analysis.stop,"#ff6685",2],
+        ["TP",analysis.target,"#2bd6a3",2],
+      ] : []),
+      ...(analysis.orderBlock ? [
+        [analysis.orderBlock.type,analysis.orderBlock.low,"#ffb454",1],
+        [`${analysis.orderBlock.type} TOP`,analysis.orderBlock.high,"#ffb454",1],
+      ] : []),
     ];
 
     const visibleLow=data.length ? Math.min(...data.map(x=>x.low)) : -Infinity;
@@ -967,6 +967,7 @@ export default function MT5AnalysisDesk(){
   const {
     markets=[],
     marketTicks={},
+    marketCandleHistory={},
     candleHistory={},
     status,
     connected,
@@ -1052,14 +1053,18 @@ export default function MT5AnalysisDesk(){
     const out={};
     for(const m of supported){
       const k=keyOf(m);
+      const scannerHistory=normalizeCandles(
+        marketCandleHistory?.[k]?.[TF[tf]] || []
+      );
+      const liveTicks=marketTicks[k]||[];
       out[k]=analyze(
         k===selectedKey
           ? (candlesByTf[tf]||[])
-          : candlesFromTicks(marketTicks[k]||[],TF[tf])
+          : mergeLiveCandles(scannerHistory,liveTicks,TF[tf])
       );
     }
     return out;
-  },[supported,selectedKey,candlesByTf,marketTicks,tf]);
+  },[supported,selectedKey,candlesByTf,marketCandleHistory,marketTicks,tf]);
 
   const a=selectedMarket
     ? analyses[selectedKey]||analyze(cs)
@@ -1149,7 +1154,7 @@ export default function MT5AnalysisDesk(){
               className={`mt5WatchRow ${k===selectedKey?"active":""}`}
               onClick={()=>m&&setSelected(k)}>
               <b>V{v}</b>
-              <span>{x?.bias||"WAITING"}</span>
+              <span>{x ? `${x.direction} · ${x.setup}` : "LOADING DATA"}</span>
               <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
             </button>;
           })}
@@ -1162,7 +1167,7 @@ export default function MT5AnalysisDesk(){
               className={`mt5WatchRow mt5CryptoRow ${k===selectedKey?"active":""}`}
               onClick={()=>setSelected(k)}>
               <b>BTCUSD</b>
-              <span>{x?.bias||"WAITING"}</span>
+              <span>{x ? `${x.direction} · ${x.setup}` : "LOADING DATA"}</span>
               <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
             </button>;
           })()}
