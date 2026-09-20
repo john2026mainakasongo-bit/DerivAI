@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
-import useDerivTicks from "../hooks/useDerivTicks";
+import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
 const TF = {
   "1m": 60, "2m": 120, "3m": 180, "5m": 300, "10m": 600,
@@ -246,7 +246,7 @@ export default function MT5AnalysisDesk(){
     changeSymbol,
     loadingMarket,
     connect,
-  }=useDerivTicks({multiMarket:true, publicOnly:true});
+  }=usePublicDerivTicks({multiMarket:true});
 
   // Recover the Deriv feed after Chrome back-forward cache,
   // tab suspension, network changes, or returning to the MT5 desk.
