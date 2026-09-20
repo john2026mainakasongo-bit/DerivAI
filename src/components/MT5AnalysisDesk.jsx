@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
 import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
@@ -62,54 +62,151 @@ function normalizeCandles(rows) {
 }
 
 function chartEvents(cs) {
-  const events = [];
-  if (cs.length < 12) return events;
+  if (cs.length < 20) return [];
 
-  for (let i = 6; i < cs.length; i++) {
+  const candidates = [];
+
+  for (let i = 8; i < cs.length; i++) {
     const c = cs[i];
-    const prior = cs.slice(Math.max(0, i - 10), i);
-    const hi = Math.max(...prior.map(x => x.high));
-    const lo = Math.min(...prior.map(x => x.low));
+    const prior = cs.slice(Math.max(0, i - 12), i);
+    const hi = Math.max(...prior.map((x) => x.high));
+    const lo = Math.min(...prior.map((x) => x.low));
     const range = Math.max(c.high - c.low, 1e-9);
-    const upper = (c.high - Math.max(c.open,c.close)) / range;
-    const lower = (Math.min(c.open,c.close) - c.low) / range;
+    const body = Math.abs(c.close - c.open);
+    const upper = (c.high - Math.max(c.open, c.close)) / range;
+    const lower = (Math.min(c.open, c.close) - c.low) / range;
 
     if (c.close > hi && c.open <= hi) {
-      events.push({ time:c.time, position:"aboveBar", color:"#24dfb0", shape:"arrowUp", text:"BREAKOUT" });
+      candidates.push({
+        time: c.time,
+        position: "aboveBar",
+        color: "#24dfb0",
+        shape: "arrowUp",
+        text: "BREAKOUT",
+        priority: 5,
+      });
     }
+
     if (c.close < lo && c.open >= lo) {
-      events.push({ time:c.time, position:"belowBar", color:"#ff6685", shape:"arrowDown", text:"BREAKOUT" });
+      candidates.push({
+        time: c.time,
+        position: "belowBar",
+        color: "#ff6685",
+        shape: "arrowDown",
+        text: "BREAKOUT",
+        priority: 5,
+      });
     }
 
-    if (upper > .42 && c.close < c.open && c.high > hi) {
-      events.push({ time:c.time, position:"aboveBar", color:"#ff9a66", shape:"circle", text:"LIQUIDITY" });
-    }
-    if (lower > .42 && c.close > c.open && c.low < lo) {
-      events.push({ time:c.time, position:"belowBar", color:"#27dabb", shape:"circle", text:"LIQUIDITY" });
+    if (upper > 0.45 && c.close < c.open && c.high >= hi && body / range > 0.18) {
+      candidates.push({
+        time: c.time,
+        position: "aboveBar",
+        color: "#ff9a66",
+        shape: "circle",
+        text: "LIQ",
+        priority: 4,
+      });
     }
 
-    const breakoutUp = cs.slice(Math.max(0,i-6),i).some(x=>x.close>hi);
-    const breakoutDn = cs.slice(Math.max(0,i-6),i).some(x=>x.close<lo);
+    if (lower > 0.45 && c.close > c.open && c.low <= lo && body / range > 0.18) {
+      candidates.push({
+        time: c.time,
+        position: "belowBar",
+        color: "#27dabb",
+        shape: "circle",
+        text: "LIQ",
+        priority: 4,
+      });
+    }
+
+    const breakoutUp = cs
+      .slice(Math.max(0, i - 8), i)
+      .some((x) => x.close > hi);
+
+    const breakoutDn = cs
+      .slice(Math.max(0, i - 8), i)
+      .some((x) => x.close < lo);
+
     if (breakoutUp && c.low <= hi && c.close > hi) {
-      events.push({ time:c.time, position:"belowBar", color:"#55e6bf", shape:"circle", text:"RETEST" });
-    }
-    if (breakoutDn && c.high >= lo && c.close < lo) {
-      events.push({ time:c.time, position:"aboveBar", color:"#ff8aa0", shape:"circle", text:"RETEST" });
+      candidates.push({
+        time: c.time,
+        position: "belowBar",
+        color: "#55e6bf",
+        shape: "circle",
+        text: "RETEST",
+        priority: 6,
+      });
     }
 
-    if (lower > .48 && c.close > c.open) {
-      events.push({ time:c.time, position:"belowBar", color:"#62efc6", shape:"circle", text:"REJECTION" });
+    if (breakoutDn && c.high >= lo && c.close < lo) {
+      candidates.push({
+        time: c.time,
+        position: "aboveBar",
+        color: "#ff8aa0",
+        shape: "circle",
+        text: "RETEST",
+        priority: 6,
+      });
     }
-    if (upper > .48 && c.close < c.open) {
-      events.push({ time:c.time, position:"aboveBar", color:"#ff7f98", shape:"circle", text:"REJECTION" });
+
+    if (lower > 0.5 && c.close > c.open && body / range > 0.2) {
+      candidates.push({
+        time: c.time,
+        position: "belowBar",
+        color: "#62efc6",
+        shape: "circle",
+        text: "REJECT",
+        priority: 3,
+      });
+    }
+
+    if (upper > 0.5 && c.close < c.open && body / range > 0.2) {
+      candidates.push({
+        time: c.time,
+        position: "aboveBar",
+        color: "#ff7f98",
+        shape: "circle",
+        text: "REJECT",
+        priority: 3,
+      });
     }
   }
 
-  const dedup = new Map();
-  for (const e of events) dedup.set(`${e.time}-${e.text}`, e);
-  return [...dedup.values()].slice(-24);
-}
+  // Keep the chart readable: one event per candle and only the
+  // strongest recent events, rather than painting every candle.
+  const byTime = new Map();
 
+  for (const event of candidates) {
+    const existing = byTime.get(event.time);
+    if (!existing || event.priority > existing.priority) {
+      byTime.set(event.time, event);
+    }
+  }
+
+  const recent = [...byTime.values()]
+    .sort((a, b) => a.time - b.time)
+    .slice(-10);
+
+  // Avoid repeated identical labels unless enough candles separate them.
+  const result = [];
+  let lastText = "";
+  let lastTime = 0;
+
+  for (const event of recent) {
+    const tooClose =
+      event.text === lastText &&
+      event.time - lastTime < 180;
+
+    if (tooClose) continue;
+
+    result.push(event);
+    lastText = event.text;
+    lastTime = event.time;
+  }
+
+  return result;
+}
 function analyze(cs) {
   if (cs.length < 24) return {
     signal:"WAIT", bias:"BUILDING", score:0, confidence:0, setup:"BUILDING",
@@ -465,4 +562,5 @@ export default function MT5AnalysisDesk(){
     </div>
   </div>;
 }
+
 
