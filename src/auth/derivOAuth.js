@@ -504,6 +504,98 @@ export async function completeDerivLogin() {
   }
 }
 
+export async function refreshDerivSession(
+  sessionInput
+) {
+  const session =
+    sessionInput ||
+    loadOAuthSession();
+
+  if (!session?.refreshToken) {
+    throw new Error(
+      "Deriv refresh token is not available. Please log in again."
+    );
+  }
+
+  if (!BACKEND_URL) {
+    throw new Error(
+      "VITE_OAUTH_BACKEND_URL is not configured on Render."
+    );
+  }
+
+  const response = await fetch(
+    `${BACKEND_URL}/api/oauth/refresh`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        refresh_token: session.refreshToken,
+      }),
+    }
+  );
+
+  const payload = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(
+      payload?.error ||
+        `Deriv token refresh failed (${response.status}).`
+    );
+  }
+
+  const accounts =
+    normalizeAccounts(payload.accounts);
+
+  const selectedStillExists =
+    accounts.some(
+      (account) =>
+        account.id ===
+        session.selectedAccountId
+    );
+
+  const next = {
+    ...session,
+    accessToken: String(
+      payload.access_token ||
+        session.accessToken ||
+        ""
+    ),
+    refreshToken: String(
+      payload.refresh_token ||
+        session.refreshToken ||
+        ""
+    ),
+    tokenType: String(
+      payload.token_type ||
+        session.tokenType ||
+        "Bearer"
+    ),
+    expiresIn: Number(
+      payload.expires_in ||
+        session.expiresIn ||
+        0
+    ),
+    createdAt: Date.now(),
+    accounts:
+      accounts.length
+        ? accounts
+        : session.accounts || [],
+    selectedAccountId:
+      selectedStillExists
+        ? session.selectedAccountId
+        : accounts[0]?.id ||
+          session.selectedAccountId ||
+          "",
+  };
+
+  saveOAuthSession(next);
+  return next;
+}
+
 export async function fetchDerivAccounts(
   sessionInput
 ) {

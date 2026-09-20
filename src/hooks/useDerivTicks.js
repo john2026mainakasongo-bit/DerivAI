@@ -48,6 +48,17 @@ function chooseDefaultMarket(markets = []) {
         /Volatility 75/i.test(item.label) &&
         !/1s|1 sec|one second/i.test(item.label)
     ) ||
+    markets.find((item) => {
+      const id = String(item?.id || "").toUpperCase();
+      const symbol = String(item?.symbol || "").toUpperCase();
+
+      return (
+        id === "R_75" ||
+        symbol === "R_75" ||
+        id === "1HZ75V" ||
+        symbol === "1HZ75V"
+      );
+    }) ||
     markets[0] ||
     null
   );
@@ -90,6 +101,7 @@ async function ensureTransactions() {
         sharedTransactionReady = true;
         return true;
       }
+
       throw error;
     } finally {
       sharedTransactionPromise = null;
@@ -99,7 +111,7 @@ async function ensureTransactions() {
   return sharedTransactionPromise;
 }
 
-export default function useDerivTicks() {
+export default function useDerivTicks({ multiMarket = false } = {}) {
   const auth = useDerivAuth();
 
   const [markets, setMarkets] = useState([]);
@@ -108,13 +120,17 @@ export default function useDerivTicks() {
   const [statusDetail, setStatusDetail] = useState("");
   const [connected, setConnected] = useState(false);
   const [loadingMarket, setLoadingMarket] = useState(false);
+
   const [ticks, setTicks] = useState([]);
+  const [marketTicks, setMarketTicks] = useState({});
+
   const [candleHistory, setCandleHistory] = useState({
     60: [],
     300: [],
     900: [],
     3600: [],
   });
+
   const [openContracts, setOpenContracts] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [tradeBusy, setTradeBusy] = useState(false);
@@ -124,12 +140,10 @@ export default function useDerivTicks() {
   const mountedRef = useRef(true);
   const manuallyDisconnectedRef = useRef(false);
 
-  // V5.1: dedupe market bootstrap requests and avoid repeated ticks_history bursts.
   const loadSymbolPromiseRef = useRef(null);
   const loadedSymbolRef = useRef("");
   const loadedAtRef = useRef(0);
 
-  // V29: remember contracts bought during this account session.
   const activeContractIdsRef = useRef(new Set());
 
   const selectedAccountId = accountIdOf(auth.selectedAccount);
@@ -146,27 +160,46 @@ export default function useDerivTicks() {
     [markets, symbol]
   );
 
-  const addTick = useCallback((tick) => {
-    if (!tick || tick.symbol !== symbolRef.current) return;
+  const addTick = useCallback(
+    (tick) => {
+      if (!tick) return;
 
-    setTicks((current) =>
-      [
-        ...current,
-        {
-          quote: Number(tick.quote),
-          epoch: Number(tick.epoch),
-        },
-      ].slice(-5000)
-    );
-  }, []);
+      const tickSymbol = String(tick.symbol || "");
+      if (!tickSymbol) return;
+
+      const normalized = {
+        quote: Number(tick.quote),
+        epoch: Number(tick.epoch),
+      };
+
+      if (!Number.isFinite(normalized.quote)) return;
+
+      if (multiMarket) {
+        setMarketTicks((current) => ({
+          ...current,
+          [tickSymbol]: [
+            ...(Array.isArray(current[tickSymbol])
+              ? current[tickSymbol]
+              : []),
+            normalized,
+          ].slice(-5000),
+        }));
+      }
+
+      if (tickSymbol !== symbolRef.current) return;
+
+      setTicks((current) =>
+        [...current, normalized].slice(-5000)
+      );
+    },
+    [multiMarket]
+  );
 
   const loadSymbol = useCallback(async (nextSymbol) => {
     if (!nextSymbol) {
       throw new Error("No Deriv market was selected.");
     }
 
-    // V5.2.1: never let historical data block the live market connection.
-    // If another bootstrap is already subscribing/loading this symbol, reuse it.
     if (
       loadSymbolPromiseRef.current?.symbol === nextSymbol &&
       loadSymbolPromiseRef.current?.promise
@@ -187,12 +220,17 @@ export default function useDerivTicks() {
       } catch (error) {
         if (!duplicateSubscription(error)) throw error;
       }
-      if (mountedRef.current) setLoadingMarket(false);
+
+      if (mountedRef.current) {
+        setLoadingMarket(false);
+      }
+
       return;
     }
 
     setLoadingMarket(true);
     setTicks([]);
+
     setCandleHistory({
       60: [],
       300: [],
@@ -200,8 +238,6 @@ export default function useDerivTicks() {
       3600: [],
     });
 
-    // CRITICAL: the promise returned here resolves immediately after the
-    // live tick subscription. Background history/candles are NOT awaited.
     const promise = (async () => {
       try {
         await derivPublicClient.subscribeTicks(nextSymbol);
@@ -212,24 +248,30 @@ export default function useDerivTicks() {
       loadedSymbolRef.current = nextSymbol;
       loadedAtRef.current = Date.now();
 
-      // The live feed is ready now. Release the connection gate immediately.
-      if (mountedRef.current) setLoadingMarket(false);
+      if (mountedRef.current) {
+        setLoadingMarket(false);
+      }
 
-      // IMPORTANT: launch enrichment without awaiting it. This allows
-      // connect() to finish and status to become CONNECTED immediately.
       void (async () => {
         try {
-          const history = await derivPublicClient.getHistory(nextSymbol, 500);
-          if (mountedRef.current && symbolRef.current === nextSymbol) {
+          const history = await derivPublicClient.getHistory(
+            nextSymbol,
+            500
+          );
+
+          if (
+            mountedRef.current &&
+            symbolRef.current === nextSymbol
+          ) {
             setTicks(history.slice(-500));
           }
         } catch (error) {
-          console.warn("[ZENTORA] Background tick history unavailable:", error);
+          console.warn(
+            "[ZENTORA] Background tick history unavailable:",
+            error
+          );
         }
 
-        // Keep a deep, real OHLC history for the Touch / No Touch workspace.
-        // 240 hourly candles gives the chart enough structure for EMA/S-R and
-        // price-action context without fabricating candles from sparse ticks.
         const candleRequests = [
           [3600, 240],
           [60, 240],
@@ -239,13 +281,17 @@ export default function useDerivTicks() {
 
         for (const [granularity, count] of candleRequests) {
           try {
-            const candles = await derivPublicClient.getCandleHistory(
-              nextSymbol,
-              granularity,
-              count
-            );
+            const candles =
+              await derivPublicClient.getCandleHistory(
+                nextSymbol,
+                granularity,
+                count
+              );
 
-            if (mountedRef.current && symbolRef.current === nextSymbol) {
+            if (
+              mountedRef.current &&
+              symbolRef.current === nextSymbol
+            ) {
               setCandleHistory((current) => ({
                 ...current,
                 [granularity]: candles,
@@ -258,8 +304,9 @@ export default function useDerivTicks() {
             );
           }
 
-          // Small pacing gap between historical market-data calls.
-          await new Promise((resolve) => window.setTimeout(resolve, 150));
+          await new Promise((resolve) =>
+            window.setTimeout(resolve, 150)
+          );
         }
       })();
     })();
@@ -269,17 +316,166 @@ export default function useDerivTicks() {
       promise,
     };
 
-    promise.finally(() => {
-      if (loadSymbolPromiseRef.current?.symbol === nextSymbol) {
-        loadSymbolPromiseRef.current = null;
-      }
-    }).catch(() => {});
+    promise
+      .finally(() => {
+        if (
+          loadSymbolPromiseRef.current?.symbol === nextSymbol
+        ) {
+          loadSymbolPromiseRef.current = null;
+        }
+      })
+      .catch(() => {});
 
     return promise;
   }, []);
 
+  /*
+   * Multi-market bootstrap.
+   *
+   * Supported identifiers:
+   *   V100 -> R_100 / 1HZ100V
+   *   V75  -> R_75  / 1HZ75V
+   *   V25  -> R_25  / 1HZ25V
+   *   V10  -> R_10  / 1HZ10V
+   *
+   * We prefer the actual symbol/id instead of relying only on the
+   * human-readable label because Deriv can return different labels
+   * for the same underlying market.
+   */
+  const loadMultiMarkets = useCallback(
+    async (liveMarkets = []) => {
+      if (!multiMarket) return;
+
+      const wanted = [100, 75, 25, 10];
+
+      const selectedMarkets = wanted
+        .map((value) => {
+          const expectedSymbols = [
+            `R_${value}`,
+            `1HZ${value}V`,
+          ];
+
+          return (
+            liveMarkets.find((item) => {
+              const id = String(item?.id || "").toUpperCase();
+              const itemSymbol = String(
+                item?.symbol || ""
+              ).toUpperCase();
+
+              return (
+                expectedSymbols.includes(id) ||
+                expectedSymbols.includes(itemSymbol)
+              );
+            }) ||
+            liveMarkets.find((item) => {
+              const label = String(item?.label || "");
+
+              return new RegExp(
+                `Volatility\\s*${value}(?:\\s*\\([^)]*\\))?\\s*Index`,
+                "i"
+              ).test(label);
+            })
+          );
+        })
+        .filter(Boolean);
+
+      const symbols = [
+        ...new Set(
+          selectedMarkets
+            .map((item) => item?.id || item?.symbol)
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        ),
+      ];
+
+      console.log(
+        "[DigitOver V12] Selected markets:",
+        selectedMarkets.map((item) => ({
+          id: item?.id,
+          symbol: item?.symbol,
+          label: item?.label,
+          short: item?.short,
+        }))
+      );
+
+      console.log(
+        "[DigitOver V12] Subscribing:",
+        symbols
+      );
+
+      if (!symbols.length) {
+        console.warn(
+          "[DigitOver V12] No supported multi-market symbols found."
+        );
+        return;
+      }
+
+      /*
+       * Subscribe to all selected markets concurrently.
+       */
+      await derivPublicClient.subscribeTicksMulti(symbols);
+
+      /*
+       * Load 100 historical ticks per market concurrently.
+       * Keep the latest 60 because Digit Over/Under analysis
+       * operates on the recent digit sequence.
+       */
+      const historyResults = await Promise.all(
+        selectedMarkets.map(async (item) => {
+          const marketId = String(
+            item?.id || item?.symbol || ""
+          );
+
+          try {
+            const history =
+              await derivPublicClient.getHistory(
+                marketId,
+                100
+              );
+
+            return [
+              marketId,
+              history.slice(-60),
+            ];
+          } catch (error) {
+            console.warn(
+              `[DigitOver V12] History failed for ${marketId}:`,
+              error
+            );
+
+            return [marketId, []];
+          }
+        })
+      );
+
+      if (!mountedRef.current) return;
+
+      setMarketTicks((current) => {
+        const next = { ...current };
+
+        for (const [marketId, history] of historyResults) {
+          next[marketId] = history;
+        }
+
+        return next;
+      });
+
+      console.log(
+        "[DigitOver V12] Multi-market books loaded:",
+        historyResults.map(([marketId, history]) => ({
+          marketId,
+          ticks: Array.isArray(history)
+            ? history.length
+            : 0,
+        }))
+      );
+    },
+    [multiMarket]
+  );
+
   const connect = useCallback(async () => {
     manuallyDisconnectedRef.current = false;
+
     setTradeError("");
     setStatus("CONNECTING");
     setStatusDetail("");
@@ -291,16 +487,14 @@ export default function useDerivTicks() {
     };
 
     const nextKey = accountKey(config);
+
     derivPublicClient.configureAccount(config);
 
-    // If a public market socket is already open, do not mistake it for the
-    // authenticated trading connection. Upgrade it to the selected account
-    // before any proposal request. This avoids the stale-public-socket state
-    // where the UI can show live ticks while trading auth is still missing.
     if (
       auth.authenticated &&
       selectedAccountId &&
-      derivPublicClient.socket?.readyState === WebSocket.OPEN &&
+      derivPublicClient.socket?.readyState ===
+        WebSocket.OPEN &&
       !derivPublicClient.socketAuthenticated
     ) {
       derivPublicClient.disconnect({
@@ -316,14 +510,17 @@ export default function useDerivTicks() {
 
     try {
       const connection = await ensureSharedSocket({
-        allowPublicFallback: !auth.authenticated || !selectedAccountId,
+        allowPublicFallback:
+          !auth.authenticated || !selectedAccountId,
       });
 
       const liveMarkets =
         await derivPublicClient.getVolatilityMarkets();
 
       if (!liveMarkets.length) {
-        throw new Error("No Volatility markets were returned.");
+        throw new Error(
+          "No Volatility markets were returned."
+        );
       }
 
       if (!mountedRef.current) return connection;
@@ -331,10 +528,21 @@ export default function useDerivTicks() {
       setMarkets(liveMarkets);
 
       const selected =
-        liveMarkets.find((item) => item.id === symbolRef.current) ||
-        chooseDefaultMarket(liveMarkets);
+        liveMarkets.find(
+          (item) => item.id === symbolRef.current
+        ) || chooseDefaultMarket(liveMarkets);
+
+      if (!selected) {
+        throw new Error(
+          "No Volatility market could be selected."
+        );
+      }
 
       await loadSymbol(selected.id);
+
+      if (multiMarket) {
+        await loadMultiMarkets(liveMarkets);
+      }
 
       if (
         auth.authenticated &&
@@ -344,14 +552,22 @@ export default function useDerivTicks() {
         try {
           await ensureTransactions();
         } catch (error) {
-          if (!duplicateSubscription(error)) throw error;
+          if (!duplicateSubscription(error)) {
+            throw error;
+          }
         }
       }
 
       const tradingConnectionRequired =
-        Boolean(auth.authenticated && selectedAccountId);
+        Boolean(
+          auth.authenticated &&
+            selectedAccountId
+        );
 
-      if (tradingConnectionRequired && !connection?.authenticated) {
+      if (
+        tradingConnectionRequired &&
+        !connection?.authenticated
+      ) {
         throw new Error(
           "Authenticated Deriv trading connection is not ready."
         );
@@ -364,6 +580,7 @@ export default function useDerivTicks() {
 
       setConnected(true);
       setStatus("CONNECTED");
+
       setStatusDetail(
         connection?.authenticated
           ? "Authenticated trading connection ready."
@@ -374,9 +591,13 @@ export default function useDerivTicks() {
     } catch (error) {
       setConnected(false);
       setStatus("ERROR");
+
       setStatusDetail(
-        error instanceof Error ? error.message : "Connection failed."
+        error instanceof Error
+          ? error.message
+          : "Connection failed."
       );
+
       throw error;
     }
   }, [
@@ -385,100 +606,133 @@ export default function useDerivTicks() {
     auth.session?.accessToken,
     loadSymbol,
     selectedAccountId,
+    multiMarket,
+    loadMultiMarkets,
   ]);
 
   useEffect(() => {
     mountedRef.current = true;
 
-    const removeStatus = derivPublicClient.onStatus((next) => {
-      if (!mountedRef.current) return;
+    const removeStatus =
+      derivPublicClient.onStatus((next) => {
+        if (!mountedRef.current) return;
 
-      setStatus(next.status);
-      setStatusDetail(next.detail || "");
+        setStatus(next.status);
+        setStatusDetail(next.detail || "");
 
-      const requiresTradingAuth =
-        Boolean(auth.authenticated && selectedAccountId);
+        const requiresTradingAuth =
+          Boolean(
+            auth.authenticated &&
+              selectedAccountId
+          );
 
-      setConnected(
-        next.status === "CONNECTED" &&
-        (!requiresTradingAuth || Boolean(next.authenticated))
-      );
+        setConnected(
+          next.status === "CONNECTED" &&
+            (!requiresTradingAuth ||
+              Boolean(next.authenticated))
+        );
 
-      if (["OFFLINE", "ERROR", "DISCONNECTED"].includes(next.status)) {
-        // Any socket close invalidates the previous subscription state.
-        // The next authenticated connection must subscribe again.
-        resetSharedSubscriptions();
-      }
+        if (
+          [
+            "OFFLINE",
+            "ERROR",
+            "DISCONNECTED",
+          ].includes(next.status)
+        ) {
+          resetSharedSubscriptions();
+        }
 
-      if (
-        ["OFFLINE", "ERROR", "DISCONNECTED"].includes(next.status) &&
-        !manuallyDisconnectedRef.current
-      ) {
-        if (reconnectTimer) window.clearTimeout(reconnectTimer);
-
-        reconnectTimer = window.setTimeout(() => {
-          reconnectTimer = null;
-          if (!manuallyDisconnectedRef.current) {
-            void connect().catch(() => {});
+        if (
+          [
+            "OFFLINE",
+            "ERROR",
+            "DISCONNECTED",
+          ].includes(next.status) &&
+          !manuallyDisconnectedRef.current
+        ) {
+          if (reconnectTimer) {
+            window.clearTimeout(reconnectTimer);
           }
-        }, 1500);
-      }
-    });
 
-    const removeTick = derivPublicClient.onTick(addTick);
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null;
 
-    const removeContract = derivPublicClient.onContract((contract) => {
-      const id = String(
-        contract?.contract_id ||
-          contract?.contractId ||
-          contract?.id ||
-          contract?.proposal_open_contract?.contract_id ||
-          contract?.data?.contract_id ||
-          ""
-      );
-      if (!id) return;
-
-      activeContractIdsRef.current.add(id);
-
-      setOpenContracts((current) => {
-        const previous = current.find(
-          (item) =>
-            String(
-              item?.contract_id ||
-                item?.contractId ||
-                item?.id ||
-                ""
-            ) === id
-        );
-
-        const merged = {
-          ...(previous || {}),
-          ...contract,
-          contract_id: id,
-          id,
-        };
-
-        const rest = current.filter(
-          (item) =>
-            String(
-              item?.contract_id ||
-                item?.contractId ||
-                item?.id ||
-                ""
-            ) !== id
-        );
-
-        return [merged, ...rest].slice(0, 30);
+            if (
+              !manuallyDisconnectedRef.current
+            ) {
+              void connect().catch(() => {});
+            }
+          }, 1500);
+        }
       });
-    });
 
-    const removeTransaction = derivPublicClient.onTransaction(
-      (transaction) => {
-        setTransactions((current) =>
-          [transaction, ...current].slice(0, 60)
-        );
-      }
-    );
+    const removeTick =
+      derivPublicClient.onTick(addTick);
+
+    const removeContract =
+      derivPublicClient.onContract(
+        (contract) => {
+          const id = String(
+            contract?.contract_id ||
+              contract?.contractId ||
+              contract?.id ||
+              contract?.proposal_open_contract
+                ?.contract_id ||
+              contract?.data?.contract_id ||
+              ""
+          );
+
+          if (!id) return;
+
+          activeContractIdsRef.current.add(id);
+
+          setOpenContracts((current) => {
+            const previous = current.find(
+              (item) =>
+                String(
+                  item?.contract_id ||
+                    item?.contractId ||
+                    item?.id ||
+                    ""
+                ) === id
+            );
+
+            const merged = {
+              ...(previous || {}),
+              ...contract,
+              contract_id: id,
+              id,
+            };
+
+            const rest = current.filter(
+              (item) =>
+                String(
+                  item?.contract_id ||
+                    item?.contractId ||
+                    item?.id ||
+                    ""
+                ) !== id
+            );
+
+            return [merged, ...rest].slice(
+              0,
+              30
+            );
+          });
+        }
+      );
+
+    const removeTransaction =
+      derivPublicClient.onTransaction(
+        (transaction) => {
+          setTransactions((current) =>
+            [transaction, ...current].slice(
+              0,
+              60
+            )
+          );
+        }
+      );
 
     return () => {
       mountedRef.current = false;
@@ -496,24 +750,24 @@ export default function useDerivTicks() {
 
   useEffect(() => {
     const config = {
-      accessToken: auth.session?.accessToken || "",
-      appId: auth.config?.clientId || "",
+      accessToken:
+        auth.session?.accessToken || "",
+      appId:
+        auth.config?.clientId || "",
       accountId: selectedAccountId,
     };
 
     const nextKey = accountKey(config);
-    const changed = derivPublicClient.configureAccount(config);
+    const changed =
+      derivPublicClient.configureAccount(
+        config
+      );
 
     if (nextKey !== sharedAccountKey) {
       sharedAccountKey = nextKey;
       resetSharedSubscriptions();
     }
 
-    /*
-     * Reconnect only when the selected Deriv account credentials change.
-     * Do NOT use `connected` as a trigger here: reconnect() itself changes
-     * connected state and can otherwise create a reconnect loop.
-     */
     if (!changed) return;
 
     setOpenContracts([]);
@@ -523,7 +777,9 @@ export default function useDerivTicks() {
     void (async () => {
       try {
         await derivPublicClient.reconnect({
-          allowPublicFallback: !auth.authenticated || !selectedAccountId,
+          allowPublicFallback:
+            !auth.authenticated ||
+            !selectedAccountId,
         });
 
         const liveMarkets =
@@ -532,13 +788,25 @@ export default function useDerivTicks() {
         setMarkets(liveMarkets);
 
         const selected =
-          liveMarkets.find((item) => item.id === symbolRef.current) ||
+          liveMarkets.find(
+            (item) =>
+              item.id === symbolRef.current
+          ) ||
           chooseDefaultMarket(liveMarkets);
 
-        if (selected) await loadSymbol(selected.id);
+        if (selected) {
+          await loadSymbol(selected.id);
+
+          if (multiMarket) {
+            await loadMultiMarkets(
+              liveMarkets
+            );
+          }
+        }
       } catch (error) {
         setStatus("ERROR");
         setConnected(false);
+
         setStatusDetail(
           error instanceof Error
             ? error.message
@@ -551,12 +819,10 @@ export default function useDerivTicks() {
     auth.session?.accessToken,
     loadSymbol,
     selectedAccountId,
+    multiMarket,
+    loadMultiMarkets,
   ]);
 
-  // One connection path only: when the selected account credentials are
-  // present, connect() establishes the authenticated trading socket directly.
-  // This avoids a public->auth->public race and repeated transaction
-  // subscriptions that previously caused unstable status changes.
   useEffect(() => {
     if (
       !auth.authenticated ||
@@ -566,7 +832,11 @@ export default function useDerivTicks() {
       return;
     }
 
-    if (!connected && status !== "CONNECTING" && !loadingMarket) {
+    if (
+      !connected &&
+      status !== "CONNECTING" &&
+      !loadingMarket
+    ) {
       void connect().catch(() => {});
     }
   }, [
@@ -578,10 +848,12 @@ export default function useDerivTicks() {
     connect,
   ]);
 
-  // V5: persistent connection watchdog. It retries only while the user is
-  // authenticated and has a selected account; manual Disconnect disables it.
   useEffect(() => {
-    if (!auth.authenticated || !selectedAccountId || manuallyDisconnectedRef.current) {
+    if (
+      !auth.authenticated ||
+      !selectedAccountId ||
+      manuallyDisconnectedRef.current
+    ) {
       return undefined;
     }
 
@@ -589,27 +861,44 @@ export default function useDerivTicks() {
     let timer = null;
 
     const attempt = async () => {
-      if (disposed || manuallyDisconnectedRef.current || connected || status === "CONNECTING") {
+      if (
+        disposed ||
+        manuallyDisconnectedRef.current ||
+        connected ||
+        status === "CONNECTING"
+      ) {
         return;
       }
+
       try {
         await connect();
       } catch (_) {
-        // The next watchdog cycle retries. The UI already exposes statusDetail.
+        // Next watchdog cycle retries.
       }
     };
 
     const tick = () => {
       if (disposed) return;
+
       void attempt();
-      timer = window.setTimeout(tick, 4000);
+
+      timer = window.setTimeout(
+        tick,
+        4000
+      );
     };
 
-    timer = window.setTimeout(tick, 250);
+    timer = window.setTimeout(
+      tick,
+      250
+    );
 
     return () => {
       disposed = true;
-      if (timer) window.clearTimeout(timer);
+
+      if (timer) {
+        window.clearTimeout(timer);
+      }
     };
   }, [
     auth.authenticated,
@@ -623,23 +912,31 @@ export default function useDerivTicks() {
     manuallyDisconnectedRef.current = true;
 
     if (reconnectTimer) {
-      window.clearTimeout(reconnectTimer);
+      window.clearTimeout(
+        reconnectTimer
+      );
+
       reconnectTimer = null;
     }
 
-    derivPublicClient.disconnect({ preserveAccount: true });
+    derivPublicClient.disconnect({
+      preserveAccount: true,
+    });
+
     sharedConnectPromise = null;
     resetSharedSubscriptions();
 
     setConnected(false);
     setStatus("DISCONNECTED");
     setStatusDetail("");
+
     setTicks([]);
     setMarkets([]);
     setSymbol("");
     setOpenContracts([]);
     setTransactions([]);
     setTradeError("");
+
     symbolRef.current = "";
   }, []);
 
@@ -660,6 +957,7 @@ export default function useDerivTicks() {
             ? error.message
             : "Unable to change market."
         );
+
         throw error;
       }
     },
@@ -677,14 +975,27 @@ export default function useDerivTicks() {
       barrier,
       symbol: tradeSymbol,
     }) => {
-      if (!auth.authenticated || !selectedAccountId) {
-        throw new Error("Log in and choose a Demo or Real account first.");
+      if (
+        !auth.authenticated ||
+        !selectedAccountId
+      ) {
+        throw new Error(
+          "Log in and choose a Demo or Real account first."
+        );
       }
 
-      const finalSymbol = tradeSymbol || symbolRef.current;
-      if (!finalSymbol) throw new Error("Choose and connect a market first.");
+      const finalSymbol =
+        tradeSymbol || symbolRef.current;
 
-      if (!derivPublicClient.socketAuthenticated) {
+      if (!finalSymbol) {
+        throw new Error(
+          "Choose and connect a market first."
+        );
+      }
+
+      if (
+        !derivPublicClient.socketAuthenticated
+      ) {
         await derivPublicClient.ensureTradingConnection();
       }
 
@@ -693,25 +1004,37 @@ export default function useDerivTicks() {
         contractType,
         amount,
         basis,
-        currency: currency || auth.selectedAccount?.currency || "USD",
+        currency:
+          currency ||
+          auth.selectedAccount?.currency ||
+          "USD",
         duration,
         durationUnit,
         barrier,
       });
     },
-    [auth.authenticated, auth.selectedAccount?.currency, selectedAccountId]
+    [
+      auth.authenticated,
+      auth.selectedAccount?.currency,
+      selectedAccountId,
+    ]
   );
 
   const placeQuotedTrade = useCallback(
     async ({ quote }) => {
-      if (!auth.authenticated || !selectedAccountId) {
+      if (
+        !auth.authenticated ||
+        !selectedAccountId
+      ) {
         throw new Error(
           "Log in and choose a Demo or Real account first."
         );
       }
 
       if (!quote?.proposalId) {
-        throw new Error("A valid proposal is required before buying.");
+        throw new Error(
+          "A valid proposal is required before buying."
+        );
       }
 
       setTradeBusy(true);
@@ -719,23 +1042,34 @@ export default function useDerivTicks() {
 
       try {
         const selectedConfig = {
-          accessToken: auth.session?.accessToken || "",
-          appId: auth.config?.clientId || "",
+          accessToken:
+            auth.session?.accessToken || "",
+          appId:
+            auth.config?.clientId || "",
           accountId: selectedAccountId,
         };
 
-        derivPublicClient.configureAccount(selectedConfig);
+        derivPublicClient.configureAccount(
+          selectedConfig
+        );
+
         await derivPublicClient.ensureTradingConnection();
+
         sharedTransactionReady = false;
         await ensureTransactions();
 
-        const bought = await derivPublicClient.buyQuotedContract(quote);
+        const bought =
+          await derivPublicClient.buyQuotedContract(
+            quote
+          );
+
         const contractId = String(
           bought?.contractId ||
             bought?.contract_id ||
             bought?.buy?.contract_id ||
             bought?.raw?.buy?.contract_id ||
-            bought?.raw?.data?.buy?.contract_id ||
+            bought?.raw?.data?.buy
+              ?.contract_id ||
             ""
         );
 
@@ -745,7 +1079,10 @@ export default function useDerivTicks() {
           );
         }
 
-        activeContractIdsRef.current.add(contractId);
+        activeContractIdsRef.current.add(
+          contractId
+        );
+
         setOpenContracts((current) => {
           const optimistic = {
             contract_id: contractId,
@@ -753,14 +1090,29 @@ export default function useDerivTicks() {
             status: "OPEN",
             is_sold: false,
             is_expired: false,
-            symbol: quote?.request?.symbol || symbolRef.current,
-            underlying: quote?.request?.symbol || symbolRef.current,
-            contract_type: quote?.request?.contractType || "",
-            buy_price: Number(quote?.askPrice || 0),
-            purchase_price: Number(quote?.askPrice || 0),
-            date_start: Math.floor(Date.now() / 1000),
-            duration: Number(quote?.request?.duration || 0),
-            duration_unit: quote?.request?.durationUnit || "t",
+            symbol:
+              quote?.request?.symbol ||
+              symbolRef.current,
+            underlying:
+              quote?.request?.symbol ||
+              symbolRef.current,
+            contract_type:
+              quote?.request?.contractType ||
+              "",
+            buy_price: Number(
+              quote?.askPrice || 0
+            ),
+            purchase_price: Number(
+              quote?.askPrice || 0
+            ),
+            date_start:
+              Math.floor(Date.now() / 1000),
+            duration: Number(
+              quote?.request?.duration || 0
+            ),
+            duration_unit:
+              quote?.request?.durationUnit ||
+              "t",
             quantum_pending: true,
           };
 
@@ -768,21 +1120,38 @@ export default function useDerivTicks() {
             optimistic,
             ...current.filter(
               (item) =>
-                String(item?.contract_id || item?.contractId || item?.id || "") !== contractId
+                String(
+                  item?.contract_id ||
+                    item?.contractId ||
+                    item?.id ||
+                    ""
+                ) !== contractId
             ),
           ].slice(0, 30);
         });
 
-        return { ...bought, contractId };
+        return {
+          ...bought,
+          contractId,
+        };
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Trade failed.";
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Trade failed.";
+
         setTradeError(message);
         throw error;
       } finally {
         setTradeBusy(false);
       }
     },
-    [auth.authenticated, auth.config?.clientId, auth.session?.accessToken, selectedAccountId]
+    [
+      auth.authenticated,
+      auth.config?.clientId,
+      auth.session?.accessToken,
+      selectedAccountId,
+    ]
   );
 
   const placeTrade = useCallback(
@@ -796,16 +1165,22 @@ export default function useDerivTicks() {
       barrier,
       symbol: tradeSymbol,
     }) => {
-      if (!auth.authenticated || !selectedAccountId) {
+      if (
+        !auth.authenticated ||
+        !selectedAccountId
+      ) {
         throw new Error(
           "Log in and choose a Demo or Real account first."
         );
       }
 
-      const finalSymbol = tradeSymbol || symbolRef.current;
+      const finalSymbol =
+        tradeSymbol || symbolRef.current;
 
       if (!finalSymbol) {
-        throw new Error("Choose and connect a market first.");
+        throw new Error(
+          "Choose and connect a market first."
+        );
       }
 
       setTradeBusy(true);
@@ -813,39 +1188,44 @@ export default function useDerivTicks() {
 
       try {
         const selectedConfig = {
-          accessToken: auth.session?.accessToken || "",
-          appId: auth.config?.clientId || "",
+          accessToken:
+            auth.session?.accessToken || "",
+          appId:
+            auth.config?.clientId || "",
           accountId: selectedAccountId,
         };
 
-        derivPublicClient.configureAccount(selectedConfig);
+        derivPublicClient.configureAccount(
+          selectedConfig
+        );
+
         await derivPublicClient.ensureTradingConnection();
 
-        // A forced account-auth reconnect creates a fresh socket. Re-arm the
-        // transaction stream so OPEN/settled trades keep updating the UI.
         sharedTransactionReady = false;
         await ensureTransactions();
 
-        const bought = await derivPublicClient.buyContract({
-          symbol: finalSymbol,
-          contractType,
-          amount,
-          basis,
-          currency:
-            currency ||
-            auth.selectedAccount?.currency ||
-            "USD",
-          duration,
-          durationUnit,
-          barrier,
-        });
+        const bought =
+          await derivPublicClient.buyContract({
+            symbol: finalSymbol,
+            contractType,
+            amount,
+            basis,
+            currency:
+              currency ||
+              auth.selectedAccount?.currency ||
+              "USD",
+            duration,
+            durationUnit,
+            barrier,
+          });
 
         const contractId = String(
           bought?.contractId ||
             bought?.contract_id ||
             bought?.buy?.contract_id ||
             bought?.raw?.buy?.contract_id ||
-            bought?.raw?.data?.buy?.contract_id ||
+            bought?.raw?.data?.buy
+              ?.contract_id ||
             ""
         );
 
@@ -855,7 +1235,9 @@ export default function useDerivTicks() {
           );
         }
 
-        activeContractIdsRef.current.add(contractId);
+        activeContractIdsRef.current.add(
+          contractId
+        );
 
         setOpenContracts((current) => {
           const optimistic = {
@@ -869,7 +1251,8 @@ export default function useDerivTicks() {
             contract_type: contractType,
             buy_price: Number(amount),
             purchase_price: Number(amount),
-            date_start: Math.floor(Date.now() / 1000),
+            date_start:
+              Math.floor(Date.now() / 1000),
             duration: Number(duration),
             duration_unit: durationUnit,
             quantum_pending: true,
@@ -885,20 +1268,21 @@ export default function useDerivTicks() {
               ) !== contractId
           );
 
-          return [optimistic, ...rest].slice(0, 30);
+          return [
+            optimistic,
+            ...rest,
+          ].slice(0, 30);
         });
 
-        /*
-         * buyQuotedContract already subscribes, but requesting once more is
-         * safe and helps recover if the first contract event was missed.
-         */
         return {
           ...bought,
           contractId,
         };
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Trade failed.";
+          error instanceof Error
+            ? error.message
+            : "Trade failed.";
 
         setTradeError(message);
         throw error;
@@ -909,50 +1293,79 @@ export default function useDerivTicks() {
     [
       auth.authenticated,
       auth.selectedAccount?.currency,
+      auth.config?.clientId,
+      auth.session?.accessToken,
       selectedAccountId,
     ]
   );
 
-  const refreshContract = useCallback(async (contractId) => {
-    const id = String(contractId || "").trim();
+  const refreshContract = useCallback(
+    async (contractId) => {
+      const id = String(
+        contractId || ""
+      ).trim();
 
-    if (!id) {
-      throw new Error("A contract ID is required.");
-    }
+      if (!id) {
+        throw new Error(
+          "A contract ID is required."
+        );
+      }
 
-    await derivPublicClient.ensureTradingConnection();
-    return derivPublicClient.subscribeOpenContract(id);
-  }, []);
-
-  const sellContract = useCallback(async (contractId, price = 0) => {
-    setTradeBusy(true);
-    setTradeError("");
-
-    try {
       await derivPublicClient.ensureTradingConnection();
-      return await derivPublicClient.sellContract(contractId, price);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to sell contract.";
 
-      setTradeError(message);
-      throw error;
-    } finally {
-      setTradeBusy(false);
-    }
-  }, []);
+      return derivPublicClient.subscribeOpenContract(
+        id
+      );
+    },
+    []
+  );
 
-  const loadPortfolio = useCallback(async () => {
-    await derivPublicClient.ensureTradingConnection();
-    return derivPublicClient.getPortfolio();
-  }, []);
+  const sellContract = useCallback(
+    async (contractId, price = 0) => {
+      setTradeBusy(true);
+      setTradeError("");
 
-  const loadStatement = useCallback(async (limit = 50) => {
-    await derivPublicClient.ensureTradingConnection();
-    return derivPublicClient.getStatement(limit);
-  }, []);
+      try {
+        await derivPublicClient.ensureTradingConnection();
+
+        return await derivPublicClient.sellContract(
+          contractId,
+          price
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to sell contract.";
+
+        setTradeError(message);
+        throw error;
+      } finally {
+        setTradeBusy(false);
+      }
+    },
+    []
+  );
+
+  const loadPortfolio = useCallback(
+    async () => {
+      await derivPublicClient.ensureTradingConnection();
+
+      return derivPublicClient.getPortfolio();
+    },
+    []
+  );
+
+  const loadStatement = useCallback(
+    async (limit = 50) => {
+      await derivPublicClient.ensureTradingConnection();
+
+      return derivPublicClient.getStatement(
+        limit
+      );
+    },
+    []
+  );
 
   const prices = useMemo(
     () =>
@@ -962,19 +1375,68 @@ export default function useDerivTicks() {
     [ticks]
   );
 
-  const currentPrice = prices.length ? prices.at(-1) : null;
+  const digitHistoryBySymbol = useMemo(() => {
+    if (!multiMarket) return {};
+
+    const output = {};
+
+    for (const item of markets) {
+      const marketId = item.id;
+
+      const rows = Array.isArray(
+        marketTicks[marketId]
+      )
+        ? marketTicks[marketId]
+        : [];
+
+      output[marketId] = rows
+        .map((row) =>
+          extractLastDigit(
+            row.quote,
+            item.decimals
+          )
+        )
+        .filter(Number.isInteger)
+        .slice(-60);
+    }
+
+    return output;
+  }, [
+    markets,
+    marketTicks,
+    multiMarket,
+  ]);
+
+  const currentPrice = prices.length
+    ? prices.at(-1)
+    : null;
 
   const lastDigit = useMemo(
-    () => extractLastDigit(currentPrice, market.decimals),
-    [currentPrice, market.decimals]
+    () =>
+      extractLastDigit(
+        currentPrice,
+        market.decimals
+      ),
+    [
+      currentPrice,
+      market.decimals,
+    ]
   );
 
   const digitHistory = useMemo(
     () =>
       prices
-        .map((price) => extractLastDigit(price, market.decimals))
+        .map((price) =>
+          extractLastDigit(
+            price,
+            market.decimals
+          )
+        )
         .filter(Number.isInteger),
-    [prices, market.decimals]
+    [
+      prices,
+      market.decimals,
+    ]
   );
 
   return {
@@ -985,6 +1447,7 @@ export default function useDerivTicks() {
     statusDetail,
     connected,
     loadingMarket,
+
     ticks,
     candleHistory,
     prices,
@@ -992,15 +1455,23 @@ export default function useDerivTicks() {
     lastDigit,
     digitHistory,
 
+    marketTicks,
+    digitHistoryBySymbol,
+    multiMarket,
+
     authenticatedFeed:
       connected &&
       auth.authenticated &&
       Boolean(selectedAccountId) &&
-      Boolean(derivPublicClient.socketAuthenticated),
+      Boolean(
+        derivPublicClient.socketAuthenticated
+      ),
 
     selectedAccountId,
-    selectedAccount: auth.selectedAccount,
-    selectedAccountType: auth.selectedAccountType,
+    selectedAccount:
+      auth.selectedAccount,
+    selectedAccountType:
+      auth.selectedAccountType,
 
     openContracts,
     transactions,
@@ -1008,16 +1479,20 @@ export default function useDerivTicks() {
     tradeError,
 
     inspection: null,
-    debugLog: derivPublicClient.debugLog || [],
+    debugLog:
+      derivPublicClient.debugLog || [],
 
     connect,
     disconnect,
     changeSymbol,
+
     quoteTrade,
     placeTrade,
     placeQuotedTrade,
+
     refreshContract,
     sellContract,
+
     loadPortfolio,
     loadStatement,
   };

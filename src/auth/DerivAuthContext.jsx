@@ -15,6 +15,7 @@ import {
   fetchDerivAccounts,
   loadOAuthConfig,
   loadOAuthSession,
+  refreshDerivSession,
   saveOAuthConfig,
 } from "./derivOAuth";
 
@@ -360,6 +361,84 @@ export function DerivAuthProvider({ children }) {
       cancelled = true;
     };
   }, [persistSession]);
+
+  useEffect(() => {
+    if (
+      !session?.accessToken ||
+      !session?.refreshToken
+    ) {
+      return undefined;
+    }
+
+    let disposed = false;
+    let timer = null;
+
+    const scheduleRefresh = () => {
+      const createdAt = Number(
+        session.createdAt || 0
+      );
+      const expiresIn = Number(
+        session.expiresIn || 0
+      );
+
+      if (!createdAt || !expiresIn) {
+        return;
+      }
+
+      const expiresAt =
+        createdAt + expiresIn * 1000;
+
+      // Refresh two minutes before expiry.
+      const delay = Math.max(
+        5000,
+        expiresAt - Date.now() - 120000
+      );
+
+      timer = window.setTimeout(
+        async () => {
+          if (disposed) return;
+
+          try {
+            const next =
+              await refreshDerivSession(
+                session
+              );
+
+            if (disposed) return;
+
+            persistSession(next);
+            setAuthError(
+              ""
+            );
+          } catch (error) {
+            if (disposed) return;
+
+            setAuthError(
+              error instanceof Error
+                ? error.message
+                : "Deriv session refresh failed. Please log in again."
+            );
+          }
+        },
+        delay
+      );
+    };
+
+    scheduleRefresh();
+
+    return () => {
+      disposed = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [
+    session?.accessToken,
+    session?.refreshToken,
+    session?.createdAt,
+    session?.expiresIn,
+    persistSession,
+  ]);
 
   useEffect(() => {
     if (

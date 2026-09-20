@@ -1,4 +1,4 @@
-const PUBLIC_SOCKET_URLS = [
+﻿const PUBLIC_SOCKET_URLS = [
   "wss://api.derivws.com/trading/v1/options/ws/public",
 ];
 
@@ -135,6 +135,8 @@ class DerivTradingClient {
     this.debugListeners = new Set();
     this.debugLog = [];
     this.subscriptionId = "";
+    this.tickSubscriptionIds = new Map();
+    this.watchSymbols = new Set();
     this.contractSubscriptionIds = new Set();
     this.activeContractIds = new Set();
     this.activeSymbol = "";
@@ -439,6 +441,8 @@ class DerivTradingClient {
     this.socketAuthenticated = false;
     this.socketAuthKey = "";
     this.subscriptionId = "";
+    this.tickSubscriptionIds = new Map();
+    this.watchSymbols = new Set();
     this.contractSubscriptionIds.clear();
   }
 
@@ -602,27 +606,71 @@ class DerivTradingClient {
         reject(new Error(`Unable to connect: ${url}`));
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         window.clearTimeout(timeout);
+
+        const closeCode = Number(event?.code || 0);
+        const closeReason = String(event?.reason || "").trim();
+        const wasClean = Boolean(event?.wasClean);
+
+        console.warn(
+          "[Deriv WS] CLOSED",
+          {
+            generation,
+            authenticatedSocket,
+            closeCode,
+            closeReason,
+            wasClean,
+            manualClose: this.manualClose,
+            authenticated: this.authenticated,
+            accountId: this.auth.accountId,
+          }
+        );
 
         // A stale socket must NEVER clear state belonging to a newer socket.
         if (
           generation !== this.socketGeneration ||
           this.socket !== socket
         ) {
+          console.warn(
+            "[Deriv WS] Ignoring stale socket close",
+            {
+              generation,
+              currentGeneration: this.socketGeneration,
+              closeCode,
+              closeReason,
+            }
+          );
           return;
         }
 
         this.clearConnectionState();
 
         if (this.manualClose) {
-          this.emitStatus("DISCONNECTED");
+          this.emitStatus(
+            "DISCONNECTED",
+            `Manual close · code ${closeCode}${
+              closeReason ? ` · ${closeReason}` : ""
+            }`
+          );
         } else if (settled) {
+          const detail =
+            authenticatedSocket
+              ? `Deriv authenticated trading connection closed · code ${closeCode}${
+                  closeReason ? ` · ${closeReason}` : ""
+                }`
+              : `Deriv live feed closed · code ${closeCode}${
+                  closeReason ? ` · ${closeReason}` : ""
+                }`;
+
+          console.warn(
+            "[Deriv WS] OFFLINE",
+            detail
+          );
+
           this.emitStatus(
             "OFFLINE",
-            authenticatedSocket
-              ? "Deriv authenticated trading connection closed."
-              : "Deriv live feed closed."
+            detail
           );
 
           if (authenticatedSocket) {
@@ -700,7 +748,11 @@ class DerivTradingClient {
 
     if (this.activeSymbol && this.socket?.readyState === WebSocket.OPEN) {
       try {
-        await this.subscribeTicks(this.activeSymbol);
+        if (this.watchSymbols.size > 1) {
+          await this.subscribeTicksMulti([...this.watchSymbols]);
+        } else {
+          await this.subscribeTicks(this.activeSymbol);
+        }
       } catch (error) {
         if (!duplicateSubscriptionError(error)) {
           throw error;
@@ -1047,6 +1099,11 @@ class DerivTradingClient {
   }
 
   async forgetCurrentSubscription() {
+    if (this.tickSubscriptionIds.size) {
+      await this.forgetAllTickSubscriptions();
+      return;
+    }
+
     if (!this.subscriptionId) return;
 
     try {
@@ -1057,6 +1114,23 @@ class DerivTradingClient {
       // Ignore stale subscription errors.
     }
 
+    this.subscriptionId = "";
+  }
+
+  async forgetAllTickSubscriptions() {
+    const ids = [...this.tickSubscriptionIds.values()]
+      .map((item) => String(item?.subscriptionId || ""))
+      .filter(Boolean);
+
+    await Promise.all(ids.map(async (subscriptionId) => {
+      try {
+        await this.request({ forget: subscriptionId });
+      } catch {
+        // Ignore stale subscription errors.
+      }
+    }));
+
+    this.tickSubscriptionIds.clear();
     this.subscriptionId = "";
   }
 
@@ -1162,19 +1236,32 @@ class DerivTradingClient {
 
   async subscribeTicks(symbol) {
     await this.forgetCurrentSubscription();
-
+    this.watchSymbols = new Set([String(symbol)]);
+    const response = await this._subscribeTickSymbol(symbol);
     this.activeSymbol = symbol;
-
-    const response = await this.request({
-      ticks: symbol,
-      subscribe: 1,
-    });
-
     this.subscriptionId = String(
       response.subscription?.id ||
         response.data?.subscription?.id ||
         ""
     );
+    return response;
+  }
+
+  async _subscribeTickSymbol(symbol) {
+    const response = await this.request({
+      ticks: symbol,
+      subscribe: 1,
+    });
+
+    const subscriptionId = String(
+      response.subscription?.id ||
+        response.data?.subscription?.id ||
+        ""
+    );
+
+    if (subscriptionId) {
+      this.tickSubscriptionIds.set(String(symbol), { subscriptionId });
+    }
 
     const firstTick =
       response.tick ||
@@ -1191,10 +1278,7 @@ class DerivTradingClient {
         this.tickListeners.forEach(
           (listener) =>
             listener({
-              symbol: tickSymbol(
-                firstTick,
-                symbol
-              ),
+              symbol: tickSymbol(firstTick, symbol),
               quote,
               epoch: Number(
                 firstTick.epoch ||
@@ -1209,6 +1293,48 @@ class DerivTradingClient {
     return response;
   }
 
+  async subscribeTicksMulti(symbols = []) {
+    const unique = [...new Set(
+      symbols.map((symbol) => String(symbol || "").trim()).filter(Boolean)
+    )];
+
+    if (!unique.length) {
+      throw new Error("No markets were supplied for multi-market subscription.");
+    }
+
+    this.watchSymbols = new Set(unique);
+
+    // Preserve existing subscriptions that are still requested; add missing ones.
+    const requested = new Set(unique);
+    const stale = [...this.tickSubscriptionIds.entries()]
+      .filter(([symbol]) => !requested.has(symbol));
+
+    await Promise.all(stale.map(async ([symbol, item]) => {
+      try {
+        if (item?.subscriptionId) {
+          await this.request({ forget: item.subscriptionId });
+        }
+      } catch {
+        // Ignore stale subscription errors.
+      }
+      this.tickSubscriptionIds.delete(symbol);
+    }));
+
+    await Promise.all(unique.map(async (symbol) => {
+      if (this.tickSubscriptionIds.has(symbol)) return;
+      await this._subscribeTickSymbol(symbol);
+    }));
+
+    this.activeSymbol = unique[0] || this.activeSymbol;
+    this.subscriptionId = String(
+      this.tickSubscriptionIds.get(this.activeSymbol)?.subscriptionId || ""
+    );
+
+    return [...this.tickSubscriptionIds.entries()].map(([symbol, item]) => ({
+      symbol,
+      subscriptionId: item.subscriptionId,
+    }));
+  }
   ensureAuthenticated() {
     if (!this.authenticated) {
       throw new Error(

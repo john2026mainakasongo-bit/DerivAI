@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+﻿import { NavLink } from "react-router-dom";
 
 export default function AppHeader({ eyebrow = "DERIVAI TRADING DESK" }) {
   return (
@@ -41,3 +41,5 @@ export default function AppHeader({ eyebrow = "DERIVAI TRADING DESK" }) {
     </header>
   );
 }
+
+
