@@ -660,6 +660,33 @@ function fvgEvents(cs) {
   return out;
 }
 
+function chartViewStorageKey(chartKey) {
+  return `derivai:mt5:chart-view:${chartKey || "default"}`;
+}
+
+function readSavedChartRange(chartKey) {
+  try {
+    const raw = window.localStorage.getItem(chartViewStorageKey(chartKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Number.isFinite(parsed?.from) || !Number.isFinite(parsed?.to)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveChartRange(chartKey, range) {
+  try {
+    if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) return;
+    window.localStorage.setItem(chartViewStorageKey(chartKey), JSON.stringify({
+      from: range.from,
+      to: range.to,
+      savedAt: Date.now()
+    }));
+  } catch {}
+}
+
 function Chart({candles,analysis,chartKey}) {
   const el=useRef(null);
   const chartRef=useRef(null);
@@ -669,6 +696,8 @@ function Chart({candles,analysis,chartKey}) {
   const projectionSeriesRef=useRef(null);
   const firstDataKeyRef=useRef("");
   const lastDataKeyRef=useRef("");
+  const chartKeyRef=useRef(chartKey || "default");
+  const restoringRangeRef=useRef(false);
 
   useEffect(()=>{
     if(!el.current) return;
@@ -754,7 +783,14 @@ function Chart({candles,analysis,chartKey}) {
     });
     ro.observe(el.current);
 
+    const persistRange = (range) => {
+      if (restoringRangeRef.current) return;
+      saveChartRange(chartKeyRef.current, range);
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(persistRange);
+
     return ()=>{
+      try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(persistRange); } catch {}
       ro.disconnect();
       markerPrimitiveRef.current?.detach?.();
       markerPrimitiveRef.current=null;
@@ -784,6 +820,7 @@ function Chart({candles,analysis,chartKey}) {
       close:c.close
     }));
 
+    chartKeyRef.current = chartKey || "default";
     const firstKey=chartKey || String(candles[0]?.time || "");
     const datasetChanged=
       firstDataKeyRef.current &&
@@ -793,8 +830,26 @@ function Chart({candles,analysis,chartKey}) {
       series.setData(data);
       firstDataKeyRef.current=firstKey;
       lastDataKeyRef.current="";
-      chart.timeScale().fitContent();
-      chart.timeScale().scrollToRealTime();
+
+      // Restore the user's last zoom/pan for this exact market + timeframe.
+      // Browser refreshes and component remounts therefore keep the same view.
+      chartKeyRef.current = chartKey || "default";
+      const savedRange = readSavedChartRange(chartKeyRef.current);
+      restoringRangeRef.current = true;
+      if (savedRange) {
+        requestAnimationFrame(() => {
+          try {
+            chart.timeScale().setVisibleLogicalRange(savedRange);
+          } finally {
+            restoringRangeRef.current = false;
+          }
+        });
+      } else {
+        chart.timeScale().fitContent();
+        chart.timeScale().scrollToRealTime();
+    requestAnimationFrame(()=>saveChartRange(chartKeyRef.current, chart.timeScale().getVisibleLogicalRange()));
+        requestAnimationFrame(() => { restoringRangeRef.current = false; });
+      }
     } else {
       const last=candles.at(-1);
 
@@ -926,10 +981,12 @@ function Chart({candles,analysis,chartKey}) {
       (range.to-range.from)*factor
     );
 
-    chart.timeScale().setVisibleLogicalRange({
+    const nextRange={
       from:center-width/2,
       to:center+width/2
-    });
+    };
+    chart.timeScale().setVisibleLogicalRange(nextRange);
+    saveChartRange(chartKeyRef.current, nextRange);
   };
 
   const resetZoom=()=>{
@@ -938,6 +995,7 @@ function Chart({candles,analysis,chartKey}) {
 
     chart.timeScale().fitContent();
     chart.timeScale().scrollToPosition(8,false);
+    requestAnimationFrame(()=>saveChartRange(chartKeyRef.current, chart.timeScale().getVisibleLogicalRange()));
   };
 
   const goRealtime=()=>{
@@ -1131,7 +1189,7 @@ export default function MT5AnalysisDesk(){
       <div>
         <i className="mt5LiveDot"/>
         {connected?"LIVE DERIV FEED":"CONNECTING"}
-        <small>{loadingMarket?"LOADING CANDLES":status||"DISCONNECTED"}</small>
+        <small>{loadingMarket && !cs.length ? "LOADING CANDLES" : cs.length ? `LIVE CANDLES · ${cs.length}` : status||"DISCONNECTED"}</small>
       </div>
       <div className="mt5Timeframes">
         {Object.keys(TF).map(x=>

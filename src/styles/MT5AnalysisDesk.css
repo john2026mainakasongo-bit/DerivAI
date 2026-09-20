@@ -246,3 +246,22 @@
 .mt5MiniRow span{line-height:1.25;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .mt5ChartToolsLeft b{max-width:520px}
 .mt5ChartWrap{background:#03111d}
+
+/* MT5 V12 — persistent chart workspace + cleaner TradingView-style framing */
+.mt5ChartWrap{min-width:0;isolation:isolate}
+.mt5ChartWrap .mt5Chart{height:clamp(520px,calc(100vh - 330px),760px);min-height:520px}
+.mt5ChartToolsRight button{user-select:none;-webkit-user-select:none}
+.mt5ChartToolsRight button:nth-child(3){color:#31e0b3;border-color:#1b6d5b}
+.mt5ChartToolsRight button:nth-child(4){color:#9ec4d3}
+.mt5ChartHead{min-width:0}
+.mt5ChartHead>div:first-child{min-width:0}
+.mt5ChartMeta{white-space:nowrap}
+.mt5HeadingCard,.mt5SignalCard,.mt5Panel{min-width:0}
+.mt5HeadingLine b,.mt5SignalSetup b,.mt5ScenarioBox b{overflow-wrap:anywhere}
+@media(min-width:1350px){
+  .mt5Grid{grid-template-columns:190px minmax(620px,1fr) 330px!important}
+  .mt5ChartWrap .mt5Chart{height:clamp(560px,calc(100vh - 315px),780px);min-height:560px}
+}
+@media(max-width:1050px){
+  .mt5Grid{grid-template-columns:165px minmax(0,1fr) 300px!important}
+}
