@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import RiseFallPage from "./pages/RiseFallPage";
 import TouchNoTouchPage from "./pages/TouchNoTouchPage";
 import AdaptiveTrendPage from "./pages/AdaptiveTrendPage";
+import MT5Page from "./pages/MT5Page";
 
 export default function App() {
   return <BrowserRouter><Routes>
@@ -12,6 +13,7 @@ export default function App() {
     <Route path="/rise-fall" element={<RiseFallPage />} />
     <Route path="/touch-no-touch" element={<TouchNoTouchPage />} />
     <Route path="/adaptive-trend" element={<AdaptiveTrendPage />} />
+    <Route path="/mt5" element={<MT5Page />} />
     <Route path="/login" element={<Login />} />
     <Route path="*" element={<Navigate to="/dashboard" replace />} />
   </Routes></BrowserRouter>;
