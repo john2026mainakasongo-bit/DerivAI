@@ -46,8 +46,20 @@ function chooseDefault(markets = []) {
   return (
     markets.find((m) => /^Volatility 75 Index$/i.test(String(m?.label || ""))) ||
     markets.find((m) => matchesMarket(m, 75)) ||
+    markets.find((m) => matchesBTC(m)) ||
     markets[0] ||
     null
+  );
+}
+
+function matchesBTC(market) {
+  const id = String(market?.id || market?.symbol || "").toUpperCase();
+  const label = String(market?.label || market?.short || market?.name || "").toUpperCase();
+  return (
+    id === "BTCUSD" ||
+    id === "CRYBTCUSD" ||
+    id.includes("BTCUSD") ||
+    /BTC\s*\/?\s*USD/.test(label)
   );
 }
 
@@ -361,13 +373,16 @@ export default function usePublicDerivTicks({
         return;
       }
 
-      const selectedMarkets = WANTED
-        .map((value) =>
-          liveMarkets.find((market) =>
-            matchesMarket(market, value)
+      const selectedMarkets = [
+        ...WANTED
+          .map((value) =>
+            liveMarkets.find((market) =>
+              matchesMarket(market, value)
+            )
           )
-        )
-        .filter(Boolean);
+          .filter(Boolean),
+        liveMarkets.find(matchesBTC),
+      ].filter(Boolean);
 
       const symbols = [
         ...new Set(
@@ -482,8 +497,19 @@ export default function usePublicDerivTicks({
             allowPublicFallback: true,
           });
 
-        const liveMarkets =
-          await derivPublicClient.getVolatilityMarkets();
+        const allMarkets =
+          await derivPublicClient.getPublicMarkets();
+
+        const liveMarkets = [
+          ...WANTED
+            .map((value) =>
+              allMarkets.find((market) =>
+                matchesMarket(market, value)
+              )
+            )
+            .filter(Boolean),
+          allMarkets.find(matchesBTC),
+        ].filter(Boolean);
 
         if (!mountedRef.current) {
           return connection;

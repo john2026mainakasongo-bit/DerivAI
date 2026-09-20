@@ -23,6 +23,12 @@ function matches(m, v) {
     new RegExp(`Volatility\\s*${v}(?:\\s*\\([^)]*\\))?\\s*Index`, "i").test(label);
 }
 
+function matchesBTC(m) {
+  const id = String(m?.id || m?.symbol || "").toUpperCase();
+  const label = labelOf(m).toUpperCase();
+  return id === "BTCUSD" || id === "CRYBTCUSD" || id.includes("BTCUSD") || /BTC\s*\/?\s*USD/.test(label);
+}
+
 function candlesFromTicks(rows, seconds) {
   const map = new Map();
   for (const r of rows || []) {
@@ -865,10 +871,11 @@ export default function MT5AnalysisDesk(){
     };
   },[connected,status,connect]);
 
-  const supported=useMemo(
-    ()=>WANTED.map(v=>markets.find(m=>matches(m,v))).filter(Boolean),
-    [markets]
-  );
+  const supported=useMemo(()=>{
+    const volatility=WANTED.map(v=>markets.find(m=>matches(m,v))).filter(Boolean);
+    const btc=markets.find(matchesBTC);
+    return btc ? [...volatility, btc] : volatility;
+  },[markets]);
   const [selected,setSelected]=useState("");
   const [tf,setTf]=useState("5m");
 
@@ -950,7 +957,7 @@ export default function MT5AnalysisDesk(){
     <div className="mt5Grid">
       <aside className="mt5Side">
         <div className="mt5Watchlist">
-          <div className="mt5PanelTitle">VOLATILITY MARKET SCANNER</div>
+          <div className="mt5PanelTitle">MARKET SCANNER</div>
           {WANTED.map(v=>{
             const m=supported.find(x=>matches(x,v));
             const k=m&&keyOf(m);
@@ -963,6 +970,19 @@ export default function MT5AnalysisDesk(){
               <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
             </button>;
           })}
+          {(()=>{
+            const m=supported.find(matchesBTC);
+            if(!m) return null;
+            const k=keyOf(m);
+            const x=analyses[k];
+            return <button type="button"
+              className={`mt5WatchRow mt5CryptoRow ${k===selectedKey?"active":""}`}
+              onClick={()=>setSelected(k)}>
+              <b>BTCUSD</b>
+              <span>{x?.bias||"WAITING"}</span>
+              <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
+            </button>;
+          })()}
         </div>
 
         <div className="mt5Panel mt5MtfPanel">

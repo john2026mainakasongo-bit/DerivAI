@@ -17,7 +17,8 @@ function normalizeSymbolRow(row = {}) {
   ).trim();
 
   const label = String(
-    row.display_name ||
+    row.underlying_symbol_name ||
+      row.display_name ||
       row.name ||
       row.label ||
       row.market_display_name ||
@@ -62,6 +63,8 @@ function normalizeSymbolRow(row = {}) {
       .replace(/\s+/g, "")
       .slice(0, 12),
     decimals,
+    market: String(row.market || row.market_type || row.underlying_symbol_type || "").trim(),
+    subgroup: String(row.subgroup || "").trim(),
     raw: row,
   };
 }
@@ -1061,26 +1064,23 @@ class DerivTradingClient {
     return true;
   }
 
-  async getVolatilityMarkets() {
+  async getPublicMarkets() {
     const message = await this.request({
       active_symbols: "brief",
     });
 
-    const rawSymbols =
-      extractRows(message);
-
-    const allMarkets = rawSymbols
+    return extractRows(message)
       .map(normalizeSymbolRow)
       .filter(Boolean);
+  }
+
+  async getVolatilityMarkets() {
+    const allMarkets = await this.getPublicMarkets();
 
     const volatilityMarkets =
-      allMarkets.filter(
-        isVolatilityMarket
-      );
+      allMarkets.filter(isVolatilityMarket);
 
-    if (
-      volatilityMarkets.length === 0
-    ) {
+    if (!volatilityMarkets.length) {
       throw new Error(
         "Deriv connected, but no Volatility markets were returned."
       );
