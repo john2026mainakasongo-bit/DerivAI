@@ -171,7 +171,10 @@ export default function usePublicDerivTicks({
         epoch,
       };
 
-      if (multiMarket) {
+      // Store each incoming tick exactly once.  The previous implementation
+      // appended the selected market twice when multiMarket=true, which could
+      // make the forming candle jump instead of following the real tick flow.
+      if (multiMarket || tickSymbol === symbolRef.current) {
         setMarketTicks((current) => ({
           ...current,
           [tickSymbol]: [
@@ -182,20 +185,6 @@ export default function usePublicDerivTicks({
           ].slice(-5000),
         }));
       }
-
-      if (tickSymbol !== symbolRef.current) {
-        return;
-      }
-
-      setMarketTicks((current) => ({
-        ...current,
-        [tickSymbol]: [
-          ...(Array.isArray(current[tickSymbol])
-            ? current[tickSymbol]
-            : []),
-          normalized,
-        ].slice(-5000),
-      }));
     },
     [multiMarket]
   );

@@ -840,9 +840,7 @@ export default function MT5AnalysisDesk(){
       if(document.visibilityState !== "visible") return;
 
       if(
-        !connected ||
         status === "OFFLINE" ||
-        status === "ERROR" ||
         status === "DISCONNECTED"
       ){
         window.clearTimeout(timer);

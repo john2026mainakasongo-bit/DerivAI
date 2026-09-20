@@ -1,5 +1,8 @@
 ﻿const PUBLIC_SOCKET_URLS = [
+  // Current public Options API endpoint.
   "wss://api.derivws.com/trading/v1/options/ws/public",
+  // Legacy market-data endpoint retained as a browser-compatible fallback.
+  "wss://ws.binaryws.com/websockets/v3",
 ];
 
 const API_BASE_URL = "https://api.derivws.com";
@@ -877,6 +880,28 @@ class DerivTradingClient {
             candidate.url,
             candidate.authenticated
           );
+
+          // Validate a public socket before reporting CONNECTED. This prevents
+          // the UI from briefly showing CONNECTED and then flipping to ERROR
+          // when the first active_symbols request fails. If the current public
+          // endpoint cannot serve the browser request, try the fallback socket.
+          if (!candidate.authenticated) {
+            try {
+              await this.request(
+                { active_symbols: "brief" },
+                10000
+              );
+            } catch (validationError) {
+              lastError = validationError;
+              try {
+                this.socket?.close();
+              } catch {
+                // Ignore.
+              }
+              this.clearConnectionState();
+              continue;
+            }
+          }
 
           const detail =
             candidate.authenticated
