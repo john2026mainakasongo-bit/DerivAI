@@ -231,16 +231,146 @@ function chartEvents(cs) {
 
   return result;
 }
+function rsi(values, period = 14) {
+  if (values.length < period + 1) return 50;
+  let gains = 0;
+  let losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = values[i] - values[i - 1];
+    if (d >= 0) gains += d;
+    else losses -= d;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  for (let i = period + 1; i < values.length; i++) {
+    const d = values[i] - values[i - 1];
+    const gain = Math.max(d, 0);
+    const loss = Math.max(-d, 0);
+    avgGain = ((avgGain * (period - 1)) + gain) / period;
+    avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+  }
+  if (avgLoss === 0) return 100;
+  if (avgGain === 0) return 0;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+function macd(values, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+  if (values.length < slowPeriod + signalPeriod) {
+    return { line: 0, signal: 0, histogram: 0 };
+  }
+  const fast = ema(values, fastPeriod);
+  const slow = ema(values, slowPeriod);
+  const lineSeries = values.map((_, i) => fast[i] - slow[i]);
+  const signalSeries = ema(lineSeries.slice(slowPeriod - 1), signalPeriod);
+  const line = lineSeries.at(-1) || 0;
+  const signal = signalSeries.at(-1) || 0;
+  return { line, signal, histogram: line - signal };
+}
+
+function bollinger(values, period = 20, multiplier = 2) {
+  if (values.length < period) return { mid:0, upper:0, lower:0, width:0 };
+  const slice=values.slice(-period);
+  const mid=avg(slice);
+  const variance=avg(slice.map(v=>(v-mid)*(v-mid)));
+  const deviation=Math.sqrt(Math.max(variance,0));
+  return { mid, upper:mid+deviation*multiplier, lower:mid-deviation*multiplier, width:deviation*multiplier*2 };
+}
+
+function stochastic(cs, period = 14) {
+  if (cs.length < period) return 50;
+  const slice=cs.slice(-period);
+  const high=Math.max(...slice.map(c=>c.high));
+  const low=Math.min(...slice.map(c=>c.low));
+  return high===low ? 50 : ((cs.at(-1).close-low)/(high-low))*100;
+}
+
+function adx(cs, period = 14) {
+  if (cs.length < period * 2 + 2) return { adx: 0, plus: 0, minus: 0 };
+  const tr = [];
+  const plusDm = [];
+  const minusDm = [];
+  for (let i = 1; i < cs.length; i++) {
+    const cur = cs[i];
+    const prev = cs[i - 1];
+    const trueRange = Math.max(
+      cur.high - cur.low,
+      Math.abs(cur.high - prev.close),
+      Math.abs(cur.low - prev.close)
+    );
+    const up = cur.high - prev.high;
+    const down = prev.low - cur.low;
+    tr.push(trueRange);
+    plusDm.push(up > down && up > 0 ? up : 0);
+    minusDm.push(down > up && down > 0 ? down : 0);
+  }
+  let atr = avg(tr.slice(0, period));
+  let p = avg(plusDm.slice(0, period));
+  let m = avg(minusDm.slice(0, period));
+  const dx = [];
+  let plus = 0;
+  let minus = 0;
+  for (let i = period; i < tr.length; i++) {
+    atr = ((atr * (period - 1)) + tr[i]) / period;
+    p = ((p * (period - 1)) + plusDm[i]) / period;
+    m = ((m * (period - 1)) + minusDm[i]) / period;
+    plus = atr ? (100 * p / atr) : 0;
+    minus = atr ? (100 * m / atr) : 0;
+    const sum = plus + minus;
+    dx.push(sum ? 100 * Math.abs(plus - minus) / sum : 0);
+  }
+  const adxValue = dx.length ? avg(dx.slice(-period)) : 0;
+  return { adx: adxValue, plus, minus };
+}
+
+function candlePattern(cs) {
+  if (cs.length < 3) return "NONE";
+  const a = cs.at(-2);
+  const b = cs.at(-1);
+  const range = Math.max(b.high - b.low, 1e-9);
+  const body = Math.abs(b.close - b.open);
+  const upper = b.high - Math.max(b.open, b.close);
+  const lower = Math.min(b.open, b.close) - b.low;
+
+  const bullishEngulf =
+    a.close < a.open &&
+    b.close > b.open &&
+    b.open <= a.close &&
+    b.close >= a.open;
+  const bearishEngulf =
+    a.close > a.open &&
+    b.close < b.open &&
+    b.open >= a.close &&
+    b.close <= a.open;
+  const bullishPin = lower / range >= 0.55 && body / range <= 0.4 && b.close > b.open;
+  const bearishPin = upper / range >= 0.55 && body / range <= 0.4 && b.close < b.open;
+
+  if (bullishEngulf) return "BULLISH ENGULFING";
+  if (bearishEngulf) return "BEARISH ENGULFING";
+  if (bullishPin) return "BULLISH PIN BAR";
+  if (bearishPin) return "BEARISH PIN BAR";
+  return "NONE";
+}
+
+function fibonacciLevels(high, low, bullish) {
+  const range = Math.max(high - low, 0);
+  if (!range) return null;
+  return {
+    level382: bullish ? high - range * 0.382 : low + range * 0.382,
+    level50: bullish ? high - range * 0.5 : low + range * 0.5,
+    level618: bullish ? high - range * 0.618 : low + range * 0.618,
+  };
+}
+
 function analyze(cs) {
-  if (cs.length < 30) {
+  if (cs.length < 35) {
     return {
-      signal:"WAIT", bias:"BUILDING", score:0, confidence:0,
-      setup:"WAITING FOR DATA", structure:"BUILDING",
-      liquidity:"WAITING", momentum:"WAITING",
-      reason:`Need more candles (${cs.length}/30).`,
-      confirmations:[], entry:null, stop:null, target:null,
-      support:null,resistance:null,ema20:null,ema50:null,ema200:null,atr:null,
-      entryType:"WAIT"
+      signal:"WAIT", bias:"BUILDING", direction:"BUILDING", score:0, confidence:0,
+      setup:"WAITING FOR DATA", structure:"BUILDING", liquidity:"WAITING",
+      momentum:"WAITING", reason:`Need more candles (${cs.length}/35).`, confirmations:[],
+      entry:null, stop:null, target:null, support:null,resistance:null,ema20:null,ema50:null,
+      ema200:null,atr:null,rsi:50,macd:0,macdSignal:0,macdHistogram:0,adx:0,stoch:50,bollinger:null,
+      fib:null, orderBlock:null, pattern:"NONE", projectedPath:[] , rr:null
     };
   }
 
@@ -250,280 +380,215 @@ function analyze(cs) {
   const e20=ema(closes,20).at(-1);
   const e50=ema(closes,50).at(-1);
   const e200=ema(closes,Math.min(200,closes.length)).at(-1);
+  const e20Prev=ema(closes,20).at(-2);
+  const e50Prev=ema(closes,50).at(-2);
 
   const ranges=cs.slice(-20).map((c,i)=>{
     if(!i) return Math.max(c.high-c.low,1e-9);
     const p=cs.at(-21+i);
-    return Math.max(
-      c.high-c.low,
-      Math.abs(c.high-p.close),
-      Math.abs(c.low-p.close)
-    );
+    return Math.max(c.high-c.low,Math.abs(c.high-p.close),Math.abs(c.low-p.close));
   });
   const atr=Math.max(avg(ranges),1e-9);
-
   const lookback=cs.slice(-21,-1);
   const hi=Math.max(...lookback.map(c=>c.high));
   const lo=Math.min(...lookback.map(c=>c.low));
+  const recentSwingHigh=Math.max(...cs.slice(-12,-1).map(c=>c.high));
+  const recentSwingLow=Math.min(...cs.slice(-12,-1).map(c=>c.low));
 
-  const recentSwingHigh=Math.max(...cs.slice(-8,-1).map(c=>c.high));
-  const recentSwingLow=Math.min(...cs.slice(-8,-1).map(c=>c.low));
-
-  const bullish=last.close>e20 && e20>e50;
-  const bearish=last.close<e20 && e20<e50;
+  const bullish=last.close>e20 && e20>e50 && e50>=e200;
+  const bearish=last.close<e20 && e20<e50 && e50<=e200;
+  const emaSlopeUp=e20>e20Prev && e50>=e50Prev;
+  const emaSlopeDown=e20<e20Prev && e50<=e50Prev;
 
   const range=Math.max(last.high-last.low,1e-9);
   const body=Math.abs(last.close-last.open);
   const upper=(last.high-Math.max(last.open,last.close))/range;
   const lower=(Math.min(last.open,last.close)-last.low)/range;
-
   const strongBull=last.close>last.open && body/range>=0.45;
   const strongBear=last.close<last.open && body/range>=0.45;
 
   const breakUp=last.close>hi+atr*0.05;
   const breakDn=last.close<lo-atr*0.05;
-
   const sweepDn=last.low<lo-atr*0.08 && last.close>lo;
   const sweepUp=last.high>hi+atr*0.08 && last.close<hi;
-
-  const sharpRejectBuy=
-    lower>=0.42 &&
-    last.close>last.open &&
-    (last.close-last.low)>=range*0.55;
-
-  const sharpRejectSell=
-    upper>=0.42 &&
-    last.close<last.open &&
-    (last.high-last.close)>=range*0.55;
-
+  const sharpRejectBuy=lower>=0.42 && last.close>last.open && (last.close-last.low)>=range*0.55;
+  const sharpRejectSell=upper>=0.42 && last.close<last.open && (last.high-last.close)>=range*0.55;
   const nearEma20=Math.abs(last.close-e20)<=atr*0.65;
 
-  const pullbackBuy=
-    bullish &&
-    nearEma20 &&
-    last.low<=e20+atr*0.35 &&
-    (strongBull || sharpRejectBuy);
+  const pullbackBuy=bullish&&nearEma20&&last.low<=e20+atr*0.35&&(strongBull||sharpRejectBuy);
+  const pullbackSell=bearish&&nearEma20&&last.high>=e20-atr*0.35&&(strongBear||sharpRejectSell);
+  const recentBreakUp=cs.slice(-8,-1).some(c=>c.close>hi);
+  const recentBreakDn=cs.slice(-8,-1).some(c=>c.close<lo);
+  const retestBuy=recentBreakUp&&last.low<=hi+atr*0.45&&last.close>hi&&last.close>last.open;
+  const retestSell=recentBreakDn&&last.high>=lo-atr*0.45&&last.close<lo&&last.close<last.open;
+  const continuationBuy=bullish&&last.close>prev.high&&last.close>e20&&strongBull;
+  const continuationSell=bearish&&last.close<prev.low&&last.close<e20&&strongBear;
 
-  const pullbackSell=
-    bearish &&
-    nearEma20 &&
-    last.high>=e20-atr*0.35 &&
-    (strongBear || sharpRejectSell);
+  const momentum=avg(cs.slice(-5).map(c=>c.close-c.open))/atr;
+  const structureBull=last.high>Math.max(...cs.slice(-8,-3).map(c=>c.high));
+  const structureBear=last.low<Math.min(...cs.slice(-8,-3).map(c=>c.low));
+  const rsiValue=rsi(closes,14);
+  const macdValue=macd(closes);
+  const adxValue=adx(cs,14);
+  const pattern=candlePattern(cs);
+  const bb=bollinger(closes,20,2);
+  const stoch=stochastic(cs,14);
 
-  const recentBreakUp=cs.slice(-7,-1).some(c=>c.close>hi);
-  const recentBreakDn=cs.slice(-7,-1).some(c=>c.close<lo);
-
-  const retestBuy=
-    recentBreakUp &&
-    last.low<=hi+atr*0.45 &&
-    last.close>hi &&
-    last.close>last.open;
-
-  const retestSell=
-    recentBreakDn &&
-    last.high>=lo-atr*0.45 &&
-    last.close<lo &&
-    last.close<last.open;
-
-  const continuationBuy=
-    bullish &&
-    last.close>prev.high &&
-    last.close>e20 &&
-    strongBull;
-
-  const continuationSell=
-    bearish &&
-    last.close<prev.low &&
-    last.close<e20 &&
-    strongBear;
-
-  const momentum=avg(
-    cs.slice(-5).map(c=>c.close-c.open)
-  )/atr;
-
-  const structureBull=
-    last.high>Math.max(...cs.slice(-8,-3).map(c=>c.high));
-  const structureBear=
-    last.low<Math.min(...cs.slice(-8,-3).map(c=>c.low));
+  const macdBull=macdValue.line>macdValue.signal && macdValue.histogram>0;
+  const macdBear=macdValue.line<macdValue.signal && macdValue.histogram<0;
+  const rsiBull=rsiValue>=52 && rsiValue<=78;
+  const rsiBear=rsiValue<=48 && rsiValue>=22;
+  const trendStrength=adxValue.adx>=20;
+  const bbBull=last.close>bb.mid && last.close<bb.upper*1.01;
+  const bbBear=last.close<bb.mid && last.close>bb.lower*0.99;
+  const stochBull=stoch>=50 && stoch<=92;
+  const stochBear=stoch<=50 && stoch>=8;
+  const priorRangeRows=cs.slice(Math.max(1,cs.length-40),Math.max(1,cs.length-20));
+  const priorAvgRange=priorRangeRows.length
+    ? avg(priorRangeRows.map(c=>{
+        const idx=cs.indexOf(c);
+        const p=cs[idx-1] || c;
+        return Math.max(c.high-c.low,Math.abs(c.high-p.close),Math.abs(c.low-p.close));
+      }))
+    : atr;
+  const volatilityExpansion=atr > priorAvgRange*1.05;
 
   const buy=[
     ["Trend alignment",bullish],
+    ["EMA slope",emaSlopeUp],
+    ["Market structure",structureBull],
+    ["MACD momentum",macdBull],
+    ["RSI regime",rsiBull],
     ["Breakout",breakUp],
     ["Retest",retestBuy],
     ["Liquidity sweep",sweepDn],
     ["Sharp rejection",sharpRejectBuy],
     ["Pullback entry",pullbackBuy],
     ["Continuation",continuationBuy],
-    ["Momentum",momentum>.15],
-    ["Structure",structureBull]
+    ["Trend strength",trendStrength],
+    ["Bollinger regime",bbBull],
+    ["Stochastic",stochBull],
+    ["Volatility expansion",volatilityExpansion],
+    ["Bullish candle",pattern==="BULLISH ENGULFING"||pattern==="BULLISH PIN BAR"]
   ];
-
   const sell=[
     ["Trend alignment",bearish],
+    ["EMA slope",emaSlopeDown],
+    ["Market structure",structureBear],
+    ["MACD momentum",macdBear],
+    ["RSI regime",rsiBear],
     ["Breakout",breakDn],
     ["Retest",retestSell],
     ["Liquidity sweep",sweepUp],
     ["Sharp rejection",sharpRejectSell],
     ["Pullback entry",pullbackSell],
     ["Continuation",continuationSell],
-    ["Momentum",momentum<-.15],
-    ["Structure",structureBear]
+    ["Trend strength",trendStrength],
+    ["Bollinger regime",bbBear],
+    ["Stochastic",stochBear],
+    ["Volatility expansion",volatilityExpansion],
+    ["Bearish candle",pattern==="BEARISH ENGULFING"||pattern==="BEARISH PIN BAR"]
   ];
 
   const bc=buy.filter(x=>x[1]).length;
   const sc=sell.filter(x=>x[1]).length;
-
-  const buySetup=
-    sharpRejectBuy ? "SHARP REJECTION" :
-    retestBuy ? "BREAKOUT RETEST" :
-    pullbackBuy ? "PULLBACK ENTRY" :
-    breakUp ? "BREAKOUT" :
-    continuationBuy ? "CONTINUATION" :
-    sweepDn ? "LIQUIDITY SWEEP" :
-    "WAITING SETUP";
-
-  const sellSetup=
-    sharpRejectSell ? "SHARP REJECTION" :
-    retestSell ? "BREAKOUT RETEST" :
-    pullbackSell ? "PULLBACK ENTRY" :
-    breakDn ? "BREAKOUT" :
-    continuationSell ? "CONTINUATION" :
-    sweepUp ? "LIQUIDITY SWEEP" :
-    "WAITING SETUP";
-
-  const raw=bc===sc ? "WAIT" : bc>sc ? "BUY" : "SELL";
+  const raw=bc===sc?"WAIT":bc>sc?"BUY":"SELL";
   const confirmations=Math.max(bc,sc);
+  const score=clamp(Math.round((confirmations/16)*72 + (Math.abs(bc-sc)*3) + (trendStrength?8:0) + ((raw==="BUY"&&bullish)||(raw==="SELL"&&bearish)?10:0)),0,100);
+  const strongSetup=raw!=="WAIT"&&confirmations>=7&&score>=62;
+  const signal=strongSetup?raw:"WAIT";
 
-  const score=clamp(
-    Math.round(
-      confirmations*8 +
-      (raw==="BUY" && bullish ? 12 : 0) +
-      (raw==="SELL" && bearish ? 12 : 0) +
-      (raw==="BUY" && (sharpRejectBuy||pullbackBuy||retestBuy) ? 12 : 0) +
-      (raw==="SELL" && (sharpRejectSell||pullbackSell||retestSell) ? 12 : 0)
-    ),
-    0,100
-  );
+  const structure=bullish?"BULLISH STRUCTURE":bearish?"BEARISH STRUCTURE":"RANGE / TRANSITION";
+  const direction=bullish&&bc>=sc+1?"UP":bearish&&sc>=bc+1?"DOWN":"RANGE";
+  const bias=direction==="UP"?"BULLISH":direction==="DOWN"?"BEARISH":"NEUTRAL";
+  const liquidity=sweepDn?"SELL-SIDE SWEPT":sweepUp?"BUY-SIDE SWEPT":"NO CLEAR SWEEP";
+  const momentumLabel=momentum>.35?"STRONG BULLISH":momentum<-.35?"STRONG BEARISH":momentum>.1?"BULLISH":momentum<-.1?"BEARISH":"NEUTRAL";
 
-  const strongSetup =
-    raw!=="WAIT" &&
-    confirmations>=5 &&
-    score>=65;
-
-  const signal=strongSetup ? raw : "WAIT";
+  const buySetup=sharpRejectBuy?"SHARP REJECTION":retestBuy?"BREAKOUT RETEST":pullbackBuy?"PULLBACK ENTRY":breakUp?"BREAKOUT":continuationBuy?"CONTINUATION":sweepDn?"LIQUIDITY SWEEP":"WAITING SETUP";
+  const sellSetup=sharpRejectSell?"SHARP REJECTION":retestSell?"BREAKOUT RETEST":pullbackSell?"PULLBACK ENTRY":breakDn?"BREAKOUT":continuationSell?"CONTINUATION":sweepUp?"LIQUIDITY SWEEP":"WAITING SETUP";
+  const setup=raw==="BUY"?buySetup:raw==="SELL"?sellSetup:(sharpRejectBuy||sharpRejectSell)?"SHARP REJECTION WATCH":(pullbackBuy||pullbackSell)?"PULLBACK WATCH":(breakUp||breakDn)?"BREAKOUT WATCH":"WAITING SETUP";
 
   const atrSafe=Math.max(atr,1e-9);
-  let stop=null,target=null,entry=null,entryType="WAIT";
-
+  let entry=null,stop=null,target=null,entryType="WAIT";
   if(signal==="BUY"){
     entry=Number(last.close.toFixed(5));
-    entryType=
-      sharpRejectBuy ? "REJECTION BUY" :
-      retestBuy ? "RETEST BUY" :
-      pullbackBuy ? "PULLBACK BUY" :
-      breakUp ? "BREAKOUT BUY" :
-      "MOMENTUM BUY";
-
-    const structureStop=Math.min(
-      recentSwingLow,
-      last.close-atrSafe*1.15
-    );
-    const risk=Math.max(
-      last.close-structureStop,
-      atrSafe*0.75
-    );
+    entryType=sharpRejectBuy?"REJECTION BUY":retestBuy?"RETEST BUY":pullbackBuy?"PULLBACK BUY":breakUp?"BREAKOUT BUY":"MOMENTUM BUY";
+    const structureStop=Math.min(recentSwingLow,last.close-atrSafe*1.15);
+    const risk=Math.max(last.close-structureStop,atrSafe*0.75);
     stop=Number((last.close-risk).toFixed(5));
-    target=Number((last.close+risk*2).toFixed(5));
+    const firstTarget=Number((Math.max(last.close+risk*2, recentSwingHigh)).toFixed(5));
+    target=Number(firstTarget.toFixed(5));
   }
-
   if(signal==="SELL"){
     entry=Number(last.close.toFixed(5));
-    entryType=
-      sharpRejectSell ? "REJECTION SELL" :
-      retestSell ? "RETEST SELL" :
-      pullbackSell ? "PULLBACK SELL" :
-      breakDn ? "BREAKOUT SELL" :
-      "MOMENTUM SELL";
-
-    const structureStop=Math.max(
-      recentSwingHigh,
-      last.close+atrSafe*1.15
-    );
-    const risk=Math.max(
-      structureStop-last.close,
-      atrSafe*0.75
-    );
+    entryType=sharpRejectSell?"REJECTION SELL":retestSell?"RETEST SELL":pullbackSell?"PULLBACK SELL":breakDn?"BREAKOUT SELL":"MOMENTUM SELL";
+    const structureStop=Math.max(recentSwingHigh,last.close+atrSafe*1.15);
+    const risk=Math.max(structureStop-last.close,atrSafe*0.75);
     stop=Number((last.close+risk).toFixed(5));
-    target=Number((last.close-risk*2).toFixed(5));
+    const firstTarget=Number((Math.min(last.close-risk*2,recentSwingLow)).toFixed(5));
+    target=Number(firstTarget.toFixed(5));
   }
 
-  const setup=raw==="BUY" ? buySetup :
-              raw==="SELL" ? sellSetup :
-              (sharpRejectBuy||sharpRejectSell) ? "SHARP REJECTION WATCH" :
-              (pullbackBuy||pullbackSell) ? "PULLBACK WATCH" :
-              (breakUp||breakDn) ? "BREAKOUT WATCH" :
-              "WAITING SETUP";
+  const rangeHigh=Math.max(...cs.slice(-50).map(c=>c.high));
+  const rangeLow=Math.min(...cs.slice(-50).map(c=>c.low));
+  const fib=fibonacciLevels(rangeHigh,rangeLow,direction!=="DOWN");
 
-  const confidence=clamp(
-    Math.round(
-      48 +
-      confirmations*5 +
-      Math.min(Math.abs(bc-sc)*5,18)
-    ),
-    48,92
-  );
+  let orderBlock=null;
+  for(let i=cs.length-2;i>=Math.max(2,cs.length-18);i--){
+    const c=cs[i];
+    const next=cs[i+1];
+    if(direction==="UP"&&c.close<c.open&&next.close>c.high+atr*0.35){
+      orderBlock={type:"BULLISH OB",low:c.low,high:c.high}; break;
+    }
+    if(direction==="DOWN"&&c.close>c.open&&next.close<c.low-atr*0.35){
+      orderBlock={type:"BEARISH OB",low:c.low,high:c.high}; break;
+    }
+  }
 
-  const liquidity=
-    sweepDn ? "SELL-SIDE SWEPT" :
-    sweepUp ? "BUY-SIDE SWEPT" :
-    "NO CLEAR SWEEP";
+  const projectedPath=[];
+  const step=Math.max(atrSafe,Math.abs(last.close-e20)*1.2);
+  if(direction==="UP"){
+    const p1=Math.min(Math.max(last.close+step*0.55,e20+step*0.4),recentSwingHigh+step*0.25);
+    const p2=Math.max(p1,last.close+step*1.2);
+    const p3=Number(Math.max(recentSwingHigh,last.close+step*2).toFixed(5));
+    projectedPath.push({time:last.time,price:last.close},{time:last.time+TF_SECONDS_FOR_PATH(cs),price:Number(p1.toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*2,price:Number(p2.toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*3,price:p3});
+  } else if(direction==="DOWN"){
+    const p1=Math.max(Math.min(last.close-step*0.55,e20-step*0.4),recentSwingLow-step*0.25);
+    const p2=Math.min(p1,last.close-step*1.2);
+    const p3=Number(Math.min(recentSwingLow,last.close-step*2).toFixed(5));
+    projectedPath.push({time:last.time,price:last.close},{time:last.time+TF_SECONDS_FOR_PATH(cs),price:Number(p1.toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*2,price:Number(p2.toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*3,price:p3});
+  } else {
+    const mid=(recentSwingHigh+recentSwingLow)/2;
+    projectedPath.push({time:last.time,price:last.close},{time:last.time+TF_SECONDS_FOR_PATH(cs),price:Number(((last.close+mid)/2).toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*2,price:Number(mid.toFixed(5))});
+  }
 
-  const structure=
-    bullish ? "BULLISH STRUCTURE" :
-    bearish ? "BEARISH STRUCTURE" :
-    "RANGE / TRANSITION";
-
-  const momentumLabel=
-    momentum>.35 ? "STRONG BULLISH" :
-    momentum<-.35 ? "STRONG BEARISH" :
-    momentum>.1 ? "BULLISH" :
-    momentum<-.1 ? "BEARISH" :
-    "NEUTRAL";
-
-  let reason="Waiting for a clean setup.";
-  if(signal==="BUY") reason=`${entryType}: ${confirmations}/9 conditions aligned. Entry, invalidation and target are mapped on the chart.`;
-  else if(signal==="SELL") reason=`${entryType}: ${confirmations}/9 conditions aligned. Entry, invalidation and target are mapped on the chart.`;
-  else if(sharpRejectBuy) reason="Early bullish rejection detected. Wait for confirmation before manual execution.";
-  else if(sharpRejectSell) reason="Early bearish rejection detected. Wait for confirmation before manual execution.";
-  else if(pullbackBuy) reason="Bullish pullback is forming around EMA20.";
-  else if(pullbackSell) reason="Bearish pullback is forming around EMA20.";
-  else if(breakUp) reason="Price is above the recent range high; wait for retest/confirmation.";
-  else if(breakDn) reason="Price is below the recent range low; wait for retest/confirmation.";
+  const confidence=clamp(Math.round(45+confirmations*3+Math.min(Math.abs(bc-sc)*4,15)+(trendStrength?8:0)),45,94);
+  let reason="Market is transitioning/ranging. Wait for structure or momentum to resolve.";
+  if(direction==="UP") reason=`Market heading UP: ${bc}/16 bullish checks vs ${sc}/16 bearish. Watch pullbacks, retests and resistance.`;
+  if(direction==="DOWN") reason=`Market heading DOWN: ${sc}/16 bearish checks vs ${bc}/16 bullish. Watch rallies, retests and support.`;
+  if(signal==="BUY") reason=`BUY setup detected from ${entryType}: ${bc}/16 bullish checks aligned. Confirm the level before manual execution.`;
+  if(signal==="SELL") reason=`SELL setup detected from ${entryType}: ${sc}/16 bearish checks aligned. Confirm the level before manual execution.`;
 
   return {
-    signal,
-    bias:bullish?"BULLISH":bearish?"BEARISH":"NEUTRAL",
-    score,
-    confidence,
-    setup,
-    structure,
-    liquidity,
-    momentum:momentumLabel,
-    reason,
-    confirmations:(raw==="BUY"?buy:sell).map(([name,ok])=>({name,ok})),
-    entry,
-    stop,
-    target,
-    entryType,
+    signal,bias,direction,score,confidence,setup,structure,liquidity,momentum:momentumLabel,reason,
+    confirmations:(raw==="BUY"?buy:sell).map(([name,ok])=>({name,ok})),entry,stop,target,entryType,
     support:Number(Math.min(lo,recentSwingLow).toFixed(5)),
     resistance:Number(Math.max(hi,recentSwingHigh).toFixed(5)),
-    ema20:Number(e20.toFixed(5)),
-    ema50:Number(e50.toFixed(5)),
-    ema200:Number(e200.toFixed(5)),
-    atr:Number(atr.toFixed(5)),
-    rr:signal==="WAIT"?null:2
+    ema20:Number(e20.toFixed(5)),ema50:Number(e50.toFixed(5)),ema200:Number(e200.toFixed(5)),atr:Number(atr.toFixed(5)),
+    rsi:Number(rsiValue.toFixed(1)),macd:Number(macdValue.line.toFixed(5)),macdSignal:Number(macdValue.signal.toFixed(5)),macdHistogram:Number(macdValue.histogram.toFixed(5)),
+    adx:Number(adxValue.adx.toFixed(1)),plusDI:Number(adxValue.plus.toFixed(1)),minusDI:Number(adxValue.minus.toFixed(1)),
+    bollinger:{upper:Number(bb.upper.toFixed(5)),mid:Number(bb.mid.toFixed(5)),lower:Number(bb.lower.toFixed(5))},
+    stoch:Number(stoch.toFixed(1)),
+    pattern,fib,orderBlock,projectedPath,rr:signal==="WAIT"?null:2
   };
 }
+
+function TF_SECONDS_FOR_PATH(cs) {
+  if (cs.length < 2) return 60;
+  const delta=Math.max(60,Number(cs.at(-1).time)-Number(cs.at(-2).time));
+  return delta;
+}
+
 function structureEvents(cs) {
   if (cs.length < 12) return [];
   const out = [];
@@ -569,6 +634,7 @@ function Chart({candles,analysis,chartKey}) {
   const seriesRef=useRef(null);
   const priceLinesRef=useRef([]);
   const markerPrimitiveRef=useRef(null);
+  const projectionSeriesRef=useRef(null);
   const firstDataKeyRef=useRef("");
   const lastDataKeyRef=useRef("");
 
@@ -646,7 +712,6 @@ function Chart({candles,analysis,chartKey}) {
     chartRef.current=chart;
     seriesRef.current=series;
 
-    const ts=chart.timeScale();
     const ro=new ResizeObserver(()=>{
       if(el.current) {
         chart.resize(
@@ -661,6 +726,10 @@ function Chart({candles,analysis,chartKey}) {
       ro.disconnect();
       markerPrimitiveRef.current?.detach?.();
       markerPrimitiveRef.current=null;
+      if(projectionSeriesRef.current){
+        try { chart.removeSeries(projectionSeriesRef.current); } catch {}
+      }
+      projectionSeriesRef.current=null;
       chartRef.current=null;
       seriesRef.current=null;
       chart.remove();
@@ -721,7 +790,15 @@ function Chart({candles,analysis,chartKey}) {
       ["EMA50",analysis.ema50,"#f3a64b",2],
       ["Entry",analysis.entry,"#20dfb1",2],
       ["SL",analysis.stop,"#ff6685",2],
-      ["TP",analysis.target,"#2bd6a3",2]
+      ["TP",analysis.target,"#2bd6a3",2],
+      ["Fib 38.2",analysis.fib?.level382,"#7b9cff",1],
+      ["Fib 50",analysis.fib?.level50,"#8d7bff",1],
+      ["Fib 61.8",analysis.fib?.level618,"#a76cff",1],
+      ["BB Upper",analysis.bollinger?.upper,"#59758a",1],
+      ["BB Mid",analysis.bollinger?.mid,"#4c6577",1],
+      ["BB Lower",analysis.bollinger?.lower,"#59758a",1],
+      [analysis.orderBlock?.type||"OB",analysis.orderBlock?.low,"#ffb454",1],
+      [analysis.orderBlock?.type?`${analysis.orderBlock.type} TOP`:"OB TOP",analysis.orderBlock?.high,"#ffb454",1]
     ];
 
     for(const [title,price,color,width] of levels){
@@ -759,6 +836,25 @@ function Chart({candles,analysis,chartKey}) {
       series,
       [...byTime.values()].slice(-18)
     );
+
+    if(projectionSeriesRef.current){
+      try { chart.removeSeries(projectionSeriesRef.current); } catch {}
+      projectionSeriesRef.current=null;
+    }
+
+    if(analysis?.projectedPath?.length>=2){
+      const projectionColor=analysis.direction==="UP"?"#27dfb1":analysis.direction==="DOWN"?"#ff6685":"#a8b8c2";
+      const projectionSeries=chart.addSeries(LineSeries,{
+        color:projectionColor,
+        lineWidth:3,
+        lineStyle:2,
+        crosshairMarkerVisible:false,
+        lastValueVisible:false,
+        priceLineVisible:false
+      });
+      projectionSeries.setData(analysis.projectedPath.map(point=>({time:point.time,value:point.price})));
+      projectionSeriesRef.current=projectionSeries;
+    }
 
     const latest=candles.at(-1)?.close;
     if(Number.isFinite(latest)){
@@ -812,7 +908,7 @@ function Chart({candles,analysis,chartKey}) {
     <div className="mt5ChartToolbar">
       <div className="mt5ChartToolsLeft">
         <span>CHART</span>
-        <b>STRUCTURE + SETUPS</b>
+        <b>PATH: {analysis.direction || "RANGE"} · {analysis.setup}</b>
       </div>
       <div className="mt5ChartToolsRight">
         <button type="button" onClick={()=>zoomBy(0.78)} title="Zoom in">+</button>
@@ -938,6 +1034,20 @@ export default function MT5AnalysisDesk(){
     return {label,data,analysis:analyze(data)};
   });
 
+  const mtfDirectional=mtf.filter(x=>x.analysis?.direction && x.analysis.direction!=="BUILDING");
+  const upFrames=mtfDirectional.filter(x=>x.analysis.direction==="UP").length;
+  const downFrames=mtfDirectional.filter(x=>x.analysis.direction==="DOWN").length;
+  const rangeFrames=mtfDirectional.filter(x=>x.analysis.direction==="RANGE").length;
+  const mtfHeading=upFrames>downFrames&&upFrames>=2?"UP":downFrames>upFrames&&downFrames>=2?"DOWN":"MIXED / RANGE";
+  const mtfAgreement=mtfDirectional.length
+    ? Math.round((Math.max(upFrames,downFrames)/mtfDirectional.length)*100)
+    : 0;
+  const mtfSummary=mtfHeading==="UP"
+    ? `${upFrames}/${mtfDirectional.length} timeframes bullish`
+    : mtfHeading==="DOWN"
+      ? `${downFrames}/${mtfDirectional.length} timeframes bearish`
+      : `${rangeFrames}/${mtfDirectional.length} timeframes ranging`;
+
   return <div className="mt5Desk">
     <div className="mt5Topbar">
       <div>
@@ -992,8 +1102,8 @@ export default function MT5AnalysisDesk(){
               className={`mt5MiniRow ${tf===label?"active":""}`}
               onClick={()=>setTf(label)}>
               <b>{label}</b>
-              <span>{z.setup}</span>
-              <strong className={z.signal.toLowerCase()}>{z.signal}</strong>
+              <span>{z.direction} · {z.setup}</span>
+              <strong className={z.direction==="UP"?"buy":z.direction==="DOWN"?"sell":"wait"}>{z.direction}</strong>
             </button>
           )}
         </div>
@@ -1015,16 +1125,25 @@ export default function MT5AnalysisDesk(){
           </div>
         </div>
         <Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`}/>
-        <div className="mt5SetupStrip">
+        <div className="mt5SetupStrip mt5DirectionStrip">
+          <span>MARKET HEADING</span><b className={a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}>{a.direction}</b>
+          <span>MTF</span><b>{mtfHeading} · {mtfAgreement}%</b>
           <span>SETUP</span><b>{a.setup}</b>
-          <span>STRUCTURE</span><b>{a.structure}</b>
-          <span>LIQUIDITY</span><b>{a.liquidity}</b>
-          <span>MOMENTUM</span><b>{a.momentum}</b>
-          <span>TRADE PLAN</span><b>{a.signal==="WAIT"?"WAIT":"READY"}</b>
+          <span>RSI / MACD</span><b>{a.rsi} · {a.macdHistogram>=0?"BULL":"BEAR"}</b>
+          <span>ADX</span><b>{a.adx}</b>
         </div>
       </main>
 
       <aside className="mt5Right">
+        <section className={`mt5Panel mt5HeadingCard ${a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}`}>
+          <div className="mt5PanelTitle">MARKET DIRECTION</div>
+          <div className="mt5HeadingWord">{a.direction}</div>
+          <div className="mt5HeadingLine"><span>TIMEFRAME</span><b>{tf}</b></div>
+          <div className="mt5HeadingLine"><span>MTF ALIGNMENT</span><b>{mtfSummary}</b></div>
+          <div className="mt5HeadingLine"><span>PATH</span><b>{a.direction==="UP"?"→ RESISTANCE":a.direction==="DOWN"?"→ SUPPORT":"↔ RANGE"}</b></div>
+          <p className="mt5HeadingReason">{a.reason}</p>
+        </section>
+
         <section className={`mt5SignalCard ${cls}`}>
           <div className="mt5SignalTop"><span>MARKET DECISION</span><b>{a.confidence?a.confidence+"%":"—"}</b></div>
           <div className="mt5SignalWord">{a.signal}</div>
@@ -1044,6 +1163,18 @@ export default function MT5AnalysisDesk(){
             onClick={()=>navigator.clipboard?.writeText(`${a.signal} ${labelOf(selectedMarket)} ${tf} Entry ${a.entry} SL ${a.stop} TP ${a.target}`)}>
             COPY MT5 TRADE PLAN
           </button>
+        </section>
+
+        <section className="mt5Panel mt5IndicatorPanel">
+          <div className="mt5PanelTitle">CONFIRMATION ENGINE</div>
+          <div className="mt5LevelRow"><span>RSI 14</span><b>{a.rsi??"—"}</b></div>
+          <div className="mt5LevelRow"><span>MACD</span><b>{a.macdHistogram>=0?"BULLISH":"BEARISH"}</b></div>
+          <div className="mt5LevelRow"><span>ADX</span><b>{a.adx??"—"} {a.adx>=20?"TREND":"WEAK"}</b></div>
+          <div className="mt5LevelRow"><span>STOCH 14</span><b>{a.stoch??"—"}</b></div>
+          <div className="mt5LevelRow"><span>BOLLINGER</span><b>{a.bollinger?`${a.bollinger.lower.toFixed(2)} - ${a.bollinger.upper.toFixed(2)}`:"—"}</b></div>
+          <div className="mt5LevelRow"><span>CANDLE</span><b>{a.pattern||"NONE"}</b></div>
+          <div className="mt5LevelRow"><span>FIB 38.2 / 50 / 61.8</span><b>{a.fib?`${a.fib.level382.toFixed(2)} / ${a.fib.level50.toFixed(2)} / ${a.fib.level618.toFixed(2)}`:"—"}</b></div>
+          <div className="mt5LevelRow"><span>ORDER BLOCK</span><b>{a.orderBlock?`${a.orderBlock.type} · ${a.orderBlock.low.toFixed(2)}-${a.orderBlock.high.toFixed(2)}`:"NONE"}</b></div>
         </section>
 
         <section className="mt5Panel">
