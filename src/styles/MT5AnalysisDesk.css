@@ -75,3 +75,20 @@
     height:520px !important;
   }
 }
+
+/* MT5 V4 — restore vertical app shell */
+.appShell:has(.mt5Intro){
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:stretch !important;
+}
+
+.appShell:has(.mt5Intro) .appHeader{
+  flex:0 0 auto !important;
+  width:100% !important;
+}
+
+.appShell:has(.mt5Intro) .appMain{
+  flex:0 0 auto !important;
+  width:100% !important;
+}
