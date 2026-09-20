@@ -152,3 +152,16 @@
 @media(max-width:1050px){
   .mt5Timeframes{justify-content:flex-start}
 }
+
+
+/* MT5 V6 — TradingView-style chart workspace controls */
+.mt5ChartWrap{position:relative;width:100%;border:1px solid #123f55;border-radius:12px;overflow:hidden;background:#03111d;box-shadow:inset 0 0 0 1px rgba(255,255,255,.01)}
+.mt5ChartWrap .mt5Chart{border:0;border-radius:0;height:calc(100vh - 350px);min-height:560px}
+.mt5ChartToolbar{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-bottom:1px solid #123f55;background:#041522;position:relative;z-index:5}
+.mt5ChartToolsLeft{display:flex;align-items:center;gap:9px;color:#4d7c8e;font-size:7px;font-weight:950;letter-spacing:.12em}
+.mt5ChartToolsLeft b{color:#b9d9e4;font-size:7px;letter-spacing:.08em}
+.mt5ChartToolsRight{display:flex;gap:4px}
+.mt5ChartToolsRight button{height:24px;min-width:28px;padding:0 8px;border:1px solid #16475c;border-radius:5px;background:#071d2a;color:#83a4b3;font-size:8px;font-weight:950;cursor:pointer}
+.mt5ChartToolsRight button:hover{background:#0b3042;color:#dff8ff;border-color:#1e708d}
+.mt5ChartToolsRight button:first-child,.mt5ChartToolsRight button:nth-child(2){font-size:13px;line-height:1}
+@media(max-width:850px){.mt5ChartWrap .mt5Chart{height:470px;min-height:470px}.mt5ChartToolbar{height:34px}}

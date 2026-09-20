@@ -283,53 +283,156 @@ function analyze(cs) {
   };
 }
 
+function structureEvents(cs) {
+  if (cs.length < 12) return [];
+  const out = [];
+  let lastSwingHigh = null;
+  let lastSwingLow = null;
+  for (let i = 3; i < cs.length - 3; i++) {
+    const c = cs[i];
+    const left = cs.slice(i - 3, i);
+    const right = cs.slice(i + 1, i + 4);
+    const swingHigh = c.high > Math.max(...left.map(x => x.high)) && c.high >= Math.max(...right.map(x => x.high));
+    const swingLow = c.low < Math.min(...left.map(x => x.low)) && c.low <= Math.min(...right.map(x => x.low));
+    if (swingHigh) lastSwingHigh = c.high;
+    if (swingLow) lastSwingLow = c.low;
+    if (lastSwingHigh != null && c.close > lastSwingHigh) {
+      out.push({time:c.time,position:"aboveBar",color:"#23dfb4",shape:"arrowUp",text:"BOS",priority:8});
+      lastSwingHigh = null;
+    }
+    if (lastSwingLow != null && c.close < lastSwingLow) {
+      out.push({time:c.time,position:"belowBar",color:"#ff6685",shape:"arrowDown",text:"BOS",priority:8});
+      lastSwingLow = null;
+    }
+  }
+  return out;
+}
+
+function fvgEvents(cs) {
+  if (cs.length < 5) return [];
+  const out = [];
+  for (let i = 2; i < cs.length; i++) {
+    const a = cs[i - 2], c = cs[i];
+    if (c.low > a.high) {
+      out.push({time:c.time,position:"belowBar",color:"#36b7ff",shape:"square",text:"FVG",priority:5});
+    } else if (c.high < a.low) {
+      out.push({time:c.time,position:"aboveBar",color:"#b38cff",shape:"square",text:"FVG",priority:5});
+    }
+  }
+  return out;
+}
+
 function Chart({candles,analysis}) {
   const el=useRef(null);
+  const chartRef=useRef(null);
+  const viewportRef=useRef(null);
+  const initializedRef=useRef(false);
   useEffect(()=>{
     if(!el.current||!candles.length) return;
     const chart=createChart(el.current,{
       autoSize:true,
-      layout:{background:{color:"#03111d"},textColor:"#8faab8"},
-      grid:{vertLines:{color:"rgba(26,67,86,.28)"},horzLines:{color:"rgba(26,67,86,.28)"}},
-      rightPriceScale:{borderColor:"#18445a"},
-      timeScale:{borderColor:"#18445a",timeVisible:true},
-      crosshair:{mode:1},
+      layout:{background:{color:"#03111d"},textColor:"#8faab8",fontFamily:"Inter, system-ui, sans-serif"},
+      grid:{vertLines:{color:"rgba(26,67,86,.25)"},horzLines:{color:"rgba(26,67,86,.25)"}},
+      rightPriceScale:{borderColor:"#18445a",scaleMargins:{top:0.08,bottom:0.08}},
+      timeScale:{borderColor:"#18445a",timeVisible:true,secondsVisible:false,barSpacing:7,minBarSpacing:2,rightOffset:8},
+      crosshair:{mode:1,vertLine:{color:"#4e91aa",width:1,style:2,labelBackgroundColor:"#0b3347"},horzLine:{color:"#4e91aa",width:1,style:2,labelBackgroundColor:"#0b3347"}},
+      handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true},
+      handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},
     });
+    chartRef.current=chart;
     const series=chart.addSeries(CandlestickSeries,{
       upColor:"#18d6a1",downColor:"#ef607d",
       borderUpColor:"#18d6a1",borderDownColor:"#ef607d",
-      wickUpColor:"#18d6a1",wickDownColor:"#ef607d"
+      wickUpColor:"#18d6a1",wickDownColor:"#ef607d",
+      lastValueVisible:true,priceLineVisible:true
     });
     series.setData(candles.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close})));
 
     const levels=[
-      ["Support",analysis.support,"#27b9e7"],
-      ["Resistance",analysis.resistance,"#f39b62"],
-      ["EMA20",analysis.ema20,"#8d7cf7"],
-      ["EMA50",analysis.ema50,"#c5d2db"],
-      ["Entry",analysis.entry,"#20dfb1"],
-      ["SL",analysis.stop,"#ff6685"],
-      ["TP",analysis.target,"#2bd6a3"]
+      ["Support",analysis.support,"#27b9e7",1],
+      ["Resistance",analysis.resistance,"#f39b62",1],
+      ["EMA20",analysis.ema20,"#55a8ff",2],
+      ["EMA50",analysis.ema50,"#f3a64b",2],
+      ["Entry",analysis.entry,"#20dfb1",2],
+      ["SL",analysis.stop,"#ff6685",2],
+      ["TP",analysis.target,"#2bd6a3",2]
     ];
-    for(const [title,price,color] of levels){
+    for(const [title,price,color,width] of levels){
       if(!Number.isFinite(price)) continue;
       const line=chart.addSeries(LineSeries,{
-        color,lineWidth:title==="Entry"||title==="SL"||title==="TP"?2:1,
-        lineStyle:2,title,lastValueVisible:true,priceLineVisible:true
+        color,lineWidth:width,lineStyle:title==="EMA20"||title==="EMA50"?0:2,title,
+        lastValueVisible:true,priceLineVisible:true
       });
-      line.setData([
-        {time:candles[0].time,value:price},
-        {time:candles.at(-1).time,value:price}
-      ]);
+      line.setData([{time:candles[0].time,value:price},{time:candles.at(-1).time,value:price}]);
     }
 
-    const markers=chartEvents(candles);
-    const markerPrimitive = markers.length ? createSeriesMarkers(series, markers) : null;
+    const current=candles.at(-1)?.close;
+    if(Number.isFinite(current)){
+      const priceLine=series.createPriceLine({price:current,color:"#d7f5ff",lineWidth:1,lineStyle:3,axisLabelVisible:true,title:"PRICE"});
+      void priceLine;
+    }
 
-    chart.timeScale().fitContent();
-    return ()=>{ markerPrimitive?.detach?.(); chart.remove(); };
+    const markers=[...chartEvents(candles),...structureEvents(candles),...fvgEvents(candles)]
+      .sort((a,b)=>(a.time-b.time)||(b.priority-a.priority));
+    const byTime=new Map();
+    for(const marker of markers){
+      const existing=byTime.get(marker.time);
+      if(!existing || marker.priority>existing.priority) byTime.set(marker.time,marker);
+    }
+    const markerPrimitive=createSeriesMarkers(series,[...byTime.values()].slice(-18));
+
+    const ts=chart.timeScale();
+    const saved=viewportRef.current;
+    if(saved){
+      try { ts.setVisibleLogicalRange(saved); } catch {}
+    } else {
+      ts.fitContent();
+    }
+    initializedRef.current=true;
+    const saveViewport=()=>{
+      try { viewportRef.current=ts.getVisibleLogicalRange(); } catch {}
+    };
+    ts.subscribeVisibleLogicalRangeChange(saveViewport);
+
+    const ro=new ResizeObserver(()=>chart.resize(el.current.clientWidth,el.current.clientHeight));
+    ro.observe(el.current);
+
+    return ()=>{
+      saveViewport();
+      ts.unsubscribeVisibleLogicalRangeChange(saveViewport);
+      ro.disconnect();
+      markerPrimitive?.detach?.();
+      chartRef.current=null;
+      chart.remove();
+    };
   },[candles,analysis]);
-  return <div ref={el} className="mt5Chart"/>;
+  const zoomBy=(delta)=>{
+    const chart=chartRef.current;
+    if(!chart) return;
+    const range=chart.timeScale().getVisibleLogicalRange();
+    if(!range) return;
+    const center=(range.from+range.to)/2;
+    const width=Math.max(12,(range.to-range.from)*delta);
+    chart.timeScale().setVisibleLogicalRange({from:center-width/2,to:center+width/2});
+  };
+  const resetZoom=()=>{
+    const chart=chartRef.current;
+    if(!chart) return;
+    chart.timeScale().fitContent();
+  };
+  return <div className="mt5ChartWrap">
+    <div className="mt5ChartToolbar">
+      <div className="mt5ChartToolsLeft">
+        <span>CHART</span><b>STRUCTURE + SETUPS</b>
+      </div>
+      <div className="mt5ChartToolsRight">
+        <button type="button" onClick={()=>zoomBy(0.82)} title="Zoom in">+</button>
+        <button type="button" onClick={()=>zoomBy(1.22)} title="Zoom out">−</button>
+        <button type="button" onClick={resetZoom}>RESET</button>
+      </div>
+    </div>
+    <div ref={el} className="mt5Chart"/>
+  </div>;
 }
 
 export default function MT5AnalysisDesk(){
