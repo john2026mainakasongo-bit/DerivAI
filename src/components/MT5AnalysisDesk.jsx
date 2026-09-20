@@ -1207,6 +1207,35 @@ export default function MT5AnalysisDesk(){
           <span>RSI / MACD</span><b>{a.rsi} · {a.macdHistogram>=0?"BULL":"BEAR"}</b>
           <span>ADX</span><b>{a.adx}</b>
         </div>
+        <div className="mt5LowerDeck">
+          <section className="mt5Panel">
+            <div className="mt5PanelTitle">KEY LEVELS</div>
+            <div className="mt5Metric"><span>Resistance</span><b>{a.resistance ?? "—"}</b></div>
+            <div className="mt5Metric"><span>Support</span><b>{a.support ?? "—"}</b></div>
+            <div className="mt5Metric"><span>EMA 20</span><b>{a.ema20 ?? "—"}</b></div>
+            <div className="mt5Metric"><span>EMA 50</span><b>{a.ema50 ?? "—"}</b></div>
+            <div className="mt5Metric"><span>EMA 200</span><b>{a.ema200 ?? "—"}</b></div>
+          </section>
+          <section className="mt5Panel">
+            <div className="mt5PanelTitle">INDICATORS</div>
+            <div className="mt5Metric"><span>RSI (14)</span><b className={a.rsi>=55?"bull":a.rsi<=45?"bear":"neutral"}>{a.rsi ?? "—"}</b></div>
+            <div className="mt5Metric"><span>MACD</span><b className={a.macdHistogram>=0?"bull":"bear"}>{a.macdHistogram>=0?"BULLISH":"BEARISH"}</b></div>
+            <div className="mt5Metric"><span>ADX (14)</span><b className={a.adx>=20?"bull":"neutral"}>{a.adx ?? "—"} {a.adx>=20?"TREND":"WEAK"}</b></div>
+            <div className="mt5Metric"><span>Stochastic</span><b className="neutral">{a.stoch ?? "—"}</b></div>
+            <div className="mt5Metric"><span>ATR</span><b>{a.atr ?? "—"}</b></div>
+          </section>
+          <section className="mt5Panel mt5ScenarioSummary">
+            <div className="mt5PanelTitle">SCENARIOS</div>
+            <div className="mt5ScenarioCompact">
+              <div className="bullish"><b>↗ BULLISH SCENARIO</b><span>Break above {a.bullTrigger ?? "—"} → retest → continuation toward resistance / next structure.</span></div>
+              <div className="bearish"><b>↘ BEARISH SCENARIO</b><span>Break below {a.bearTrigger ?? "—"} → retest → continuation toward support / next structure.</span></div>
+            </div>
+          </section>
+        </div>
+        <div className="mt5Insight">
+          <b>ⓘ TRADING INSIGHT</b>
+          <p>{a.reason} Current path: {pathMode}. {nextCondition}</p>
+        </div>
       </main>
 
       <aside className="mt5Right">
@@ -1218,6 +1247,7 @@ export default function MT5AnalysisDesk(){
           <div className="mt5HeadingLine"><span>HIGHER-TF BIAS</span><b>{htfBias} · {htfAgreement}%</b></div>
           <div className="mt5HeadingLine"><span>MTF ALIGNMENT</span><b>{mtfSummary}</b></div>
           <div className="mt5HeadingLine"><span>MARKET STRUCTURE</span><b>{a.structure}</b></div>
+          <div className="mt5HeadingLine"><span>PRESSURE</span><b>{a.pressure || "NEUTRAL"}</b></div>
           <div className="mt5HeadingLine"><span>ACTIVE PATH</span><b>{a.pathBias || "—"}</b></div>
           <div className="mt5HeadingLine"><span>BULL TRIGGER</span><b>{a.bullTrigger ?? "—"}</b></div>
           <div className="mt5HeadingLine"><span>BEAR TRIGGER</span><b>{a.bearTrigger ?? "—"}</b></div>
@@ -1225,8 +1255,15 @@ export default function MT5AnalysisDesk(){
           <p className="mt5HeadingReason">{a.reason}</p>
         </section>
 
+        <section className="mt5Panel mt5ScoreCard">
+          <div className="mt5PanelTitle">ANALYSIS SCORE</div>
+          <div className="mt5ScoreValue">{a.confidence || 0} <span>/ 100</span></div>
+          <div className="mt5ScoreTrack"><i style={{width:`${a.confidence || 0}%`}}/></div>
+          <small>Confirmation score, not a probability forecast.</small>
+        </section>
+
         <section className={`mt5SignalCard ${cls}`}>
-          <div className="mt5SignalTop"><span>MARKET DECISION</span><b>{a.confidence?a.confidence+"%":"—"}</b></div>
+          <div className="mt5SignalTop"><span>DECISION</span><b>ANALYSIS SCORE · {a.confidence?`${a.confidence} / 100`:"—"}</b></div>
           <div className="mt5SignalWord">{a.signal}</div>
           <p>{a.reason}</p>
           <div className="mt5SignalSetup">
@@ -1284,6 +1321,12 @@ export default function MT5AnalysisDesk(){
           <div><span>REJECTION</span><b>{a.setup==="REJECTION"?"CONFIRMED":"WAIT"}</b></div>
           <div><span>CONTINUATION</span><b>{a.setup==="CONTINUATION"?"CONFIRMED":"WAIT"}</b></div>
           <div><span>FAKE / FAILED RETEST</span><b>{a.setup==="FAKE RETEST"?"DETECTED":"CLEAR"}</b></div>
+        </section>
+
+        <section className="mt5Panel mt5Scenarios">
+          <div className="mt5PanelTitle">SCENARIOS</div>
+          <div className="mt5Scenario bullish"><b>↗ BULLISH SCENARIO</b><span>Break above {a.bullTrigger ?? "—"} → retest → continuation toward resistance / next structure.</span></div>
+          <div className="mt5Scenario bearish"><b>↘ BEARISH SCENARIO</b><span>Break below {a.bearTrigger ?? "—"} → retest → continuation toward support / next structure.</span></div>
         </section>
 
         <section className="mt5Panel mt5Safety">

@@ -206,3 +206,36 @@
 .mt5ScenarioBox span{color:#628596;font-size:6.5px;font-weight:950;letter-spacing:.08em}
 .mt5ScenarioBox b{max-width:68%;color:#bcd9e2;font-size:7px;text-align:right;line-height:1.35}
 .mt5HeadingLine b{max-width:70%;line-height:1.3}
+
+
+/* MT5 V10 — polished directional dashboard */
+.mt5ScoreCard{padding:14px!important}
+.mt5ScoreValue{font-size:32px;font-weight:1000;line-height:1;color:#f1d66a;margin:2px 0 9px}.mt5ScoreValue span{font-size:18px;color:#65e6b8}
+.mt5ScoreTrack{height:10px;border:1px solid #16475b;background:#0b2533;border-radius:99px;overflow:hidden}.mt5ScoreTrack i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#1ddfae,#55e29b)}
+.mt5ScoreCard small{display:block;margin-top:8px;color:#6f95a5;font-size:7px;line-height:1.35}
+.mt5Scenarios{display:grid;gap:8px}.mt5Scenarios .mt5PanelTitle{grid-column:1/-1}
+.mt5Scenario{padding:10px;border:1px solid #123f55;border-radius:8px;background:#051722}.mt5Scenario b{display:block;font-size:8px;margin-bottom:5px}.mt5Scenario span{display:block;color:#8aa7b4;font-size:8px;line-height:1.45}.mt5Scenario.bullish b{color:#28dfae}.mt5Scenario.bearish b{color:#ff6682}
+.mt5HeadingCard{box-shadow:inset 0 1px 0 rgba(255,255,255,.015)}
+.mt5HeadingWord{font-size:34px}.mt5HeadingSub{font-size:7.5px}
+.mt5SignalTop b{font-size:7px;color:#f0d66e}
+.mt5SignalWord{font-size:46px}
+@media(min-width:1350px){.appShell:has(.mt5Intro) .mt5Grid{grid-template-columns:200px minmax(0,1fr) 360px!important}.mt5Right{display:flex;flex-direction:column;gap:10px}.mt5Right>.mt5Panel,.mt5Right>.mt5SignalCard{margin-top:0}.mt5ChartWrap .mt5Chart{min-height:600px}}
+
+/* MT5 V10 — visual match to approved dashboard mockup */
+.mt5Desk{--panel:#061824;--panel2:#071d2b;--line:#16475b;--muted:#6f95a5;--cyan:#29dfc0;--blue:#138bd0;--green:#27dfb0;--red:#ff5f7d;--amber:#ffc861}
+.mt5Grid{grid-template-columns:170px minmax(0,1fr) 320px!important;gap:10px!important}
+.mt5Watchlist,.mt5Panel,.mt5SignalCard,.mt5ChartHead,.mt5ChartWrap{box-shadow:0 8px 28px rgba(0,0,0,.12)}
+.mt5WatchRow{grid-template-columns:58px 1fr 48px;padding:12px 12px}.mt5WatchRow.active{box-shadow:inset 3px 0 0 #159ee7;background:#0a2940}
+.mt5ChartHead{padding:13px 14px}.mt5ChartHead h2{font-size:18px}.mt5ChartMeta b{font-size:17px}
+.mt5ChartWrap .mt5Chart{min-height:540px;height:calc(100vh - 360px)}
+.mt5HeadingCard{margin-top:0;background:linear-gradient(180deg,#071c29,#061824)}
+.mt5HeadingWord{font-size:38px;margin:5px 0 7px}.mt5HeadingCard.wait .mt5HeadingWord{color:#ffd06b}.mt5HeadingSub{font-size:8px;color:#ffc861}
+.mt5HeadingLine{padding:7px 0}.mt5HeadingLine b{font-size:7.5px}
+.mt5ScoreCard{background:linear-gradient(145deg,#061824,#07242b)}.mt5ScoreValue{font-size:30px;font-weight:1000;color:#ffd36f;line-height:1}.mt5ScoreValue span{font-size:18px;color:#63e7a9}.mt5ScoreTrack{height:9px;border-radius:99px;background:#123243;margin:10px 0 7px;overflow:hidden}.mt5ScoreTrack i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#21d88f,#55e06d)}.mt5ScoreCard small{color:#6f95a5;font-size:7px}
+.mt5SignalCard{margin-top:10px}.mt5SignalWord{font-size:46px}.mt5SignalTop{align-items:center}.mt5SignalTop b{font-size:7px}
+.mt5LowerDeck{display:grid;grid-template-columns:1fr 1fr 1.05fr;gap:10px;margin-top:10px}.mt5LowerDeck .mt5Panel{margin:0}.mt5Metric{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #0d3040;font-size:8px}.mt5Metric:last-child{border-bottom:0}.mt5Metric span{color:#7897a6}.mt5Metric b{color:#e9f8fd;text-align:right}.mt5Metric b.bull{color:#27dfb0}.mt5Metric b.bear{color:#ff6e8b}.mt5Metric b.neutral{color:#ffc861}
+.mt5ScenarioCompact{display:grid;gap:8px}.mt5ScenarioCompact>div{padding:9px 10px;border:1px solid #16475b;border-radius:8px;background:#051722}.mt5ScenarioCompact b{display:block;font-size:8px;margin-bottom:5px}.mt5ScenarioCompact span{display:block;color:#8ba5b2;font-size:7.5px;line-height:1.45}.mt5ScenarioCompact .bullish b{color:#27dfb0}.mt5ScenarioCompact .bearish b{color:#ff6685}
+.mt5Insight{margin-top:10px;padding:13px 15px;border:1px dashed #1d6e91;border-radius:10px;background:#061a28}.mt5Insight b{display:block;color:#49bff2;font-size:10px;margin-bottom:5px}.mt5Insight p{margin:0;color:#9bb5c1;font-size:8.5px;line-height:1.55}
+.mt5Right{display:flex;flex-direction:column;gap:0}.mt5Right>.mt5Panel,.mt5Right>.mt5SignalCard{margin-top:10px}.mt5Right>.mt5HeadingCard{margin-top:0}
+@media(max-width:1200px){.mt5Grid{grid-template-columns:165px minmax(0,1fr) 300px!important}.mt5LowerDeck{grid-template-columns:1fr 1fr}.mt5LowerDeck .mt5ScenarioSummary{grid-column:1/-1}}
+@media(max-width:850px){.mt5Grid{grid-template-columns:1fr!important}.mt5LowerDeck{grid-template-columns:1fr}.mt5LowerDeck .mt5ScenarioSummary{grid-column:auto}.mt5ChartWrap .mt5Chart{height:470px;min-height:470px}}
