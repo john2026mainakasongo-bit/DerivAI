@@ -246,7 +246,7 @@ export default function MT5AnalysisDesk(){
     changeSymbol,
     loadingMarket,
     connect,
-  }=useDerivTicks({multiMarket:true});
+  }=useDerivTicks({multiMarket:true, publicOnly:true});
 
   // Recover the Deriv feed after Chrome back-forward cache,
   // tab suspension, network changes, or returning to the MT5 desk.
