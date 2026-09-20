@@ -562,7 +562,11 @@ function analyze(cs) {
           : (last.close-midpoint)>=0 ? "→ RESISTANCE" : "→ SUPPORT";
 
   const projectedPath=[];
-  const step=Math.max(atrSafe,Math.abs(last.close-e20)*1.2);
+  // Keep projected paths proportional to the selected market. A stale
+  // cross-market EMA must never create a 2x/3x price projection that
+  // destroys the chart scale.
+  const rawStep=Math.max(atrSafe,Math.abs(last.close-e20)*0.5);
+  const step=Math.min(rawStep,Math.max(Math.abs(last.close)*0.03,atrSafe));
   const pathSeconds=TF_SECONDS_FOR_PATH(cs);
   if(direction==="UP"){
     const target=Math.max(bullTrigger,last.close+step);
@@ -896,10 +900,19 @@ function Chart({candles,analysis,chartKey}) {
     const visibleLow=data.length ? Math.min(...data.map(x=>x.low)) : -Infinity;
     const visibleHigh=data.length ? Math.max(...data.map(x=>x.high)) : Infinity;
     const lastPrice=candles.at(-1)?.close;
+
+    // Never let a stale/cross-market analysis level distort the selected
+    // chart. Indicator levels must be close to the chart's current price.
+    const levelCompatible=(price)=>{
+      if(!Number.isFinite(price) || !Number.isFinite(lastPrice) || lastPrice===0) return false;
+      const ratio=Math.abs(price/lastPrice);
+      const relative=Math.abs(price-lastPrice)/Math.max(Math.abs(lastPrice),1e-9);
+      return ratio>=0.5 && ratio<=2 && relative<=0.75;
+    };
     const chartPad=Math.max(analysis?.atr*3 || 0, Math.abs(visibleHigh-visibleLow)*0.08, Math.abs(lastPrice||0)*0.002);
 
     for(const [title,price,color,width] of levels){
-      if(!Number.isFinite(price)) continue;
+      if(!levelCompatible(price)) continue;
       if(Number.isFinite(lastPrice) && (price < visibleLow-chartPad || price > visibleHigh+chartPad)) continue;
       const line=series.createPriceLine({
         price,
@@ -1092,11 +1105,16 @@ export default function MT5AnalysisDesk(){
 
   const candlesByTf=useMemo(()=>{
     const out={};
+    const perMarketHistory=marketCandleHistory?.[selectedKey] || {};
+
     for(const [label,seconds] of Object.entries(TF)){
-      const historical=normalizeCandles(candleHistory[seconds]);
-      // Always merge the latest subscribed ticks into the historical base.
-      // This keeps the currently forming candle live instead of waiting for
-      // the next historical-candle refresh.
+      const historical=normalizeCandles(
+        perMarketHistory[seconds] || candleHistory[seconds] || []
+      );
+
+      // Always merge the latest subscribed ticks into the history for THIS
+      // market. This prevents V100/V75 data from ever becoming the BTC chart
+      // after a market switch or refresh.
       out[label]=mergeLiveCandles(
         historical,
         tickRows,
@@ -1104,9 +1122,10 @@ export default function MT5AnalysisDesk(){
       );
     }
     return out;
-  },[candleHistory,tickRows]);
+  },[marketCandleHistory,selectedKey,candleHistory,tickRows]);
 
   const cs=candlesByTf[tf]||[];
+  const feedReady=connected || (cs.length>0 && tickRows.length>0);
   const analyses=useMemo(()=>{
     const out={};
     for(const m of supported){
@@ -1132,7 +1151,10 @@ export default function MT5AnalysisDesk(){
   const mtf=Object.entries(TF).map(([label,seconds])=>{
     const data=selectedMarket && label
       ? mergeLiveCandles(
-          normalizeCandles(candleHistory[seconds]),
+          normalizeCandles(
+            marketCandleHistory?.[selectedKey]?.[seconds] ||
+            candleHistory[seconds] || []
+          ),
           tickRows,
           seconds
         )
@@ -1188,7 +1210,7 @@ export default function MT5AnalysisDesk(){
     <div className="mt5Topbar">
       <div>
         <i className="mt5LiveDot"/>
-        {connected?"LIVE DERIV FEED":"CONNECTING"}
+        {feedReady?"LIVE DERIV FEED":"CONNECTING"}
         <small>{loadingMarket && !cs.length ? "LOADING CANDLES" : cs.length ? `LIVE CANDLES · ${cs.length}` : status||"DISCONNECTED"}</small>
       </div>
       <div className="mt5Timeframes">
