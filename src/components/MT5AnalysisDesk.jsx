@@ -545,35 +545,67 @@ function analyze(cs) {
     }
   }
 
+  const rangeHigh50=rangeHigh;
+  const rangeLow50=rangeLow;
+  const bullTrigger=Number(Math.max(hi,recentSwingHigh).toFixed(5));
+  const bearTrigger=Number(Math.min(lo,recentSwingLow).toFixed(5));
+  const midpoint=(bullTrigger+bearTrigger)/2;
+  const pressure=bullish || (bc>sc && momentum>=0) ? "BULLISH" : bearish || (sc>bc && momentum<=0) ? "BEARISH" : "NEUTRAL";
+  const pathBias=direction==="UP"
+    ? "→ RESISTANCE"
+    : direction==="DOWN"
+      ? "→ SUPPORT"
+      : pressure==="BULLISH"
+        ? "→ RESISTANCE · BREAKOUT WATCH"
+        : pressure==="BEARISH"
+          ? "→ SUPPORT · BREAKDOWN WATCH"
+          : (last.close-midpoint)>=0 ? "→ RESISTANCE" : "→ SUPPORT";
+
   const projectedPath=[];
   const step=Math.max(atrSafe,Math.abs(last.close-e20)*1.2);
+  const pathSeconds=TF_SECONDS_FOR_PATH(cs);
   if(direction==="UP"){
-    const p1=Math.min(Math.max(last.close+step*0.55,e20+step*0.4),recentSwingHigh+step*0.25);
-    const p2=Math.max(p1,last.close+step*1.2);
-    const p3=Number(Math.max(recentSwingHigh,last.close+step*2).toFixed(5));
-    projectedPath.push({time:last.time,price:last.close},{time:last.time+TF_SECONDS_FOR_PATH(cs),price:Number(p1.toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*2,price:Number(p2.toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*3,price:p3});
+    const target=Math.max(bullTrigger,last.close+step);
+    projectedPath.push(
+      {time:last.time,price:last.close},
+      {time:last.time+pathSeconds*2,price:Number(target.toFixed(5))},
+      {time:last.time+pathSeconds*3,price:Number((target+step*0.55).toFixed(5))}
+    );
   } else if(direction==="DOWN"){
-    const p1=Math.max(Math.min(last.close-step*0.55,e20-step*0.4),recentSwingLow-step*0.25);
-    const p2=Math.min(p1,last.close-step*1.2);
-    const p3=Number(Math.min(recentSwingLow,last.close-step*2).toFixed(5));
-    projectedPath.push({time:last.time,price:last.close},{time:last.time+TF_SECONDS_FOR_PATH(cs),price:Number(p1.toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*2,price:Number(p2.toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*3,price:p3});
+    const target=Math.min(bearTrigger,last.close-step);
+    projectedPath.push(
+      {time:last.time,price:last.close},
+      {time:last.time+pathSeconds*2,price:Number(target.toFixed(5))},
+      {time:last.time+pathSeconds*3,price:Number((target-step*0.55).toFixed(5))}
+    );
   } else {
-    const mid=(recentSwingHigh+recentSwingLow)/2;
-    projectedPath.push({time:last.time,price:last.close},{time:last.time+TF_SECONDS_FOR_PATH(cs),price:Number(((last.close+mid)/2).toFixed(5))},{time:last.time+TF_SECONDS_FOR_PATH(cs)*2,price:Number(mid.toFixed(5))});
+    const target=pathBias.includes("RESISTANCE") ? bullTrigger : bearTrigger;
+    const distance=Math.abs(target-last.close);
+    const safeTarget=distance>step*0.35 ? target : last.close+(target>=last.close?step: -step);
+    const continuation=safeTarget>=last.close ? safeTarget+step*0.35 : safeTarget-step*0.35;
+    projectedPath.push(
+      {time:last.time,price:last.close},
+      {time:last.time+pathSeconds*2,price:Number(safeTarget.toFixed(5))},
+      {time:last.time+pathSeconds*3,price:Number(continuation.toFixed(5))}
+    );
   }
 
   const confidence=clamp(Math.round(45+confirmations*3+Math.min(Math.abs(bc-sc)*4,15)+(trendStrength?8:0)),45,94);
-  let reason="Market is transitioning/ranging. Wait for structure or momentum to resolve.";
-  if(direction==="UP") reason=`Market heading UP: ${bc}/16 bullish checks vs ${sc}/16 bearish. Watch pullbacks, retests and resistance.`;
-  if(direction==="DOWN") reason=`Market heading DOWN: ${sc}/16 bearish checks vs ${bc}/16 bullish. Watch rallies, retests and support.`;
+  let reason=`Market is ranging. ${pressure} pressure is present, but structure is not fully resolved.`;
+  if(direction==="UP") reason=`Market structure is UP with ${bc}/16 bullish checks vs ${sc}/16 bearish. Path is toward resistance; watch pullbacks and retests.`;
+  if(direction==="DOWN") reason=`Market structure is DOWN with ${sc}/16 bearish checks vs ${bc}/16 bullish. Path is toward support; watch rallies and retests.`;
+  if(direction==="RANGE" && pressure==="BULLISH") reason=`Range with bullish pressure. Watch ${bullTrigger.toFixed(2)} for a confirmed breakout/retest; below ${bearTrigger.toFixed(2)} would invalidate the bullish scenario.`;
+  if(direction==="RANGE" && pressure==="BEARISH") reason=`Range with bearish pressure. Watch ${bearTrigger.toFixed(2)} for a confirmed breakdown/retest; above ${bullTrigger.toFixed(2)} would weaken the bearish scenario.`;
+  if(direction==="RANGE" && pressure==="NEUTRAL") reason=`Price is inside the current range between ${bearTrigger.toFixed(2)} and ${bullTrigger.toFixed(2)}. Wait for a clean break and retest.`;
   if(signal==="BUY") reason=`BUY setup detected from ${entryType}: ${bc}/16 bullish checks aligned. Confirm the level before manual execution.`;
   if(signal==="SELL") reason=`SELL setup detected from ${entryType}: ${sc}/16 bearish checks aligned. Confirm the level before manual execution.`;
 
   return {
-    signal,bias,direction,score,confidence,setup,structure,liquidity,momentum:momentumLabel,reason,
+    signal,bias,direction,score,confidence,setup,structure,liquidity,momentum:momentumLabel,reason,pressure,pathBias,
     confirmations:(raw==="BUY"?buy:sell).map(([name,ok])=>({name,ok})),entry,stop,target,entryType,
     support:Number(Math.min(lo,recentSwingLow).toFixed(5)),
     resistance:Number(Math.max(hi,recentSwingHigh).toFixed(5)),
+    bullTrigger,bearTrigger,rangeHigh:rangeHigh50,rangeLow:rangeLow50,
     ema20:Number(e20.toFixed(5)),ema50:Number(e50.toFixed(5)),ema200:Number(e200.toFixed(5)),atr:Number(atr.toFixed(5)),
     rsi:Number(rsiValue.toFixed(1)),macd:Number(macdValue.line.toFixed(5)),macdSignal:Number(macdValue.signal.toFixed(5)),macdHistogram:Number(macdValue.histogram.toFixed(5)),
     adx:Number(adxValue.adx.toFixed(1)),plusDI:Number(adxValue.plus.toFixed(1)),minusDI:Number(adxValue.minus.toFixed(1)),
@@ -741,7 +773,10 @@ function Chart({candles,analysis,chartKey}) {
     const series=seriesRef.current;
     if(!chart || !series || !candles.length) return;
 
-    const data=candles.map(c=>({
+    // Keep the analysis on the full dataset, but render a recent window so
+    // distant historical prices cannot compress the current BTC/Volatility chart.
+    const visibleCandles = candles.slice(-180);
+    const data=visibleCandles.map(c=>({
       time:c.time,
       open:c.open,
       high:c.high,
@@ -794,6 +829,8 @@ function Chart({candles,analysis,chartKey}) {
       ["Fib 38.2",analysis.fib?.level382,"#7b9cff",1],
       ["Fib 50",analysis.fib?.level50,"#8d7bff",1],
       ["Fib 61.8",analysis.fib?.level618,"#a76cff",1],
+      ["Bull trigger",analysis.bullTrigger,"#27dfb1",1],
+      ["Bear trigger",analysis.bearTrigger,"#ff6685",1],
       ["BB Upper",analysis.bollinger?.upper,"#59758a",1],
       ["BB Mid",analysis.bollinger?.mid,"#4c6577",1],
       ["BB Lower",analysis.bollinger?.lower,"#59758a",1],
@@ -801,8 +838,14 @@ function Chart({candles,analysis,chartKey}) {
       [analysis.orderBlock?.type?`${analysis.orderBlock.type} TOP`:"OB TOP",analysis.orderBlock?.high,"#ffb454",1]
     ];
 
+    const visibleLow=data.length ? Math.min(...data.map(x=>x.low)) : -Infinity;
+    const visibleHigh=data.length ? Math.max(...data.map(x=>x.high)) : Infinity;
+    const lastPrice=candles.at(-1)?.close;
+    const chartPad=Math.max(analysis?.atr*3 || 0, Math.abs(visibleHigh-visibleLow)*0.08, Math.abs(lastPrice||0)*0.002);
+
     for(const [title,price,color,width] of levels){
       if(!Number.isFinite(price)) continue;
+      if(Number.isFinite(lastPrice) && (price < visibleLow-chartPad || price > visibleHigh+chartPad)) continue;
       const line=series.createPriceLine({
         price,
         color,
@@ -908,7 +951,7 @@ function Chart({candles,analysis,chartKey}) {
     <div className="mt5ChartToolbar">
       <div className="mt5ChartToolsLeft">
         <span>CHART</span>
-        <b>PATH: {analysis.direction || "RANGE"} · {analysis.setup}</b>
+        <b>PATH: {analysis.pathBias || analysis.direction || "RANGE"} · {analysis.setup}</b>
       </div>
       <div className="mt5ChartToolsRight">
         <button type="button" onClick={()=>zoomBy(0.78)} title="Zoom in">+</button>
@@ -1129,6 +1172,8 @@ export default function MT5AnalysisDesk(){
           <span>MARKET HEADING</span><b className={a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}>{a.direction}</b>
           <span>MTF</span><b>{mtfHeading} · {mtfAgreement}%</b>
           <span>SETUP</span><b>{a.setup}</b>
+          <span>PATH</span><b>{a.pathBias || "—"}</b>
+          <span>TRIGGERS</span><b>{a.bullTrigger ?? "—"} / {a.bearTrigger ?? "—"}</b>
           <span>RSI / MACD</span><b>{a.rsi} · {a.macdHistogram>=0?"BULL":"BEAR"}</b>
           <span>ADX</span><b>{a.adx}</b>
         </div>
@@ -1138,9 +1183,12 @@ export default function MT5AnalysisDesk(){
         <section className={`mt5Panel mt5HeadingCard ${a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}`}>
           <div className="mt5PanelTitle">MARKET DIRECTION</div>
           <div className="mt5HeadingWord">{a.direction}</div>
+          <div className="mt5HeadingSub">{a.direction==="RANGE" ? `${a.pressure} PRESSURE · WAITING FOR CONFIRMATION` : `${a.direction} STRUCTURE · ACTIVE PATH`}</div>
           <div className="mt5HeadingLine"><span>TIMEFRAME</span><b>{tf}</b></div>
           <div className="mt5HeadingLine"><span>MTF ALIGNMENT</span><b>{mtfSummary}</b></div>
-          <div className="mt5HeadingLine"><span>PATH</span><b>{a.direction==="UP"?"→ RESISTANCE":a.direction==="DOWN"?"→ SUPPORT":"↔ RANGE"}</b></div>
+          <div className="mt5HeadingLine"><span>ACTIVE PATH</span><b>{a.pathBias || "—"}</b></div>
+          <div className="mt5HeadingLine"><span>BULL TRIGGER</span><b>{a.bullTrigger ?? "—"}</b></div>
+          <div className="mt5HeadingLine"><span>BEAR TRIGGER</span><b>{a.bearTrigger ?? "—"}</b></div>
           <p className="mt5HeadingReason">{a.reason}</p>
         </section>
 
