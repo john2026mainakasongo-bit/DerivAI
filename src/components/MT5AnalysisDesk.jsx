@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CandlestickSeries, LineSeries, createChart } from "lightweight-charts";
+import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
 import useDerivTicks from "../hooks/useDerivTicks";
 
-const TF = { M1: 60, M5: 300, M15: 900, H1: 3600 };
+const TF = {
+  "1m": 60, "2m": 120, "3m": 180, "5m": 300, "10m": 600,
+  "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
+  "4h": 14400, "8h": 28800, "24h": 86400,
+};
 const WANTED = [100, 75, 25, 10];
 
 const n = (v, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d;
@@ -36,6 +40,74 @@ function ema(values, period) {
   if (!values.length) return [];
   const k=2/(period+1); let e=values[0];
   return values.map((v,i)=>{ if(i) e=v*k+e*(1-k); return e; });
+}
+
+function normalizeCandles(rows) {
+  return (rows || [])
+    .map((c) => ({
+      time: Number(c?.time ?? c?.epoch),
+      open: Number(c?.open),
+      high: Number(c?.high),
+      low: Number(c?.low),
+      close: Number(c?.close),
+    }))
+    .filter(c =>
+      Number.isFinite(c.time) &&
+      Number.isFinite(c.open) &&
+      Number.isFinite(c.high) &&
+      Number.isFinite(c.low) &&
+      Number.isFinite(c.close)
+    )
+    .sort((a,b)=>a.time-b.time);
+}
+
+function chartEvents(cs) {
+  const events = [];
+  if (cs.length < 12) return events;
+
+  for (let i = 6; i < cs.length; i++) {
+    const c = cs[i];
+    const prior = cs.slice(Math.max(0, i - 10), i);
+    const hi = Math.max(...prior.map(x => x.high));
+    const lo = Math.min(...prior.map(x => x.low));
+    const range = Math.max(c.high - c.low, 1e-9);
+    const upper = (c.high - Math.max(c.open,c.close)) / range;
+    const lower = (Math.min(c.open,c.close) - c.low) / range;
+
+    if (c.close > hi && c.open <= hi) {
+      events.push({ time:c.time, position:"aboveBar", color:"#24dfb0", shape:"arrowUp", text:"BREAKOUT" });
+    }
+    if (c.close < lo && c.open >= lo) {
+      events.push({ time:c.time, position:"belowBar", color:"#ff6685", shape:"arrowDown", text:"BREAKOUT" });
+    }
+
+    if (upper > .42 && c.close < c.open && c.high > hi) {
+      events.push({ time:c.time, position:"aboveBar", color:"#ff9a66", shape:"circle", text:"LIQUIDITY" });
+    }
+    if (lower > .42 && c.close > c.open && c.low < lo) {
+      events.push({ time:c.time, position:"belowBar", color:"#27dabb", shape:"circle", text:"LIQUIDITY" });
+    }
+
+    const breakoutUp = cs.slice(Math.max(0,i-6),i).some(x=>x.close>hi);
+    const breakoutDn = cs.slice(Math.max(0,i-6),i).some(x=>x.close<lo);
+    if (breakoutUp && c.low <= hi && c.close > hi) {
+      events.push({ time:c.time, position:"belowBar", color:"#55e6bf", shape:"circle", text:"RETEST" });
+    }
+    if (breakoutDn && c.high >= lo && c.close < lo) {
+      events.push({ time:c.time, position:"aboveBar", color:"#ff8aa0", shape:"circle", text:"RETEST" });
+    }
+
+    if (lower > .48 && c.close > c.open) {
+      events.push({ time:c.time, position:"belowBar", color:"#62efc6", shape:"circle", text:"REJECTION" });
+    }
+    if (upper > .48 && c.close < c.open) {
+      events.push({ time:c.time, position:"aboveBar", color:"#ff7f98", shape:"circle", text:"REJECTION" });
+    }
+  }
+
+  const dedup = new Map();
+  for (const e of events) dedup.set(`${e.time}-${e.text}`, e);
+  return [...dedup.values()].slice(-24);
 }
 
 function analyze(cs) {
@@ -119,81 +191,241 @@ function Chart({candles,analysis}) {
   useEffect(()=>{
     if(!el.current||!candles.length) return;
     const chart=createChart(el.current,{
-      autoSize:true,layout:{background:{color:"#03111d"},textColor:"#8faab8"},
+      autoSize:true,
+      layout:{background:{color:"#03111d"},textColor:"#8faab8"},
       grid:{vertLines:{color:"rgba(26,67,86,.28)"},horzLines:{color:"rgba(26,67,86,.28)"}},
-      rightPriceScale:{borderColor:"#18445a"},timeScale:{borderColor:"#18445a",timeVisible:true}
+      rightPriceScale:{borderColor:"#18445a"},
+      timeScale:{borderColor:"#18445a",timeVisible:true},
+      crosshair:{mode:1},
     });
-    const series=chart.addSeries(CandlestickSeries,{upColor:"#18d6a1",downColor:"#ef607d",borderUpColor:"#18d6a1",borderDownColor:"#ef607d",wickUpColor:"#18d6a1",wickDownColor:"#ef607d"});
+    const series=chart.addSeries(CandlestickSeries,{
+      upColor:"#18d6a1",downColor:"#ef607d",
+      borderUpColor:"#18d6a1",borderDownColor:"#ef607d",
+      wickUpColor:"#18d6a1",wickDownColor:"#ef607d"
+    });
     series.setData(candles.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close})));
-    const levels=[["Support",analysis.support,"#27b9e7"],["Resistance",analysis.resistance,"#f39b62"],["EMA20",analysis.ema20,"#8d7cf7"],["EMA50",analysis.ema50,"#c5d2db"],["Entry",analysis.entry,"#20dfb1"],["SL",analysis.stop,"#ff6685"],["TP",analysis.target,"#2bd6a3"]];
-    for(const [title,price,color] of levels){if(!Number.isFinite(price))continue;const line=chart.addSeries(LineSeries,{color,lineWidth:1,lineStyle:2,title,lastValueVisible:true,priceLineVisible:true});line.setData([{time:candles[0].time,value:price},{time:candles.at(-1).time,value:price}]);}
+
+    const levels=[
+      ["Support",analysis.support,"#27b9e7"],
+      ["Resistance",analysis.resistance,"#f39b62"],
+      ["EMA20",analysis.ema20,"#8d7cf7"],
+      ["EMA50",analysis.ema50,"#c5d2db"],
+      ["Entry",analysis.entry,"#20dfb1"],
+      ["SL",analysis.stop,"#ff6685"],
+      ["TP",analysis.target,"#2bd6a3"]
+    ];
+    for(const [title,price,color] of levels){
+      if(!Number.isFinite(price)) continue;
+      const line=chart.addSeries(LineSeries,{
+        color,lineWidth:title==="Entry"||title==="SL"||title==="TP"?2:1,
+        lineStyle:2,title,lastValueVisible:true,priceLineVisible:true
+      });
+      line.setData([
+        {time:candles[0].time,value:price},
+        {time:candles.at(-1).time,value:price}
+      ]);
+    }
+
+    const markers=chartEvents(candles);
+    const markerPrimitive = markers.length ? createSeriesMarkers(series, markers) : null;
+
     chart.timeScale().fitContent();
-    return ()=>chart.remove();
+    return ()=>{ markerPrimitive?.detach?.(); chart.remove(); };
   },[candles,analysis]);
   return <div ref={el} className="mt5Chart"/>;
 }
 
 export default function MT5AnalysisDesk(){
-  const {markets=[],marketTicks={},status,connected}=useDerivTicks({multiMarket:true});
-  const supported=useMemo(()=>WANTED.map(v=>markets.find(m=>matches(m,v))).filter(Boolean),[markets]);
+  const {
+    markets=[],
+    marketTicks={},
+    candleHistory={},
+    status,
+    connected,
+    symbol,
+    changeSymbol,
+    loadingMarket,
+  }=useDerivTicks({multiMarket:true});
+
+  const supported=useMemo(
+    ()=>WANTED.map(v=>markets.find(m=>matches(m,v))).filter(Boolean),
+    [markets]
+  );
   const [selected,setSelected]=useState("");
-  const [tf,setTf]=useState("M5");
-  useEffect(()=>{if(!selected&&supported[0])setSelected(keyOf(supported[0]));},[selected,supported]);
+  const [tf,setTf]=useState("5m");
+
+  useEffect(()=>{
+    if(!selected&&supported[0]) setSelected(keyOf(supported[0]));
+  },[selected,supported]);
+
+  useEffect(()=>{
+    if(!selected||!connected||selected===symbol) return;
+    void changeSymbol(selected).catch(()=>{});
+  },[selected,connected,symbol,changeSymbol]);
 
   const selectedMarket=supported.find(m=>keyOf(m)===selected)||supported[0];
-  const rows=selectedMarket?(marketTicks[keyOf(selectedMarket)]||[]):[];
-  const cs=useMemo(()=>candlesFromTicks(rows,TF[tf]),[rows,tf]);
+  const selectedKey=keyOf(selectedMarket);
+  const tickRows=selectedMarket?(marketTicks[selectedKey]||[]):[];
+
+  const candlesByTf=useMemo(()=>{
+    const out={};
+    for(const [label,seconds] of Object.entries(TF)){
+      const historical=normalizeCandles(candleHistory[seconds]);
+      out[label]=historical.length>=24
+        ? historical
+        : candlesFromTicks(tickRows,seconds);
+    }
+    return out;
+  },[candleHistory,tickRows]);
+
+  const cs=candlesByTf[tf]||[];
   const analyses=useMemo(()=>{
     const out={};
-    for(const m of supported) out[keyOf(m)]=analyze(candlesFromTicks(marketTicks[keyOf(m)]||[],TF[tf]));
+    for(const m of supported){
+      const k=keyOf(m);
+      out[k]=analyze(
+        k===selectedKey
+          ? (candlesByTf[tf]||[])
+          : candlesFromTicks(marketTicks[k]||[],TF[tf])
+      );
+    }
     return out;
-  },[supported,marketTicks,tf]);
-  const a=selectedMarket?analyses[keyOf(selectedMarket)]||analyze(cs):analyze(cs);
+  },[supported,selectedKey,candlesByTf,marketTicks,tf]);
+
+  const a=selectedMarket
+    ? analyses[selectedKey]||analyze(cs)
+    : analyze(cs);
   const cls=a.signal==="BUY"?"buy":a.signal==="SELL"?"sell":"wait";
+
+  const mtf=Object.entries(TF).map(([label,seconds])=>{
+    const data=selectedMarket && label
+      ? (label===tf
+        ? cs
+        : normalizeCandles(candleHistory[seconds]).length>=24
+          ? normalizeCandles(candleHistory[seconds])
+          : candlesFromTicks(tickRows,seconds))
+      : [];
+    return {label,data,analysis:analyze(data)};
+  });
 
   return <div className="mt5Desk">
     <div className="mt5Topbar">
-      <div><i className="mt5LiveDot"/> {connected?"LIVE DERIV FEED":"CONNECTING"} <small>{status||"DISCONNECTED"}</small></div>
-      <div className="mt5Timeframes">{Object.keys(TF).map(x=><button key={x} type="button" className={tf===x?"active":""} onClick={()=>setTf(x)}>{x}</button>)}</div>
+      <div>
+        <i className="mt5LiveDot"/>
+        {connected?"LIVE DERIV FEED":"CONNECTING"}
+        <small>{loadingMarket?"LOADING CANDLES":status||"DISCONNECTED"}</small>
+      </div>
+      <div className="mt5Timeframes">
+        {Object.keys(TF).map(x=>
+          <button key={x} type="button" className={tf===x?"active":""} onClick={()=>setTf(x)}>
+            {x}
+          </button>
+        )}
+      </div>
     </div>
 
     <div className="mt5Grid">
       <aside className="mt5Side">
-        <div className="mt5Watchlist"><div className="mt5PanelTitle">MARKET SCANNER</div>
+        <div className="mt5Watchlist">
+          <div className="mt5PanelTitle">MARKET SCANNER</div>
           {WANTED.map(v=>{
-            const m=supported.find(x=>matches(x,v)); const k=m&&keyOf(m); const x=k&&analyses[k];
-            return <button key={v} type="button" className={`mt5WatchRow ${k===keyOf(selectedMarket)?"active":""}`} onClick={()=>m&&setSelected(k)}>
-              <b>V{v}</b><span>{x?.bias||"WAITING"}</span><strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
+            const m=supported.find(x=>matches(x,v));
+            const k=m&&keyOf(m);
+            const x=k&&analyses[k];
+            return <button key={v} type="button"
+              className={`mt5WatchRow ${k===selectedKey?"active":""}`}
+              onClick={()=>m&&setSelected(k)}>
+              <b>V{v}</b>
+              <span>{x?.bias||"WAITING"}</span>
+              <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
             </button>;
           })}
         </div>
-        <div className="mt5Panel"><div className="mt5PanelTitle">MULTI-TIMEFRAME BIAS</div>
-          {Object.keys(TF).map(x=>{const z=analyze(candlesFromTicks(rows,TF[x]));return <div className="mt5MiniRow" key={x}><b>{x}</b><span>{z.bias}</span><strong className={z.signal.toLowerCase()}>{z.signal}</strong></div>;})}
+
+        <div className="mt5Panel mt5MtfPanel">
+          <div className="mt5PanelTitle">ALL TIMEFRAME ANALYSIS</div>
+          {mtf.map(({label,analysis:z})=>
+            <button key={label} type="button"
+              className={`mt5MiniRow ${tf===label?"active":""}`}
+              onClick={()=>setTf(label)}>
+              <b>{label}</b>
+              <span>{z.setup}</span>
+              <strong className={z.signal.toLowerCase()}>{z.signal}</strong>
+            </button>
+          )}
+        </div>
+
+        <div className="mt5Panel mt5Checklist">
+          <div className="mt5PanelTitle">STRUCTURE CHECK</div>
+          {(a.confirmations||[]).map(x=>
+            <div key={x.name}><i className={x.ok?"on":""}>{x.ok?"✓":"·"}</i><span>{x.name}</span><b>{x.ok?"OK":"WAIT"}</b></div>
+          )}
         </div>
       </aside>
 
       <main className="mt5Center">
-        <div className="mt5ChartHead"><div><span>LIVE PRICE ACTION</span><h2>{labelOf(selectedMarket)}</h2></div><div className="mt5ChartMeta"><b>{cs.at(-1)?.close??"—"}</b><small>{cs.length} candles</small></div></div>
+        <div className="mt5ChartHead">
+          <div><span>LIVE PRICE ACTION · {tf}</span><h2>{labelOf(selectedMarket)}</h2></div>
+          <div className="mt5ChartMeta"><b>{cs.at(-1)?.close??"—"}</b><small>{cs.length} candles</small></div>
+        </div>
         <Chart candles={cs} analysis={a}/>
-        <div className="mt5SetupStrip"><span>SETUP</span><b>{a.setup}</b><span>STRUCTURE</span><b>{a.structure}</b><span>LIQUIDITY</span><b>{a.liquidity}</b><span>MOMENTUM</span><b>{a.momentum}</b></div>
+        <div className="mt5SetupStrip">
+          <span>SETUP</span><b>{a.setup}</b>
+          <span>STRUCTURE</span><b>{a.structure}</b>
+          <span>LIQUIDITY</span><b>{a.liquidity}</b>
+          <span>MOMENTUM</span><b>{a.momentum}</b>
+          <span>TRADE PLAN</span><b>{a.signal==="WAIT"?"WAIT":"READY"}</b>
+        </div>
       </main>
 
       <aside className="mt5Right">
         <section className={`mt5SignalCard ${cls}`}>
           <div className="mt5SignalTop"><span>MARKET DECISION</span><b>{a.confidence?a.confidence+"%":"—"}</b></div>
-          <div className="mt5SignalWord">{a.signal}</div><p>{a.reason}</p>
+          <div className="mt5SignalWord">{a.signal}</div>
+          <p>{a.reason}</p>
           <div className="mt5Levels">
-            <div><span>Entry</span><b>{a.entry??"—"}</b></div><div><span>Stop loss</span><b>{a.stop??"—"}</b></div>
-            <div><span>Take profit</span><b>{a.target??"—"}</b></div><div><span>Risk / reward</span><b>{a.rr?"1:"+a.rr:"—"}</b></div>
+            <div><span>Entry</span><b>{a.entry??"—"}</b></div>
+            <div><span>Stop loss</span><b>{a.stop??"—"}</b></div>
+            <div><span>Take profit</span><b>{a.target??"—"}</b></div>
+            <div><span>Risk / reward</span><b>{a.rr?"1:"+a.rr:"—"}</b></div>
           </div>
-          <div className="mt5ConfirmationList">{(a.confirmations||[]).map(x=><div key={x.name}><i className={x.ok?"on":""}>{x.ok?"✓":"·"}</i><span>{x.name}</span><b>{x.ok?"CONFIRMED":"WAIT"}</b></div>)}</div>
-          <button type="button" className="mt5CopyPlan" onClick={()=>navigator.clipboard?.writeText(`${a.signal} ${labelOf(selectedMarket)} Entry ${a.entry} SL ${a.stop} TP ${a.target}`)}>COPY MT5 TRADE PLAN</button>
+          <div className="mt5ConfirmationList">
+            {(a.confirmations||[]).map(x=>
+              <div key={x.name}><i className={x.ok?"on":""}>{x.ok?"✓":"·"}</i><span>{x.name}</span><b>{x.ok?"CONFIRMED":"WAIT"}</b></div>
+            )}
+          </div>
+          <button type="button" className="mt5CopyPlan"
+            onClick={()=>navigator.clipboard?.writeText(`${a.signal} ${labelOf(selectedMarket)} ${tf} Entry ${a.entry} SL ${a.stop} TP ${a.target}`)}>
+            COPY MT5 TRADE PLAN
+          </button>
         </section>
-        <section className="mt5Panel"><div className="mt5PanelTitle">KEY LEVELS</div>
-          {["support","resistance","ema20","ema50","atr"].map(k=><div className="mt5LevelRow" key={k}><span>{k==="ema20"?"EMA 20":k==="ema50"?"EMA 50":k.toUpperCase()}</span><b>{a[k]??"—"}</b></div>)}
+
+        <section className="mt5Panel">
+          <div className="mt5PanelTitle">KEY LEVELS</div>
+          {["support","resistance","ema20","ema50","atr"].map(k=>
+            <div className="mt5LevelRow" key={k}>
+              <span>{k==="ema20"?"EMA 20":k==="ema50"?"EMA 50":k.toUpperCase()}</span>
+              <b>{a[k]??"—"}</b>
+            </div>
+          )}
         </section>
-        <section className="mt5Panel mt5Safety"><div className="mt5PanelTitle">MANUAL EXECUTION</div><p>This desk does not place trades. Use the analysis plan as a manual reference, then execute yourself in MT5.</p></section>
+
+        <section className="mt5Panel mt5TradeMap">
+          <div className="mt5PanelTitle">SETUP MAP</div>
+          <div><span>BREAKOUT</span><b>{a.setup==="BREAKOUT"?"CONFIRMED":"WAIT"}</b></div>
+          <div><span>RETEST</span><b>{a.setup==="RETEST"?"CONFIRMED":"WAIT"}</b></div>
+          <div><span>LIQUIDITY</span><b>{a.liquidity}</b></div>
+          <div><span>REJECTION</span><b>{a.setup==="REJECTION"?"CONFIRMED":"WAIT"}</b></div>
+          <div><span>CONTINUATION</span><b>{a.setup==="CONTINUATION"?"CONFIRMED":"WAIT"}</b></div>
+          <div><span>FAKE / FAILED RETEST</span><b>{a.setup==="FAKE RETEST"?"DETECTED":"CLEAR"}</b></div>
+        </section>
+
+        <section className="mt5Panel mt5Safety">
+          <div className="mt5PanelTitle">MANUAL EXECUTION</div>
+          <p>This desk does not place trades. Use the analysis plan as a manual reference, then execute yourself in MT5.</p>
+        </section>
       </aside>
     </div>
   </div>;
 }
+

@@ -126,9 +126,17 @@ export default function useDerivTicks({ multiMarket = false } = {}) {
 
   const [candleHistory, setCandleHistory] = useState({
     60: [],
+    120: [],
+    180: [],
     300: [],
+    600: [],
     900: [],
+    1800: [],
     3600: [],
+    7200: [],
+    14400: [],
+    28800: [],
+    86400: [],
   });
 
   const [openContracts, setOpenContracts] = useState([]);
@@ -231,12 +239,20 @@ export default function useDerivTicks({ multiMarket = false } = {}) {
     setLoadingMarket(true);
     setTicks([]);
 
-    setCandleHistory({
-      60: [],
-      300: [],
-      900: [],
-      3600: [],
-    });
+  const [candleHistory, setCandleHistory] = useState({
+    60: [],
+    120: [],
+    180: [],
+    300: [],
+    600: [],
+    900: [],
+    1800: [],
+    3600: [],
+    7200: [],
+    14400: [],
+    28800: [],
+    86400: [],
+  });
 
     const promise = (async () => {
       try {
@@ -273,41 +289,47 @@ export default function useDerivTicks({ multiMarket = false } = {}) {
         }
 
         const candleRequests = [
-          [3600, 240],
           [60, 240],
+          [120, 240],
+          [180, 240],
           [300, 240],
+          [600, 240],
           [900, 240],
+          [1800, 240],
+          [3600, 240],
+          [7200, 240],
+          [14400, 240],
+          [28800, 180],
+          [86400, 180],
         ];
 
-        for (const [granularity, count] of candleRequests) {
-          try {
-            const candles =
-              await derivPublicClient.getCandleHistory(
-                nextSymbol,
-                granularity,
-                count
+        await Promise.all(
+          candleRequests.map(async ([granularity, count]) => {
+            try {
+              const candles =
+                await derivPublicClient.getCandleHistory(
+                  nextSymbol,
+                  granularity,
+                  count
+                );
+
+              if (
+                mountedRef.current &&
+                symbolRef.current === nextSymbol
+              ) {
+                setCandleHistory((current) => ({
+                  ...current,
+                  [granularity]: candles,
+                }));
+              }
+            } catch (error) {
+              console.warn(
+                `[ZENTORA] Background ${granularity}s candles unavailable:`,
+                error
               );
-
-            if (
-              mountedRef.current &&
-              symbolRef.current === nextSymbol
-            ) {
-              setCandleHistory((current) => ({
-                ...current,
-                [granularity]: candles,
-              }));
             }
-          } catch (error) {
-            console.warn(
-              `[ZENTORA] Background ${granularity}s candles unavailable:`,
-              error
-            );
-          }
-
-          await new Promise((resolve) =>
-            window.setTimeout(resolve, 150)
-          );
-        }
+          })
+        );
       })();
     })();
 

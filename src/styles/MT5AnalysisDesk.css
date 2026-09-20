@@ -92,3 +92,63 @@
   flex:0 0 auto !important;
   width:100% !important;
 }
+
+/* MT5 V5 — Deriv-style timeframe bar + annotated setup workspace */
+.mt5Timeframes{
+  display:flex;
+  gap:4px;
+  max-width:100%;
+  overflow-x:auto;
+  padding-bottom:1px;
+  scrollbar-width:thin;
+}
+.mt5Timeframes button{
+  flex:0 0 auto;
+  min-width:42px;
+  padding:7px 9px;
+}
+.mt5MtfPanel .mt5MiniRow{
+  width:100%;
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr) 44px;
+  align-items:center;
+  text-align:left;
+  border:0;
+  background:transparent;
+  cursor:pointer;
+}
+.mt5MtfPanel .mt5MiniRow.active{
+  background:#092538;
+  border-radius:7px;
+}
+.mt5Checklist>div{
+  display:grid;
+  grid-template-columns:18px minmax(0,1fr) auto;
+  gap:6px;
+  align-items:center;
+  padding:7px 0;
+  border-bottom:1px solid #0d2d3c;
+  font-size:8px;
+}
+.mt5Checklist>div:last-child{border-bottom:0}
+.mt5Checklist i{
+  width:15px;height:15px;display:grid;place-items:center;
+  border-radius:4px;border:1px solid #29485a;color:#526b78;font-style:normal;
+}
+.mt5Checklist i.on{
+  color:#061824;background:#25dfb2;border-color:#25dfb2;font-weight:1000;
+}
+.mt5Checklist span{color:#9ab1bd}
+.mt5Checklist b{font-size:7px;color:#6f8d9e}
+.mt5TradeMap>div:not(.mt5PanelTitle){
+  display:flex;justify-content:space-between;gap:8px;
+  padding:7px 0;border-bottom:1px solid #0d2d3c;
+  font-size:8px;
+}
+.mt5TradeMap>div:last-child{border-bottom:0}
+.mt5TradeMap span{color:#708d9e}
+.mt5TradeMap b{color:#a9bdc8;font-size:7px}
+.mt5Chart{min-height:520px}
+@media(max-width:1050px){
+  .mt5Timeframes{justify-content:flex-start}
+}
