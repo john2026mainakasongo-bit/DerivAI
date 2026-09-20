@@ -245,7 +245,44 @@ export default function MT5AnalysisDesk(){
     symbol,
     changeSymbol,
     loadingMarket,
+    connect,
   }=useDerivTicks({multiMarket:true});
+
+  // Recover the Deriv feed after Chrome back-forward cache,
+  // tab suspension, network changes, or returning to the MT5 desk.
+  useEffect(()=>{
+    let timer=null;
+
+    const resumeFeed=()=>{
+      if(document.visibilityState !== "visible") return;
+
+      if(
+        !connected ||
+        status === "OFFLINE" ||
+        status === "ERROR" ||
+        status === "DISCONNECTED"
+      ){
+        window.clearTimeout(timer);
+
+        timer=window.setTimeout(()=>{
+          void connect().catch(()=>{});
+        },250);
+      }
+    };
+
+    window.addEventListener("pageshow",resumeFeed);
+    window.addEventListener("online",resumeFeed);
+    document.addEventListener("visibilitychange",resumeFeed);
+
+    resumeFeed();
+
+    return ()=>{
+      window.removeEventListener("pageshow",resumeFeed);
+      window.removeEventListener("online",resumeFeed);
+      document.removeEventListener("visibilitychange",resumeFeed);
+      window.clearTimeout(timer);
+    };
+  },[connected,status,connect]);
 
   const supported=useMemo(
     ()=>WANTED.map(v=>markets.find(m=>matches(m,v))).filter(Boolean),
