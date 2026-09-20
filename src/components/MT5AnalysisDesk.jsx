@@ -593,7 +593,7 @@ function Chart({candles,analysis,chartKey}) {
         minBarSpacing:2,
         maxBarSpacing:28,
         rightOffset:8,
-        shiftVisibleRangeOnNewBar:false,
+        shiftVisibleRangeOnNewBar:true,
         lockVisibleTimeRangeOnResize:true
       },
       crosshair:{
@@ -684,11 +684,13 @@ function Chart({candles,analysis,chartKey}) {
       firstDataKeyRef.current=firstKey;
       lastDataKeyRef.current="";
       chart.timeScale().fitContent();
-      chart.timeScale().scrollToPosition(8,false);
+      chart.timeScale().scrollToRealTime();
     } else {
       const last=candles.at(-1);
 
       if(last) {
+        // This is the critical realtime path: the active candle is updated
+        // from the newest Deriv tick without resetting the whole chart.
         series.update({
           time:last.time,
           open:last.open,
@@ -889,9 +891,14 @@ export default function MT5AnalysisDesk(){
     const out={};
     for(const [label,seconds] of Object.entries(TF)){
       const historical=normalizeCandles(candleHistory[seconds]);
-      out[label]=historical.length>=24
-        ? historical
-        : candlesFromTicks(tickRows,seconds);
+      // Always merge the latest subscribed ticks into the historical base.
+      // This keeps the currently forming candle live instead of waiting for
+      // the next historical-candle refresh.
+      out[label]=mergeLiveCandles(
+        historical,
+        tickRows,
+        seconds
+      );
     }
     return out;
   },[candleHistory,tickRows]);
@@ -917,11 +924,11 @@ export default function MT5AnalysisDesk(){
 
   const mtf=Object.entries(TF).map(([label,seconds])=>{
     const data=selectedMarket && label
-      ? (label===tf
-        ? cs
-        : normalizeCandles(candleHistory[seconds]).length>=24
-          ? normalizeCandles(candleHistory[seconds])
-          : candlesFromTicks(tickRows,seconds))
+      ? mergeLiveCandles(
+          normalizeCandles(candleHistory[seconds]),
+          tickRows,
+          seconds
+        )
       : [];
     return {label,data,analysis:analyze(data)};
   });
@@ -984,7 +991,10 @@ export default function MT5AnalysisDesk(){
       <main className="mt5Center">
         <div className="mt5ChartHead">
           <div><span>LIVE PRICE ACTION · {tf} · ENTRY / SL / TP</span><h2>{labelOf(selectedMarket)}</h2></div>
-          <div className="mt5ChartMeta"><b>{cs.at(-1)?.close??"—"}</b><small>{cs.length} candles</small></div>
+          <div className="mt5ChartMeta">
+            <b>{cs.at(-1)?.close??"—"}</b>
+            <small><i className="mt5LiveDot"/> FORMING · {cs.length} candles</small>
+          </div>
         </div>
         <Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`}/>
         <div className="mt5SetupStrip">
