@@ -36,6 +36,24 @@ function candlesFromTicks(rows, seconds) {
   return [...map.values()].sort((a,b)=>a.time-b.time);
 }
 
+function mergeLiveCandles(historical, ticks, seconds) {
+  const base = normalizeCandles(historical);
+  const live = candlesFromTicks(ticks, seconds);
+  if (!live.length) return base;
+
+  const map = new Map(base.map((c) => [c.time, c]));
+  const newestBase = base.at(-1)?.time ?? -Infinity;
+
+  for (const candle of live) {
+    if (candle.time >= newestBase) {
+      map.set(candle.time, candle);
+    }
+  }
+
+  return [...map.values()]
+    .sort((a, b) => a.time - b.time)
+    .slice(-500);
+}
 function ema(values, period) {
   if (!values.length) return [];
   const k=2/(period+1); let e=values[0];
@@ -322,31 +340,154 @@ function fvgEvents(cs) {
   return out;
 }
 
-function Chart({candles,analysis}) {
+function Chart({candles,analysis,chartKey}) {
   const el=useRef(null);
   const chartRef=useRef(null);
-  const viewportRef=useRef(null);
-  const initializedRef=useRef(false);
+  const seriesRef=useRef(null);
+  const priceLinesRef=useRef([]);
+  const markerPrimitiveRef=useRef(null);
+  const firstDataKeyRef=useRef("");
+  const lastDataKeyRef=useRef("");
+
   useEffect(()=>{
-    if(!el.current||!candles.length) return;
+    if(!el.current) return;
+
     const chart=createChart(el.current,{
       autoSize:true,
-      layout:{background:{color:"#03111d"},textColor:"#8faab8",fontFamily:"Inter, system-ui, sans-serif"},
-      grid:{vertLines:{color:"rgba(26,67,86,.25)"},horzLines:{color:"rgba(26,67,86,.25)"}},
-      rightPriceScale:{borderColor:"#18445a",scaleMargins:{top:0.08,bottom:0.08}},
-      timeScale:{borderColor:"#18445a",timeVisible:true,secondsVisible:false,barSpacing:7,minBarSpacing:2,rightOffset:8},
-      crosshair:{mode:1,vertLine:{color:"#4e91aa",width:1,style:2,labelBackgroundColor:"#0b3347"},horzLine:{color:"#4e91aa",width:1,style:2,labelBackgroundColor:"#0b3347"}},
-      handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true},
-      handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},
+      layout:{
+        background:{color:"#03111d"},
+        textColor:"#8faab8",
+        fontFamily:"Inter, system-ui, sans-serif"
+      },
+      grid:{
+        vertLines:{color:"rgba(26,67,86,.22)"},
+        horzLines:{color:"rgba(26,67,86,.22)"}
+      },
+      rightPriceScale:{
+        borderColor:"#18445a",
+        scaleMargins:{top:0.08,bottom:0.08},
+        autoScale:true
+      },
+      timeScale:{
+        borderColor:"#18445a",
+        timeVisible:true,
+        secondsVisible:false,
+        barSpacing:8,
+        minBarSpacing:2,
+        maxBarSpacing:28,
+        rightOffset:8,
+        shiftVisibleRangeOnNewBar:false,
+        lockVisibleTimeRangeOnResize:true
+      },
+      crosshair:{
+        mode:1,
+        vertLine:{
+          color:"#4e91aa",
+          width:1,
+          style:2,
+          labelBackgroundColor:"#0b3347"
+        },
+        horzLine:{
+          color:"#4e91aa",
+          width:1,
+          style:2,
+          labelBackgroundColor:"#0b3347"
+        }
+      },
+      handleScale:{
+        mouseWheel:true,
+        pinch:true,
+        axisPressedMouseMove:true,
+        axisDoubleClickReset:true
+      },
+      handleScroll:{
+        mouseWheel:true,
+        pressedMouseMove:true,
+        horzTouchDrag:true,
+        vertTouchDrag:true
+      }
     });
-    chartRef.current=chart;
+
     const series=chart.addSeries(CandlestickSeries,{
-      upColor:"#18d6a1",downColor:"#ef607d",
-      borderUpColor:"#18d6a1",borderDownColor:"#ef607d",
-      wickUpColor:"#18d6a1",wickDownColor:"#ef607d",
-      lastValueVisible:true,priceLineVisible:true
+      upColor:"#18d6a1",
+      downColor:"#ef607d",
+      borderUpColor:"#18d6a1",
+      borderDownColor:"#ef607d",
+      wickUpColor:"#18d6a1",
+      wickDownColor:"#ef607d",
+      lastValueVisible:true,
+      priceLineVisible:true,
+      borderVisible:false
     });
-    series.setData(candles.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close})));
+
+    chartRef.current=chart;
+    seriesRef.current=series;
+
+    const ts=chart.timeScale();
+    const ro=new ResizeObserver(()=>{
+      if(el.current) {
+        chart.resize(
+          el.current.clientWidth,
+          el.current.clientHeight
+        );
+      }
+    });
+    ro.observe(el.current);
+
+    return ()=>{
+      ro.disconnect();
+      markerPrimitiveRef.current?.detach?.();
+      markerPrimitiveRef.current=null;
+      chartRef.current=null;
+      seriesRef.current=null;
+      chart.remove();
+    };
+  },[]);
+
+  useEffect(()=>{
+    const chart=chartRef.current;
+    const series=seriesRef.current;
+    if(!chart || !series || !candles.length) return;
+
+    const data=candles.map(c=>({
+      time:c.time,
+      open:c.open,
+      high:c.high,
+      low:c.low,
+      close:c.close
+    }));
+
+    const firstKey=chartKey || String(candles[0]?.time || "");
+    const datasetChanged=
+      firstDataKeyRef.current &&
+      firstDataKeyRef.current !== firstKey;
+
+    if(!firstDataKeyRef.current || datasetChanged) {
+      series.setData(data);
+      firstDataKeyRef.current=firstKey;
+      lastDataKeyRef.current="";
+      chart.timeScale().fitContent();
+      chart.timeScale().scrollToPosition(8,false);
+    } else {
+      const last=candles.at(-1);
+
+      if(last) {
+        series.update({
+          time:last.time,
+          open:last.open,
+          high:last.high,
+          low:last.low,
+          close:last.close
+        });
+      }
+    }
+
+    lastDataKeyRef.current=String(candles.at(-1)?.time || "");
+
+    for(const line of priceLinesRef.current) {
+      try { series.removePriceLine(line); } catch {}
+    }
+    priceLinesRef.current=[];
 
     const levels=[
       ["Support",analysis.support,"#27b9e7",1],
@@ -357,84 +498,107 @@ function Chart({candles,analysis}) {
       ["SL",analysis.stop,"#ff6685",2],
       ["TP",analysis.target,"#2bd6a3",2]
     ];
+
     for(const [title,price,color,width] of levels){
       if(!Number.isFinite(price)) continue;
-      const line=chart.addSeries(LineSeries,{
-        color,lineWidth:width,lineStyle:title==="EMA20"||title==="EMA50"?0:2,title,
-        lastValueVisible:true,priceLineVisible:true
+      const line=series.createPriceLine({
+        price,
+        color,
+        lineWidth:width,
+        lineStyle:title==="EMA20"||title==="EMA50"?0:2,
+        axisLabelVisible:true,
+        title
       });
-      line.setData([{time:candles[0].time,value:price},{time:candles.at(-1).time,value:price}]);
+      priceLinesRef.current.push(line);
     }
 
-    const current=candles.at(-1)?.close;
-    if(Number.isFinite(current)){
-      const priceLine=series.createPriceLine({price:current,color:"#d7f5ff",lineWidth:1,lineStyle:3,axisLabelVisible:true,title:"PRICE"});
-      void priceLine;
-    }
+    markerPrimitiveRef.current?.detach?.();
 
-    const markers=[...chartEvents(candles),...structureEvents(candles),...fvgEvents(candles)]
-      .sort((a,b)=>(a.time-b.time)||(b.priority-a.priority));
+    const markers=[
+      ...chartEvents(candles),
+      ...structureEvents(candles),
+      ...fvgEvents(candles)
+    ].sort(
+      (a,b)=>(a.time-b.time)||(b.priority-a.priority)
+    );
+
     const byTime=new Map();
     for(const marker of markers){
       const existing=byTime.get(marker.time);
-      if(!existing || marker.priority>existing.priority) byTime.set(marker.time,marker);
+      if(!existing || marker.priority>existing.priority) {
+        byTime.set(marker.time,marker);
+      }
     }
-    const markerPrimitive=createSeriesMarkers(series,[...byTime.values()].slice(-18));
 
-    const ts=chart.timeScale();
-    const saved=viewportRef.current;
-    if(saved){
-      try { ts.setVisibleLogicalRange(saved); } catch {}
-    } else {
-      ts.fitContent();
+    markerPrimitiveRef.current=createSeriesMarkers(
+      series,
+      [...byTime.values()].slice(-18)
+    );
+
+    const latest=candles.at(-1)?.close;
+    if(Number.isFinite(latest)){
+      const currentLine=series.createPriceLine({
+        price:latest,
+        color:"#d7f5ff",
+        lineWidth:1,
+        lineStyle:3,
+        axisLabelVisible:true,
+        title:"PRICE"
+      });
+      priceLinesRef.current.push(currentLine);
     }
-    initializedRef.current=true;
-    const saveViewport=()=>{
-      try { viewportRef.current=ts.getVisibleLogicalRange(); } catch {}
-    };
-    ts.subscribeVisibleLogicalRangeChange(saveViewport);
+  },[candles,analysis,chartKey]);
 
-    const ro=new ResizeObserver(()=>chart.resize(el.current.clientWidth,el.current.clientHeight));
-    ro.observe(el.current);
-
-    return ()=>{
-      saveViewport();
-      ts.unsubscribeVisibleLogicalRangeChange(saveViewport);
-      ro.disconnect();
-      markerPrimitive?.detach?.();
-      chartRef.current=null;
-      chart.remove();
-    };
-  },[candles,analysis]);
-  const zoomBy=(delta)=>{
+  const zoomBy=(factor)=>{
     const chart=chartRef.current;
     if(!chart) return;
+
     const range=chart.timeScale().getVisibleLogicalRange();
     if(!range) return;
+
     const center=(range.from+range.to)/2;
-    const width=Math.max(12,(range.to-range.from)*delta);
-    chart.timeScale().setVisibleLogicalRange({from:center-width/2,to:center+width/2});
+    const width=Math.max(
+      8,
+      (range.to-range.from)*factor
+    );
+
+    chart.timeScale().setVisibleLogicalRange({
+      from:center-width/2,
+      to:center+width/2
+    });
   };
+
   const resetZoom=()=>{
     const chart=chartRef.current;
     if(!chart) return;
+
     chart.timeScale().fitContent();
+    chart.timeScale().scrollToPosition(8,false);
   };
+
+  const goRealtime=()=>{
+    const chart=chartRef.current;
+    if(!chart) return;
+
+    chart.timeScale().scrollToRealTime();
+  };
+
   return <div className="mt5ChartWrap">
     <div className="mt5ChartToolbar">
       <div className="mt5ChartToolsLeft">
-        <span>CHART</span><b>STRUCTURE + SETUPS</b>
+        <span>CHART</span>
+        <b>STRUCTURE + SETUPS</b>
       </div>
       <div className="mt5ChartToolsRight">
-        <button type="button" onClick={()=>zoomBy(0.82)} title="Zoom in">+</button>
-        <button type="button" onClick={()=>zoomBy(1.22)} title="Zoom out">−</button>
+        <button type="button" onClick={()=>zoomBy(0.78)} title="Zoom in">+</button>
+        <button type="button" onClick={()=>zoomBy(1.28)} title="Zoom out">−</button>
+        <button type="button" onClick={goRealtime}>LIVE</button>
         <button type="button" onClick={resetZoom}>RESET</button>
       </div>
     </div>
     <div ref={el} className="mt5Chart"/>
   </div>;
 }
-
 export default function MT5AnalysisDesk(){
   const {
     markets=[],
@@ -605,7 +769,7 @@ export default function MT5AnalysisDesk(){
           <div><span>LIVE PRICE ACTION · {tf}</span><h2>{labelOf(selectedMarket)}</h2></div>
           <div className="mt5ChartMeta"><b>{cs.at(-1)?.close??"—"}</b><small>{cs.length} candles</small></div>
         </div>
-        <Chart candles={cs} analysis={a}/>
+        <Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`}/>
         <div className="mt5SetupStrip">
           <span>SETUP</span><b>{a.setup}</b>
           <span>STRUCTURE</span><b>{a.structure}</b>
@@ -665,5 +829,6 @@ export default function MT5AnalysisDesk(){
     </div>
   </div>;
 }
+
 
 
