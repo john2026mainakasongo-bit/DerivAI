@@ -1091,6 +1091,36 @@ export default function MT5AnalysisDesk(){
       ? `${downFrames}/${mtfDirectional.length} timeframes bearish`
       : `${rangeFrames}/${mtfDirectional.length} timeframes ranging`;
 
+  // Separate the active timeframe from the higher-timeframe context so a
+  // short-term move does not get presented as the whole-market direction.
+  const htfLabels=["1h","2h","4h","8h","24h"];
+  const htfDirectional=mtf.filter(x=>htfLabels.includes(x.label)&&x.analysis?.direction&&x.analysis.direction!=="BUILDING");
+  const htfUp=htfDirectional.filter(x=>x.analysis.direction==="UP").length;
+  const htfDown=htfDirectional.filter(x=>x.analysis.direction==="DOWN").length;
+  const htfRange=htfDirectional.filter(x=>x.analysis.direction==="RANGE").length;
+  const htfBias=htfUp>htfDown&&htfUp>=2?"BULLISH":htfDown>htfUp&&htfDown>=2?"BEARISH":"MIXED / RANGE";
+  const htfAgreement=htfDirectional.length
+    ? Math.round((Math.max(htfUp,htfDown)/htfDirectional.length)*100)
+    : 0;
+  const pathMode=a.direction==="UP"
+    ? "UPSIDE PATH"
+    : a.direction==="DOWN"
+      ? "DOWNSIDE PATH"
+      : a.pressure==="BULLISH"
+        ? "BULLISH BREAKOUT WATCH"
+        : a.pressure==="BEARISH"
+          ? "BEARISH BREAKDOWN WATCH"
+          : "RANGE — WAIT FOR BREAK";
+  const nextCondition=a.direction==="UP"
+    ? `Hold above ${a.bullTrigger}. Watch retest toward resistance.`
+    : a.direction==="DOWN"
+      ? `Break below ${a.bearTrigger} confirms downside continuation.`
+      : a.pressure==="BULLISH"
+        ? `Break and retest above ${a.bullTrigger} confirms upside.`
+        : a.pressure==="BEARISH"
+          ? `Break and retest below ${a.bearTrigger} confirms downside.`
+          : `Wait for a clean break of ${a.bullTrigger} or ${a.bearTrigger}.`;
+
   return <div className="mt5Desk">
     <div className="mt5Topbar">
       <div>
@@ -1183,19 +1213,30 @@ export default function MT5AnalysisDesk(){
         <section className={`mt5Panel mt5HeadingCard ${a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}`}>
           <div className="mt5PanelTitle">MARKET DIRECTION</div>
           <div className="mt5HeadingWord">{a.direction}</div>
-          <div className="mt5HeadingSub">{a.direction==="RANGE" ? `${a.pressure} PRESSURE · WAITING FOR CONFIRMATION` : `${a.direction} STRUCTURE · ACTIVE PATH`}</div>
+          <div className="mt5HeadingSub">SHORT-TERM {a.direction} · {pathMode}</div>
           <div className="mt5HeadingLine"><span>TIMEFRAME</span><b>{tf}</b></div>
+          <div className="mt5HeadingLine"><span>HIGHER-TF BIAS</span><b>{htfBias} · {htfAgreement}%</b></div>
           <div className="mt5HeadingLine"><span>MTF ALIGNMENT</span><b>{mtfSummary}</b></div>
+          <div className="mt5HeadingLine"><span>MARKET STRUCTURE</span><b>{a.structure}</b></div>
           <div className="mt5HeadingLine"><span>ACTIVE PATH</span><b>{a.pathBias || "—"}</b></div>
           <div className="mt5HeadingLine"><span>BULL TRIGGER</span><b>{a.bullTrigger ?? "—"}</b></div>
           <div className="mt5HeadingLine"><span>BEAR TRIGGER</span><b>{a.bearTrigger ?? "—"}</b></div>
+          <div className="mt5HeadingLine"><span>NEXT CONDITION</span><b>{nextCondition}</b></div>
           <p className="mt5HeadingReason">{a.reason}</p>
         </section>
 
         <section className={`mt5SignalCard ${cls}`}>
           <div className="mt5SignalTop"><span>MARKET DECISION</span><b>{a.confidence?a.confidence+"%":"—"}</b></div>
           <div className="mt5SignalWord">{a.signal}</div>
-          <p>{a.reason}</p><div className="mt5SignalSetup"><span>SETUP</span><b>{a.setup}</b></div>
+          <p>{a.reason}</p>
+          <div className="mt5SignalSetup">
+            <span>SETUP</span>
+            <b>{a.setup}</b>
+          </div>
+          <div className="mt5ScenarioBox">
+            <div><span>ACTIVE PATH</span><b>{pathMode}</b></div>
+            <div><span>CONFIRMATION</span><b>{nextCondition}</b></div>
+          </div>
           <div className="mt5Levels">
             <div><span>Entry</span><b>{a.entry??"—"}</b></div>
             <div><span>Stop loss</span><b>{a.stop??"—"}</b></div>
