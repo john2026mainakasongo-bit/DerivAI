@@ -4,25 +4,23 @@ import Login from "./pages/Login";
 import RiseFallPage from "./pages/RiseFallPage";
 import TouchNoTouchPage from "./pages/TouchNoTouchPage";
 import AdaptiveTrendPage from "./pages/AdaptiveTrendPage";
-<<<<<<< HEAD
-import MT5Page from "./pages/MT5Page";
-=======
 import DigitOverRecoveryPage from "./pages/DigitOverRecoveryPage";
->>>>>>> origin/main
+import MT5Page from "./pages/MT5Page";
 
 export default function App() {
-  return <BrowserRouter><Routes>
-    <Route path="/" element={<Navigate to="/dashboard" replace />} />
-    <Route path="/dashboard" element={<Dashboard />} />
-    <Route path="/rise-fall" element={<RiseFallPage />} />
-    <Route path="/touch-no-touch" element={<TouchNoTouchPage />} />
-    <Route path="/adaptive-trend" element={<AdaptiveTrendPage />} />
-<<<<<<< HEAD
-    <Route path="/mt5" element={<MT5Page />} />
-=======
-    <Route path="/digit-over" element={<DigitOverRecoveryPage />} />
->>>>>>> origin/main
-    <Route path="/login" element={<Login />} />
-    <Route path="*" element={<Navigate to="/dashboard" replace />} />
-  </Routes></BrowserRouter>;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/rise-fall" element={<RiseFallPage />} />
+        <Route path="/touch-no-touch" element={<TouchNoTouchPage />} />
+        <Route path="/adaptive-trend" element={<AdaptiveTrendPage />} />
+        <Route path="/digit-over" element={<DigitOverRecoveryPage />} />
+        <Route path="/mt5" element={<MT5Page />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
