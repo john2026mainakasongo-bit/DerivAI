@@ -63,6 +63,21 @@ function matchesBTC(market) {
   );
 }
 
+function matchesGold(market) {
+  const id = String(market?.id || market?.symbol || "").toUpperCase();
+  const label = String(
+    market?.label || market?.short || market?.name || ""
+  ).toUpperCase();
+
+  return (
+    id === "XAUUSD" ||
+    id === "FRXXAUUSD" ||
+    id.includes("XAUUSD") ||
+    /GOLD\s*\/?\s*USD/.test(label) ||
+    /GOLD/.test(label)
+  );
+}
+
 function normalizeTicks(rows = []) {
   return rows
     .map((row) => ({
@@ -384,6 +399,7 @@ export default function usePublicDerivTicks({
           )
           .filter(Boolean),
         liveMarkets.find(matchesBTC),
+        liveMarkets.find(matchesGold),
       ].filter(Boolean);
 
       const symbols = [
@@ -546,6 +562,7 @@ export default function usePublicDerivTicks({
             )
             .filter(Boolean),
           allMarkets.find(matchesBTC),
+          allMarkets.find(matchesGold),
         ].filter(Boolean);
 
         if (!mountedRef.current) {

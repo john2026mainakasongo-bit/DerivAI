@@ -29,6 +29,18 @@ function matchesBTC(m) {
   return id === "BTCUSD" || id === "CRYBTCUSD" || id.includes("BTCUSD") || /BTC\s*\/?\s*USD/.test(label);
 }
 
+function matchesGold(m) {
+  const id = String(m?.id || m?.symbol || "").toUpperCase();
+  const label = labelOf(m).toUpperCase();
+  return (
+    id === "XAUUSD" ||
+    id === "FRXXAUUSD" ||
+    id.includes("XAUUSD") ||
+    /GOLD\s*\/?\s*USD/.test(label) ||
+    /GOLD/.test(label)
+  );
+}
+
 function candlesFromTicks(rows, seconds) {
   const map = new Map();
   for (const r of rows || []) {
@@ -1085,7 +1097,8 @@ export default function MT5AnalysisDesk(){
   const supported=useMemo(()=>{
     const volatility=WANTED.map(v=>markets.find(m=>matches(m,v))).filter(Boolean);
     const btc=markets.find(matchesBTC);
-    return btc ? [...volatility, btc] : volatility;
+    const gold=markets.find(matchesGold);
+    return [...volatility, ...[btc, gold].filter(Boolean)];
   },[markets]);
   const [selected,setSelected]=useState("");
   const [tf,setTf]=useState("5m");
@@ -1247,6 +1260,19 @@ export default function MT5AnalysisDesk(){
               className={`mt5WatchRow mt5CryptoRow ${k===selectedKey?"active":""}`}
               onClick={()=>setSelected(k)}>
               <b>BTCUSD</b>
+              <span>{x ? `${x.direction} · ${x.setup}` : "LOADING DATA"}</span>
+              <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
+            </button>;
+          })()}
+          {(()=>{
+            const m=supported.find(matchesGold);
+            if(!m) return null;
+            const k=keyOf(m);
+            const x=analyses[k];
+            return <button type="button"
+              className={`mt5WatchRow mt5GoldRow ${k===selectedKey?"active":""}`}
+              onClick={()=>setSelected(k)}>
+              <b>XAUUSD</b>
               <span>{x ? `${x.direction} · ${x.setup}` : "LOADING DATA"}</span>
               <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
             </button>;
