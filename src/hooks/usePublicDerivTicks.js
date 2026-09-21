@@ -314,7 +314,7 @@ export default function usePublicDerivTicks({
           tickHistory =
             await derivPublicClient.getHistory(
               cleanSymbol,
-              500
+              5000
             );
         } catch (error) {
           console.warn(
@@ -332,60 +332,74 @@ export default function usePublicDerivTicks({
           }));
         }
 
-        loadedSymbolRef.current =
-          cleanSymbol;
+        // Load the selected market's OHLC history in a controlled sequence.
+        // Sending all 13 candle requests at once can trigger public-feed
+        // throttling on refresh, leaving the chart with only a few live ticks.
+        // The selected market must finish its historical candles before we
+        // mark it as ready.
+        for (const [, seconds] of Object.entries(TF_SECONDS)) {
+          if (!mountedRef.current || symbolRef.current !== cleanSymbol) break;
 
-        loadedAtRef.current = Date.now();
+          let normalizedCandles = [];
+          let lastError = null;
 
-        const requests = Object.entries(
-          TF_SECONDS
-        );
-
-        await Promise.all(
-          requests.map(
-            async ([, seconds]) => {
-              try {
-                const candles =
-                  await derivPublicClient.getCandleHistory(
-                    cleanSymbol,
-                    Number(seconds),
-                    Number(seconds) >= 28800
-                      ? 180
-                      : 240
-                  );
-
-                if (
-                  mountedRef.current &&
-                  symbolRef.current === cleanSymbol
-                ) {
-                  const normalizedCandles =
-                    normalizeCandles(candles);
-
-                  setMarketCandleHistory((current) => ({
-                    ...current,
-                    [cleanSymbol]: {
-                      ...(current[cleanSymbol] || {}),
-                      [seconds]: normalizedCandles,
-                    },
-                  }));
-
-                  // Keep the legacy selected-market cache for compatibility.
-                  setCandleHistory((current) => ({
-                    ...current,
-                    [seconds]: normalizedCandles,
-                  }));
-                }
-              } catch (error) {
-                console.warn(
-                  `[MT5 PUBLIC] Candle history failed for ${cleanSymbol} ${seconds}s:`,
-                  error
-                );
-              }
+          for (let attempt = 1; attempt <= 3; attempt += 1) {
+            try {
+              const candles = await derivPublicClient.getCandleHistory(
+                cleanSymbol,
+                Number(seconds),
+                Number(seconds) >= 28800 ? 180 : 240
+              );
+              normalizedCandles = normalizeCandles(candles);
+              if (normalizedCandles.length >= 35) break;
+            } catch (error) {
+              lastError = error;
             }
-          )
-        );
 
-        if (mountedRef.current) {
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+            }
+          }
+
+          // If the candle endpoint is temporarily empty, derive a small live
+          // fallback from the 5,000 tick history instead of mixing markets.
+          if (normalizedCandles.length < 35) {
+            const fallbackTicks = normalizeTicks(tickHistory);
+            const fallback = candlesFromTicks(fallbackTicks, Number(seconds));
+            if (fallback.length > normalizedCandles.length) {
+              normalizedCandles = fallback;
+            }
+          }
+
+          if (lastError && normalizedCandles.length === 0) {
+            console.warn(
+              `[MT5 PUBLIC] Candle history failed for ${cleanSymbol} ${seconds}s:`,
+              lastError
+            );
+          }
+
+          if (
+            mountedRef.current &&
+            symbolRef.current === cleanSymbol
+          ) {
+            setMarketCandleHistory((current) => ({
+              ...current,
+              [cleanSymbol]: {
+                ...(current[cleanSymbol] || {}),
+                [seconds]: normalizedCandles,
+              },
+            }));
+
+            setCandleHistory((current) => ({
+              ...current,
+              [seconds]: normalizedCandles,
+            }));
+          }
+        }
+
+        if (mountedRef.current && symbolRef.current === cleanSymbol) {
+          loadedSymbolRef.current = cleanSymbol;
+          loadedAtRef.current = Date.now();
           setLoadingMarket(false);
         }
       } catch (error) {
@@ -512,35 +526,10 @@ export default function usePublicDerivTicks({
           )
         );
 
-      // The scanner needs real OHLC history, not only the last 500 ticks.
-      // Load every desk timeframe for each watched market so V100/V75/V25/V10
-      // and BTCUSD can be analysed consistently even when they are not selected.
-      const candleHistories = {};
-      for (const market of selectedMarkets) {
-        const marketId = String(market?.id || market?.symbol || "").trim();
-        if (!marketId) continue;
-
-        const tfRows = await Promise.all(
-          Object.entries(TF_SECONDS).map(async ([, seconds]) => {
-            try {
-              const rows = await derivPublicClient.getCandleHistory(
-                marketId,
-                Number(seconds),
-                Number(seconds) >= 28800 ? 180 : 240
-              );
-              return [Number(seconds), normalizeCandles(rows)];
-            } catch (error) {
-              console.warn(
-                `[MT5 PUBLIC] Scanner candles failed for ${marketId} ${seconds}s:`,
-                error
-              );
-              return [Number(seconds), []];
-            }
-          })
-        );
-
-        candleHistories[marketId] = Object.fromEntries(tfRows);
-      }
+      // Do not fan out candle-history requests for every scanner market here.
+      // The selected market is loaded fully by loadSymbol above. Scanner markets
+      // use their tick history until selected, which avoids public-feed throttling
+      // during page refresh. Selecting a market then loads all of its timeframes.
 
       if (!mountedRef.current) {
         return;
@@ -558,10 +547,9 @@ export default function usePublicDerivTicks({
         return next;
       });
 
-      setMarketCandleHistory((current) => ({
-        ...current,
-        ...candleHistories,
-      }));
+      // Selected-market candle history is intentionally loaded on demand.
+      // Keeping this empty prevents refresh-time request bursts.
+
     },
     [multiMarket]
   );
@@ -632,12 +620,6 @@ export default function usePublicDerivTicks({
         }
 
         await loadSymbol(selected.id);
-
-        if (multiMarket) {
-          await loadAllMarkets(
-            liveMarkets
-          );
-        }
 
         if (mountedRef.current) {
           setConnected(true);
