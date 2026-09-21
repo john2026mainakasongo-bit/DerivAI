@@ -17,63 +17,85 @@ const TF_SECONDS = {
   "24h": 86400,
 };
 
-const WANTED = [100, 75, 25, 10];
+// Curated analysis watchlist: major Forex pairs plus selected USD-priced
+// instruments. Synthetic Volatility indices are intentionally excluded.
+const FOREX_TARGETS = [
+  "frxEURUSD",
+  "frxGBPUSD",
+  "frxUSDJPY",
+  "frxUSDCHF",
+  "frxAUDUSD",
+  "frxUSDCAD",
+  "frxNZDUSD",
+  "frxEURGBP",
+];
+
+const USD_TARGETS = [
+  "XAUUSD",
+  "frxXAUUSD",
+  "XAGUSD",
+  "frxXAGUSD",
+  "BTCUSD",
+  "cryBTCUSD",
+  "ETHUSD",
+  "cryETHUSD",
+];
 
 function keyOf(market) {
   return String(market?.id || market?.symbol || "");
 }
 
-function matchesMarket(market, value) {
-  const id = String(market?.id || "").toUpperCase();
-  const symbol = String(market?.symbol || "").toUpperCase();
-  const label = String(
-    market?.label || market?.short || market?.name || ""
-  );
-
-  return (
-    id === `R_${value}` ||
-    id === `1HZ${value}V` ||
-    symbol === `R_${value}` ||
-    symbol === `1HZ${value}V` ||
-    new RegExp(
-      `Volatility\\s*${value}(?:\\s*\\([^)]*\\))?\\s*Index`,
-      "i"
-    ).test(label)
-  );
+function symbolId(market) {
+  return String(market?.id || market?.symbol || "").toUpperCase();
 }
 
-function chooseDefault(markets = []) {
+function matchesTarget(market, targets = []) {
+  const id = symbolId(market);
+  const label = String(
+    market?.label || market?.short || market?.name || ""
+  ).toUpperCase().replace(/\s+/g, "");
+  return targets.some((target) => {
+    const t = String(target).toUpperCase();
+    return id === t || id.endsWith(t) || label.includes(t);
+  });
+}
+
+function matchesForex(market) {
+  const id = symbolId(market);
+  const label = String(
+    market?.label || market?.short || market?.name || ""
+  ).toUpperCase();
   return (
-    markets.find((m) => /^Volatility 75 Index$/i.test(String(m?.label || ""))) ||
-    markets.find((m) => matchesMarket(m, 75)) ||
-    markets.find((m) => matchesBTC(m)) ||
-    markets[0] ||
-    null
+    String(market?.market || "").toLowerCase() === "forex" &&
+    FOREX_TARGETS.some((target) => id === target.toUpperCase() || id.endsWith(target.toUpperCase())) ||
+    /^(EUR|GBP|USD|JPY|CHF|AUD|CAD|NZD)\s*\/\s*(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD)$/.test(label)
   );
 }
 
 function matchesBTC(market) {
-  const id = String(market?.id || market?.symbol || "").toUpperCase();
-  const label = String(market?.label || market?.short || market?.name || "").toUpperCase();
-  return (
-    id === "BTCUSD" ||
-    id === "CRYBTCUSD" ||
-    id.includes("BTCUSD") ||
-    /BTC\s*\/?\s*USD/.test(label)
-  );
+  return matchesTarget(market, ["BTCUSD", "CRYBTCUSD"]) ||
+    /BTC\s*\/?\s*USD/i.test(String(market?.label || ""));
 }
 
 function matchesGold(market) {
-  const id = String(market?.id || market?.symbol || "").toUpperCase();
-  const label = String(
-    market?.label || market?.short || market?.name || ""
-  ).toUpperCase();
+  return matchesTarget(market, ["XAUUSD", "FRXXAUUSD"]) ||
+    /GOLD\s*\/?\s*USD/i.test(String(market?.label || ""));
+}
 
+function matchesUSDAsset(market) {
+  return matchesTarget(market, USD_TARGETS);
+}
+
+function chooseDefault(markets = []) {
   return (
-    id === "XAUUSD" ||
-    id === "FRXXAUUSD" ||
-    id.includes("XAUUSD") ||
-    /GOLD\s*\/?\s*USD/.test(label)
+    FOREX_TARGETS
+      .map((target) => markets.find((m) => symbolId(m) === target.toUpperCase() || symbolId(m).endsWith(target.toUpperCase())))
+      .find(Boolean) ||
+    markets.find(matchesForex) ||
+    markets.find(matchesGold) ||
+    markets.find(matchesBTC) ||
+    markets[0] ||
+    null
   );
 }
 
@@ -390,13 +412,23 @@ export default function usePublicDerivTicks({
       }
 
       const selectedMarkets = [
-        ...WANTED
-          .map((value) =>
+        ...FOREX_TARGETS
+          .map((target) =>
             liveMarkets.find((market) =>
-              matchesMarket(market, value)
+              symbolId(market) === target.toUpperCase() ||
+              symbolId(market).endsWith(target.toUpperCase())
             )
           )
           .filter(Boolean),
+        ...USD_TARGETS
+          .map((target) =>
+            liveMarkets.find((market) =>
+              symbolId(market) === target.toUpperCase() ||
+              symbolId(market).endsWith(target.toUpperCase())
+            )
+          )
+          .filter(Boolean),
+        liveMarkets.find(matchesForex),
         liveMarkets.find(matchesBTC),
         liveMarkets.find(matchesGold),
       ].filter(Boolean);
@@ -553,15 +585,22 @@ export default function usePublicDerivTicks({
           await derivPublicClient.getPublicMarkets();
 
         const liveMarkets = [
-          ...WANTED
-            .map((value) =>
+          ...FOREX_TARGETS
+            .map((target) =>
               allMarkets.find((market) =>
-                matchesMarket(market, value)
+                symbolId(market) === target.toUpperCase() ||
+                symbolId(market).endsWith(target.toUpperCase())
               )
             )
             .filter(Boolean),
-          allMarkets.find(matchesBTC),
-          allMarkets.find(matchesGold),
+          ...USD_TARGETS
+            .map((target) =>
+              allMarkets.find((market) =>
+                symbolId(market) === target.toUpperCase() ||
+                symbolId(market).endsWith(target.toUpperCase())
+              )
+            )
+            .filter(Boolean),
         ].filter(Boolean);
 
         if (!mountedRef.current) {
@@ -579,7 +618,7 @@ export default function usePublicDerivTicks({
 
         if (!selected) {
           throw new Error(
-            "No Volatility market was returned."
+            "No supported Forex or USD market was returned."
           );
         }
 

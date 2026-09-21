@@ -7,39 +7,33 @@ const TF = {
   "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
   "4h": 14400, "8h": 28800, "24h": 86400,
 };
-const WANTED = [100, 75, 25, 10];
+const FOREX_TARGETS = [
+  "frxEURUSD",
+  "frxGBPUSD",
+  "frxUSDJPY",
+  "frxUSDCHF",
+  "frxAUDUSD",
+  "frxUSDCAD",
+  "frxNZDUSD",
+  "frxEURGBP",
+];
+
+const USD_TARGETS = [
+  "XAUUSD",
+  "frxXAUUSD",
+  "XAGUSD",
+  "frxXAGUSD",
+  "BTCUSD",
+  "cryBTCUSD",
+  "ETHUSD",
+  "cryETHUSD",
+];
 
 const n = (v, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d;
 const keyOf = (m) => String(m?.id || m?.symbol || "");
-const labelOf = (m) => String(m?.label || m?.short || m?.id || "Volatility");
+const labelOf = (m) => String(m?.label || m?.short || m?.id || "Market");
 const avg = (a) => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
 const clamp = (v,a,b) => Math.min(b,Math.max(a,v));
-
-function matches(m, v) {
-  const id = String(m?.id || "").toUpperCase();
-  const s = String(m?.symbol || "").toUpperCase();
-  const label = labelOf(m);
-  return id === `R_${v}` || id === `1HZ${v}V` || s === `R_${v}` || s === `1HZ${v}V` ||
-    new RegExp(`Volatility\\s*${v}(?:\\s*\\([^)]*\\))?\\s*Index`, "i").test(label);
-}
-
-function matchesBTC(m) {
-  const id = String(m?.id || m?.symbol || "").toUpperCase();
-  const label = labelOf(m).toUpperCase();
-  return id === "BTCUSD" || id === "CRYBTCUSD" || id.includes("BTCUSD") || /BTC\s*\/?\s*USD/.test(label);
-}
-
-function matchesGold(m) {
-  const id = String(m?.id || m?.symbol || "").toUpperCase();
-  const label = labelOf(m).toUpperCase();
-  return (
-    id === "XAUUSD" ||
-    id === "FRXXAUUSD" ||
-    id.includes("XAUUSD") ||
-    /GOLD\s*\/?\s*USD/.test(label) ||
-    /GOLD/.test(label)
-  );
-}
 
 function candlesFromTicks(rows, seconds) {
   const map = new Map();
@@ -677,7 +671,9 @@ function fvgEvents(cs) {
 }
 
 function chartViewStorageKey(chartKey) {
-  return `derivai:mt5:chart-view:${chartKey || "default"}`;
+  // v2 intentionally invalidates the older raw logical ranges, which could
+  // be tied to a different candle count after a refresh/timeframe switch.
+  return `derivai:mt5:chart-view:v2:${chartKey || "default"}`;
 }
 
 function readSavedChartRange(chartKey) {
@@ -692,15 +688,25 @@ function readSavedChartRange(chartKey) {
   }
 }
 
-function saveChartRange(chartKey, range) {
+function saveChartRange(chartKey, range, dataCount = 0) {
   try {
     if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) return;
     window.localStorage.setItem(chartViewStorageKey(chartKey), JSON.stringify({
       from: range.from,
       to: range.to,
+      dataCount: Number.isFinite(dataCount) ? dataCount : 0,
       savedAt: Date.now()
     }));
   } catch {}
+}
+
+function defaultVisibleBars(dataCount) {
+  if (!Number.isFinite(dataCount) || dataCount <= 0) return { from: 0, to: 0 };
+  const bars = Math.min(80, Math.max(36, dataCount - 1));
+  return {
+    from: Math.max(-1, dataCount - bars - 1),
+    to: dataCount + 5,
+  };
 }
 
 function Chart({candles,analysis,chartKey}) {
@@ -714,6 +720,7 @@ function Chart({candles,analysis,chartKey}) {
   const lastDataKeyRef=useRef("");
   const chartKeyRef=useRef(chartKey || "default");
   const restoringRangeRef=useRef(false);
+  const dataCountRef=useRef(0);
 
   useEffect(()=>{
     if(!el.current) return;
@@ -801,7 +808,7 @@ function Chart({candles,analysis,chartKey}) {
 
     const persistRange = (range) => {
       if (restoringRangeRef.current) return;
-      saveChartRange(chartKeyRef.current, range);
+      saveChartRange(chartKeyRef.current, range, dataCountRef.current);
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(persistRange);
 
@@ -851,6 +858,7 @@ function Chart({candles,analysis,chartKey}) {
       low:c.low,
       close:c.close
     }));
+    dataCountRef.current=data.length;
 
     chartKeyRef.current = chartKey || "default";
     const firstKey=chartKey || String(candles[0]?.time || "");
@@ -869,31 +877,49 @@ function Chart({candles,analysis,chartKey}) {
       const savedRange = readSavedChartRange(chartKeyRef.current);
       const dataCount = data.length;
       const savedWidth = savedRange ? savedRange.to - savedRange.from : 0;
+      const savedCount = Number(savedRange?.dataCount);
+      const savedRightGap = Number.isFinite(savedCount)
+        ? savedCount - savedRange.to
+        : Infinity;
       const savedRangeIsValid = Boolean(
         savedRange &&
         dataCount >= 20 &&
         Number.isFinite(savedWidth) &&
-        savedWidth >= 8 &&
-        savedWidth <= Math.max(40, dataCount * 1.25) &&
-        savedRange.to >= -20 &&
-        savedRange.from <= dataCount + 20
+        savedWidth >= 12 &&
+        savedWidth <= Math.max(40, dataCount * 0.95) &&
+        Number.isFinite(savedRightGap) &&
+        savedRightGap >= -8 &&
+        savedRightGap <= 40
       );
       restoringRangeRef.current = true;
       if (savedRangeIsValid) {
+        // Re-anchor the saved range to the newest candle count. This prevents
+        // a refresh or timeframe switch from opening in the middle of history.
+        const to = dataCount - savedRightGap;
+        const from = to - savedWidth;
+        const normalizedRange = {
+          from: Math.max(-1, from),
+          to: Math.min(dataCount + 6, to),
+        };
         requestAnimationFrame(() => {
           try {
-            chart.timeScale().setVisibleLogicalRange(savedRange);
+            chart.timeScale().setVisibleLogicalRange(normalizedRange);
           } finally {
             restoringRangeRef.current = false;
           }
         });
       } else {
-        // First open, refresh, or a stale saved range: always start on the
-        // latest candles with a clean readable scale.
+        // Always open a timeframe at the latest readable candle window.
         try { window.localStorage.removeItem(chartViewStorageKey(chartKeyRef.current)); } catch {}
-        chart.timeScale().fitContent();
-        chart.timeScale().scrollToRealTime();
-        requestAnimationFrame(()=>saveChartRange(chartKeyRef.current, chart.timeScale().getVisibleLogicalRange()));
+        const initialRange = defaultVisibleBars(dataCount);
+        chart.timeScale().setVisibleLogicalRange(initialRange);
+        requestAnimationFrame(() => {
+          saveChartRange(
+            chartKeyRef.current,
+            chart.timeScale().getVisibleLogicalRange(),
+            dataCount
+          );
+        });
         requestAnimationFrame(() => { restoringRangeRef.current = false; });
       }
     } else {
@@ -1041,7 +1067,7 @@ function Chart({candles,analysis,chartKey}) {
       to:center+width/2
     };
     chart.timeScale().setVisibleLogicalRange(nextRange);
-    saveChartRange(chartKeyRef.current, nextRange);
+    saveChartRange(chartKeyRef.current, nextRange, candles.length);
   };
 
   const resetZoom=()=>{
@@ -1050,7 +1076,7 @@ function Chart({candles,analysis,chartKey}) {
 
     chart.timeScale().fitContent();
     chart.timeScale().scrollToPosition(8,false);
-    requestAnimationFrame(()=>saveChartRange(chartKeyRef.current, chart.timeScale().getVisibleLogicalRange()));
+    requestAnimationFrame(()=>saveChartRange(chartKeyRef.current, chart.timeScale().getVisibleLogicalRange(), candles.length));
   };
 
   const goRealtime=()=>{
@@ -1125,10 +1151,19 @@ export default function MT5AnalysisDesk(){
   },[connected,status,connect]);
 
   const supported=useMemo(()=>{
-    const volatility=WANTED.map(v=>markets.find(m=>matches(m,v))).filter(Boolean);
-    const btc=markets.find(matchesBTC);
-    const gold=markets.find(matchesGold);
-    return [...volatility, ...[btc, gold].filter(Boolean)];
+    // Keep the desk focused on Forex and selected USD-priced instruments.
+    // The list is built only from symbols actually returned by active_symbols.
+    const ordered = [
+      ...FOREX_TARGETS
+        .map(target => markets.find(m => keyOf(m).toUpperCase() === target.toUpperCase() ||
+          keyOf(m).toUpperCase().endsWith(target.toUpperCase())))
+        .filter(Boolean),
+      ...USD_TARGETS
+        .map(target => markets.find(m => keyOf(m).toUpperCase() === target.toUpperCase() ||
+          keyOf(m).toUpperCase().endsWith(target.toUpperCase())))
+        .filter(Boolean),
+    ];
+    return [...new Map(ordered.map(m => [keyOf(m), m])).values()];
   },[markets]);
   const [selected,setSelected]=useState("");
   const [tf,setTf]=useState("5m");
@@ -1269,44 +1304,17 @@ export default function MT5AnalysisDesk(){
       <aside className="mt5Side">
         <div className="mt5Watchlist">
           <div className="mt5PanelTitle">MARKET SCANNER</div>
-          {WANTED.map(v=>{
-            const m=supported.find(x=>matches(x,v));
-            const k=m&&keyOf(m);
-            const x=k&&analyses[k];
-            return <button key={v} type="button"
+          {supported.map(m=>{
+            const k=keyOf(m);
+            const x=analyses[k];
+            return <button key={k} type="button"
               className={`mt5WatchRow ${k===selectedKey?"active":""}`}
-              onClick={()=>m&&setSelected(k)}>
-              <b>V{v}</b>
+              onClick={()=>setSelected(k)}>
+              <b>{labelOf(m)}</b>
               <span>{x ? `${x.direction} · ${x.setup}` : "LOADING DATA"}</span>
               <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
             </button>;
           })}
-          {(()=>{
-            const m=supported.find(matchesBTC);
-            if(!m) return null;
-            const k=keyOf(m);
-            const x=analyses[k];
-            return <button type="button"
-              className={`mt5WatchRow mt5CryptoRow ${k===selectedKey?"active":""}`}
-              onClick={()=>setSelected(k)}>
-              <b>BTCUSD</b>
-              <span>{x ? `${x.direction} · ${x.setup}` : "LOADING DATA"}</span>
-              <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
-            </button>;
-          })()}
-          {(()=>{
-            const m=supported.find(matchesGold);
-            if(!m) return null;
-            const k=keyOf(m);
-            const x=analyses[k];
-            return <button type="button"
-              className={`mt5WatchRow mt5GoldRow ${k===selectedKey?"active":""}`}
-              onClick={()=>setSelected(k)}>
-              <b>XAUUSD</b>
-              <span>{x ? `${x.direction} · ${x.setup}` : "LOADING DATA"}</span>
-              <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
-            </button>;
-          })()}
         </div>
 
         <div className="mt5Panel mt5MtfPanel">
