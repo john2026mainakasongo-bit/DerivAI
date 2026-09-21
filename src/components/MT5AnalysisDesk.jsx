@@ -718,6 +718,7 @@ function Chart({candles,analysis,chartKey}) {
   const projectionSeriesRef=useRef(null);
   const firstDataKeyRef=useRef("");
   const lastDataKeyRef=useRef("");
+  const datasetSignatureRef=useRef("");
   const chartKeyRef=useRef(chartKey || "default");
   const restoringRangeRef=useRef(false);
   const dataCountRef=useRef(0);
@@ -862,14 +863,21 @@ function Chart({candles,analysis,chartKey}) {
 
     chartKeyRef.current = chartKey || "default";
     const firstKey=chartKey || String(candles[0]?.time || "");
-    const datasetChanged=
-      firstDataKeyRef.current &&
-      firstDataKeyRef.current !== firstKey;
+    const dataSignature = [
+      chartKey || "default",
+      data.length,
+      data[0]?.time || "",
+      data.at(-1)?.time || ""
+    ].join("|");
+    const datasetChanged =
+      !datasetSignatureRef.current ||
+      datasetSignatureRef.current !== dataSignature;
 
-    if(!firstDataKeyRef.current || datasetChanged) {
+    if(datasetChanged) {
       series.setData(data);
       firstDataKeyRef.current=firstKey;
       lastDataKeyRef.current="";
+      datasetSignatureRef.current=dataSignature;
 
       // Restore the user's last zoom/pan for this exact market + timeframe.
       // Browser refreshes and component remounts therefore keep the same view.
@@ -939,6 +947,7 @@ function Chart({candles,analysis,chartKey}) {
     }
 
     lastDataKeyRef.current=String(candles.at(-1)?.time || "");
+    datasetSignatureRef.current=dataSignature;
 
     for(const line of priceLinesRef.current) {
       try { series.removePriceLine(line); } catch {}
@@ -1187,7 +1196,7 @@ export default function MT5AnalysisDesk(){
 
     for(const [label,seconds] of Object.entries(TF)){
       const historical=normalizeCandles(
-        perMarketHistory[seconds] || candleHistory[seconds] || []
+        perMarketHistory[seconds] || []
       );
 
       // Always merge the latest subscribed ticks into the history for THIS
@@ -1230,8 +1239,7 @@ export default function MT5AnalysisDesk(){
     const data=selectedMarket && label
       ? mergeLiveCandles(
           normalizeCandles(
-            marketCandleHistory?.[selectedKey]?.[seconds] ||
-            candleHistory[seconds] || []
+            marketCandleHistory?.[selectedKey]?.[seconds] || []
           ),
           tickRows,
           seconds

@@ -358,13 +358,22 @@ export default function usePublicDerivTicks({
                   mountedRef.current &&
                   symbolRef.current === cleanSymbol
                 ) {
-                  setCandleHistory(
-                    (current) => ({
-                      ...current,
-                      [seconds]:
-                        normalizeCandles(candles),
-                    })
-                  );
+                  const normalizedCandles =
+                    normalizeCandles(candles);
+
+                  setMarketCandleHistory((current) => ({
+                    ...current,
+                    [cleanSymbol]: {
+                      ...(current[cleanSymbol] || {}),
+                      [seconds]: normalizedCandles,
+                    },
+                  }));
+
+                  // Keep the legacy selected-market cache for compatibility.
+                  setCandleHistory((current) => ({
+                    ...current,
+                    [seconds]: normalizedCandles,
+                  }));
                 }
               } catch (error) {
                 console.warn(
@@ -800,6 +809,7 @@ export default function usePublicDerivTicks({
       )) {
         const stored =
           normalizeCandles(
+            marketCandleHistory?.[selectedKey]?.[seconds] ||
             candleHistory[seconds]
           );
 
@@ -816,6 +826,8 @@ export default function usePublicDerivTicks({
     },
     [
       candleHistory,
+      marketCandleHistory,
+      selectedKey,
       ticks,
     ]
   );
