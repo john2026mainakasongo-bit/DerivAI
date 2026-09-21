@@ -73,8 +73,7 @@ function matchesGold(market) {
     id === "XAUUSD" ||
     id === "FRXXAUUSD" ||
     id.includes("XAUUSD") ||
-    /GOLD\s*\/?\s*USD/.test(label) ||
-    /GOLD/.test(label)
+    /GOLD\s*\/?\s*USD/.test(label)
   );
 }
 

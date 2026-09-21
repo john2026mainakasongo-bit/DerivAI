@@ -825,10 +825,26 @@ function Chart({candles,analysis,chartKey}) {
     const series=seriesRef.current;
     if(!chart || !series || !candles.length) return;
 
-    // Keep the analysis on the full dataset, but render a recent window so
-    // distant historical prices cannot compress the current BTC/Volatility chart.
+    // Keep the analysis on the full dataset, but render a recent window.
+    // Also reject an obviously cross-market/bad-history candle from the
+    // visual chart so one rogue quote cannot flatten the whole price scale.
     const visibleCandles = candles.slice(-180);
-    const data=visibleCandles.map(c=>({
+    const recentCloses = visibleCandles.slice(-20).map(c=>Number(c.close)).filter(Number.isFinite);
+    const referencePrice = recentCloses.length
+      ? recentCloses[recentCloses.length - 1]
+      : Number(visibleCandles.at(-1)?.close);
+    const displayCompatible=(c)=>{
+      if(!Number.isFinite(referencePrice) || referencePrice===0) return true;
+      const values=[c.open,c.high,c.low,c.close].map(Number);
+      if(values.some(v=>!Number.isFinite(v))) return false;
+      const minValue=Math.min(...values);
+      const maxValue=Math.max(...values);
+      const minRatio=Math.abs(minValue/referencePrice);
+      const maxRatio=Math.abs(maxValue/referencePrice);
+      return minRatio>=0.5 && maxRatio<=2 && maxValue>=minValue;
+    };
+    const safeVisibleCandles = visibleCandles.filter(displayCompatible);
+    const data=safeVisibleCandles.map(c=>({
       time:c.time,
       open:c.open,
       high:c.high,
@@ -851,8 +867,19 @@ function Chart({candles,analysis,chartKey}) {
       // Browser refreshes and component remounts therefore keep the same view.
       chartKeyRef.current = chartKey || "default";
       const savedRange = readSavedChartRange(chartKeyRef.current);
+      const dataCount = data.length;
+      const savedWidth = savedRange ? savedRange.to - savedRange.from : 0;
+      const savedRangeIsValid = Boolean(
+        savedRange &&
+        dataCount >= 20 &&
+        Number.isFinite(savedWidth) &&
+        savedWidth >= 8 &&
+        savedWidth <= Math.max(40, dataCount * 1.25) &&
+        savedRange.to >= -20 &&
+        savedRange.from <= dataCount + 20
+      );
       restoringRangeRef.current = true;
-      if (savedRange) {
+      if (savedRangeIsValid) {
         requestAnimationFrame(() => {
           try {
             chart.timeScale().setVisibleLogicalRange(savedRange);
@@ -861,9 +888,12 @@ function Chart({candles,analysis,chartKey}) {
           }
         });
       } else {
+        // First open, refresh, or a stale saved range: always start on the
+        // latest candles with a clean readable scale.
+        try { window.localStorage.removeItem(chartViewStorageKey(chartKeyRef.current)); } catch {}
         chart.timeScale().fitContent();
         chart.timeScale().scrollToRealTime();
-    requestAnimationFrame(()=>saveChartRange(chartKeyRef.current, chart.timeScale().getVisibleLogicalRange()));
+        requestAnimationFrame(()=>saveChartRange(chartKeyRef.current, chart.timeScale().getVisibleLogicalRange()));
         requestAnimationFrame(() => { restoringRangeRef.current = false; });
       }
     } else {
