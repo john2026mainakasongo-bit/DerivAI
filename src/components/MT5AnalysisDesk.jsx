@@ -107,24 +107,30 @@ function chartEvents(cs) {
     const lower = (Math.min(c.open, c.close) - c.low) / range;
 
     if (c.close > hi && c.open <= hi) {
+      const future = cs.slice(i + 1, Math.min(cs.length, i + 6));
+      const failed = future.some(x => x.close < hi);
+
       candidates.push({
         time: c.time,
         position: "aboveBar",
-        color: "#24dfb0",
-        shape: "arrowUp",
-        text: "BREAKOUT",
-        priority: 5,
+        color: failed ? "#ffb454" : "#24dfb0",
+        shape: failed ? "circle" : "arrowUp",
+        text: failed ? "FAILED BREAK" : "BULL BREAK",
+        priority: failed ? 7 : 8,
       });
     }
 
     if (c.close < lo && c.open >= lo) {
+      const future = cs.slice(i + 1, Math.min(cs.length, i + 6));
+      const failed = future.some(x => x.close > lo);
+
       candidates.push({
         time: c.time,
         position: "belowBar",
-        color: "#ff6685",
-        shape: "arrowDown",
-        text: "BREAKOUT",
-        priority: 5,
+        color: failed ? "#ffb454" : "#ff6685",
+        shape: failed ? "circle" : "arrowDown",
+        text: failed ? "FAILED BREAK" : "BEAR BREAK",
+        priority: failed ? 7 : 8,
       });
     }
 
@@ -203,8 +209,6 @@ function chartEvents(cs) {
     }
   }
 
-  // Keep the chart readable: one event per candle and only the
-  // strongest recent events, rather than painting every candle.
   const byTime = new Map();
 
   for (const event of candidates) {
@@ -214,11 +218,13 @@ function chartEvents(cs) {
     }
   }
 
+  // Only show the strongest recent events. A failed break is intentionally
+  // kept visible so a historical breakout cannot be mistaken for a current
+  // entry signal after price has reclaimed the level.
   const recent = [...byTime.values()]
     .sort((a, b) => a.time - b.time)
-    .slice(-10);
+    .slice(-8);
 
-  // Avoid repeated identical labels unless enough candles separate them.
   const result = [];
   let lastText = "";
   let lastTime = 0;
@@ -1006,8 +1012,8 @@ function Chart({candles,analysis,chartKey}) {
 
     const markers=[
       ...chartEvents(candles),
-      ...structureEvents(candles),
-      ...fvgEvents(candles)
+      ...structureEvents(candles).slice(-4),
+      ...fvgEvents(candles).slice(-3)
     ].sort(
       (a,b)=>(a.time-b.time)||(b.priority-a.priority)
     );
@@ -1020,9 +1026,15 @@ function Chart({candles,analysis,chartKey}) {
       }
     }
 
+    // Keep labels readable: prioritize structural/breakout events and cap
+    // the total number of markers visible on the chart.
+    const markerList=[...byTime.values()]
+      .sort((a,b)=>(a.time-b.time)||(b.priority-a.priority))
+      .slice(-10);
+
     markerPrimitiveRef.current=createSeriesMarkers(
       series,
-      [...byTime.values()].slice(-18)
+      markerList
     );
 
     if(projectionSeriesRef.current){
@@ -1494,6 +1506,7 @@ export default function MT5AnalysisDesk(){
     </div>
   </div>;
 }
+
 
 
 
