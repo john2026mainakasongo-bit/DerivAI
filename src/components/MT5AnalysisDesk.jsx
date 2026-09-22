@@ -35,6 +35,41 @@ const labelOf = (m) => String(m?.label || m?.short || m?.id || "Market");
 const avg = (a) => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
 const clamp = (v,a,b) => Math.min(b,Math.max(a,v));
 
+function chartPriceFormat(chartKey, price) {
+  const key = String(chartKey || "").toUpperCase();
+
+  if (key.includes("JPY")) {
+    return { type:"price", precision:3, minMove:0.001 };
+  }
+
+  if (
+    key.includes("XAU") ||
+    key.includes("XAG") ||
+    key.includes("BTC") ||
+    key.includes("ETH")
+  ) {
+    return { type:"price", precision:2, minMove:0.01 };
+  }
+
+  if (
+    key.includes("EURUSD") ||
+    key.includes("GBPUSD") ||
+    key.includes("AUDUSD") ||
+    key.includes("NZDUSD") ||
+    key.includes("USDCAD") ||
+    key.includes("USDCHF") ||
+    key.includes("EURGBP")
+  ) {
+    return { type:"price", precision:5, minMove:0.00001 };
+  }
+
+  if (Number(price) >= 1000) {
+    return { type:"price", precision:2, minMove:0.01 };
+  }
+
+  return { type:"price", precision:5, minMove:0.00001 };
+}
+
 function candlesFromTicks(rows, seconds) {
   const map = new Map();
   for (const r of rows || []) {
@@ -802,7 +837,8 @@ function Chart({candles,analysis,chartKey}) {
       wickDownColor:"#ef607d",
       lastValueVisible:true,
       priceLineVisible:true,
-      borderVisible:false
+      borderVisible:false,
+        priceFormat:chartPriceFormat(chartKey, 0)
     });
 
     chartRef.current=chart;
@@ -872,7 +908,16 @@ function Chart({candles,analysis,chartKey}) {
     }));
     dataCountRef.current=data.length;
 
-    chartKeyRef.current = chartKey || "default";
+    
+      // Keep the price axis precise for each instrument.
+      // Example: EUR/USD 1.14633 must not display as 1.15.
+      const latestPrice = Number(data.at(-1)?.close ?? candles.at(-1)?.close);
+
+      series.applyOptions({
+        priceFormat:chartPriceFormat(chartKey, latestPrice)
+      });
+
+      chartKeyRef.current = chartKey || "default";
     const firstKey=chartKey || String(candles[0]?.time || "");
     const dataSignature = [
       chartKey || "default",
@@ -1532,8 +1577,4 @@ export default function MT5AnalysisDesk(){
     </div>
   </div>;
 }
-
-
-
-
 
