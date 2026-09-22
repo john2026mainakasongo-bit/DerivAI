@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
 import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
@@ -380,7 +380,7 @@ function analyze(cs) {
       signal:"WAIT", bias:"BUILDING", direction:"BUILDING", score:0, confidence:0,
       setup:"WAITING FOR DATA", structure:"BUILDING", liquidity:"WAITING",
       momentum:"WAITING", reason:`Need more candles (${cs.length}/35).`, confirmations:[],
-      entry:null, stop:null, target:null, support:null,resistance:null,ema20:null,ema50:null,
+      entry:null, stop:null, target:null, tp1:null, tp2:null, tp3:null, riskDistance:null, support:null,resistance:null,ema20:null,ema50:null,
       ema200:null,atr:null,rsi:50,macd:0,macdSignal:0,macdHistogram:0,adx:0,stoch:50,bollinger:null,
       fib:null, orderBlock:null, pattern:"NONE", projectedPath:[] , rr:null
     };
@@ -522,23 +522,28 @@ function analyze(cs) {
 
   const atrSafe=Math.max(atr,1e-9);
   let entry=null,stop=null,target=null,entryType="WAIT";
+  let tp1=null,tp2=null,tp3=null,riskDistance=null;
   if(signal==="BUY"){
     entry=Number(last.close.toFixed(5));
     entryType=sharpRejectBuy?"REJECTION BUY":retestBuy?"RETEST BUY":pullbackBuy?"PULLBACK BUY":breakUp?"BREAKOUT BUY":"MOMENTUM BUY";
     const structureStop=Math.min(recentSwingLow,last.close-atrSafe*1.15);
-    const risk=Math.max(last.close-structureStop,atrSafe*0.75);
-    stop=Number((last.close-risk).toFixed(5));
-    const firstTarget=Number((Math.max(last.close+risk*2, recentSwingHigh)).toFixed(5));
-    target=Number(firstTarget.toFixed(5));
+    riskDistance=Math.max(last.close-structureStop,atrSafe*0.75);
+    stop=Number((last.close-riskDistance).toFixed(5));
+    tp1=Number((last.close+riskDistance*1.0).toFixed(5));
+    tp2=Number((last.close+riskDistance*2.0).toFixed(5));
+    tp3=Number((Math.max(last.close+riskDistance*2.5,recentSwingHigh)).toFixed(5));
+    target=tp2;
   }
   if(signal==="SELL"){
     entry=Number(last.close.toFixed(5));
     entryType=sharpRejectSell?"REJECTION SELL":retestSell?"RETEST SELL":pullbackSell?"PULLBACK SELL":breakDn?"BREAKOUT SELL":"MOMENTUM SELL";
     const structureStop=Math.max(recentSwingHigh,last.close+atrSafe*1.15);
-    const risk=Math.max(structureStop-last.close,atrSafe*0.75);
-    stop=Number((last.close+risk).toFixed(5));
-    const firstTarget=Number((Math.min(last.close-risk*2,recentSwingLow)).toFixed(5));
-    target=Number(firstTarget.toFixed(5));
+    riskDistance=Math.max(structureStop-last.close,atrSafe*0.75);
+    stop=Number((last.close+riskDistance).toFixed(5));
+    tp1=Number((last.close-riskDistance*1.0).toFixed(5));
+    tp2=Number((last.close-riskDistance*2.0).toFixed(5));
+    tp3=Number((Math.min(last.close-riskDistance*2.5,recentSwingLow)).toFixed(5));
+    target=tp2;
   }
 
   const rangeHigh=Math.max(...cs.slice(-50).map(c=>c.high));
@@ -618,7 +623,7 @@ function analyze(cs) {
 
   return {
     signal,bias,direction,score,confidence,setup,structure,liquidity,momentum:momentumLabel,reason,pressure,pathBias,
-    confirmations:(raw==="BUY"?buy:sell).map(([name,ok])=>({name,ok})),entry,stop,target,entryType,
+    confirmations:(raw==="BUY"?buy:sell).map(([name,ok])=>({name,ok})),entry,stop,target,tp1,tp2,tp3,riskDistance,entryType,
     support:Number(Math.min(lo,recentSwingLow).toFixed(5)),
     resistance:Number(Math.max(hi,recentSwingHigh).toFixed(5)),
     bullTrigger,bearTrigger,rangeHigh:rangeHigh50,rangeLow:rangeLow50,
@@ -967,12 +972,14 @@ function Chart({candles,analysis,chartKey}) {
       ["Resistance",analysis.resistance,"#f39b62",1],
       ["EMA20",analysis.ema20,"#55a8ff",2],
       ["EMA50",analysis.ema50,"#f3a64b",2],
-      ["Bull trigger",analysis.bullTrigger,"#27dfb1",1],
-      ["Bear trigger",analysis.bearTrigger,"#ff6685",1],
+      ["BUY ABOVE",analysis.bullTrigger,"#27dfb1",1],
+      ["SELL BELOW",analysis.bearTrigger,"#ff6685",1],
       ...(analysis.signal!=="WAIT" ? [
-        ["Entry",analysis.entry,"#20dfb1",2],
-        ["SL",analysis.stop,"#ff6685",2],
-        ["TP",analysis.target,"#2bd6a3",2],
+        [analysis.signal==="BUY"?"BUY ENTRY":"SELL ENTRY",analysis.entry,analysis.signal==="BUY"?"#20dfb1":"#ff6685",3],
+        ["SL",analysis.stop,"#ff6685",3],
+        ["TP1",analysis.tp1,"#2bd6a3",2],
+        ["TP2",analysis.tp2,"#2bd6a3",2],
+        ["TP3",analysis.tp3,"#2bd6a3",2],
       ] : []),
       ...(analysis.orderBlock ? [
         [analysis.orderBlock.type,analysis.orderBlock.low,"#ffb454",1],
@@ -1431,6 +1438,15 @@ export default function MT5AnalysisDesk(){
           <small>Confirmation score, not a probability forecast.</small>
         </section>
 
+        <section className={`mt5Panel mt5TradePlanHero ${cls}`}>
+          <div className="mt5PanelTitle">ACTION MAP · {tf}</div>
+          <div className="mt5ActionRow">
+            <div className="mt5ActionBuy"><span>BUY ABOVE</span><b>{a.bullTrigger??"—"}</b></div>
+            <div className="mt5ActionSell"><span>SELL BELOW</span><b>{a.bearTrigger??"—"}</b></div>
+          </div>
+          <div className="mt5ActionHint">{a.signal==="BUY"?"BUY plan active — wait for confirmation at the entry level.":a.signal==="SELL"?"SELL plan active — wait for confirmation at the entry level.":"WAIT — use the trigger levels to confirm direction before manual MT5 execution."}</div>
+        </section>
+
         <section className={`mt5SignalCard ${cls}`}>
           <div className="mt5SignalTop"><span>DECISION</span><b>ANALYSIS SCORE · {a.confidence?`${a.confidence} / 100`:"—"}</b></div>
           <div className="mt5SignalWord">{a.signal}</div>
@@ -1443,11 +1459,13 @@ export default function MT5AnalysisDesk(){
             <div><span>ACTIVE PATH</span><b>{pathMode}</b></div>
             <div><span>CONFIRMATION</span><b>{nextCondition}</b></div>
           </div>
-          <div className="mt5Levels">
-            <div><span>Entry</span><b>{a.entry??"—"}</b></div>
-            <div><span>Stop loss</span><b>{a.stop??"—"}</b></div>
-            <div><span>Take profit</span><b>{a.target??"—"}</b></div>
-            <div><span>Risk / reward</span><b>{a.rr?"1:"+a.rr:"—"}</b></div>
+          <div className="mt5TradePlanGrid">
+            <div className="entry"><span>{a.signal==="BUY"?"BUY ENTRY":"SELL ENTRY"}</span><b>{a.entry??"—"}</b></div>
+            <div className="stop"><span>STOP LOSS</span><b>{a.stop??"—"}</b></div>
+            <div className="tp"><span>TP1</span><b>{a.tp1??"—"}</b></div>
+            <div className="tp"><span>TP2</span><b>{a.tp2??"—"}</b></div>
+            <div className="tp"><span>TP3</span><b>{a.tp3??"—"}</b></div>
+            <div><span>R:R</span><b>{a.rr?"1:"+a.rr:"—"}</b></div>
           </div>
           <div className="mt5ConfirmationList">
             {(a.confirmations||[]).map(x=>
@@ -1455,7 +1473,7 @@ export default function MT5AnalysisDesk(){
             )}
           </div>
           <button type="button" className="mt5CopyPlan"
-            onClick={()=>navigator.clipboard?.writeText(`${a.signal} ${labelOf(selectedMarket)} ${tf} Entry ${a.entry} SL ${a.stop} TP ${a.target}`)}>
+            onClick={()=>navigator.clipboard?.writeText(`${a.signal} ${labelOf(selectedMarket)} ${tf} Entry ${a.entry} SL ${a.stop} TP1 ${a.tp1} TP2 ${a.tp2} TP3 ${a.tp3}`)}>
             COPY MT5 TRADE PLAN
           </button>
         </section>

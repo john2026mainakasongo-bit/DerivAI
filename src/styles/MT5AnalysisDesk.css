@@ -265,3 +265,28 @@
 @media(max-width:1050px){
   .mt5Grid{grid-template-columns:165px minmax(0,1fr) 300px!important}
 }
+
+/* MT5 V8 — action map + multi-target execution plan */
+.mt5TradePlanHero{padding:12px 13px;background:linear-gradient(145deg,#061a26,#07141f);border-color:#17485c}
+.mt5TradePlanHero.buy{border-color:#147a64}
+.mt5TradePlanHero.sell{border-color:#7b3048}
+.mt5ActionRow{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+.mt5ActionRow>div{padding:10px 9px;border-radius:8px;border:1px solid #174457;background:#061823}
+.mt5ActionRow span{display:block;font-size:7px;font-weight:950;letter-spacing:.08em}
+.mt5ActionRow b{display:block;margin-top:4px;font-size:14px;color:#eaf8ff}
+.mt5ActionBuy{border-color:#147a64!important;background:linear-gradient(145deg,#06231f,#071a22)!important}
+.mt5ActionBuy span{color:#31e3b3}
+.mt5ActionSell{border-color:#793249!important;background:linear-gradient(145deg,#26101a,#071821)!important}
+.mt5ActionSell span{color:#ff718c}
+.mt5ActionHint{margin-top:8px;color:#7696a5;font-size:7px;line-height:1.45}
+.mt5TradePlanGrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.mt5TradePlanGrid>div{padding:9px;border:1px solid #123a4e;border-radius:7px;background:#05131f}
+.mt5TradePlanGrid span{display:block;color:#628494;font-size:7px;font-weight:900}
+.mt5TradePlanGrid b{display:block;margin-top:4px;color:#eaf8ff;font-size:11px}
+.mt5TradePlanGrid .entry{border-color:#13745f;background:#06221e}
+.mt5TradePlanGrid .entry span{color:#34dfb1}
+.mt5TradePlanGrid .stop{border-color:#743047;background:#21101a}
+.mt5TradePlanGrid .stop span{color:#ff718b}
+.mt5TradePlanGrid .tp{border-color:#116b5b;background:#05231e}
+.mt5TradePlanGrid .tp span{color:#46e6ba}
+.mt5TradePlanGrid .tp b{color:#55edc0}
