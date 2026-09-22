@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
 import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
@@ -1444,7 +1444,15 @@ export default function MT5AnalysisDesk(){
             <div className="mt5ActionBuy"><span>BUY ABOVE</span><b>{a.bullTrigger??"—"}</b></div>
             <div className="mt5ActionSell"><span>SELL BELOW</span><b>{a.bearTrigger??"—"}</b></div>
           </div>
-          <div className="mt5ActionHint">{a.signal==="BUY"?"BUY plan active — wait for confirmation at the entry level.":a.signal==="SELL"?"SELL plan active — wait for confirmation at the entry level.":"WAIT — use the trigger levels to confirm direction before manual MT5 execution."}</div>
+          <div className="mt5ActionHint">{a.signal==="BUY"?"BUY plan active — wait for confirmation above the BUY trigger.":a.signal==="SELL"?"SELL plan active — wait for confirmation below the SELL trigger.":"WAIT — use the trigger levels to confirm direction before manual MT5 execution."}</div>
+          <div className={`mt5ActionPlan ${cls}`}>
+            <div><span>ENTRY</span><b>{a.entry??"—"}</b></div>
+            <div className="planStop"><span>STOP LOSS</span><b>{a.stop??"—"}</b></div>
+            <div className="planTp"><span>TP1</span><b>{a.tp1??"—"}</b></div>
+            <div className="planTp"><span>TP2</span><b>{a.tp2??"—"}</b></div>
+            <div className="planTp"><span>TP3</span><b>{a.tp3??"—"}</b></div>
+            <div className="planInvalid"><span>INVALIDATION</span><b>{a.signal==="BUY" ? `Break & close below ${a.bearTrigger??"—"}` : a.signal==="SELL" ? `Break & close above ${a.bullTrigger??"—"}` : "Wait for a confirmed break"}</b></div>
+          </div>
         </section>
 
         <section className={`mt5SignalCard ${cls}`}>
