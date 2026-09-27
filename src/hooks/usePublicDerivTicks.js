@@ -17,29 +17,38 @@ const TF_SECONDS = {
   "24h": 86400,
 };
 
-// Curated analysis watchlist: major Forex pairs plus selected USD-priced
-// instruments. Synthetic Volatility indices are intentionally excluded.
-const FOREX_TARGETS = [
-  "frxEURUSD",
-  "frxGBPUSD",
-  "frxUSDJPY",
-  "frxUSDCHF",
-  "frxAUDUSD",
-  "frxUSDCAD",
-  "frxNZDUSD",
-  "frxEURGBP",
-];
+// MT5 Analysis Desk uses Deriv Volatility/Synthetic markets only.
+// Forex, crypto and metals are intentionally excluded from this desk.
+function isVolatilityMarket(market = {}) {
+  const id = symbolId(market);
+  const label = String(
+    market?.label || market?.short || market?.name || ""
+  ).toUpperCase();
 
-const USD_TARGETS = [
-  "XAUUSD",
-  "frxXAUUSD",
-  "XAGUSD",
-  "frxXAGUSD",
-  "BTCUSD",
-  "cryBTCUSD",
-  "ETHUSD",
-  "cryETHUSD",
-];
+  return (
+    /VOLATILITY/.test(label) ||
+    /HIGH\s*FREQUENCY\s*VOL/.test(label) ||
+    /VOL\s*SWITCH|VSI/.test(label) ||
+    /^R_\d+$/i.test(id) ||
+    /^\d+HZ\d+V$/i.test(id)
+  );
+}
+
+function volatilityRank(market = {}) {
+  const text = `${market?.label || ""} ${market?.id || market?.symbol || ""}`;
+  const m = text.match(/(?:VOLATILITY|VOL|VSI)[^0-9]*(\d+(?:\.\d+)?)/i);
+  const value = m ? Number(m[1]) : 9999;
+  const hf = /HIGH\s*FREQUENCY/i.test(text) ? 1 : 0;
+  return [hf, value, text];
+}
+
+function chooseDefault(markets = []) {
+  const ranked = [...markets].sort((a,b) => {
+    const ra = volatilityRank(a), rb = volatilityRank(b);
+    return ra[0] - rb[0] || ra[1] - rb[1] || String(ra[2]).localeCompare(String(rb[2]));
+  });
+  return ranked[0] || null;
+}
 
 function keyOf(market) {
   return String(market?.id || market?.symbol || "");
@@ -47,56 +56,6 @@ function keyOf(market) {
 
 function symbolId(market) {
   return String(market?.id || market?.symbol || "").toUpperCase();
-}
-
-function matchesTarget(market, targets = []) {
-  const id = symbolId(market);
-  const label = String(
-    market?.label || market?.short || market?.name || ""
-  ).toUpperCase().replace(/\s+/g, "");
-  return targets.some((target) => {
-    const t = String(target).toUpperCase();
-    return id === t || id.endsWith(t) || label.includes(t);
-  });
-}
-
-function matchesForex(market) {
-  const id = symbolId(market);
-  const label = String(
-    market?.label || market?.short || market?.name || ""
-  ).toUpperCase();
-  return (
-    String(market?.market || "").toLowerCase() === "forex" &&
-    FOREX_TARGETS.some((target) => id === target.toUpperCase() || id.endsWith(target.toUpperCase())) ||
-    /^(EUR|GBP|USD|JPY|CHF|AUD|CAD|NZD)\s*\/\s*(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD)$/.test(label)
-  );
-}
-
-function matchesBTC(market) {
-  return matchesTarget(market, ["BTCUSD", "CRYBTCUSD"]) ||
-    /BTC\s*\/?\s*USD/i.test(String(market?.label || ""));
-}
-
-function matchesGold(market) {
-  return matchesTarget(market, ["XAUUSD", "FRXXAUUSD"]) ||
-    /GOLD\s*\/?\s*USD/i.test(String(market?.label || ""));
-}
-
-function matchesUSDAsset(market) {
-  return matchesTarget(market, USD_TARGETS);
-}
-
-function chooseDefault(markets = []) {
-  return (
-    FOREX_TARGETS
-      .map((target) => markets.find((m) => symbolId(m) === target.toUpperCase() || symbolId(m).endsWith(target.toUpperCase())))
-      .find(Boolean) ||
-    markets.find(matchesForex) ||
-    markets.find(matchesGold) ||
-    markets.find(matchesBTC) ||
-    markets[0] ||
-    null
-  );
 }
 
 function normalizeTicks(rows = []) {
@@ -434,27 +393,8 @@ export default function usePublicDerivTicks({
         return;
       }
 
-      const selectedMarkets = [
-        ...FOREX_TARGETS
-          .map((target) =>
-            liveMarkets.find((market) =>
-              symbolId(market) === target.toUpperCase() ||
-              symbolId(market).endsWith(target.toUpperCase())
-            )
-          )
-          .filter(Boolean),
-        ...USD_TARGETS
-          .map((target) =>
-            liveMarkets.find((market) =>
-              symbolId(market) === target.toUpperCase() ||
-              symbolId(market).endsWith(target.toUpperCase())
-            )
-          )
-          .filter(Boolean),
-        liveMarkets.find(matchesForex),
-        liveMarkets.find(matchesBTC),
-        liveMarkets.find(matchesGold),
-      ].filter(Boolean);
+      // Subscribe every Deriv Volatility market returned by active_symbols.
+      const selectedMarkets = liveMarkets.filter(isVolatilityMarket);
 
       const symbols = [
         ...new Set(
@@ -581,24 +521,17 @@ export default function usePublicDerivTicks({
         const allMarkets =
           await derivPublicClient.getPublicMarkets();
 
-        const liveMarkets = [
-          ...FOREX_TARGETS
-            .map((target) =>
-              allMarkets.find((market) =>
-                symbolId(market) === target.toUpperCase() ||
-                symbolId(market).endsWith(target.toUpperCase())
-              )
-            )
-            .filter(Boolean),
-          ...USD_TARGETS
-            .map((target) =>
-              allMarkets.find((market) =>
-                symbolId(market) === target.toUpperCase() ||
-                symbolId(market).endsWith(target.toUpperCase())
-              )
-            )
-            .filter(Boolean),
-        ].filter(Boolean);
+        // Deriv is the source of truth for the current Volatility universe.
+        // This keeps newly introduced volatility variants available without
+        // hard-coding Forex/crypto/metals symbols.
+        const liveMarkets = allMarkets
+          .filter(isVolatilityMarket)
+          .sort((a, b) => {
+            const ra = volatilityRank(a);
+            const rb = volatilityRank(b);
+            return ra[0] - rb[0] || ra[1] - rb[1] ||
+              String(ra[2]).localeCompare(String(rb[2]));
+          });
 
         if (!mountedRef.current) {
           return connection;
@@ -615,7 +548,7 @@ export default function usePublicDerivTicks({
 
         if (!selected) {
           throw new Error(
-            "No supported Forex or USD market was returned."
+            "No Deriv Volatility markets were returned."
           );
         }
 
