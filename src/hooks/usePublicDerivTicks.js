@@ -307,7 +307,11 @@ export default function usePublicDerivTicks({
               const candles = await derivPublicClient.getCandleHistory(
                 cleanSymbol,
                 Number(seconds),
-                Number(seconds) >= 28800 ? 180 : 240
+                Number(seconds) === 86400
+                  ? 400
+                  : Number(seconds) >= 28800
+                    ? 180
+                    : 240
               );
               normalizedCandles = normalizeCandles(candles);
               if (normalizedCandles.length >= 35) break;

@@ -291,3 +291,26 @@
 .mt5TradePlanGrid .tp{border-color:#116b5b;background:#05231e}
 .mt5TradePlanGrid .tp span{color:#46e6ba}
 .mt5TradePlanGrid .tp b{color:#55edc0}
+
+/* Deep multi-timeframe confluence */
+.mt5ConfluencePanel{margin-top:10px;border:1px solid #16465a;background:linear-gradient(145deg,#061a25,#06131d);border-radius:10px;padding:12px}
+.mt5ConfluenceHead{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+.mt5ConfluenceHead .mt5PanelTitle{margin:0}
+.mt5ConfluenceScore{font-size:20px;font-weight:1000;color:#f5c35b}
+.mt5ConfluenceScore small{font-size:7px;color:#6d8d9c;font-weight:800}
+.mt5TfMatrix{display:grid;grid-template-columns:repeat(7,minmax(54px,1fr));gap:5px;margin-top:10px}
+.mt5TfCell{padding:7px 5px;border:1px solid #14394a;border-radius:7px;background:#05131d;text-align:center;min-width:0}
+.mt5TfCell b{display:block;color:#dff6ff;font-size:8px}
+.mt5TfCell span{display:block;margin-top:4px;font-size:7px;font-weight:950}
+.mt5TfCell.up{border-color:#116b5a;background:#05231e}.mt5TfCell.up span{color:#43e7ba}
+.mt5TfCell.down{border-color:#733149;background:#21101a}.mt5TfCell.down span{color:#ff718c}
+.mt5TfCell.range{border-color:#68532d;background:#20190d}.mt5TfCell.range span{color:#ffc66c}
+.mt5MarketPath{margin-top:9px;padding:9px;border:1px solid #173f52;border-radius:8px;background:#04111a}
+.mt5MarketPath span{display:block;color:#688a99;font-size:7px;font-weight:950;letter-spacing:.08em}
+.mt5MarketPath b{display:block;margin-top:4px;color:#dff7ff;font-size:9px;line-height:1.5}
+.mt5PathLevels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:7px}
+.mt5PathLevels div{padding:7px;border:1px solid #126653;border-radius:7px;background:#05221d}
+.mt5PathLevels span{font-size:6px;color:#57dcb8}
+.mt5PathLevels b{font-size:9px;color:#dffcf4;margin-top:3px}
+.mt5ConfluenceReason{margin:8px 0 0;color:#8aa6b3;font-size:8px;line-height:1.55}
+@media(max-width:900px){.mt5TfMatrix{grid-template-columns:repeat(4,minmax(54px,1fr))}}
