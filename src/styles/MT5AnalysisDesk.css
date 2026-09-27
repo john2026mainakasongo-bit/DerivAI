@@ -314,3 +314,23 @@
 .mt5PathLevels b{font-size:9px;color:#dffcf4;margin-top:3px}
 .mt5ConfluenceReason{margin:8px 0 0;color:#8aa6b3;font-size:8px;line-height:1.55}
 @media(max-width:900px){.mt5TfMatrix{grid-template-columns:repeat(4,minmax(54px,1fr))}}
+
+/* MT5 V13 — live pullback entry watch + post-entry exit monitor */
+.mt5MonitorButton{width:100%;margin-top:8px;padding:10px 9px;border:1px solid #1b8d7a;border-radius:8px;background:#083d38;color:#74f0d1;font-size:8px;font-weight:950;cursor:pointer;letter-spacing:.04em}
+.mt5MonitorButton.buy{border-color:#147a64;background:#073d34;color:#71f0d0}
+.mt5MonitorButton.sell{border-color:#7b3048;background:#3b1320;color:#ff9caf}
+.mt5MonitorButton.stopMonitor{border-color:#73572b;background:#211a0d;color:#ffd38d}
+.mt5LiveTradeMonitor{border-color:#176653;background:linear-gradient(145deg,#061c28,#06251f)}
+.mt5LiveTradeMonitor.danger{border-color:#8a304b;background:linear-gradient(145deg,#21101a,#160c13)}
+.mt5LiveTradeMonitor.profit{border-color:#176653}
+.mt5MonitorStatus{font-size:19px;font-weight:1000;color:#42e7c0;margin:2px 0 9px}
+.mt5LiveTradeMonitor.danger .mt5MonitorStatus{color:#ff718c}
+.mt5LiveTradeMonitor.profit .mt5MonitorStatus{color:#55edc0}
+.mt5MonitorGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.mt5MonitorGrid>div{padding:7px;border:1px solid #123a4e;border-radius:7px;background:#05131f}
+.mt5MonitorGrid span{display:block;color:#648594;font-size:6px;font-weight:900}
+.mt5MonitorGrid b{display:block;margin-top:3px;color:#eaf8ff;font-size:9px}
+.mt5MonitorProgress{height:5px;margin-top:9px;overflow:hidden;border-radius:99px;background:#102d39}
+.mt5MonitorProgress i{display:block;height:100%;border-radius:99px;background:#35ddb5}
+.mt5LiveTradeMonitor p{margin:8px 0 0;color:#89a6b3;font-size:8px;line-height:1.5}
+@media(max-width:900px){.mt5MonitorGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -494,8 +494,15 @@ function analyze(cs, marketKey = "", marketLabel = "") {
   const sharpRejectSell=upper>=0.42 && last.close<last.open && (last.high-last.close)>=range*0.55;
   const nearEma20=Math.abs(last.close-e20)<=atr*0.65;
 
-  const pullbackBuy=bullish&&nearEma20&&last.low<=e20+atr*strategy.pullbackAtr&&(strongBull||sharpRejectBuy);
-  const pullbackSell=bearish&&nearEma20&&last.high>=e20-atr*strategy.pullbackAtr&&(strongBear||sharpRejectSell);
+  // Pullback is tracked as a live phase instead of only becoming visible
+  // after the confirmation candle has already closed. This gives the desk a
+  // useful "entry watch" state while the pullback is still developing.
+  const priorHigh8=Math.max(...cs.slice(-9,-1).map(c=>c.high));
+  const priorLow8=Math.min(...cs.slice(-9,-1).map(c=>c.low));
+  const retracingIntoBuyZone=bullish&&nearEma20&&last.low<=e20+atr*(strategy.pullbackAtr+0.18)&&priorHigh8-last.close>=atr*0.30;
+  const retracingIntoSellZone=bearish&&nearEma20&&last.high>=e20-atr*(strategy.pullbackAtr+0.18)&&last.close-priorLow8>=atr*0.30;
+  const pullbackBuy=retracingIntoBuyZone&&(strongBull||sharpRejectBuy);
+  const pullbackSell=retracingIntoSellZone&&(strongBear||sharpRejectSell);
   const recentBreakUp=cs.slice(-8,-1).some(c=>c.close>hi);
   const recentBreakDn=cs.slice(-8,-1).some(c=>c.close<lo);
   const retestBuy=recentBreakUp&&last.low<=hi+atr*0.45&&last.close>hi&&last.close>last.open;
@@ -510,6 +517,8 @@ function analyze(cs, marketKey = "", marketLabel = "") {
   const macdValue=macd(closes);
   const adxValue=adx(cs,14);
   const pattern=candlePattern(cs);
+  const pullbackExhaustBuy=retracingIntoBuyZone && momentum>-0.05 && (pattern==="BULLISH ENGULFING" || pattern==="BULLISH PIN BAR" || strongBull || sharpRejectBuy);
+  const pullbackExhaustSell=retracingIntoSellZone && momentum<0.05 && (pattern==="BEARISH ENGULFING" || pattern==="BEARISH PIN BAR" || strongBear || sharpRejectSell);
   const bb=bollinger(closes,20,2);
   const stoch=stochastic(cs,14);
 
@@ -590,6 +599,15 @@ function analyze(cs, marketKey = "", marketLabel = "") {
     regimeSetup;
   const signal=strongSetup?raw:"WAIT";
 
+  // A watchable setup can exist before the final confirmation candle. It is
+  // intentionally NOT reported as BUY/SELL yet; it is an actionable trigger
+  // with a pre-calculated risk plan.
+  const buyEntryWatch=signal==="WAIT" && raw==="BUY" && bullish && score>=55 &&
+    (retracingIntoBuyZone || recentBreakUp || retestBuy || continuationBuy || sharpRejectBuy);
+  const sellEntryWatch=signal==="WAIT" && raw==="SELL" && bearish && score>=55 &&
+    (retracingIntoSellZone || recentBreakDn || retestSell || continuationSell || sharpRejectSell);
+  const watchSide=buyEntryWatch?"BUY":sellEntryWatch?"SELL":null;
+
   const structure=bullish?"BULLISH STRUCTURE":bearish?"BEARISH STRUCTURE":"RANGE / TRANSITION";
   const direction=bullish&&bc>=sc+1?"UP":bearish&&sc>=bc+1?"DOWN":"RANGE";
   const bias=direction==="UP"?"BULLISH":direction==="DOWN"?"BEARISH":"NEUTRAL";
@@ -603,28 +621,45 @@ function analyze(cs, marketKey = "", marketLabel = "") {
   const atrSafe=Math.max(atr,1e-9);
   let entry=null,stop=null,target=null,entryType="WAIT";
   let tp1=null,tp2=null,tp3=null,riskDistance=null;
-  if(signal==="BUY"){
-    entry=Number(last.close.toFixed(5));
-    entryType=sharpRejectBuy?"REJECTION BUY":retestBuy?"RETEST BUY":pullbackBuy?"PULLBACK BUY":breakUp?"BREAKOUT BUY":"MOMENTUM BUY";
-    const structureStop=Math.min(recentSwingLow,last.close-atrSafe*strategy.stopAtr);
-    riskDistance=Math.max(last.close-structureStop,atrSafe*0.75);
-    stop=Number((last.close-riskDistance).toFixed(5));
-    tp1=Number((last.close+riskDistance*1.0).toFixed(5));
-    tp2=Number((last.close+riskDistance*2.0).toFixed(5));
-    tp3=Number((Math.max(last.close+riskDistance*2.5,recentSwingHigh)).toFixed(5));
+  const planSide=signal!=="WAIT"?signal:watchSide;
+  if(planSide==="BUY"){
+    // Confirmed entries use the current close. Entry-watch setups use the
+    // current candle high so the desk only triggers if price starts to push.
+    entry=Number((signal==="BUY"?last.close:Math.max(last.high,last.close)).toFixed(5));
+    entryType=signal==="BUY"
+      ? (sharpRejectBuy?"REJECTION BUY":retestBuy?"RETEST BUY":pullbackBuy?"PULLBACK BUY":breakUp?"BREAKOUT BUY":"MOMENTUM BUY")
+      : (retracingIntoBuyZone?"PULLBACK ENTRY WATCH":"BREAKOUT ENTRY WATCH");
+    const pullbackLow=Math.min(...cs.slice(-4).map(c=>c.low));
+    const structureStop=Math.min(recentSwingLow,pullbackLow,last.close-atrSafe*strategy.stopAtr);
+    riskDistance=Math.max(entry-structureStop,atrSafe*0.75);
+    stop=Number((entry-riskDistance).toFixed(5));
+    tp1=Number((entry+riskDistance*1.0).toFixed(5));
+    tp2=Number((entry+riskDistance*2.0).toFixed(5));
+    tp3=Number((Math.max(entry+riskDistance*2.5,recentSwingHigh)).toFixed(5));
     target=tp2;
   }
-  if(signal==="SELL"){
-    entry=Number(last.close.toFixed(5));
-    entryType=sharpRejectSell?"REJECTION SELL":retestSell?"RETEST SELL":pullbackSell?"PULLBACK SELL":breakDn?"BREAKOUT SELL":"MOMENTUM SELL";
-    const structureStop=Math.max(recentSwingHigh,last.close+atrSafe*strategy.stopAtr);
-    riskDistance=Math.max(structureStop-last.close,atrSafe*0.75);
-    stop=Number((last.close+riskDistance).toFixed(5));
-    tp1=Number((last.close-riskDistance*1.0).toFixed(5));
-    tp2=Number((last.close-riskDistance*2.0).toFixed(5));
-    tp3=Number((Math.min(last.close-riskDistance*2.5,recentSwingLow)).toFixed(5));
+  if(planSide==="SELL"){
+    entry=Number((signal==="SELL"?last.close:Math.min(last.low,last.close)).toFixed(5));
+    entryType=signal==="SELL"
+      ? (sharpRejectSell?"REJECTION SELL":retestSell?"RETEST SELL":pullbackSell?"PULLBACK SELL":breakDn?"BREAKOUT SELL":"MOMENTUM SELL")
+      : (retracingIntoSellZone?"PULLBACK ENTRY WATCH":"BREAKDOWN ENTRY WATCH");
+    const pullbackHigh=Math.max(...cs.slice(-4).map(c=>c.high));
+    const structureStop=Math.max(recentSwingHigh,pullbackHigh,last.close+atrSafe*strategy.stopAtr);
+    riskDistance=Math.max(structureStop-entry,atrSafe*0.75);
+    stop=Number((entry+riskDistance).toFixed(5));
+    tp1=Number((entry-riskDistance*1.0).toFixed(5));
+    tp2=Number((entry-riskDistance*2.0).toFixed(5));
+    tp3=Number((Math.min(entry-riskDistance*2.5,recentSwingLow)).toFixed(5));
     target=tp2;
   }
+
+  const pullbackState=
+    pullbackExhaustBuy?"BUY PULLBACK EXHAUSTION":
+    pullbackExhaustSell?"SELL PULLBACK EXHAUSTION":
+    retracingIntoBuyZone?"BUY PULLBACK ACTIVE":
+    retracingIntoSellZone?"SELL PULLBACK ACTIVE":
+    "NO ACTIVE PULLBACK";
+  const planStatus=signal!=="WAIT"?"ENTRY CONFIRMED":watchSide?"ENTRY WATCH":"NO TRADE";
 
   const rangeHigh=Math.max(...cs.slice(-50).map(c=>c.high));
   const rangeLow=Math.min(...cs.slice(-50).map(c=>c.low));
@@ -700,10 +735,13 @@ function analyze(cs, marketKey = "", marketLabel = "") {
   if(direction==="RANGE" && pressure==="NEUTRAL") reason=`Price is inside the current range between ${bearTrigger.toFixed(2)} and ${bullTrigger.toFixed(2)}. Wait for a clean break and retest.`;
   if(signal==="BUY") reason=`BUY setup detected from ${entryType}: ${bc}/16 bullish checks aligned. Confirm the level before manual execution.`;
   if(signal==="SELL") reason=`SELL setup detected from ${entryType}: ${sc}/16 bearish checks aligned. Confirm the level before manual execution.`;
+  if(signal==="WAIT" && watchSide==="BUY") reason=`BUY ENTRY WATCH: ${pullbackState}. Trigger above ${entry}. SL ${stop}; wait for the push/confirmation.`;
+  if(signal==="WAIT" && watchSide==="SELL") reason=`SELL ENTRY WATCH: ${pullbackState}. Trigger below ${entry}. SL ${stop}; wait for the push/confirmation.`;
 
   return {
     signal,bias,direction,score,confidence,setup,strategy:strategy.name,structure,liquidity,momentum:momentumLabel,reason,pressure,pathBias,
     confirmations:(raw==="BUY"?buy:sell).map(([name,ok])=>({name,ok})),entry,stop,target,tp1,tp2,tp3,riskDistance,entryType,
+    planSide,planStatus,watchSide,pullbackState,pullbackExhaustion:pullbackExhaustBuy||pullbackExhaustSell,
     support:Number(Math.min(lo,recentSwingLow).toFixed(5)),
     resistance:Number(Math.max(hi,recentSwingHigh).toFixed(5)),
     bullTrigger,bearTrigger,rangeHigh:rangeHigh50,rangeLow:rangeLow50,
@@ -712,7 +750,7 @@ function analyze(cs, marketKey = "", marketLabel = "") {
     adx:Number(adxValue.adx.toFixed(1)),plusDI:Number(adxValue.plus.toFixed(1)),minusDI:Number(adxValue.minus.toFixed(1)),
     bollinger:{upper:Number(bb.upper.toFixed(5)),mid:Number(bb.mid.toFixed(5)),lower:Number(bb.lower.toFixed(5))},
     stoch:Number(stoch.toFixed(1)),
-    pattern,fib,orderBlock,projectedPath,rr:signal==="WAIT"?null:2
+    pattern,fib,orderBlock,projectedPath,rr:planSide?2:null
   };
 }
 
@@ -1286,6 +1324,7 @@ export default function MT5AnalysisDesk(){
   },[markets]);
   const [selected,setSelected]=useState("");
   const [tf,setTf]=useState("5m");
+  const [activeTrade,setActiveTrade]=useState(null);
 
   useEffect(()=>{
     if(!selected&&supported[0]) setSelected(keyOf(supported[0]));
@@ -1295,6 +1334,12 @@ export default function MT5AnalysisDesk(){
     if(!selected||!connected||selected===symbol) return;
     void changeSymbol(selected).catch(()=>{});
   },[selected,connected,symbol,changeSymbol]);
+
+  // A manual trade monitor is deliberately opt-in. The desk never assumes
+  // that a user entered a position merely because an analysis signal fired.
+  useEffect(()=>{
+    setActiveTrade(null);
+  },[selected,tf]);
 
   const selectedMarket=supported.find(m=>keyOf(m)===selected)||supported[0];
   const selectedKey=keyOf(selectedMarket);
@@ -1346,7 +1391,60 @@ export default function MT5AnalysisDesk(){
   const a=selectedMarket
     ? analyses[selectedKey]||analyze(cs, selectedKey, labelOf(selectedMarket))
     : analyze(cs, selectedKey, labelOf(selectedMarket));
-  const cls=a.signal==="BUY"?"buy":a.signal==="SELL"?"sell":"wait";
+  const cls=a.signal==="BUY"?"buy":a.signal==="SELL"?"sell":a.watchSide==="BUY"?"buy":a.watchSide==="SELL"?"sell":"wait";
+
+  const livePrice=Number.isFinite(Number(cs.at(-1)?.close)) ? Number(cs.at(-1)?.close) : NaN;
+  const tradeMonitor=useMemo(()=>{
+    if(!activeTrade || !Number.isFinite(livePrice)) return null;
+    const side=activeTrade.side;
+    const entry=Number(activeTrade.entry);
+    const stop=Number(activeTrade.stop);
+    const tp1=Number(activeTrade.tp1);
+    const tp2=Number(activeTrade.tp2);
+    const tp3=Number(activeTrade.tp3);
+    const favorable=side==="BUY"?livePrice-entry:entry-livePrice;
+    const totalToTp2=side==="BUY"?tp2-entry:entry-tp2;
+    const progress=totalToTp2>0?clamp(favorable/totalToTp2,0,1.25):0;
+    const stopHit=side==="BUY"?livePrice<=stop:livePrice>=stop;
+    const tp3Hit=side==="BUY"?livePrice>=tp3:livePrice<=tp3;
+    const tp1Hit=side==="BUY"?livePrice>=tp1:livePrice<=tp1;
+    const oppositeStructure=side==="BUY"
+      ? (a.direction==="DOWN" || String(a.momentum||"").includes("BEARISH") || livePrice<a.ema20)
+      : (a.direction==="UP" || String(a.momentum||"").includes("BULLISH") || livePrice>a.ema20);
+    const invalidated=side==="BUY"?livePrice<=a.bearTrigger:livePrice>=a.bullTrigger;
+    let status="HOLD";
+    let reason="Structure and momentum are still supportive.";
+    if(stopHit){
+      status="EXIT NOW";
+      reason="Stop-loss level has been reached. Protect the account; do not widen the stop.";
+    } else if(invalidated){
+      status="EXIT NOW";
+      reason=`Market invalidation reached at ${side==="BUY"?a.bearTrigger:a.bullTrigger}.`;
+    } else if(tp3Hit){
+      status="TAKE PROFIT";
+      reason="Final target zone reached. Protect/close the remaining position.";
+    } else if(tp1Hit && oppositeStructure){
+      status="EXIT WARNING";
+      reason="TP1 was reached but continuation is weakening. Protect profit instead of waiting blindly for TP2.";
+    } else if(progress>=0.75 && oppositeStructure){
+      status="EXIT WARNING";
+      reason="Price is deep into the target path while momentum/structure is turning against the position.";
+    } else if(tp1Hit){
+      status="TP1 REACHED";
+      reason="TP1 reached and structure is still supportive. Consider protecting the position.";
+    }
+    return {status,reason,progress,tp1Hit,tp3Hit,stopHit,livePrice,favorable};
+  },[activeTrade,livePrice,a]);
+
+  const startTradeMonitor=()=>{
+    if(a.signal!=="BUY" && a.signal!=="SELL") return;
+    if(!Number.isFinite(Number(a.entry)) || !Number.isFinite(Number(a.stop))) return;
+    setActiveTrade({
+      side:a.signal,entry:a.entry,stop:a.stop,tp1:a.tp1,tp2:a.tp2,tp3:a.tp3,startedAt:Date.now()
+    });
+  };
+
+  const stopTradeMonitor=()=>setActiveTrade(null);
 
   const mtf=Object.entries(TF).map(([label,seconds])=>{
     const data=selectedMarket && label
@@ -1471,7 +1569,8 @@ export default function MT5AnalysisDesk(){
         <div className="mt5SetupStrip mt5DirectionStrip">
           <span>MARKET HEADING</span><b className={a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}>{a.direction}</b>
           <span>MTF</span><b>{mtfHeading} · {mtfAgreement}%</b>
-          <span>SETUP</span><b>{a.setup}</b>
+          <span>SETUP</span><b>{a.planStatus || a.setup}</b>
+          <span>PULLBACK</span><b>{a.pullbackState || "NO ACTIVE PULLBACK"}</b>
           <span>PATH</span><b>{a.pathBias || "—"}</b>
           <span>TRIGGERS</span><b>{a.bullTrigger ?? "—"} / {a.bearTrigger ?? "—"}</b>
           <span>RSI / MACD</span><b>{a.rsi} · {a.macdHistogram>=0?"BULL":"BEAR"}</b>
@@ -1538,7 +1637,7 @@ export default function MT5AnalysisDesk(){
             <div className="mt5ActionBuy"><span>BUY ABOVE</span><b>{a.bullTrigger??"—"}</b></div>
             <div className="mt5ActionSell"><span>SELL BELOW</span><b>{a.bearTrigger??"—"}</b></div>
           </div>
-          <div className="mt5ActionHint">{a.signal==="BUY"?"BUY plan active — wait for confirmation above the BUY trigger.":a.signal==="SELL"?"SELL plan active — wait for confirmation below the SELL trigger.":"WAIT — use the trigger levels to confirm direction before manual MT5 execution."}</div>
+          <div className="mt5ActionHint">{a.signal==="BUY"?"BUY plan active — entry, SL and TP are calculated. After you enter manually, start the trade monitor.":a.signal==="SELL"?"SELL plan active — entry, SL and TP are calculated. After you enter manually, start the trade monitor.":a.watchSide?`${a.watchSide} ENTRY WATCH — ${a.pullbackState}. Trigger is ready; wait for the push/confirmation.`:"WAIT — no confirmed entry. Watch the pullback/breakout trigger before manual MT5 execution."}</div>
           <div className={`mt5ActionPlan ${cls}`}>
             <div><span>ENTRY</span><b>{a.entry??"—"}</b></div>
             <div className="planStop"><span>STOP LOSS</span><b>{a.stop??"—"}</b></div>
@@ -1547,22 +1646,49 @@ export default function MT5AnalysisDesk(){
             <div className="planTp"><span>TP3</span><b>{a.tp3??"—"}</b></div>
             <div className="planInvalid"><span>INVALIDATION</span><b>{a.signal==="BUY" ? `Break & close below ${a.bearTrigger??"—"}` : a.signal==="SELL" ? `Break & close above ${a.bullTrigger??"—"}` : "Wait for a confirmed break"}</b></div>
           </div>
+          {a.signal!=="WAIT" && !activeTrade && (
+            <button type="button" className={`mt5MonitorButton ${cls}`} onClick={startTradeMonitor}>
+              I ENTERED {a.signal} — START EXIT MONITOR
+            </button>
+          )}
+          {activeTrade && (
+            <button type="button" className="mt5MonitorButton stopMonitor" onClick={stopTradeMonitor}>
+              STOP TRADE MONITOR
+            </button>
+          )}
         </section>
+
+        {tradeMonitor && (
+          <section className={`mt5Panel mt5LiveTradeMonitor ${tradeMonitor.status.includes("EXIT")?"danger":tradeMonitor.status.includes("TP")||tradeMonitor.status==="TAKE PROFIT"?"profit":""}`}>
+            <div className="mt5PanelTitle">LIVE TRADE MONITOR · {activeTrade.side}</div>
+            <div className="mt5MonitorStatus">{tradeMonitor.status}</div>
+            <div className="mt5MonitorGrid">
+              <div><span>ENTRY</span><b>{activeTrade.entry}</b></div>
+              <div><span>LIVE</span><b>{tradeMonitor.livePrice}</b></div>
+              <div><span>SL</span><b>{activeTrade.stop}</b></div>
+              <div><span>TP1</span><b>{activeTrade.tp1}</b></div>
+              <div><span>TP2</span><b>{activeTrade.tp2}</b></div>
+              <div><span>TP3</span><b>{activeTrade.tp3}</b></div>
+            </div>
+            <div className="mt5MonitorProgress"><i style={{width:`${Math.round(tradeMonitor.progress*100)}%`}}/></div>
+            <p>{tradeMonitor.reason}</p>
+          </section>
+        )}
 
         <section className={`mt5SignalCard ${cls}`}>
           <div className="mt5SignalTop"><span>DECISION</span><b>ANALYSIS SCORE · {a.confidence?`${a.confidence} / 100`:"—"}</b></div>
-          <div className="mt5SignalWord">{a.signal}</div>
+          <div className="mt5SignalWord">{a.signal!=="WAIT"?a.signal:(a.watchSide?`${a.watchSide} WATCH`:"WAIT")}</div>
           <p>{a.reason}</p>
           <div className="mt5SignalSetup">
             <span>SETUP</span>
-            <b>{a.setup}</b>
+            <b>{a.planStatus} · {a.setup}</b>
           </div>
           <div className="mt5ScenarioBox">
             <div><span>ACTIVE PATH</span><b>{pathMode}</b></div>
             <div><span>CONFIRMATION</span><b>{nextCondition}</b></div>
           </div>
           <div className="mt5TradePlanGrid">
-            <div className="entry"><span>{a.signal==="BUY"?"BUY ENTRY":"SELL ENTRY"}</span><b>{a.entry??"—"}</b></div>
+            <div className="entry"><span>{a.planSide==="BUY"?"BUY ENTRY":a.planSide==="SELL"?"SELL ENTRY":"ENTRY"}</span><b>{a.entry??"—"}</b></div>
             <div className="stop"><span>STOP LOSS</span><b>{a.stop??"—"}</b></div>
             <div className="tp"><span>TP1</span><b>{a.tp1??"—"}</b></div>
             <div className="tp"><span>TP2</span><b>{a.tp2??"—"}</b></div>
@@ -1575,7 +1701,7 @@ export default function MT5AnalysisDesk(){
             )}
           </div>
           <button type="button" className="mt5CopyPlan"
-            onClick={()=>navigator.clipboard?.writeText(`${a.signal} ${labelOf(selectedMarket)} ${tf} Entry ${a.entry} SL ${a.stop} TP1 ${a.tp1} TP2 ${a.tp2} TP3 ${a.tp3}`)}>
+            onClick={()=>navigator.clipboard?.writeText(`${a.planSide||a.signal} ${labelOf(selectedMarket)} ${tf} Entry ${a.entry} SL ${a.stop} TP1 ${a.tp1} TP2 ${a.tp2} TP3 ${a.tp3}`)}>
             COPY MT5 TRADE PLAN
           </button>
         </section>
