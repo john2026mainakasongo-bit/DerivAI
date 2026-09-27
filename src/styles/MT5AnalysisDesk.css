@@ -1,5 +1,5 @@
-.mt5Intro{width:min(100%,1480px);margin:0 auto 12px;padding:22px 26px;display:flex;align-items:center;justify-content:space-between;gap:24px;border:1px solid #123f55;background:linear-gradient(105deg,#03111d,#061b2a);border-radius:14px}.mt5Intro span{color:#28dcb9;font-size:9px;font-weight:950;letter-spacing:.14em}.mt5Intro h1{margin:6px 0;color:#f2fbff;font-size:27px}.mt5Intro p{margin:0;max-width:900px;color:#88a5b4;font-size:11px;line-height:1.55}.mt5IntroBadge{min-width:150px;padding:12px 14px;border:1px solid #1a596b;border-radius:10px;color:#2de0ba;font-size:10px;font-weight:950;text-align:center}.mt5IntroBadge i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#24dcb6;box-shadow:0 0 12px #24dcb6;margin-right:7px}.mt5IntroBadge small{display:block;margin-top:5px;color:#7898a8;font-size:8px;font-weight:700}.mt5Desk{width:min(100%,1480px);margin:0 auto;padding:0 16px 24px;color:#eaf7ff}.mt5Topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:9px 12px;border:1px solid #123d53;border-radius:10px;background:#051622;color:#8ca8b6;font-size:9px;font-weight:900}.mt5Topbar>div:first-child{display:flex;align-items:center;gap:8px}.mt5Topbar small{color:#567786;font-size:8px}.mt5LiveDot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#20dcae;box-shadow:0 0 10px #20dcae}.mt5Timeframes{display:flex;gap:4px}.mt5Timeframes button{border:1px solid #16465c;background:#071d2b;color:#7895a5;border-radius:7px;padding:7px 10px;font-size:9px;font-weight:900;cursor:pointer}.mt5Timeframes button.active{background:#0a76b8;border-color:#0a9de4;color:#fff}.mt5Grid{display:grid;grid-template-columns:190px minmax(0,1fr) 300px;gap:10px}.mt5Side,.mt5Center,.mt5Right{min-width:0}.mt5Panel,.mt5SignalCard{border:1px solid #123f55;border-radius:12px;background:#061824}.mt5Panel{padding:13px;margin-top:10px}.mt5PanelTitle{color:#27dabb;font-size:9px;font-weight:950;letter-spacing:.12em;margin-bottom:10px}.mt5Watchlist{border:1px solid #123f55;border-radius:12px;background:#061824;max-height:430px;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}.mt5Watchlist .mt5PanelTitle{padding:13px 13px 8px;margin:0}.mt5WatchRow{width:100%;display:grid;grid-template-columns:38px 1fr 48px;gap:5px;align-items:center;padding:11px 12px;border:0;border-top:1px solid #0e3041;background:transparent;color:#d9edf4;text-align:left;cursor:pointer}.mt5WatchRow:hover,.mt5WatchRow.active{background:#092538}.mt5WatchRow b{font-size:11px}.mt5WatchRow span{font-size:7px;color:#7898a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mt5WatchRow strong{font-size:8px;text-align:right}.buy{color:#26dfb1!important}.sell{color:#ff718d!important}.wait{color:#9bb0ba!important}.mt5MiniRow{display:grid;grid-template-columns:30px 1fr 42px;gap:5px;padding:8px 0;border-bottom:1px solid #0d2d3c;color:#7897a6;font-size:8px}.mt5MiniRow:last-child{border-bottom:0}.mt5MiniRow b{color:#e9f7fc}.mt5MiniRow strong{text-align:right}.mt5ChartHead{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #123f55;border-bottom:0;border-radius:12px 12px 0 0;background:#061824}.mt5ChartHead span{color:#4f7f91;font-size:7px;font-weight:900;letter-spacing:.12em}.mt5ChartHead h2{margin:3px 0 0;color:#f1fbff;font-size:16px}.mt5ChartMeta{text-align:right}.mt5ChartMeta b{display:block;color:#2ee0b4;font-size:14px}.mt5ChartMeta small{color:#638494;font-size:7px}.mt5Chart{height:510px;width:100%;border:1px solid #123f55;background:#03111d}.mt5SetupStrip{display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr auto 1fr;gap:7px;align-items:center;padding:9px 10px;border:1px solid #123f55;border-top:0;border-radius:0 0 12px 12px;background:#051622;font-size:7px}.mt5SetupStrip span{color:#557d8e;font-weight:900}.mt5SetupStrip b{color:#cfe5ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mt5SignalCard{padding:14px}.mt5SignalCard.buy{border-color:#13745f}.mt5SignalCard.sell{border-color:#783047}.mt5SignalTop{display:flex;justify-content:space-between;color:#5d8292;font-size:8px;font-weight:900;letter-spacing:.1em}.mt5SignalTop b{color:#d6ebf1}.mt5SignalWord{font-size:42px;line-height:1;font-weight:1000;margin:12px 0 7px;color:#cbdde4}.mt5SignalCard.buy .mt5SignalWord{color:#27dfb0}.mt5SignalCard.sell .mt5SignalWord{color:#ff6e8b}.mt5SignalCard p{margin:0 0 12px;color:#87a3b1;font-size:8px;line-height:1.5}.mt5Levels{display:grid;grid-template-columns:1fr 1fr;gap:6px}.mt5Levels div{padding:8px;border:1px solid #123a4e;border-radius:7px;background:#05131f}.mt5Levels span{display:block;color:#567b8b;font-size:7px}.mt5Levels b{display:block;margin-top:4px;color:#eaf8ff;font-size:10px}.mt5ConfirmationList{margin-top:10px;border-top:1px solid #0d3040}.mt5ConfirmationList div{display:grid;grid-template-columns:16px 1fr auto;gap:6px;align-items:center;padding:7px 0;border-bottom:1px solid #0c2938;font-size:7px;color:#89a3af}.mt5ConfirmationList i{width:15px;height:15px;display:grid;place-items:center;border-radius:50%;background:#1a2b34;color:#627984;font-style:normal}.mt5ConfirmationList i.on{background:#0b5d4d;color:#67f2ca}.mt5ConfirmationList b{color:#62a08f;font-size:6px}.mt5CopyPlan{width:100%;margin-top:10px;height:36px;border:1px solid #1b8d7a;border-radius:8px;background:#083d38;color:#74f0d1;font-size:8px;font-weight:950;cursor:pointer}.mt5LevelRow{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #0d2d3d;color:#7392a1;font-size:8px}.mt5LevelRow:last-child{border-bottom:0}.mt5LevelRow b{color:#e4f3f8}.mt5Safety p{margin:0;color:#7897a6;font-size:8px;line-height:1.5}.mt5DashboardCard{border-color:#1a6b70!important;background:linear-gradient(145deg,#061c28,#052d2c)!important}.mt5DashboardCard .botIcon{color:#42e7c0}.mt5DashboardCard .botTag{color:#55e4c5}.mt5DashboardCard .botOpenButton{background:#0a8f7a;border-color:#0a8f7a}.mt5DashboardCard .botOpenButton:hover{background:#0ca98e}@media(max-width:1200px){.mt5Grid{grid-template-columns:170px minmax(0,1fr)}.mt5Right{grid-column:1/-1;display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px}.mt5Chart{height:460px}}@media(max-width:800px){.mt5Intro{align-items:flex-start;flex-direction:column;padding:18px 15px}.mt5Intro h1{font-size:22px}.mt5IntroBadge{width:100%}.mt5Desk{padding:0 8px 18px}.mt5Topbar{align-items:flex-start;flex-direction:column}.mt5Grid{grid-template-columns:1fr}.mt5Side{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mt5Panel{margin-top:0}.mt5Chart{height:390px}.mt5Right{display:block;margin-top:10px}.mt5SetupStrip{grid-template-columns:auto 1fr;gap:5px}.mt5Timeframes{width:100%}.mt5Timeframes button{flex:1}}
-/* MT5 V3 — TRUE FULL WIDTH WORKSTATION */
+﻿.mt5Intro{width:min(100%,1480px);margin:0 auto 12px;padding:22px 26px;display:flex;align-items:center;justify-content:space-between;gap:24px;border:1px solid #123f55;background:linear-gradient(105deg,#03111d,#061b2a);border-radius:14px}.mt5Intro span{color:#28dcb9;font-size:9px;font-weight:950;letter-spacing:.14em}.mt5Intro h1{margin:6px 0;color:#f2fbff;font-size:27px}.mt5Intro p{margin:0;max-width:900px;color:#88a5b4;font-size:11px;line-height:1.55}.mt5IntroBadge{min-width:150px;padding:12px 14px;border:1px solid #1a596b;border-radius:10px;color:#2de0ba;font-size:10px;font-weight:950;text-align:center}.mt5IntroBadge i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#24dcb6;box-shadow:0 0 12px #24dcb6;margin-right:7px}.mt5IntroBadge small{display:block;margin-top:5px;color:#7898a8;font-size:8px;font-weight:700}.mt5Desk{width:min(100%,1480px);margin:0 auto;padding:0 16px 24px;color:#eaf7ff}.mt5Topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:9px 12px;border:1px solid #123d53;border-radius:10px;background:#051622;color:#8ca8b6;font-size:9px;font-weight:900}.mt5Topbar>div:first-child{display:flex;align-items:center;gap:8px}.mt5Topbar small{color:#567786;font-size:8px}.mt5LiveDot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#20dcae;box-shadow:0 0 10px #20dcae}.mt5Timeframes{display:flex;gap:4px}.mt5Timeframes button{border:1px solid #16465c;background:#071d2b;color:#7895a5;border-radius:7px;padding:7px 10px;font-size:9px;font-weight:900;cursor:pointer}.mt5Timeframes button.active{background:#0a76b8;border-color:#0a9de4;color:#fff}.mt5Grid{display:grid;grid-template-columns:190px minmax(0,1fr) 300px;gap:10px}.mt5Side,.mt5Center,.mt5Right{min-width:0}.mt5Panel,.mt5SignalCard{border:1px solid #123f55;border-radius:12px;background:#061824}.mt5Panel{padding:13px;margin-top:10px}.mt5PanelTitle{color:#27dabb;font-size:9px;font-weight:950;letter-spacing:.12em;margin-bottom:10px}.mt5Watchlist{border:1px solid #123f55;border-radius:12px;background:#061824;max-height:430px;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}.mt5Watchlist .mt5PanelTitle{padding:13px 13px 8px;margin:0}.mt5WatchRow{width:100%;display:grid;grid-template-columns:38px 1fr 48px;gap:5px;align-items:center;padding:11px 12px;border:0;border-top:1px solid #0e3041;background:transparent;color:#d9edf4;text-align:left;cursor:pointer}.mt5WatchRow:hover,.mt5WatchRow.active{background:#092538}.mt5WatchRow b{font-size:11px}.mt5WatchRow span{font-size:7px;color:#7898a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mt5WatchRow strong{font-size:8px;text-align:right}.buy{color:#26dfb1!important}.sell{color:#ff718d!important}.wait{color:#9bb0ba!important}.mt5MiniRow{display:grid;grid-template-columns:30px 1fr 42px;gap:5px;padding:8px 0;border-bottom:1px solid #0d2d3c;color:#7897a6;font-size:8px}.mt5MiniRow:last-child{border-bottom:0}.mt5MiniRow b{color:#e9f7fc}.mt5MiniRow strong{text-align:right}.mt5ChartHead{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #123f55;border-bottom:0;border-radius:12px 12px 0 0;background:#061824}.mt5ChartHead span{color:#4f7f91;font-size:7px;font-weight:900;letter-spacing:.12em}.mt5ChartHead h2{margin:3px 0 0;color:#f1fbff;font-size:16px}.mt5ChartMeta{text-align:right}.mt5ChartMeta b{display:block;color:#2ee0b4;font-size:14px}.mt5ChartMeta small{color:#638494;font-size:7px}.mt5Chart{height:510px;width:100%;border:1px solid #123f55;background:#03111d}.mt5SetupStrip{display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr auto 1fr;gap:7px;align-items:center;padding:9px 10px;border:1px solid #123f55;border-top:0;border-radius:0 0 12px 12px;background:#051622;font-size:7px}.mt5SetupStrip span{color:#557d8e;font-weight:900}.mt5SetupStrip b{color:#cfe5ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mt5SignalCard{padding:14px}.mt5SignalCard.buy{border-color:#13745f}.mt5SignalCard.sell{border-color:#783047}.mt5SignalTop{display:flex;justify-content:space-between;color:#5d8292;font-size:8px;font-weight:900;letter-spacing:.1em}.mt5SignalTop b{color:#d6ebf1}.mt5SignalWord{font-size:42px;line-height:1;font-weight:1000;margin:12px 0 7px;color:#cbdde4}.mt5SignalCard.buy .mt5SignalWord{color:#27dfb0}.mt5SignalCard.sell .mt5SignalWord{color:#ff6e8b}.mt5SignalCard p{margin:0 0 12px;color:#87a3b1;font-size:8px;line-height:1.5}.mt5Levels{display:grid;grid-template-columns:1fr 1fr;gap:6px}.mt5Levels div{padding:8px;border:1px solid #123a4e;border-radius:7px;background:#05131f}.mt5Levels span{display:block;color:#567b8b;font-size:7px}.mt5Levels b{display:block;margin-top:4px;color:#eaf8ff;font-size:10px}.mt5ConfirmationList{margin-top:10px;border-top:1px solid #0d3040}.mt5ConfirmationList div{display:grid;grid-template-columns:16px 1fr auto;gap:6px;align-items:center;padding:7px 0;border-bottom:1px solid #0c2938;font-size:7px;color:#89a3af}.mt5ConfirmationList i{width:15px;height:15px;display:grid;place-items:center;border-radius:50%;background:#1a2b34;color:#627984;font-style:normal}.mt5ConfirmationList i.on{background:#0b5d4d;color:#67f2ca}.mt5ConfirmationList b{color:#62a08f;font-size:6px}.mt5CopyPlan{width:100%;margin-top:10px;height:36px;border:1px solid #1b8d7a;border-radius:8px;background:#083d38;color:#74f0d1;font-size:8px;font-weight:950;cursor:pointer}.mt5LevelRow{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #0d2d3d;color:#7392a1;font-size:8px}.mt5LevelRow:last-child{border-bottom:0}.mt5LevelRow b{color:#e4f3f8}.mt5Safety p{margin:0;color:#7897a6;font-size:8px;line-height:1.5}.mt5DashboardCard{border-color:#1a6b70!important;background:linear-gradient(145deg,#061c28,#052d2c)!important}.mt5DashboardCard .botIcon{color:#42e7c0}.mt5DashboardCard .botTag{color:#55e4c5}.mt5DashboardCard .botOpenButton{background:#0a8f7a;border-color:#0a8f7a}.mt5DashboardCard .botOpenButton:hover{background:#0ca98e}@media(max-width:1200px){.mt5Grid{grid-template-columns:170px minmax(0,1fr)}.mt5Right{grid-column:1/-1;display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px}.mt5Chart{height:460px}}@media(max-width:800px){.mt5Intro{align-items:flex-start;flex-direction:column;padding:18px 15px}.mt5Intro h1{font-size:22px}.mt5IntroBadge{width:100%}.mt5Desk{padding:0 8px 18px}.mt5Topbar{align-items:flex-start;flex-direction:column}.mt5Grid{grid-template-columns:1fr}.mt5Side{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mt5Panel{margin-top:0}.mt5Chart{height:390px}.mt5Right{display:block;margin-top:10px}.mt5SetupStrip{grid-template-columns:auto 1fr;gap:5px}.mt5Timeframes{width:100%}.mt5Timeframes button{flex:1}}
+/* MT5 V3 â€” TRUE FULL WIDTH WORKSTATION */
 .appShell:has(.mt5Intro){
   width:100vw !important;
   max-width:none !important;
@@ -76,7 +76,7 @@
   }
 }
 
-/* MT5 V4 — restore vertical app shell */
+/* MT5 V4 â€” restore vertical app shell */
 .appShell:has(.mt5Intro){
   display:flex !important;
   flex-direction:column !important;
@@ -93,7 +93,7 @@
   width:100% !important;
 }
 
-/* MT5 V5 — Deriv-style timeframe bar + annotated setup workspace */
+/* MT5 V5 â€” Deriv-style timeframe bar + annotated setup workspace */
 .mt5Timeframes{
   display:flex;
   gap:4px;
@@ -154,7 +154,7 @@
 }
 
 
-/* MT5 V6 — TradingView-style chart workspace controls */
+/* MT5 V6 â€” TradingView-style chart workspace controls */
 .mt5ChartWrap{position:relative;width:100%;border:1px solid #123f55;border-radius:12px;overflow:hidden;background:#03111d;box-shadow:inset 0 0 0 1px rgba(255,255,255,.01)}
 .mt5ChartWrap .mt5Chart{border:0;border-radius:0;height:calc(100vh - 350px);min-height:560px}
 .mt5ChartToolbar{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-bottom:1px solid #123f55;background:#041522;position:relative;z-index:5}
@@ -166,7 +166,7 @@
 .mt5ChartToolsRight button:first-child,.mt5ChartToolsRight button:nth-child(2){font-size:13px;line-height:1}
 @media(max-width:850px){.mt5ChartWrap .mt5Chart{height:470px;min-height:470px}.mt5ChartToolbar{height:34px}}
 
-/* MT5 V7 — directional path + deeper confirmation workspace */
+/* MT5 V7 â€” directional path + deeper confirmation workspace */
 .mt5HeadingCard{padding:12px 13px;margin-top:10px;overflow:hidden}
 .mt5HeadingWord{font-size:30px;line-height:1;font-weight:1000;letter-spacing:.04em;margin:4px 0 9px;color:#cbdde4}
 .mt5HeadingCard.buy .mt5HeadingWord{color:#27dfb0}
@@ -182,7 +182,7 @@
 @media(max-width:1200px){.mt5DirectionStrip{grid-template-columns:auto 1fr auto 1fr auto 1fr auto 1fr auto 1fr}}
 @media(max-width:850px){.mt5DirectionStrip{grid-template-columns:auto 1fr}.mt5HeadingWord{font-size:26px}}
 
-/* MT5 V8 — cleaner current-price framing + explicit directional path */
+/* MT5 V8 â€” cleaner current-price framing + explicit directional path */
 .mt5HeadingSub{
   margin:-3px 0 9px;
   color:#6f95a5;
@@ -197,7 +197,7 @@
 @media(max-width:850px){.mt5DirectionStrip{grid-template-columns:auto 1fr}.mt5HeadingSub{font-size:7px}}
 
 
-/* MT5 V9 — clear direction context and conditional setup framing */
+/* MT5 V9 â€” clear direction context and conditional setup framing */
 .mt5SignalSetup{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 8px;padding:8px 10px;border:1px solid #16475b;border-radius:7px;background:#061a26}
 .mt5SignalSetup span{display:block;color:#6f95a5;font-size:7px;font-weight:950;letter-spacing:.12em}
 .mt5SignalSetup b{display:block;color:#e4f8fc;font-size:10px;font-weight:1000;text-align:right;line-height:1.15}
@@ -208,7 +208,7 @@
 .mt5HeadingLine b{max-width:70%;line-height:1.3}
 
 
-/* MT5 V10 — polished directional dashboard */
+/* MT5 V10 â€” polished directional dashboard */
 .mt5ScoreCard{padding:14px!important}
 .mt5ScoreValue{font-size:32px;font-weight:1000;line-height:1;color:#f1d66a;margin:2px 0 9px}.mt5ScoreValue span{font-size:18px;color:#65e6b8}
 .mt5ScoreTrack{height:10px;border:1px solid #16475b;background:#0b2533;border-radius:99px;overflow:hidden}.mt5ScoreTrack i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#1ddfae,#55e29b)}
@@ -221,7 +221,7 @@
 .mt5SignalWord{font-size:46px}
 @media(min-width:1350px){.appShell:has(.mt5Intro) .mt5Grid{grid-template-columns:200px minmax(0,1fr) 360px!important}.mt5Right{display:flex;flex-direction:column;gap:10px}.mt5Right>.mt5Panel,.mt5Right>.mt5SignalCard{margin-top:0}.mt5ChartWrap .mt5Chart{min-height:600px}}
 
-/* MT5 V10 — visual match to approved dashboard mockup */
+/* MT5 V10 â€” visual match to approved dashboard mockup */
 .mt5Desk{--panel:#061824;--panel2:#071d2b;--line:#16475b;--muted:#6f95a5;--cyan:#29dfc0;--blue:#138bd0;--green:#27dfb0;--red:#ff5f7d;--amber:#ffc861}
 .mt5Grid{grid-template-columns:170px minmax(0,1fr) 320px!important;gap:10px!important}
 .mt5Watchlist,.mt5Panel,.mt5SignalCard,.mt5ChartHead,.mt5ChartWrap{box-shadow:0 8px 28px rgba(0,0,0,.12)}
@@ -240,14 +240,14 @@
 @media(max-width:1200px){.mt5Grid{grid-template-columns:165px minmax(0,1fr) 300px!important}.mt5LowerDeck{grid-template-columns:1fr 1fr}.mt5LowerDeck .mt5ScenarioSummary{grid-column:1/-1}}
 @media(max-width:850px){.mt5Grid{grid-template-columns:1fr!important}.mt5LowerDeck{grid-template-columns:1fr}.mt5LowerDeck .mt5ScenarioSummary{grid-column:auto}.mt5ChartWrap .mt5Chart{height:470px;min-height:470px}}
 
-/* MT5 V11 — deeper scanner history + cleaner price-axis presentation */
+/* MT5 V11 â€” deeper scanner history + cleaner price-axis presentation */
 .mt5WatchRow span{line-height:1.2;min-width:0}
 .mt5WatchRow strong{letter-spacing:.03em}
 .mt5MiniRow span{line-height:1.25;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .mt5ChartToolsLeft b{max-width:520px}
 .mt5ChartWrap{background:#03111d}
 
-/* MT5 V12 — persistent chart workspace + cleaner TradingView-style framing */
+/* MT5 V12 â€” persistent chart workspace + cleaner TradingView-style framing */
 .mt5ChartWrap{min-width:0;isolation:isolate}
 .mt5ChartWrap .mt5Chart{height:clamp(520px,calc(100vh - 330px),760px);min-height:520px}
 .mt5ChartToolsRight button{user-select:none;-webkit-user-select:none}
@@ -266,7 +266,7 @@
   .mt5Grid{grid-template-columns:165px minmax(0,1fr) 300px!important}
 }
 
-/* MT5 V8 — action map + multi-target execution plan */
+/* MT5 V8 â€” action map + multi-target execution plan */
 .mt5TradePlanHero{padding:12px 13px;background:linear-gradient(145deg,#061a26,#07141f);border-color:#17485c}
 .mt5TradePlanHero.buy{border-color:#147a64}
 .mt5TradePlanHero.sell{border-color:#7b3048}
@@ -291,3 +291,169 @@
 .mt5TradePlanGrid .tp{border-color:#116b5b;background:#05231e}
 .mt5TradePlanGrid .tp span{color:#46e6ba}
 .mt5TradePlanGrid .tp b{color:#55edc0}
+/* MT5 V13 — professional setup engine */
+.mt5ChartArea{
+  position:relative;
+  width:100%;
+  height:clamp(520px,calc(100vh - 330px),760px);
+  min-height:520px;
+  overflow:hidden;
+}
+.mt5ChartArea .mt5Chart{
+  position:relative;
+  width:100%;
+  height:100%!important;
+  min-height:0!important;
+}
+.mt5SetupOverlay{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  z-index:4;
+  pointer-events:none;
+}
+.mt5ProSetupCard{
+  margin-top:10px;
+  padding:12px 13px;
+  border-color:#16475b;
+  background:linear-gradient(145deg,#061925,#07131e);
+}
+.mt5ProSetupCard.confirmed.buy{border-color:#147a64;background:linear-gradient(145deg,#06251f,#071821)}
+.mt5ProSetupCard.confirmed.sell{border-color:#7b3048;background:linear-gradient(145deg,#28101a,#071821)}
+.mt5ProSetupCard.forming{border-color:#80672d;background:linear-gradient(145deg,#211b0d,#071821)}
+.mt5ProSetupHeader{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+}
+.mt5ProSetupHeader strong{
+  display:block;
+  margin-top:3px;
+  color:#d8edf4;
+  font-size:18px;
+  line-height:1;
+}
+.mt5ProSetupCard.buy .mt5ProSetupHeader strong{color:#27dfb0}
+.mt5ProSetupCard.sell .mt5ProSetupHeader strong{color:#ff6685}
+.mt5PlanStatus{
+  padding:5px 8px;
+  border:1px solid #315365;
+  border-radius:99px;
+  color:#b5ccd5;
+  background:#071a26;
+  font-size:7px;
+  font-weight:1000;
+  letter-spacing:.08em;
+}
+.mt5ProSetupCard.confirmed .mt5PlanStatus{border-color:#1f8b72;color:#5ff0c4}
+.mt5ProSetupCard.forming .mt5PlanStatus{border-color:#8b6e2e;color:#ffd07a}
+.mt5ProSetupType{
+  margin-top:10px;
+  color:#9ed8ef;
+  font-size:9px;
+  font-weight:1000;
+  letter-spacing:.08em;
+}
+.mt5ProSetupContext{
+  margin:4px 0 8px;
+  color:#7796a5;
+  font-size:7.5px;
+  line-height:1.4;
+}
+.mt5PlanGrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:5px;
+}
+.mt5PlanGrid>div{
+  padding:8px;
+  border:1px solid #123a4e;
+  border-radius:7px;
+  background:#05131f;
+}
+.mt5PlanGrid span{
+  display:block;
+  color:#688796;
+  font-size:6.5px;
+  font-weight:950;
+  letter-spacing:.08em;
+}
+.mt5PlanGrid b{
+  display:block;
+  margin-top:3px;
+  color:#eaf8ff;
+  font-size:9px;
+  line-height:1.2;
+  overflow-wrap:anywhere;
+}
+.mt5PlanGrid .zone{
+  grid-column:1/-1;
+  border-color:#2c6477;
+  background:#071d29;
+}
+.mt5ProSetupCard.buy .mt5PlanGrid .zone{border-color:#147a64}
+.mt5ProSetupCard.sell .mt5PlanGrid .zone{border-color:#7b3048}
+.mt5PlanGrid .stop{border-color:#743047;background:#21101a}
+.mt5PlanGrid .stop span{color:#ff718b}
+.mt5PlanGrid .tp{border-color:#116b5b;background:#05231e}
+.mt5PlanGrid .tp span{color:#46e6ba}
+.mt5PlanGrid .tp b{color:#55edc0}
+.mt5PlanConfluence{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px;
+  margin-top:8px;
+}
+.mt5PlanConfluence span{
+  padding:4px 6px;
+  border:1px solid #1a3544;
+  border-radius:99px;
+  color:#627c89;
+  background:#071722;
+  font-size:6.5px;
+  font-weight:900;
+}
+.mt5PlanConfluence span.on{
+  border-color:#1f725f;
+  color:#5ce9c3;
+  background:#06211d;
+}
+.mt5PlanInvalidation{
+  display:grid;
+  grid-template-columns:80px 1fr;
+  gap:8px;
+  margin-top:8px;
+  padding:7px 8px;
+  border:1px solid #73572b;
+  border-radius:7px;
+  background:#211a0d;
+}
+.mt5PlanInvalidation span{
+  color:#ffbf67;
+  font-size:6.5px;
+  font-weight:950;
+  letter-spacing:.08em;
+}
+.mt5PlanInvalidation b{
+  color:#ffd38d;
+  font-size:7px;
+  line-height:1.35;
+}
+@media(min-width:1350px){
+  .mt5ChartArea{
+    height:clamp(560px,calc(100vh - 315px),780px);
+    min-height:560px;
+  }
+}
+@media(max-width:850px){
+  .mt5ChartArea{
+    height:470px;
+    min-height:470px;
+  }
+  .mt5PlanGrid{grid-template-columns:1fr}
+  .mt5PlanGrid .zone{grid-column:auto}
+  .mt5PlanInvalidation{grid-template-columns:1fr}
+}
+

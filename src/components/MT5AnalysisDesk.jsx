@@ -716,6 +716,266 @@ function fvgEvents(cs) {
   return out;
 }
 
+function buildProfessionalSetup(cs, a, htfBias) {
+  if (!cs?.length || !a?.atr || cs.length < 35) {
+    return {
+      status:"WAIT", direction:"WAIT", type:"WAITING FOR DATA",
+      context:"Need more candles",
+      entry:null,entryLow:null,entryHigh:null,stop:null,tp1:null,tp2:null,tp3:null,
+      rr:null,invalidation:"Wait for sufficient market history.",
+      score:0,confirmations:[]
+    };
+  }
+
+  const last=cs.at(-1);
+  const atr=Math.max(Number(a.atr)||0,1e-9);
+  const e20=Number(a.ema20);
+  const lookback=cs.slice(-21,-1);
+  const rangeHigh=Math.max(...lookback.map(c=>Number(c.high)));
+  const rangeLow=Math.min(...lookback.map(c=>Number(c.low)));
+
+  const body=Math.abs(last.close-last.open);
+  const range=Math.max(last.high-last.low,1e-9);
+  const upper=(last.high-Math.max(last.open,last.close))/range;
+  const lower=(Math.min(last.open,last.close)-last.low)/range;
+
+  const bullReject=last.close>last.open && lower>=0.42 && body/range>=0.12;
+  const bearReject=last.close<last.open && upper>=0.42 && body/range>=0.12;
+
+  const breakUp=last.close>rangeHigh+atr*0.05;
+  const breakDn=last.close<rangeLow-atr*0.05;
+  const sweepLow=last.low<rangeLow-atr*0.08 && last.close>rangeLow;
+  const sweepHigh=last.high>rangeHigh+atr*0.08 && last.close<rangeHigh;
+  const nearEma=Number.isFinite(e20) && Math.abs(last.close-e20)<=atr*0.75;
+
+  function priorBreak(direction) {
+    const start=Math.max(20,cs.length-7);
+    for(let i=start;i<cs.length-1;i++){
+      const before=cs.slice(Math.max(0,i-20),i);
+      if(before.length<8) continue;
+      const hi=Math.max(...before.map(c=>c.high));
+      const lo=Math.min(...before.map(c=>c.low));
+      if(direction==="BUY" && cs[i].close>hi+atr*0.03) return {level:hi,time:cs[i].time};
+      if(direction==="SELL" && cs[i].close<lo-atr*0.03) return {level:lo,time:cs[i].time};
+    }
+    return null;
+  }
+
+  const priorUp=priorBreak("BUY");
+  const priorDn=priorBreak("SELL");
+
+  const retestBuy=Boolean(
+    priorUp &&
+    last.low<=priorUp.level+atr*0.45 &&
+    last.close>=priorUp.level &&
+    last.close>last.open
+  );
+
+  const retestSell=Boolean(
+    priorDn &&
+    last.high>=priorDn.level-atr*0.45 &&
+    last.close<=priorDn.level &&
+    last.close<last.open
+  );
+
+  let latestFvg=null;
+  for(let i=Math.max(2,cs.length-14);i<cs.length;i++){
+    const left=cs[i-2];
+    const right=cs[i];
+    if(right.low>left.high+atr*0.05){
+      latestFvg={type:"BULLISH FVG",low:left.high,high:right.low,time:right.time};
+    } else if(right.high<left.low-atr*0.05){
+      latestFvg={type:"BEARISH FVG",low:right.high,high:left.low,time:right.time};
+    }
+  }
+
+  const fvgBull=Boolean(
+    latestFvg?.type==="BULLISH FVG" &&
+    last.low<=latestFvg.high+atr*0.35 &&
+    last.close>=latestFvg.low
+  );
+
+  const fvgBear=Boolean(
+    latestFvg?.type==="BEARISH FVG" &&
+    last.high>=latestFvg.low-atr*0.35 &&
+    last.close<=latestFvg.high
+  );
+
+  const htfBuy=htfBias==="BULLISH";
+  const htfSell=htfBias==="BEARISH";
+  const macdBull=Number(a.macdHistogram)>=0;
+  const macdBear=Number(a.macdHistogram)<=0;
+  const rsiBull=Number(a.rsi)>=50;
+  const rsiBear=Number(a.rsi)<=50;
+
+  const buyChecks=[
+    ["HTF alignment",htfBuy],
+    ["TF structure",a.direction==="UP"],
+    ["Break of structure",breakUp||Boolean(priorUp)],
+    ["Retest",retestBuy],
+    ["Sell-side sweep",sweepLow],
+    ["Bullish rejection",bullReject],
+    ["Bullish FVG",fvgBull],
+    ["Above EMA20",Number.isFinite(e20)&&last.close>=e20],
+    ["Momentum",macdBull&&rsiBull]
+  ];
+
+  const sellChecks=[
+    ["HTF alignment",htfSell],
+    ["TF structure",a.direction==="DOWN"],
+    ["Break of structure",breakDn||Boolean(priorDn)],
+    ["Retest",retestSell],
+    ["Buy-side sweep",sweepHigh],
+    ["Bearish rejection",bearReject],
+    ["Bearish FVG",fvgBear],
+    ["Below EMA20",Number.isFinite(e20)&&last.close<=e20],
+    ["Momentum",macdBear&&rsiBear]
+  ];
+
+  const buyScore=buyChecks.filter(x=>x[1]).length;
+  const sellScore=sellChecks.filter(x=>x[1]).length;
+
+  let direction="WAIT";
+  if(buyScore>sellScore && buyScore>=4) direction="BUY";
+  if(sellScore>buyScore && sellScore>=4) direction="SELL";
+
+  if(direction==="WAIT"){
+    return {
+      status:"WAIT",
+      direction:"WAIT",
+      type:(breakUp||breakDn)?"BREAKOUT WATCH":(sweepLow||sweepHigh)?"LIQUIDITY WATCH":"WAITING SETUP",
+      context:`${a.structure || "Range"} · HTF ${htfBias || "MIXED / RANGE"}`,
+      entry:null,entryLow:null,entryHigh:null,stop:null,tp1:null,tp2:null,tp3:null,
+      rr:null,
+      invalidation:`Wait for a clean break above ${a.bullTrigger ?? rangeHigh} or below ${a.bearTrigger ?? rangeLow}.`,
+      score:Math.max(buyScore,sellScore),
+      confirmations:(buyScore>sellScore?buyChecks:sellChecks).map(([name,ok])=>({name,ok}))
+    };
+  }
+
+  const isBuy=direction==="BUY";
+  const trigger=Number(isBuy ? (a.bullTrigger ?? rangeHigh) : (a.bearTrigger ?? rangeLow));
+
+  let entryLow;
+  let entryHigh;
+
+  if(isBuy){
+    if(retestBuy || breakUp){
+      entryLow=trigger-atr*0.18;
+      entryHigh=trigger+atr*0.12;
+    } else if(sweepLow){
+      entryLow=last.close-atr*0.18;
+      entryHigh=last.close+atr*0.18;
+    } else if(nearEma){
+      entryLow=e20-atr*0.20;
+      entryHigh=e20+atr*0.20;
+    } else {
+      entryLow=last.close-atr*0.12;
+      entryHigh=last.close+atr*0.12;
+    }
+  } else {
+    if(retestSell || breakDn){
+      entryLow=trigger-atr*0.12;
+      entryHigh=trigger+atr*0.18;
+    } else if(sweepHigh){
+      entryLow=last.close-atr*0.18;
+      entryHigh=last.close+atr*0.18;
+    } else if(nearEma){
+      entryLow=e20-atr*0.20;
+      entryHigh=e20+atr*0.20;
+    } else {
+      entryLow=last.close-atr*0.12;
+      entryHigh=last.close+atr*0.12;
+    }
+  }
+
+  const entry=Math.min(Math.max(last.close,entryLow),entryHigh);
+
+  let stop;
+  if(isBuy){
+    stop=Math.min(
+      rangeLow,
+      sweepLow ? last.low : Infinity,
+      latestFvg?.type==="BULLISH FVG" ? latestFvg.low : Infinity
+    )-atr*0.22;
+  } else {
+    stop=Math.max(
+      rangeHigh,
+      sweepHigh ? last.high : -Infinity,
+      latestFvg?.type==="BEARISH FVG" ? latestFvg.high : -Infinity
+    )+atr*0.22;
+  }
+
+  const risk=Math.max(Math.abs(entry-stop),atr*0.45);
+
+  let tp1,tp2,tp3;
+  if(isBuy){
+    const resistance=Number(a.resistance);
+    tp1=Math.max(entry+risk,resistance>entry?resistance:entry+risk);
+    tp2=Math.max(entry+risk*2,tp1+risk*0.65);
+    tp3=Math.max(entry+risk*3,tp2+risk*0.55);
+  } else {
+    const support=Number(a.support);
+    tp1=Math.min(entry-risk,support<entry?support:entry-risk);
+    tp2=Math.min(entry-risk*2,tp1-risk*0.65);
+    tp3=Math.min(entry-risk*3,tp2-risk*0.55);
+  }
+
+  const rr=Math.abs(tp2-entry)/risk;
+
+  let type;
+  if(isBuy){
+    type=sweepLow&&bullReject?"LIQUIDITY SWEEP + REVERSAL":
+      retestBuy?"BREAKOUT + RETEST":
+      fvgBull&&nearEma?"FVG / EMA PULLBACK":
+      nearEma?"TREND PULLBACK":
+      breakUp?"BREAKOUT":
+      "STRUCTURE CONTINUATION";
+  } else {
+    type=sweepHigh&&bearReject?"LIQUIDITY SWEEP + REVERSAL":
+      retestSell?"BREAKOUT + RETEST":
+      fvgBear&&nearEma?"FVG / EMA PULLBACK":
+      nearEma?"TREND PULLBACK":
+      breakDn?"BREAKDOWN":
+      "STRUCTURE CONTINUATION";
+  }
+
+  const activeChecks=isBuy?buyChecks:sellChecks;
+  const score=isBuy?buyScore:sellScore;
+  const corePattern=isBuy
+    ? (retestBuy || (sweepLow&&bullReject) || (nearEma&&bullReject) || breakUp)
+    : (retestSell || (sweepHigh&&bearReject) || (nearEma&&bearReject) || breakDn);
+
+  const htfAligned=isBuy?htfBuy:htfSell;
+  const confirmed=score>=6 && corePattern && rr>=1.5 &&
+    (htfAligned || a.direction===(isBuy?"UP":"DOWN"));
+  const status=confirmed?"CONFIRMED":score>=4?"FORMING":"WAIT";
+
+  const invalidation=isBuy
+    ? `5m close below ${stop.toFixed(5)} or loss of the setup zone.`
+    : `5m close above ${stop.toFixed(5)} or loss of the setup zone.`;
+
+  const p5=(v)=>Number.isFinite(v)?Number(v.toFixed(5)):null;
+
+  return {
+    status,direction,type,
+    context:`${a.structure || "Structure"} · HTF ${htfBias || "MIXED / RANGE"} · ${activeChecks.filter(x=>x[1]).length} confluences`,
+    entryLow:p5(entryLow),
+    entryHigh:p5(entryHigh),
+    entry:p5(entry),
+    stop:p5(stop),
+    tp1:p5(tp1),
+    tp2:p5(tp2),
+    tp3:p5(tp3),
+    rr:Number(rr.toFixed(2)),
+    invalidation,
+    score,
+    confirmations:activeChecks.map(([name,ok])=>({name,ok})),
+    fvg:latestFvg,
+    trigger:p5(trigger)
+  };
+}
+
 function chartViewStorageKey(chartKey) {
   // v2 intentionally invalidates the older raw logical ranges, which could
   // be tied to a different candle count after a refresh/timeframe switch.
@@ -755,7 +1015,7 @@ function defaultVisibleBars(dataCount) {
   };
 }
 
-function Chart({candles,analysis,chartKey}) {
+function Chart({candles,analysis,chartKey,setupPlan}) {
   const el=useRef(null);
   const chartRef=useRef(null);
   const seriesRef=useRef(null);
@@ -768,6 +1028,8 @@ function Chart({candles,analysis,chartKey}) {
   const chartKeyRef=useRef(chartKey || "default");
   const restoringRangeRef=useRef(false);
   const dataCountRef=useRef(0);
+  const setupOverlayRef=useRef(null);
+  const overlayRenderRef=useRef(null);
 
   useEffect(()=>{
     if(!el.current) return;
@@ -851,6 +1113,7 @@ function Chart({candles,analysis,chartKey}) {
           el.current.clientHeight
         );
       }
+      overlayRenderRef.current?.();
     });
     ro.observe(el.current);
 
@@ -1026,6 +1289,13 @@ function Chart({candles,analysis,chartKey}) {
         ["TP2",analysis.tp2,"#2bd6a3",2],
         ["TP3",analysis.tp3,"#2bd6a3",2],
       ] : []),
+      ...(analysis.signal==="WAIT" && setupPlan?.status!=="WAIT" ? [
+        ["PLAN ENTRY",setupPlan.entry,setupPlan.direction==="BUY"?"#20dfb1":"#ff6685",3],
+        ["PLAN SL",setupPlan.stop,"#ff6685",3],
+        ["PLAN TP1",setupPlan.tp1,"#2bd6a3",2],
+        ["PLAN TP2",setupPlan.tp2,"#2bd6a3",2],
+        ["PLAN TP3",setupPlan.tp3,"#2bd6a3",2],
+      ] : []),
       ...(analysis.orderBlock ? [
         [analysis.orderBlock.type,analysis.orderBlock.low,"#ffb454",1],
         [`${analysis.orderBlock.type} TOP`,analysis.orderBlock.high,"#ffb454",1],
@@ -1120,7 +1390,108 @@ function Chart({candles,analysis,chartKey}) {
       });
       priceLinesRef.current.push(currentLine);
     }
-  },[candles,analysis,chartKey]);
+    const renderSetupOverlay=()=>{
+      const svg=setupOverlayRef.current;
+      const width=el.current?.clientWidth || 0;
+      const height=el.current?.clientHeight || 0;
+
+      if(!svg || !width || !height) return;
+
+      svg.setAttribute("viewBox",`0 0 ${width} ${height}`);
+      svg.innerHTML="";
+
+      const plan=setupPlan;
+      if(!plan || plan.status==="WAIT" ||
+         !Number.isFinite(plan.entry) ||
+         !Number.isFinite(plan.stop) ||
+         !Number.isFinite(plan.tp3)) {
+        return;
+      }
+
+      const yEntry=series.priceToCoordinate(plan.entry);
+      const yStop=series.priceToCoordinate(plan.stop);
+      const yTp1=Number.isFinite(plan.tp1)?series.priceToCoordinate(plan.tp1):null;
+      const yTp2=Number.isFinite(plan.tp2)?series.priceToCoordinate(plan.tp2):null;
+      const yTp3=series.priceToCoordinate(plan.tp3);
+      const yEntryLow=Number.isFinite(plan.entryLow)?series.priceToCoordinate(plan.entryLow):yEntry;
+      const yEntryHigh=Number.isFinite(plan.entryHigh)?series.priceToCoordinate(plan.entryHigh):yEntry;
+
+      if([yEntry,yStop,yTp3,yEntryLow,yEntryHigh].some(v=>v==null || !Number.isFinite(v))) return;
+
+      const x1=Math.max(18,width*0.70);
+      const x2=Math.min(width-8,width*0.985);
+      const zoneTop=Math.min(yEntryLow,yEntryHigh);
+      const zoneBottom=Math.max(yEntryLow,yEntryHigh);
+      const riskTop=Math.min(zoneTop,yStop);
+      const riskBottom=Math.max(zoneBottom,yStop);
+      const rewardTop=Math.min(zoneTop,yTp3);
+      const rewardBottom=Math.max(zoneBottom,yTp3);
+
+      const riskColor=plan.direction==="BUY"?"rgba(255,95,125,.16)":"rgba(39,223,176,.10)";
+      const rewardColor=plan.direction==="BUY"?"rgba(39,223,176,.16)":"rgba(255,95,125,.16)";
+      const accent=plan.direction==="BUY"?"#27dfb0":"#ff6685";
+      const ns="http://www.w3.org/2000/svg";
+
+      const rect=(x,y,w,h,fill,stroke)=>{
+        const node=document.createElementNS(ns,"rect");
+        node.setAttribute("x",x);
+        node.setAttribute("y",y);
+        node.setAttribute("width",Math.max(1,w));
+        node.setAttribute("height",Math.max(1,h));
+        node.setAttribute("fill",fill);
+        node.setAttribute("stroke",stroke);
+        node.setAttribute("stroke-width","1");
+        return node;
+      };
+
+      const line=(xA,yA,xB,yB,stroke,dash="4 4",widthPx="1.5")=>{
+        const node=document.createElementNS(ns,"line");
+        node.setAttribute("x1",xA);
+        node.setAttribute("y1",yA);
+        node.setAttribute("x2",xB);
+        node.setAttribute("y2",yB);
+        node.setAttribute("stroke",stroke);
+        node.setAttribute("stroke-width",widthPx);
+        node.setAttribute("stroke-dasharray",dash);
+        return node;
+      };
+
+      svg.appendChild(rect(x1,riskTop,x2-x1,riskBottom-riskTop,riskColor,"rgba(255,95,125,.45)"));
+      svg.appendChild(rect(x1,rewardTop,x2-x1,rewardBottom-rewardTop,rewardColor,plan.direction==="BUY"?"rgba(39,223,176,.45)":"rgba(255,95,125,.45)"));
+      svg.appendChild(rect(x1,zoneTop,x2-x1,Math.max(2,zoneBottom-zoneTop),"rgba(255,255,255,.035)",accent));
+
+      svg.appendChild(line(x1,yEntry,x2,yEntry,accent,"5 4","2"));
+      svg.appendChild(line(x1,yStop,x2,yStop,"#ff6685","4 4","1.4"));
+      if(Number.isFinite(yTp1)) svg.appendChild(line(x1,yTp1,x2,yTp1,"#46e6ba","3 5","1"));
+      if(Number.isFinite(yTp2)) svg.appendChild(line(x1,yTp2,x2,yTp2,"#46e6ba","3 5","1"));
+      svg.appendChild(line(x1,yTp3,x2,yTp3,"#46e6ba","3 5","1"));
+
+      const addText=(x,y,value,fill="#dff8ff",size="8",anchor="start")=>{
+        const node=document.createElementNS(ns,"text");
+        node.setAttribute("x",x);
+        node.setAttribute("y",y);
+        node.setAttribute("fill",fill);
+        node.setAttribute("font-size",size);
+        node.setAttribute("font-family","Inter, system-ui, sans-serif");
+        node.setAttribute("font-weight","900");
+        node.setAttribute("text-anchor",anchor);
+        node.textContent=value;
+        svg.appendChild(node);
+      };
+
+      addText(x1+7,Math.max(12,zoneTop-8),`${plan.direction} · ${plan.status}`,accent,"9","start");
+      addText(x2-5,yEntry-5,`ENTRY ${plan.entry}`,accent,"8","end");
+      addText(x2-5,yStop-5,`SL ${plan.stop}`,"#ff8da3","8","end");
+      addText(x2-5,(yTp1 ?? yTp3)-5,`TP1 ${plan.tp1}`,"#65efc7","8","end");
+      if(Number.isFinite(yTp2)) addText(x2-5,yTp2-5,`TP2 ${plan.tp2}`,"#65efc7","8","end");
+      addText(x2-5,yTp3-5,`TP3 ${plan.tp3}`,"#65efc7","8","end");
+      addText(x1+7,(zoneTop+zoneBottom)/2+3,"ENTRY ZONE","#b8d5df","7","start");
+    };
+
+    overlayRenderRef.current=renderSetupOverlay;
+    renderSetupOverlay();
+
+  },[candles,analysis,chartKey,setupPlan]);
 
   const zoomBy=(factor)=>{
     const chart=chartRef.current;
@@ -1172,7 +1543,10 @@ function Chart({candles,analysis,chartKey}) {
         <button type="button" onClick={resetZoom}>RESET</button>
       </div>
     </div>
-    <div ref={el} className="mt5Chart"/>
+    <div className="mt5ChartArea">
+      <div ref={el} className="mt5Chart"/>
+      <svg ref={setupOverlayRef} className="mt5SetupOverlay" aria-hidden="true"/>
+    </div>
   </div>;
 }
 export default function MT5AnalysisDesk(){
@@ -1334,6 +1708,49 @@ export default function MT5AnalysisDesk(){
   const htfDown=htfDirectional.filter(x=>x.analysis.direction==="DOWN").length;
   const htfRange=htfDirectional.filter(x=>x.analysis.direction==="RANGE").length;
   const htfBias=htfUp>htfDown&&htfUp>=2?"BULLISH":htfDown>htfUp&&htfDown>=2?"BEARISH":"MIXED / RANGE";
+
+  const plan=useMemo(
+    ()=>buildProfessionalSetup(cs,a,htfBias),
+    [cs,a,htfBias]
+  );
+
+  const visibleEntry=a.signal!=="WAIT"
+    ? a.entry
+    : plan.status!=="WAIT"
+      ? plan.entry
+      : null;
+
+  const visibleStop=a.signal!=="WAIT"
+    ? a.stop
+    : plan.status!=="WAIT"
+      ? plan.stop
+      : null;
+
+  const visibleTp1=a.signal!=="WAIT"
+    ? a.tp1
+    : plan.status!=="WAIT"
+      ? plan.tp1
+      : null;
+
+  const visibleTp2=a.signal!=="WAIT"
+    ? a.tp2
+    : plan.status!=="WAIT"
+      ? plan.tp2
+      : null;
+
+  const visibleTp3=a.signal!=="WAIT"
+    ? a.tp3
+    : plan.status!=="WAIT"
+      ? plan.tp3
+      : null;
+
+  const visibleInvalidation=plan.status!=="WAIT"
+    ? plan.invalidation
+    : a.signal==="BUY"
+      ? `Break & close below ${a.bearTrigger??"—"}`
+      : a.signal==="SELL"
+        ? `Break & close above ${a.bullTrigger??"—"}`
+        : "Wait for a confirmed break";
   const htfAgreement=htfDirectional.length
     ? Math.round((Math.max(htfUp,htfDown)/htfDirectional.length)*100)
     : 0;
@@ -1418,11 +1835,11 @@ export default function MT5AnalysisDesk(){
             <small><i className="mt5LiveDot"/> FORMING · {cs.length} candles</small>
           </div>
         </div>
-        <Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`}/>
+        <Chart candles={cs} analysis={a} setupPlan={plan} chartKey={`${selectedKey}:${tf}`}/>
         <div className="mt5SetupStrip mt5DirectionStrip">
           <span>MARKET HEADING</span><b className={a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}>{a.direction}</b>
           <span>MTF</span><b>{mtfHeading} · {mtfAgreement}%</b>
-          <span>SETUP</span><b>{a.setup}</b>
+          <span>SETUP</span><b>{plan.status!=="WAIT"?`${plan.status} · ${plan.type}`:a.setup}</b>
           <span>PATH</span><b>{a.pathBias || "—"}</b>
           <span>TRIGGERS</span><b>{a.bullTrigger ?? "—"} / {a.bearTrigger ?? "—"}</b>
           <span>RSI / MACD</span><b>{a.rsi} · {a.macdHistogram>=0?"BULL":"BEAR"}</b>
@@ -1483,7 +1900,41 @@ export default function MT5AnalysisDesk(){
           <small>Confirmation score, not a probability forecast.</small>
         </section>
 
-        <section className={`mt5Panel mt5TradePlanHero ${cls}`}>
+        <section className={`mt5Panel mt5ProSetupCard ${plan.status.toLowerCase()} ${plan.direction.toLowerCase()}`}>
+          <div className="mt5ProSetupHeader">
+            <div>
+              <div className="mt5PanelTitle">PRO SETUP ENGINE</div>
+              <strong>{plan.direction==="BUY"?"LONG":plan.direction==="SELL"?"SHORT":"WAIT"}</strong>
+            </div>
+            <span className="mt5PlanStatus">{plan.status}</span>
+          </div>
+
+          <div className="mt5ProSetupType">{plan.type}</div>
+          <p className="mt5ProSetupContext">{plan.context}</p>
+
+          <div className="mt5PlanGrid">
+            <div className="zone"><span>ENTRY ZONE</span><b>{plan.entryLow!=null?`${plan.entryLow} — ${plan.entryHigh}`:"—"}</b></div>
+            <div><span>ENTRY</span><b>{visibleEntry??"—"}</b></div>
+            <div className="stop"><span>STOP LOSS</span><b>{visibleStop??"—"}</b></div>
+            <div><span>R:R</span><b>{plan.rr?`1:${plan.rr}`:"—"}</b></div>
+            <div className="tp"><span>TP1</span><b>{visibleTp1??"—"}</b></div>
+            <div className="tp"><span>TP2</span><b>{visibleTp2??"—"}</b></div>
+            <div className="tp"><span>TP3</span><b>{visibleTp3??"—"}</b></div>
+          </div>
+
+          <div className="mt5PlanConfluence">
+            {(plan.confirmations||[]).map(x=>
+              <span key={x.name} className={x.ok?"on":""}>{x.ok?"✓ ":""}{x.name}</span>
+            )}
+          </div>
+
+          <div className="mt5PlanInvalidation">
+            <span>INVALIDATION</span>
+            <b>{visibleInvalidation}</b>
+          </div>
+        </section>
+
+        <section className="mt5Panel mt5ActionMap">
           <div className="mt5PanelTitle">ACTION MAP · {tf}</div>
           <div className="mt5ActionRow">
             <div className="mt5ActionBuy"><span>BUY ABOVE</span><b>{a.bullTrigger??"—"}</b></div>
@@ -1491,12 +1942,12 @@ export default function MT5AnalysisDesk(){
           </div>
           <div className="mt5ActionHint">{a.signal==="BUY"?"BUY plan active — wait for confirmation above the BUY trigger.":a.signal==="SELL"?"SELL plan active — wait for confirmation below the SELL trigger.":"WAIT — use the trigger levels to confirm direction before manual MT5 execution."}</div>
           <div className={`mt5ActionPlan ${cls}`}>
-            <div><span>ENTRY</span><b>{a.entry??"—"}</b></div>
-            <div className="planStop"><span>STOP LOSS</span><b>{a.stop??"—"}</b></div>
-            <div className="planTp"><span>TP1</span><b>{a.tp1??"—"}</b></div>
-            <div className="planTp"><span>TP2</span><b>{a.tp2??"—"}</b></div>
-            <div className="planTp"><span>TP3</span><b>{a.tp3??"—"}</b></div>
-            <div className="planInvalid"><span>INVALIDATION</span><b>{a.signal==="BUY" ? `Break & close below ${a.bearTrigger??"—"}` : a.signal==="SELL" ? `Break & close above ${a.bullTrigger??"—"}` : "Wait for a confirmed break"}</b></div>
+            <div><span>ENTRY</span><b>{visibleEntry??"—"}</b></div>
+            <div className="planStop"><span>STOP LOSS</span><b>{visibleStop??"—"}</b></div>
+            <div className="planTp"><span>TP1</span><b>{visibleTp1??"—"}</b></div>
+            <div className="planTp"><span>TP2</span><b>{visibleTp2??"—"}</b></div>
+            <div className="planTp"><span>TP3</span><b>{visibleTp3??"—"}</b></div>
+            <div className="planInvalid"><span>INVALIDATION</span><b>{visibleInvalidation}</b></div>
           </div>
         </section>
 
@@ -1577,4 +2028,5 @@ export default function MT5AnalysisDesk(){
     </div>
   </div>;
 }
+
 
