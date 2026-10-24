@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CandlestickSeries, createChart } from "lightweight-charts";
+import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
+import { readStored, writeStored, freshTick, captureSignal, advanceSignals, SIGNAL_KEY } from "../utils/mt5ViewerState";
 import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
 const TF = {
@@ -838,13 +839,14 @@ function defaultVisibleBars(dataCount) {
   };
 }
 
-function Chart({candles,analysis,chartKey}) {
+function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools}) {
   const el=useRef(null);
   const chartRef=useRef(null);
   const seriesRef=useRef(null);
   const priceLinesRef=useRef([]);
   const markerPrimitiveRef=useRef(null);
   const projectionSeriesRef=useRef(null);
+  const overlaysRef=useRef([]);
   const firstDataKeyRef=useRef("");
   const lastDataKeyRef=useRef("");
   const datasetSignatureRef=useRef("");
@@ -1095,14 +1097,18 @@ function Chart({candles,analysis,chartKey}) {
 
     // Keep the chart readable: only structural levels and actionable lines
     // stay on the price axis. The full indicator set remains in the dashboard.
+    const plan=focusedSignal;
     const levels=[
       ["Support",analysis.support,"#27b9e7",1],
       ["Resistance",analysis.resistance,"#f3b756",1],
-      ...(analysis.signal!=="WAIT" ? [
-        ["Entry",analysis.entry,"#20dfb1",2],
-        ["SL",analysis.stop,"#ff6685",2],
-        ["TP1",analysis.tp1,"#2bd6a3",1],
-      ] : []),
+      ...(tools.scenarios?[["BUY trigger",analysis.bullTrigger,"#18d6a1",1],["SELL trigger",analysis.bearTrigger,"#ff6685",1]]:[]),
+      ...(plan?[
+        [`${plan.side} entry`,plan.entry,plan.side==='BUY'?"#18d6a1":"#ff6685",2],
+        ["SL",plan.stop,"#ff6685",2],
+        ["TP1",plan.tp1,"#18d6a1",1],
+        ["TP2",plan.tp2,"#18d6a1",1],
+        ["TP3",plan.tp3,"#18d6a1",1],
+      ]:[])
     ];
 
     const visibleLow=data.length ? Math.min(...data.map(x=>x.low)) : -Infinity;
@@ -1120,7 +1126,7 @@ function Chart({candles,analysis,chartKey}) {
     const chartPad=Math.max(analysis?.atr*3 || 0, Math.abs(visibleHigh-visibleLow)*0.08, Math.abs(lastPrice||0)*0.002);
 
     for(const [title,price,color,width] of levels){
-      if(!levelCompatible(price)) continue;
+      if(price==null || !levelCompatible(price)) continue;
       if(Number.isFinite(lastPrice) && (price < visibleLow-chartPad || price > visibleHigh+chartPad)) continue;
       const line=series.createPriceLine({
         price,
@@ -1133,7 +1139,35 @@ function Chart({candles,analysis,chartKey}) {
       priceLinesRef.current.push(line);
     }
 
-  },[candles,analysis,chartKey]);
+
+    for(const overlay of overlaysRef.current){try{chart.removeSeries(overlay);}catch{}}
+    overlaysRef.current=[];
+    const line=(points,color,style=0)=>{
+      if(points.length<2) return;
+      const overlay=chart.addSeries(LineSeries,{color,lineWidth:2,lineStyle:style,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false,autoscaleInfoProvider:()=>null});
+      overlay.setData(points);overlaysRef.current.push(overlay);
+    };
+    if(tools.ema){
+      for(const [period,color] of [[20,'#6faaff'],[50,'#e8ae63']]){
+        const values=ema(data.map(c=>c.close),period);
+        line(data.map((c,i)=>({time:c.time,value:values[i]})),color);
+      }
+    }
+    if(tools.scenarios && data.length>35){
+      const last=data.at(-1),seconds=TF_SECONDS_FOR_PATH(data);
+      const step=Math.max(analysis.atr || 0,Math.abs(last.close)*0.0005);
+      // Conditional paths, not predicted future prices; excluded from autoscale.
+      for(const [trigger,sign,color] of [[analysis.bullTrigger,1,'#18d6a188'],[analysis.bearTrigger,-1,'#ff668588']]){
+        if(trigger!=null && levelCompatible(trigger)) line([{time:last.time,value:last.close},{time:last.time+seconds*2,value:trigger},{time:last.time+seconds*4,value:trigger+sign*step}],color,2);
+      }
+    }
+    const times=new Set(data.map(c=>c.time));
+    const entryMarkers=signalHistory.filter(row=>times.has(row.time)).map(row=>({time:row.time,position:row.side==='BUY'?'belowBar':'aboveBar',color:row.side==='BUY'?'#18d6a1':'#ff6685',shape:row.side==='BUY'?'arrowUp':'arrowDown',text:`${row.side} · ${row.entry}`}));
+    const structure=tools.structure?structureEvents(data).slice(-4):[];
+    const markers=[...structure,...entryMarkers].sort((a,b)=>a.time-b.time);
+    if(markerPrimitiveRef.current) markerPrimitiveRef.current.setMarkers(markers);
+    else markerPrimitiveRef.current=createSeriesMarkers(series,markers);
+  },[candles,analysis,chartKey,signalHistory,focusedSignal,tools]);
 
   const zoomBy=(factor)=>{
     const chart=chartRef.current;
@@ -1200,7 +1234,8 @@ export default function MT5AnalysisDesk(){
     changeSymbol,
     loadingMarket,
     connect,
-  }=usePublicDerivTicks({multiMarket:true});
+    cacheWarning,
+  }=usePublicDerivTicks({multiMarket:true,persistViewer:true});
 
   // Recover the Deriv feed after Chrome back-forward cache,
   // tab suspension, network changes, or returning to the MT5 desk.
@@ -1252,16 +1287,37 @@ export default function MT5AnalysisDesk(){
       return ra[0]-rb[0] || ra[1]-rb[1] || ra[2].localeCompare(rb[2]);
     });
   },[markets]);
-  const [selected,setSelected]=useState("");
-  const [tf,setTf]=useState("5m");
-  const [activeTrade,setActiveTrade]=useState(null);
+  const [selected,setSelected]=useState(()=>readStored('derivai:mt5:prefs:v2',{}).market || '');
+  const [tf,setTf]=useState(()=>{const saved=readStored('derivai:mt5:prefs:v2',{}).tf;return TF[saved]?saved:'5m';});
+  const [tools,setTools]=useState({ema:true,scenarios:true,structure:false});
+  const [clock,setClock]=useState(Date.now());
+  useEffect(()=>{const timer=setInterval(()=>setClock(Date.now()),1000);return ()=>clearInterval(timer);},[]);
+  useEffect(()=>{if(selected) writeStored('derivai:mt5:prefs:v2',{market:selected,tf});},[selected,tf]);
+  const [signals,setSignals]=useState(()=>{const rows=readStored(SIGNAL_KEY,[]);return Array.isArray(rows)?rows.filter(r=>r && r.id && r.market && TF[r.tf] && ['BUY','SELL'].includes(r.side) && [r.entry,r.stop,r.tp1,r.tp2,r.tp3,r.time,r.detectedAt,r.lastEpoch].every(Number.isFinite)).slice(0,120):[];});
+  const [signalWarning,setSignalWarning]=useState('');
+  const signalsRef=useRef(signals);
+  signalsRef.current=signals;
+  const signalPersistRef=useRef(0);
+  useEffect(()=>{
+    const save=()=>{const ok=writeStored(SIGNAL_KEY,signalsRef.current);setSignalWarning(ok?'':'Signal history could not be saved.');};
+    const timer=setInterval(save,5000);
+    window.addEventListener('pagehide',save);
+    return ()=>{save();clearInterval(timer);window.removeEventListener('pagehide',save);};
+  },[]);
+  const [focusId,setFocusId]=useState('');
+  const [activeTrade,setActiveTrade]=useState(()=>{
+    const saved=readStored('derivai:mt5:monitor:v2',null);
+    return saved?.market===selected && saved?.tf===tf?saved:null;
+  });
+  const monitorContext=useRef(`${selected}:${tf}`);
+  useEffect(()=>{writeStored('derivai:mt5:monitor:v2',activeTrade);},[activeTrade]);
   const analysisDialog=useRef(null);
   const journalDialog=useRef(null);
   const [journal,setJournal]=useState(()=>{try {const rows=JSON.parse(localStorage.getItem("derivai:mt5:journal:v1")||"[]"); return Array.isArray(rows)?rows:[];} catch {return [];}});
   const [journalNotice,setJournalNotice]=useState("");
   const savePlan=()=>{
-    if(!connected || !["BUY","SELL"].includes(a.signal)) return;
-    const row={id:Date.now(),market:labelOf(selectedMarket),tf,side:a.signal,entry:a.entry,stop:a.stop,tp1:a.tp1,result:"Open"};
+    if(!focusedSignal) return;
+    const row={id:Date.now(),market:labelOf(selectedMarket),tf,side:focusedSignal.side,entry:focusedSignal.entry,stop:focusedSignal.stop,tp1:focusedSignal.tp1,result:"Open"};
     const next=[row,...journal].slice(0,200);
     try { localStorage.setItem("derivai:mt5:journal:v1",JSON.stringify(next)); setJournal(next); setJournalNotice("Plan saved on this device."); } catch {setJournalNotice("Could not save: browser storage is unavailable.");}
   };
@@ -1271,7 +1327,7 @@ export default function MT5AnalysisDesk(){
   };
 
   useEffect(()=>{
-    if(!selected&&supported[0]) setSelected(keyOf(supported[0]));
+    if(supported.length && !supported.some(m=>keyOf(m)===selected)) setSelected(keyOf(supported[0]));
   },[selected,supported]);
 
   useEffect(()=>{
@@ -1282,7 +1338,9 @@ export default function MT5AnalysisDesk(){
   // A manual trade monitor is deliberately opt-in. The desk never assumes
   // that a user entered a position merely because an analysis signal fired.
   useEffect(()=>{
-    setActiveTrade(null);
+    const context=`${selected}:${tf}`;
+    if(monitorContext.current!==context) setActiveTrade(null);
+    monitorContext.current=context;
   },[selected,tf]);
 
   const selectedMarket=supported.find(m=>keyOf(m)===selected)||supported[0];
@@ -1311,6 +1369,47 @@ export default function MT5AnalysisDesk(){
   },[marketCandleHistory,selectedKey,candleHistory,tickRows]);
 
   const cs=candlesByTf[tf]||[];
+  const latestTick=tickRows.at(-1);
+  const isLive=freshTick(connected,latestTick,clock);
+  const closedAnalysis=useMemo(()=>analyze(cs.slice(0,-1),selectedKey,labelOf(selectedMarket)),[cs,selectedKey,selectedMarket]);
+  const detector=useRef(readStored('derivai:mt5:detector:v2',{}));
+  useEffect(()=>{
+    if(!isLive || cs.length<36) return;
+    const key=`${selectedKey}:${tf}`;
+    const closedTime=cs.at(-2).time;
+    if(closedTime!==Math.floor(Number(latestTick?.epoch)/TF[tf])*TF[tf]-TF[tf]) return;
+    // Revisit once per closed candle; never generate signals from cached history.
+    if(detector.current[key]?.time===closedTime) return;
+    const signature=['BUY','SELL'].includes(closedAnalysis.signal)?`${closedAnalysis.signal}:${closedAnalysis.setup}`:'WAIT';
+    const previous=detector.current[key];
+    detector.current[key]={time:closedTime,signature};
+    writeStored('derivai:mt5:detector:v2',detector.current);
+    if(signature==='WAIT' || previous?.signature===signature) return;
+    const now=Date.now();
+    setSignals(rows=>{
+      const next=captureSignal(rows,closedAnalysis,{market:selectedKey,tf,time:closedTime,now});
+      writeStored(SIGNAL_KEY,next);
+      return next;
+    });
+    setFocusId('');
+  },[isLive,cs,closedAnalysis,selectedKey,tf]);
+  useEffect(()=>{
+    if(!latestTick || !isLive) return;
+    setSignals(rows=>{
+      const next=advanceSignals(rows,selectedKey,latestTick,true);
+      const transition=next.some((r,i)=>r.status!==rows[i]?.status || r.entered!==rows[i]?.entered);
+      if(transition || Date.now()-signalPersistRef.current>5000){writeStored(SIGNAL_KEY,next);signalPersistRef.current=Date.now();}
+      return next;
+    });
+  },[latestTick,isLive,selectedKey]);
+  const marketSignals=useMemo(()=>signals.filter(r=>r.market===selectedKey && r.tf===tf),[signals,selectedKey,tf]);
+  const focusedSignal=marketSignals.find(r=>r.id===focusId)||marketSignals[0]||null;
+  useEffect(()=>{
+    if(isLive || !selectedKey) return;
+    let busy=false;
+    const timer=setInterval(()=>{if(!busy && document.visibilityState==='visible'){busy=true;Promise.resolve(connect()).catch(()=>{}).finally(()=>{busy=false;});}},15000);
+    return ()=>clearInterval(timer);
+  },[isLive,selectedKey,connect]);
   const analyses=useMemo(()=>{
     const out={};
     for(const m of supported){
@@ -1379,11 +1478,8 @@ export default function MT5AnalysisDesk(){
   },[activeTrade,livePrice,a]);
 
   const startTradeMonitor=()=>{
-    if(a.signal!=="BUY" && a.signal!=="SELL") return;
-    if(!Number.isFinite(Number(a.entry)) || !Number.isFinite(Number(a.stop))) return;
-    setActiveTrade({
-      side:a.signal,entry:a.entry,stop:a.stop,tp1:a.tp1,tp2:a.tp2,tp3:a.tp3,startedAt:Date.now()
-    });
+    if(!isLive || !focusedSignal) return;
+    setActiveTrade({...focusedSignal,market:selectedKey,tf,startedAt:Date.now()});
   };
 
   const stopTradeMonitor=()=>setActiveTrade(null);
@@ -1418,16 +1514,16 @@ export default function MT5AnalysisDesk(){
           ? `Break and retest below ${a.bearTrigger} confirms downside.`
           : `Wait for a clean break of ${a.bullTrigger} or ${a.bearTrigger}.`;
 
-  const confirmed=connected && ["BUY","SELL"].includes(a.signal);
-  const plan=activeTrade || (confirmed?a:null);
-  const shownSignal=connected?(confirmed?a.signal:"WAIT"):"OFFLINE";
-  const signalClass=confirmed?a.signal.toLowerCase():"wait";
+  const confirmed=isLive && ["BUY","SELL"].includes(closedAnalysis.signal);
+  const plan=activeTrade || focusedSignal;
+  const shownSignal=isLive?(confirmed?closedAnalysis.signal:"WAIT"):"SYNCING";
+  const signalClass=confirmed?closedAnalysis.signal.toLowerCase():"wait";
   const directionLabel=(value)=>value==="UP"?"Bullish":value==="DOWN"?"Bearish":value==="BUILDING"?"Loading":"Range";
   return <div className="mt5Desk">
     <header className="deskHeader">
       <a href="/dashboard" className="deskBrand" aria-label="DerivAI dashboard"><span>ϟ</span> DerivAI</a>
       <span className="deskTitle">MT5 Analysis Desk</span>
-      <span className={`deskConnection ${connected?"online":""}`}><i/>{connected?"Live":"Connecting"}</span>
+      <span className={`deskConnection ${isLive?"online":""}`}><i/>{isLive?"Live ticks":cs.length?"Cached · reconnecting":"Connecting"}</span>
     </header>
     <nav className="deskToolbar" aria-label="Market and timeframe">
       <select aria-label="Select market" value={selectedKey} onChange={e=>setSelected(e.target.value)}>
@@ -1442,31 +1538,35 @@ export default function MT5AnalysisDesk(){
       <main className="deskChartColumn">
         <section className="deskChartPanel">
           <div className="deskChartHeading"><h1>{labelOf(selectedMarket)}</h1><b>{cs.at(-1)?.close??"—"}</b></div>
-          <div className="deskChartArea"><Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`}/>
+          <div className="deskToolRow">{[['ema','EMA 20/50'],['scenarios','BUY / SELL paths'],['structure','Structure']].map(([key,label])=><button type="button" key={key} aria-pressed={tools[key]} onClick={()=>setTools(value=>({...value,[key]:!value[key]}))}>{label}</button>)}<span>Dashed paths = conditional scenarios</span></div>
+          <div className="deskChartArea"><Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`} tools={tools} signalHistory={marketSignals} focusedSignal={activeTrade || focusedSignal}/>
           {!cs.length && <div className="deskEmpty">{loadingMarket?"Loading candles…":status||"Waiting for market data…"}</div>}</div>
         </section>
         <section className="deskOverview"><h2>TIMEFRAME OVERVIEW</h2><div>{mtf.filter(x=>["15m","1h","4h"].includes(x.label)).map(({label,analysis:z})=><button type="button" key={label} onClick={()=>setTf(label)}><b>{label}</b><span className={z.direction==="UP"?"buy":z.direction==="DOWN"?"sell":"wait"}>{directionLabel(z.direction)}</span></button>)}</div></section>
       </main>
       <aside className="deskSetup">
         <h2>CURRENT SETUP</h2><div className={`deskSignal ${signalClass}`}>{shownSignal}</div>
-        <p className="deskSubtitle">{directionLabel(a.direction)} · {confirmed?a.setup:"No confirmed entry"}</p>
+        <p className="deskSubtitle">{confirmed?closedAnalysis.setup:'Scanning for the next confirmed entry'}</p>
+        <div className="deskBias"><b className={a.direction==='UP'?'buy':a.direction==='DOWN'?'sell':'wait'}>{a.direction==='UP'?'↑':a.direction==='DOWN'?'↓':'↔'} {directionLabel(a.direction)} bias</b><span>{a.pathBias || 'Waiting for data'}</span></div>
         <div className="deskTriggers"><div className="buy"><span>BUY ABOVE</span><b>{a.bullTrigger??"—"}</b></div><div className="sell"><span>SELL BELOW</span><b>{a.bearTrigger??"—"}</b></div></div>
+        {focusedSignal && <div className="deskSignalPicker"><select aria-label="Chart signal" value={focusedSignal.id} onChange={e=>setFocusId(e.target.value)}>{marketSignals.map(r=><option key={r.id} value={r.id}>{r.side} · {new Date(r.detectedAt).toLocaleTimeString()} · {r.status}</option>)}</select><small>{focusedSignal.status}{focusedSignal.gapUnverified?' · Offline gap unverified':''}</small></div>}
         {activeTrade && <small>Monitoring your saved {activeTrade.side} entry</small>}
         <dl className="deskLevels"><div><dt>Entry</dt><dd>{plan?.entry??"—"}</dd></div><div><dt>Stop loss</dt><dd className="sell">{plan?.stop??"—"}</dd></div><div><dt>Take profit 1</dt><dd className="buy">{plan?.tp1??"—"}</dd></div></dl>
-        {tradeMonitor ? <div className="deskMonitor"><b>{connected?tradeMonitor.status:"OFFLINE — monitor paused"}</b><p>{connected?tradeMonitor.reason:"Reconnect to resume live monitoring."}</p><button type="button" onClick={stopTradeMonitor}>Stop monitor</button></div> : <p className="deskHint">{confirmed?"Plan confirmed. Enter manually in MT5.":"Levels appear when a setup is confirmed."}</p>}
-        {confirmed && !activeTrade && <button type="button" onClick={startTradeMonitor}>I entered {a.signal} · Monitor</button>}
+        {tradeMonitor ? <div className="deskMonitor"><b>{isLive?tradeMonitor.status:"OFFLINE — monitor paused"}</b><p>{isLive?tradeMonitor.reason:"Reconnect to resume live monitoring."}</p><button type="button" onClick={stopTradeMonitor}>Stop monitor</button></div> : <p className="deskHint">{confirmed?"Plan confirmed. Enter manually in MT5.":focusedSignal?"Saved signal on chart · scanning continues.":"New confirmed entries appear on the chart automatically."}</p>}
+        {isLive && focusedSignal && !activeTrade && !["SL touched","TP3 touched","Expired"].includes(focusedSignal.status) && <button type="button" onClick={startTradeMonitor}>I entered {focusedSignal.side} · Monitor</button>}
         <button type="button" className="deskAnalysisButton" onClick={()=>analysisDialog.current.showModal()}>View analysis <span>›</span></button>
       </aside>
     </div>
-    <footer className="deskFooter"><span>Manual trading</span><button type="button" onClick={()=>journalDialog.current.showModal()}>Signal journal</button></footer>
+    <footer className="deskFooter"><span>{cacheWarning || signalWarning || (isLive?`Last tick ${new Date(latestTick.epoch*1000).toLocaleTimeString()} · Auto-scanning` : "Saved chart · awaiting fresh ticks")}</span><button type="button" onClick={()=>journalDialog.current.showModal()}>Signal journal</button></footer>
     <dialog ref={analysisDialog} className="deskDialog"><form method="dialog"><h2>Analysis · {tf}</h2><button aria-label="Close analysis">✕</button></form>
       <p>{a.reason}</p><p>{nextCondition}</p>
       <dl className="deskLevels">{[["Strategy",a.strategy],["Higher timeframe bias",htfBias],["Structure",a.structure],["TP2",plan?.tp2],["TP3",plan?.tp3],["RSI",a.rsi],["ADX",a.adx]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v??"—"}</dd></div>)}</dl>
       <h3>Confirmations</h3>{(a.confirmations||[]).map(x=><p key={x.name}>{x.ok?"✓":"○"} {x.name}</p>)}
-      {confirmed && <button type="button" onClick={savePlan}>Save plan to journal</button>}<p role="status">{journalNotice}</p>
+      {focusedSignal && <button type="button" onClick={savePlan}>Save plan to journal</button>}<p role="status">{journalNotice}</p>
     </dialog>
     <dialog ref={journalDialog} className="deskDialog deskJournal"><form method="dialog"><h2>Signal journal</h2><button aria-label="Close journal">✕</button></form>
-      <p>Saved on this browser. Results are recorded manually.</p>{confirmed && <button type="button" onClick={savePlan}>Save current plan</button>}<p role="status">{journalNotice}</p>
+      <p>Saved on this browser. Level touches describe observed quotes, not executed trades. Offline gaps cannot be verified.</p>
+      <h3>Automatic signals</h3>{signals.length?<div className="deskTableWrap"><table><thead><tr>{['Market','TF','Side','Entry','SL','TP1','Status'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{signals.map(r=><tr key={r.id}><td>{r.market}</td><td>{r.tf}</td><td>{r.side}</td><td>{r.entry}</td><td>{r.stop}</td><td>{r.tp1}</td><td>{r.status}{r.gapUnverified?' · Gap unverified':''}</td></tr>)}</tbody></table></div>:<p>Waiting for the first confirmed signal.</p>}<h3>Manual journal</h3>{focusedSignal && <button type="button" onClick={savePlan}>Save current plan</button>}<p role="status">{journalNotice}</p>
       {journal.length?<div className="deskTableWrap"><table><thead><tr>{["Date","Market","TF","Side","Entry","SL","TP1","Result"].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{journal.map(row=><tr key={row.id}><td>{new Date(row.id).toLocaleString()}</td><td>{row.market}</td><td>{row.tf}</td><td>{row.side}</td><td>{row.entry}</td><td>{row.stop}</td><td>{row.tp1}</td><td><select aria-label={`Result for ${row.market}`} value={row.result} onChange={e=>updateResult(row.id,e.target.value)}>{["Open","Win","Loss","Breakeven","Cancelled"].map(x=><option key={x}>{x}</option>)}</select></td></tr>)}</tbody></table></div>:<p>No saved plans yet.</p>}
     </dialog>
   </div>;

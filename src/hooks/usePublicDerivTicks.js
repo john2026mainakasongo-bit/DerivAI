@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { readStored, writeStored } from "../utils/mt5ViewerState";
+
 import derivPublicClient from "../services/derivApi";
 
 const TF_SECONDS = {
@@ -130,11 +132,18 @@ function candlesFromTicks(rows = [], seconds = 60) {
 
 export default function usePublicDerivTicks({
   multiMarket = false,
+  persistViewer = false,
 } = {}) {
-  const [markets, setMarkets] = useState([]);
-  const [marketTicks, setMarketTicks] = useState({});
+  const cacheRef=useRef(undefined);
+  if(cacheRef.current===undefined){
+    const saved=persistViewer?readStored("derivai:mt5:feed:v2",null):null;
+    cacheRef.current=saved && saved.version===2 && Date.now()-saved.savedAt<7*86400000 ? saved : {};
+  }
+  const cache=cacheRef.current;
+  const [markets, setMarkets] = useState(()=>Array.isArray(cache.markets)?cache.markets:[]);
+  const [marketTicks, setMarketTicks] = useState(()=>cache.ticks || {});
   // Full OHLC history for every scanner market, keyed by symbol and timeframe seconds.
-  const [marketCandleHistory, setMarketCandleHistory] = useState({});
+  const [marketCandleHistory, setMarketCandleHistory] = useState(()=>cache.history || {});
   const [candleHistory, setCandleHistory] = useState(() => {
     const initial = {};
 
@@ -145,16 +154,36 @@ export default function usePublicDerivTicks({
     return initial;
   });
 
-  const [symbol, setSymbol] = useState("");
+  const [symbol, setSymbol] = useState(()=>cache.symbol || "");
   const [status, setStatus] = useState("DISCONNECTED");
   const [connected, setConnected] = useState(false);
   const [loadingMarket, setLoadingMarket] = useState(false);
 
   const mountedRef = useRef(true);
-  const symbolRef = useRef("");
+  const symbolRef = useRef(cache.symbol || "");
   const loadPromiseRef = useRef(null);
   const loadedAtRef = useRef(0);
   const loadedSymbolRef = useRef("");
+
+  const [cacheWarning,setCacheWarning]=useState("");
+  const snapshotRef=useRef(null);
+  snapshotRef.current={markets,marketTicks,marketCandleHistory,symbol};
+  useEffect(()=>{
+    if(!persistViewer) return;
+    const save=()=>{
+      const snap=snapshotRef.current;
+      if(!snap.symbol || !snap.markets.length) return;
+      const history=Object.fromEntries(Object.entries(snap.marketCandleHistory[snap.symbol]||{}).map(([tf,rows])=>[tf,Array.isArray(rows)?rows.slice(-300):[]]));
+      if(!Object.values(history).some(rows=>rows.length)) return;
+      const ok=writeStored("derivai:mt5:feed:v2",{version:2,savedAt:Date.now(),symbol:snap.symbol,markets:snap.markets,history:{[snap.symbol]:history},ticks:{[snap.symbol]:(snap.marketTicks[snap.symbol]||[]).slice(-1200)}});
+      setCacheWarning(ok?"":"Chart cache unavailable: browser storage is full or blocked.");
+    };
+    const timer=setInterval(save,5000);
+    const hide=()=>{if(document.visibilityState==='hidden') save();};
+    window.addEventListener('pagehide',save);
+    document.addEventListener('visibilitychange',hide);
+    return ()=>{save();clearInterval(timer);window.removeEventListener('pagehide',save);document.removeEventListener('visibilitychange',hide);};
+  },[persistViewer]);
 
   const addTick = useCallback(
     (tick) => {
@@ -752,6 +781,7 @@ export default function usePublicDerivTicks({
   );
 
   return {
+    cacheWarning,
     markets,
     market: selectedMarket,
 
