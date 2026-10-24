@@ -39,3 +39,14 @@ test('storage denied and malformed JSON fall back without crashing',()=>{
  globalThis.localStorage={getItem(){return '{bad';},setItem(){throw Error('blocked');}};
  assert.deepEqual(readStored('x',[]),[]);assert.equal(writeStored('x',[]),false);
 });
+
+test('fit trade includes all BUY/SELL levels beyond the candle range',async()=>{
+ const {fitPlanRange}=await import('../src/utils/mt5ViewerState.js');
+ for(const plan of [buy,sell]){
+ const range=fitPlanRange({priceRange:{minValue:99,maxValue:101}},plan).priceRange;
+ for(const value of [plan.entry,plan.stop,plan.tp1,plan.tp2,plan.tp3]) assert.ok(value>range.minValue && value<range.maxValue);
+ }
+ assert.equal(fitPlanRange(null,buy),null);
+ const base={priceRange:{minValue:99,maxValue:101}};
+ assert.equal(fitPlanRange(base,null),base);
+});

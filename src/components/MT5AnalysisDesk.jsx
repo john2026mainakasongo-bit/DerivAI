@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
-import { readStored, writeStored, freshTick, captureSignal, advanceSignals, SIGNAL_KEY } from "../utils/mt5ViewerState";
+import { readStored, writeStored, freshTick, captureSignal, advanceSignals, fitPlanRange, SIGNAL_KEY } from "../utils/mt5ViewerState";
 import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
 const TF = {
@@ -841,6 +841,8 @@ function defaultVisibleBars(dataCount) {
 
 function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools}) {
   const el=useRef(null);
+  const planRef=useRef(focusedSignal);
+  planRef.current=focusedSignal;
   const chartRef=useRef(null);
   const seriesRef=useRef(null);
   const priceLinesRef=useRef([]);
@@ -923,6 +925,7 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
       lastValueVisible:true,
       priceLineVisible:true,
       borderVisible:false,
+      autoscaleInfoProvider:(base)=>fitPlanRange(base(),planRef.current),
         priceFormat:chartPriceFormat(chartKey, 0)
     });
 
@@ -1126,8 +1129,10 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
     const chartPad=Math.max(analysis?.atr*3 || 0, Math.abs(visibleHigh-visibleLow)*0.08, Math.abs(lastPrice||0)*0.002);
 
     for(const [title,price,color,width] of levels){
-      if(price==null || !levelCompatible(price)) continue;
-      if(Number.isFinite(lastPrice) && (price < visibleLow-chartPad || price > visibleHigh+chartPad)) continue;
+      const tradeLevel=title.endsWith(' entry') || ['SL','TP1','TP2','TP3'].includes(title);
+      if(price==null || !Number.isFinite(price)) continue;
+      if(!tradeLevel && (!levelCompatible(price) || price < visibleLow-chartPad || price > visibleHigh+chartPad)) continue;
+      if(tools.scenarios && ((title==='Support' && price===analysis.bearTrigger) || (title==='Resistance' && price===analysis.bullTrigger))) continue;
       const line=series.createPriceLine({
         price,
         color,
@@ -1169,6 +1174,11 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
     else markerPrimitiveRef.current=createSeriesMarkers(series,markers);
   },[candles,analysis,chartKey,signalHistory,focusedSignal,tools]);
 
+  useEffect(()=>{
+    chartRef.current?.priceScale('right').applyOptions({autoScale:true});
+  },[focusedSignal?.id,chartKey]);
+
+  const fitTrade=()=>chartRef.current?.priceScale('right').applyOptions({autoScale:true});
   const zoomBy=(factor)=>{
     const chart=chartRef.current;
     if(!chart) return;
@@ -1213,6 +1223,7 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
         <b>Price action</b>
       </div>
       <div className="mt5ChartToolsRight">
+        <button type="button" onClick={fitTrade} disabled={!focusedSignal} title="Fit Entry, SL and all targets">Fit trade</button>
         <button type="button" onClick={()=>zoomBy(0.78)} title="Zoom in">+</button>
         <button type="button" onClick={()=>zoomBy(1.28)} title="Zoom out">−</button>
         <button type="button" onClick={goRealtime}>LIVE</button>
@@ -1514,10 +1525,10 @@ export default function MT5AnalysisDesk(){
           ? `Break and retest below ${a.bearTrigger} confirms downside.`
           : `Wait for a clean break of ${a.bullTrigger} or ${a.bearTrigger}.`;
 
-  const confirmed=isLive && ["BUY","SELL"].includes(closedAnalysis.signal);
   const plan=activeTrade || focusedSignal;
-  const shownSignal=isLive?(confirmed?closedAnalysis.signal:"WAIT"):"SYNCING";
-  const signalClass=confirmed?closedAnalysis.signal.toLowerCase():"wait";
+  const shownSignal=plan?.side || 'WAIT';
+  const signalClass=plan?.side?.toLowerCase() || 'wait';
+  const trackedStatus=activeTrade?(isLive?tradeMonitor?.status:'Monitor paused'):plan?(plan.status==='Watching entry'?'Awaiting entry':plan.status):'No saved setup';
   const directionLabel=(value)=>value==="UP"?"Bullish":value==="DOWN"?"Bearish":value==="BUILDING"?"Loading":"Range";
   return <div className="mt5Desk">
     <header className="deskHeader">
@@ -1544,21 +1555,24 @@ export default function MT5AnalysisDesk(){
         </section>
         <section className="deskOverview"><h2>TIMEFRAME OVERVIEW</h2><div>{mtf.filter(x=>["15m","1h","4h"].includes(x.label)).map(({label,analysis:z})=><button type="button" key={label} onClick={()=>setTf(label)}><b>{label}</b><span className={z.direction==="UP"?"buy":z.direction==="DOWN"?"sell":"wait"}>{directionLabel(z.direction)}</span></button>)}</div></section>
       </main>
-      <aside className="deskSetup">
-        <h2>CURRENT SETUP</h2><div className={`deskSignal ${signalClass}`}>{shownSignal}</div>
-        <p className="deskSubtitle">{confirmed?closedAnalysis.setup:'Scanning for the next confirmed entry'}</p>
+      <aside className="deskSetup deskTracked">
+        <h2>TRACKED SETUP</h2>
+        <div className="deskTrackedHeading"><div className={`deskSignal ${signalClass}`}>{shownSignal}</div><span className="deskStatusBadge">{trackedStatus}</span></div>
         <div className="deskBias"><b className={a.direction==='UP'?'buy':a.direction==='DOWN'?'sell':'wait'}>{a.direction==='UP'?'↑':a.direction==='DOWN'?'↓':'↔'} {directionLabel(a.direction)} bias</b><span>{a.pathBias || 'Waiting for data'}</span></div>
-        <div className="deskTriggers"><div className="buy"><span>BUY ABOVE</span><b>{a.bullTrigger??"—"}</b></div><div className="sell"><span>SELL BELOW</span><b>{a.bearTrigger??"—"}</b></div></div>
-        {focusedSignal && <div className="deskSignalPicker"><select aria-label="Chart signal" value={focusedSignal.id} onChange={e=>setFocusId(e.target.value)}>{marketSignals.map(r=><option key={r.id} value={r.id}>{r.side} · {new Date(r.detectedAt).toLocaleTimeString()} · {r.status}</option>)}</select><small>{focusedSignal.status}{focusedSignal.gapUnverified?' · Offline gap unverified':''}</small></div>}
-        {activeTrade && <small>Monitoring your saved {activeTrade.side} entry</small>}
-        <dl className="deskLevels"><div><dt>Entry</dt><dd>{plan?.entry??"—"}</dd></div><div><dt>Stop loss</dt><dd className="sell">{plan?.stop??"—"}</dd></div><div><dt>Take profit 1</dt><dd className="buy">{plan?.tp1??"—"}</dd></div></dl>
-        {tradeMonitor ? <div className="deskMonitor"><b>{isLive?tradeMonitor.status:"OFFLINE — monitor paused"}</b><p>{isLive?tradeMonitor.reason:"Reconnect to resume live monitoring."}</p><button type="button" onClick={stopTradeMonitor}>Stop monitor</button></div> : <p className="deskHint">{confirmed?"Plan confirmed. Enter manually in MT5.":focusedSignal?"Saved signal on chart · scanning continues.":"New confirmed entries appear on the chart automatically."}</p>}
-        {isLive && focusedSignal && !activeTrade && !["SL touched","TP3 touched","Expired"].includes(focusedSignal.status) && <button type="button" onClick={startTradeMonitor}>I entered {focusedSignal.side} · Monitor</button>}
-        <button type="button" className="deskAnalysisButton" onClick={()=>analysisDialog.current.showModal()}>View analysis <span>›</span></button>
+        <div className="deskPlanBox">
+          <dl className="deskLevels">{[['Entry','entry',''],['Stop loss','stop','sell'],['Take profit 1','tp1','buy'],['Take profit 2','tp2','buy'],['Take profit 3','tp3','buy']].map(([label,key,color])=><div key={key}><dt>{label}</dt><dd className={color}>{plan?.[key]??'—'}</dd></div>)}</dl>
+          <small>{plan?`Saved ${new Date(plan.detectedAt || plan.startedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} · Fixed levels`:'Confirmed setups appear automatically'}{plan?.gapUnverified?' · Gap unverified':''}</small>
+        </div>
+        {marketSignals.length>1 && !activeTrade && <select className="deskSavedSelect" aria-label="Chart signal" value={focusedSignal.id} onChange={e=>setFocusId(e.target.value)}>{marketSignals.map(r=><option key={r.id} value={r.id}>{r.side} · {new Date(r.detectedAt).toLocaleTimeString()} · {r.status}</option>)}</select>}
+        <div className="deskScanner"><b><i className={isLive?'online':''}/> SCANNER</b><span>{isLive?'Searching for next setup':'Paused · awaiting live ticks'}<small>{isLive?'Updates automatically':'Saved levels remain visible'}</small></span></div>
+        <section className="deskOtherScenarios"><h2>OTHER SCENARIOS</h2><div><span className="buy">BUY above</span><b>{a.bullTrigger??'—'}</b></div><div><span className="sell">SELL below</span><b>{a.bearTrigger??'—'}</b></div></section>
+        <div className="deskSetupActions"><button type="button" onClick={()=>analysisDialog.current.showModal()}>View analysis</button>{activeTrade?<button type="button" onClick={stopTradeMonitor}>Stop monitor</button>:<button type="button" className={signalClass} disabled={!isLive || !plan || ['SL touched','TP3 touched','Expired'].includes(plan.status)} title="Start monitoring only after entering manually in MT5" onClick={startTradeMonitor}>I entered {plan?.side || 'a trade'}</button>}</div>
+
       </aside>
     </div>
     <footer className="deskFooter"><span>{cacheWarning || signalWarning || (isLive?`Last tick ${new Date(latestTick.epoch*1000).toLocaleTimeString()} · Auto-scanning` : "Saved chart · awaiting fresh ticks")}</span><button type="button" onClick={()=>journalDialog.current.showModal()}>Signal journal</button></footer>
     <dialog ref={analysisDialog} className="deskDialog"><form method="dialog"><h2>Analysis · {tf}</h2><button aria-label="Close analysis">✕</button></form>
+      {tradeMonitor && <div className="deskMonitor"><b>{isLive?tradeMonitor.status:'Monitor paused'}</b><p>{isLive?tradeMonitor.reason:'Waiting for fresh ticks.'}</p></div>}
       <p>{a.reason}</p><p>{nextCondition}</p>
       <dl className="deskLevels">{[["Strategy",a.strategy],["Higher timeframe bias",htfBias],["Structure",a.structure],["TP2",plan?.tp2],["TP3",plan?.tp3],["RSI",a.rsi],["ADX",a.adx]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v??"—"}</dd></div>)}</dl>
       <h3>Confirmations</h3>{(a.confirmations||[]).map(x=><p key={x.name}>{x.ok?"✓":"○"} {x.name}</p>)}

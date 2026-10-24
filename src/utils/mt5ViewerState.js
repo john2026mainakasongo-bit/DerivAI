@@ -39,3 +39,13 @@ export function advanceSignals(rows,market,tick,live) {
   });
   return changed?next:rows;
 }
+
+export function fitPlanRange(info, plan) {
+  if(!info?.priceRange || !plan) return info;
+  const values=[plan.entry,plan.stop,plan.tp1,plan.tp2,plan.tp3].filter(value=>Number.isFinite(value));
+  if(!values.length) return info;
+  const minValue=Math.min(info.priceRange.minValue,...values);
+  const maxValue=Math.max(info.priceRange.maxValue,...values);
+  const padding=Math.max((maxValue-minValue)*0.05,Math.abs(maxValue)*0.00001);
+  return {...info,priceRange:{minValue:minValue-padding,maxValue:maxValue+padding}};
+}
