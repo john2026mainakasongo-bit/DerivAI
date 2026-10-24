@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
+import { CandlestickSeries, createChart } from "lightweight-charts";
 import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
 const TF = {
@@ -1097,21 +1097,11 @@ function Chart({candles,analysis,chartKey}) {
     // stay on the price axis. The full indicator set remains in the dashboard.
     const levels=[
       ["Support",analysis.support,"#27b9e7",1],
-      ["Resistance",analysis.resistance,"#f39b62",1],
-      ["EMA20",analysis.ema20,"#55a8ff",2],
-      ["EMA50",analysis.ema50,"#f3a64b",2],
-      ["BUY ABOVE",analysis.bullTrigger,"#27dfb1",1],
-      ["SELL BELOW",analysis.bearTrigger,"#ff6685",1],
+      ["Resistance",analysis.resistance,"#f3b756",1],
       ...(analysis.signal!=="WAIT" ? [
-        [analysis.signal==="BUY"?"BUY ENTRY":"SELL ENTRY",analysis.entry,analysis.signal==="BUY"?"#20dfb1":"#ff6685",3],
-        ["SL",analysis.stop,"#ff6685",3],
-        ["TP1",analysis.tp1,"#2bd6a3",2],
-        ["TP2",analysis.tp2,"#2bd6a3",2],
-        ["TP3",analysis.tp3,"#2bd6a3",2],
-      ] : []),
-      ...(analysis.orderBlock ? [
-        [analysis.orderBlock.type,analysis.orderBlock.low,"#ffb454",1],
-        [`${analysis.orderBlock.type} TOP`,analysis.orderBlock.high,"#ffb454",1],
+        ["Entry",analysis.entry,"#20dfb1",2],
+        ["SL",analysis.stop,"#ff6685",2],
+        ["TP1",analysis.tp1,"#2bd6a3",1],
       ] : []),
     ];
 
@@ -1143,66 +1133,6 @@ function Chart({candles,analysis,chartKey}) {
       priceLinesRef.current.push(line);
     }
 
-    markerPrimitiveRef.current?.detach?.();
-
-    const markers=[
-      ...chartEvents(candles),
-      ...structureEvents(candles).slice(-4),
-      ...fvgEvents(candles).slice(-3)
-    ].sort(
-      (a,b)=>(a.time-b.time)||(b.priority-a.priority)
-    );
-
-    const byTime=new Map();
-    for(const marker of markers){
-      const existing=byTime.get(marker.time);
-      if(!existing || marker.priority>existing.priority) {
-        byTime.set(marker.time,marker);
-      }
-    }
-
-    // Keep labels readable: prioritize structural/breakout events and cap
-    // the total number of markers visible on the chart.
-    const markerList=[...byTime.values()]
-      .sort((a,b)=>(a.time-b.time)||(b.priority-a.priority))
-      .slice(-10);
-
-    markerPrimitiveRef.current=createSeriesMarkers(
-      series,
-      markerList
-    );
-
-    if(projectionSeriesRef.current){
-      try { chart.removeSeries(projectionSeriesRef.current); } catch {}
-      projectionSeriesRef.current=null;
-    }
-
-    if(analysis?.projectedPath?.length>=2){
-      const projectionColor=analysis.direction==="UP"?"#27dfb1":analysis.direction==="DOWN"?"#ff6685":"#a8b8c2";
-      const projectionSeries=chart.addSeries(LineSeries,{
-        color:projectionColor,
-        lineWidth:3,
-        lineStyle:2,
-        crosshairMarkerVisible:false,
-        lastValueVisible:false,
-        priceLineVisible:false
-      });
-      projectionSeries.setData(analysis.projectedPath.map(point=>({time:point.time,value:point.price})));
-      projectionSeriesRef.current=projectionSeries;
-    }
-
-    const latest=candles.at(-1)?.close;
-    if(Number.isFinite(latest)){
-      const currentLine=series.createPriceLine({
-        price:latest,
-        color:"#d7f5ff",
-        lineWidth:1,
-        lineStyle:3,
-        axisLabelVisible:true,
-        title:"PRICE"
-      });
-      priceLinesRef.current.push(currentLine);
-    }
   },[candles,analysis,chartKey]);
 
   const zoomBy=(factor)=>{
@@ -1246,7 +1176,7 @@ function Chart({candles,analysis,chartKey}) {
     <div className="mt5ChartToolbar">
       <div className="mt5ChartToolsLeft">
         <span>CHART</span>
-        <b>PATH: {analysis.pathBias || analysis.direction || "RANGE"} · {analysis.setup}</b>
+        <b>Price action</b>
       </div>
       <div className="mt5ChartToolsRight">
         <button type="button" onClick={()=>zoomBy(0.78)} title="Zoom in">+</button>
@@ -1325,6 +1255,20 @@ export default function MT5AnalysisDesk(){
   const [selected,setSelected]=useState("");
   const [tf,setTf]=useState("5m");
   const [activeTrade,setActiveTrade]=useState(null);
+  const analysisDialog=useRef(null);
+  const journalDialog=useRef(null);
+  const [journal,setJournal]=useState(()=>{try {const rows=JSON.parse(localStorage.getItem("derivai:mt5:journal:v1")||"[]"); return Array.isArray(rows)?rows:[];} catch {return [];}});
+  const [journalNotice,setJournalNotice]=useState("");
+  const savePlan=()=>{
+    if(!connected || !["BUY","SELL"].includes(a.signal)) return;
+    const row={id:Date.now(),market:labelOf(selectedMarket),tf,side:a.signal,entry:a.entry,stop:a.stop,tp1:a.tp1,result:"Open"};
+    const next=[row,...journal].slice(0,200);
+    try { localStorage.setItem("derivai:mt5:journal:v1",JSON.stringify(next)); setJournal(next); setJournalNotice("Plan saved on this device."); } catch {setJournalNotice("Could not save: browser storage is unavailable.");}
+  };
+  const updateResult=(id,result)=>{
+    const next=journal.map(row=>row.id===id?{...row,result}:row);
+    try {localStorage.setItem("derivai:mt5:journal:v1",JSON.stringify(next));setJournal(next);} catch {setJournalNotice("Could not save result.");}
+  };
 
   useEffect(()=>{
     if(!selected&&supported[0]) setSelected(keyOf(supported[0]));
@@ -1367,7 +1311,6 @@ export default function MT5AnalysisDesk(){
   },[marketCandleHistory,selectedKey,candleHistory,tickRows]);
 
   const cs=candlesByTf[tf]||[];
-  const feedReady=connected || (cs.length>0 && tickRows.length>0);
   const analyses=useMemo(()=>{
     const out={};
     for(const m of supported){
@@ -1391,7 +1334,6 @@ export default function MT5AnalysisDesk(){
   const a=selectedMarket
     ? analyses[selectedKey]||analyze(cs, selectedKey, labelOf(selectedMarket))
     : analyze(cs, selectedKey, labelOf(selectedMarket));
-  const cls=a.signal==="BUY"?"buy":a.signal==="SELL"?"sell":a.watchSide==="BUY"?"buy":a.watchSide==="SELL"?"sell":"wait";
 
   const livePrice=Number.isFinite(Number(cs.at(-1)?.close)) ? Number(cs.at(-1)?.close) : NaN;
   const tradeMonitor=useMemo(()=>{
@@ -1459,40 +1401,13 @@ export default function MT5AnalysisDesk(){
     return {label,data,analysis:analyze(data, selectedKey, labelOf(selectedMarket))};
   });
 
-  const mtfDirectional=mtf.filter(x=>x.analysis?.direction && x.analysis.direction!=="BUILDING");
-  const upFrames=mtfDirectional.filter(x=>x.analysis.direction==="UP").length;
-  const downFrames=mtfDirectional.filter(x=>x.analysis.direction==="DOWN").length;
-  const rangeFrames=mtfDirectional.filter(x=>x.analysis.direction==="RANGE").length;
-  const mtfHeading=upFrames>downFrames&&upFrames>=2?"UP":downFrames>upFrames&&downFrames>=2?"DOWN":"MIXED / RANGE";
-  const mtfAgreement=mtfDirectional.length
-    ? Math.round((Math.max(upFrames,downFrames)/mtfDirectional.length)*100)
-    : 0;
-  const mtfSummary=mtfHeading==="UP"
-    ? `${upFrames}/${mtfDirectional.length} timeframes bullish`
-    : mtfHeading==="DOWN"
-      ? `${downFrames}/${mtfDirectional.length} timeframes bearish`
-      : `${rangeFrames}/${mtfDirectional.length} timeframes ranging`;
-
   // Separate the active timeframe from the higher-timeframe context so a
   // short-term move does not get presented as the whole-market direction.
   const htfLabels=["1h","2h","4h","8h","24h"];
   const htfDirectional=mtf.filter(x=>htfLabels.includes(x.label)&&x.analysis?.direction&&x.analysis.direction!=="BUILDING");
   const htfUp=htfDirectional.filter(x=>x.analysis.direction==="UP").length;
   const htfDown=htfDirectional.filter(x=>x.analysis.direction==="DOWN").length;
-  const htfRange=htfDirectional.filter(x=>x.analysis.direction==="RANGE").length;
   const htfBias=htfUp>htfDown&&htfUp>=2?"BULLISH":htfDown>htfUp&&htfDown>=2?"BEARISH":"MIXED / RANGE";
-  const htfAgreement=htfDirectional.length
-    ? Math.round((Math.max(htfUp,htfDown)/htfDirectional.length)*100)
-    : 0;
-  const pathMode=a.direction==="UP"
-    ? "UPSIDE PATH"
-    : a.direction==="DOWN"
-      ? "DOWNSIDE PATH"
-      : a.pressure==="BULLISH"
-        ? "BULLISH BREAKOUT WATCH"
-        : a.pressure==="BEARISH"
-          ? "BEARISH BREAKDOWN WATCH"
-          : "RANGE — WAIT FOR BREAK";
   const nextCondition=a.direction==="UP"
     ? `Hold above ${a.bullTrigger}. Watch retest toward resistance.`
     : a.direction==="DOWN"
@@ -1503,253 +1418,56 @@ export default function MT5AnalysisDesk(){
           ? `Break and retest below ${a.bearTrigger} confirms downside.`
           : `Wait for a clean break of ${a.bullTrigger} or ${a.bearTrigger}.`;
 
+  const confirmed=connected && ["BUY","SELL"].includes(a.signal);
+  const plan=activeTrade || (confirmed?a:null);
+  const shownSignal=connected?(confirmed?a.signal:"WAIT"):"OFFLINE";
+  const signalClass=confirmed?a.signal.toLowerCase():"wait";
+  const directionLabel=(value)=>value==="UP"?"Bullish":value==="DOWN"?"Bearish":value==="BUILDING"?"Loading":"Range";
   return <div className="mt5Desk">
-    <div className="mt5Topbar">
-      <div>
-        <i className="mt5LiveDot"/>
-        {feedReady?"LIVE DERIV FEED":"CONNECTING"}
-        <small>{loadingMarket && !cs.length ? "LOADING CANDLES" : cs.length ? `LIVE CANDLES · ${cs.length}` : status||"DISCONNECTED"}</small>
+    <header className="deskHeader">
+      <a href="/dashboard" className="deskBrand" aria-label="DerivAI dashboard"><span>ϟ</span> DerivAI</a>
+      <span className="deskTitle">MT5 Analysis Desk</span>
+      <span className={`deskConnection ${connected?"online":""}`}><i/>{connected?"Live":"Connecting"}</span>
+    </header>
+    <nav className="deskToolbar" aria-label="Market and timeframe">
+      <select aria-label="Select market" value={selectedKey} onChange={e=>setSelected(e.target.value)}>
+        {!supported.length && <option value="">Loading markets…</option>}
+        {supported.map(m=><option key={keyOf(m)} value={keyOf(m)}>{labelOf(m)}</option>)}
+      </select>
+      <div className="deskFrames">{["1m","5m","15m","1h","4h","24h"].map(x=><button type="button" key={x} aria-pressed={tf===x} className={tf===x?"active":""} onClick={()=>setTf(x)}>{x==="24h"?"1D":x}</button>)}
+        <select aria-label="All timeframes" value={tf} onChange={e=>setTf(e.target.value)}>{Object.keys(TF).map(x=><option key={x} value={x}>{x}</option>)}</select>
       </div>
-      <div className="mt5Timeframes">
-        {Object.keys(TF).map(x=>
-          <button key={x} type="button" className={tf===x?"active":""} onClick={()=>setTf(x)}>
-            {x}
-          </button>
-        )}
-      </div>
-    </div>
-
-    <div className="mt5Grid">
-      <aside className="mt5Side">
-        <div className="mt5Watchlist">
-          <div className="mt5PanelTitle">MARKET SCANNER</div>
-          {supported.map(m=>{
-            const k=keyOf(m);
-            const x=analyses[k];
-            return <button key={k} type="button"
-              className={`mt5WatchRow ${k===selectedKey?"active":""}`}
-              onClick={()=>setSelected(k)}>
-              <b>{labelOf(m)}</b>
-              <span>{x ? `${x.direction} · ${x.setup}` : "LOADING DATA"}</span>
-              <strong className={x?.signal?.toLowerCase()}>{x?.signal||"WAIT"}</strong>
-            </button>;
-          })}
-        </div>
-
-        <div className="mt5Panel mt5MtfPanel">
-          <div className="mt5PanelTitle">ALL TIMEFRAME ANALYSIS</div>
-          {mtf.map(({label,analysis:z})=>
-            <button key={label} type="button"
-              className={`mt5MiniRow ${tf===label?"active":""}`}
-              onClick={()=>setTf(label)}>
-              <b>{label}</b>
-              <span>{z.direction} · {z.setup}</span>
-              <strong className={z.direction==="UP"?"buy":z.direction==="DOWN"?"sell":"wait"}>{z.direction}</strong>
-            </button>
-          )}
-        </div>
-
-        <div className="mt5Panel mt5Checklist">
-          <div className="mt5PanelTitle">STRUCTURE CHECK</div>
-          {(a.confirmations||[]).map(x=>
-            <div key={x.name}><i className={x.ok?"on":""}>{x.ok?"✓":"·"}</i><span>{x.name}</span><b>{x.ok?"OK":"WAIT"}</b></div>
-          )}
-        </div>
-      </aside>
-
-      <main className="mt5Center">
-        <div className="mt5ChartHead">
-          <div><span>LIVE PRICE ACTION · {tf} · ENTRY / SL / TP</span><h2>{labelOf(selectedMarket)}</h2><small className="mt5StrategyBadge">{a.strategy || "ADAPTIVE STRATEGY"}</small></div>
-          <div className="mt5ChartMeta">
-            <b>{cs.at(-1)?.close??"—"}</b>
-            <small><i className="mt5LiveDot"/> FORMING · {cs.length} candles</small>
-          </div>
-        </div>
-        <Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`}/>
-        <div className="mt5SetupStrip mt5DirectionStrip">
-          <span>MARKET HEADING</span><b className={a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}>{a.direction}</b>
-          <span>MTF</span><b>{mtfHeading} · {mtfAgreement}%</b>
-          <span>SETUP</span><b>{a.planStatus || a.setup}</b>
-          <span>PULLBACK</span><b>{a.pullbackState || "NO ACTIVE PULLBACK"}</b>
-          <span>PATH</span><b>{a.pathBias || "—"}</b>
-          <span>TRIGGERS</span><b>{a.bullTrigger ?? "—"} / {a.bearTrigger ?? "—"}</b>
-          <span>RSI / MACD</span><b>{a.rsi} · {a.macdHistogram>=0?"BULL":"BEAR"}</b>
-          <span>ADX</span><b>{a.adx}</b>
-        </div>
-        <div className="mt5LowerDeck">
-          <section className="mt5Panel">
-            <div className="mt5PanelTitle">KEY LEVELS</div>
-            <div className="mt5Metric"><span>Resistance</span><b>{a.resistance ?? "—"}</b></div>
-            <div className="mt5Metric"><span>Support</span><b>{a.support ?? "—"}</b></div>
-            <div className="mt5Metric"><span>EMA 20</span><b>{a.ema20 ?? "—"}</b></div>
-            <div className="mt5Metric"><span>EMA 50</span><b>{a.ema50 ?? "—"}</b></div>
-            <div className="mt5Metric"><span>EMA 200</span><b>{a.ema200 ?? "—"}</b></div>
-          </section>
-          <section className="mt5Panel">
-            <div className="mt5PanelTitle">INDICATORS</div>
-            <div className="mt5Metric"><span>RSI (14)</span><b className={a.rsi>=55?"bull":a.rsi<=45?"bear":"neutral"}>{a.rsi ?? "—"}</b></div>
-            <div className="mt5Metric"><span>MACD</span><b className={a.macdHistogram>=0?"bull":"bear"}>{a.macdHistogram>=0?"BULLISH":"BEARISH"}</b></div>
-            <div className="mt5Metric"><span>ADX (14)</span><b className={a.adx>=20?"bull":"neutral"}>{a.adx ?? "—"} {a.adx>=20?"TREND":"WEAK"}</b></div>
-            <div className="mt5Metric"><span>Stochastic</span><b className="neutral">{a.stoch ?? "—"}</b></div>
-            <div className="mt5Metric"><span>ATR</span><b>{a.atr ?? "—"}</b></div>
-          </section>
-          <section className="mt5Panel mt5ScenarioSummary">
-            <div className="mt5PanelTitle">SCENARIOS</div>
-            <div className="mt5ScenarioCompact">
-              <div className="bullish"><b>↗ BULLISH SCENARIO</b><span>Break above {a.bullTrigger ?? "—"} → retest → continuation toward resistance / next structure.</span></div>
-              <div className="bearish"><b>↘ BEARISH SCENARIO</b><span>Break below {a.bearTrigger ?? "—"} → retest → continuation toward support / next structure.</span></div>
-            </div>
-          </section>
-        </div>
-        <div className="mt5Insight">
-          <b>ⓘ TRADING INSIGHT</b>
-          <p>{a.reason} Current path: {pathMode}. {nextCondition}</p>
-        </div>
+    </nav>
+    <div className="deskMain">
+      <main className="deskChartColumn">
+        <section className="deskChartPanel">
+          <div className="deskChartHeading"><h1>{labelOf(selectedMarket)}</h1><b>{cs.at(-1)?.close??"—"}</b></div>
+          <div className="deskChartArea"><Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`}/>
+          {!cs.length && <div className="deskEmpty">{loadingMarket?"Loading candles…":status||"Waiting for market data…"}</div>}</div>
+        </section>
+        <section className="deskOverview"><h2>TIMEFRAME OVERVIEW</h2><div>{mtf.filter(x=>["15m","1h","4h"].includes(x.label)).map(({label,analysis:z})=><button type="button" key={label} onClick={()=>setTf(label)}><b>{label}</b><span className={z.direction==="UP"?"buy":z.direction==="DOWN"?"sell":"wait"}>{directionLabel(z.direction)}</span></button>)}</div></section>
       </main>
-
-      <aside className="mt5Right">
-        <section className={`mt5Panel mt5HeadingCard ${a.direction==="UP"?"buy":a.direction==="DOWN"?"sell":"wait"}`}>
-          <div className="mt5PanelTitle">MARKET DIRECTION</div>
-          <div className="mt5HeadingWord">{a.direction}</div>
-          <div className="mt5HeadingSub">SHORT-TERM {a.direction} · {pathMode}</div>
-          <div className="mt5HeadingLine"><span>STRATEGY</span><b>{a.strategy || "ADAPTIVE"}</b></div><div className="mt5HeadingLine"><span>TIMEFRAME</span><b>{tf}</b></div>
-          <div className="mt5HeadingLine"><span>HIGHER-TF BIAS</span><b>{htfBias} · {htfAgreement}%</b></div>
-          <div className="mt5HeadingLine"><span>MTF ALIGNMENT</span><b>{mtfSummary}</b></div>
-          <div className="mt5HeadingLine"><span>MARKET STRUCTURE</span><b>{a.structure}</b></div>
-          <div className="mt5HeadingLine"><span>PRESSURE</span><b>{a.pressure || "NEUTRAL"}</b></div>
-          <div className="mt5HeadingLine"><span>ACTIVE PATH</span><b>{a.pathBias || "—"}</b></div>
-          <div className="mt5HeadingLine"><span>BULL TRIGGER</span><b>{a.bullTrigger ?? "—"}</b></div>
-          <div className="mt5HeadingLine"><span>BEAR TRIGGER</span><b>{a.bearTrigger ?? "—"}</b></div>
-          <div className="mt5HeadingLine"><span>NEXT CONDITION</span><b>{nextCondition}</b></div>
-          <p className="mt5HeadingReason">{a.reason}</p>
-        </section>
-
-        <section className="mt5Panel mt5ScoreCard">
-          <div className="mt5PanelTitle">ANALYSIS SCORE</div>
-          <div className="mt5ScoreValue">{a.confidence || 0} <span>/ 100</span></div>
-          <div className="mt5ScoreTrack"><i style={{width:`${a.confidence || 0}%`}}/></div>
-          <small>Confirmation score, not a probability forecast.</small>
-        </section>
-
-        <section className={`mt5Panel mt5TradePlanHero ${cls}`}>
-          <div className="mt5PanelTitle">ACTION MAP · {tf}</div>
-          <div className="mt5ActionRow">
-            <div className="mt5ActionBuy"><span>BUY ABOVE</span><b>{a.bullTrigger??"—"}</b></div>
-            <div className="mt5ActionSell"><span>SELL BELOW</span><b>{a.bearTrigger??"—"}</b></div>
-          </div>
-          <div className="mt5ActionHint">{a.signal==="BUY"?"BUY plan active — entry, SL and TP are calculated. After you enter manually, start the trade monitor.":a.signal==="SELL"?"SELL plan active — entry, SL and TP are calculated. After you enter manually, start the trade monitor.":a.watchSide?`${a.watchSide} ENTRY WATCH — ${a.pullbackState}. Trigger is ready; wait for the push/confirmation.`:"WAIT — no confirmed entry. Watch the pullback/breakout trigger before manual MT5 execution."}</div>
-          <div className={`mt5ActionPlan ${cls}`}>
-            <div><span>ENTRY</span><b>{a.entry??"—"}</b></div>
-            <div className="planStop"><span>STOP LOSS</span><b>{a.stop??"—"}</b></div>
-            <div className="planTp"><span>TP1</span><b>{a.tp1??"—"}</b></div>
-            <div className="planTp"><span>TP2</span><b>{a.tp2??"—"}</b></div>
-            <div className="planTp"><span>TP3</span><b>{a.tp3??"—"}</b></div>
-            <div className="planInvalid"><span>INVALIDATION</span><b>{a.signal==="BUY" ? `Break & close below ${a.bearTrigger??"—"}` : a.signal==="SELL" ? `Break & close above ${a.bullTrigger??"—"}` : "Wait for a confirmed break"}</b></div>
-          </div>
-          {a.signal!=="WAIT" && !activeTrade && (
-            <button type="button" className={`mt5MonitorButton ${cls}`} onClick={startTradeMonitor}>
-              I ENTERED {a.signal} — START EXIT MONITOR
-            </button>
-          )}
-          {activeTrade && (
-            <button type="button" className="mt5MonitorButton stopMonitor" onClick={stopTradeMonitor}>
-              STOP TRADE MONITOR
-            </button>
-          )}
-        </section>
-
-        {tradeMonitor && (
-          <section className={`mt5Panel mt5LiveTradeMonitor ${tradeMonitor.status.includes("EXIT")?"danger":tradeMonitor.status.includes("TP")||tradeMonitor.status==="TAKE PROFIT"?"profit":""}`}>
-            <div className="mt5PanelTitle">LIVE TRADE MONITOR · {activeTrade.side}</div>
-            <div className="mt5MonitorStatus">{tradeMonitor.status}</div>
-            <div className="mt5MonitorGrid">
-              <div><span>ENTRY</span><b>{activeTrade.entry}</b></div>
-              <div><span>LIVE</span><b>{tradeMonitor.livePrice}</b></div>
-              <div><span>SL</span><b>{activeTrade.stop}</b></div>
-              <div><span>TP1</span><b>{activeTrade.tp1}</b></div>
-              <div><span>TP2</span><b>{activeTrade.tp2}</b></div>
-              <div><span>TP3</span><b>{activeTrade.tp3}</b></div>
-            </div>
-            <div className="mt5MonitorProgress"><i style={{width:`${Math.round(tradeMonitor.progress*100)}%`}}/></div>
-            <p>{tradeMonitor.reason}</p>
-          </section>
-        )}
-
-        <section className={`mt5SignalCard ${cls}`}>
-          <div className="mt5SignalTop"><span>DECISION</span><b>ANALYSIS SCORE · {a.confidence?`${a.confidence} / 100`:"—"}</b></div>
-          <div className="mt5SignalWord">{a.signal!=="WAIT"?a.signal:(a.watchSide?`${a.watchSide} WATCH`:"WAIT")}</div>
-          <p>{a.reason}</p>
-          <div className="mt5SignalSetup">
-            <span>SETUP</span>
-            <b>{a.planStatus} · {a.setup}</b>
-          </div>
-          <div className="mt5ScenarioBox">
-            <div><span>ACTIVE PATH</span><b>{pathMode}</b></div>
-            <div><span>CONFIRMATION</span><b>{nextCondition}</b></div>
-          </div>
-          <div className="mt5TradePlanGrid">
-            <div className="entry"><span>{a.planSide==="BUY"?"BUY ENTRY":a.planSide==="SELL"?"SELL ENTRY":"ENTRY"}</span><b>{a.entry??"—"}</b></div>
-            <div className="stop"><span>STOP LOSS</span><b>{a.stop??"—"}</b></div>
-            <div className="tp"><span>TP1</span><b>{a.tp1??"—"}</b></div>
-            <div className="tp"><span>TP2</span><b>{a.tp2??"—"}</b></div>
-            <div className="tp"><span>TP3</span><b>{a.tp3??"—"}</b></div>
-            <div><span>R:R</span><b>{a.rr?"1:"+a.rr:"—"}</b></div>
-          </div>
-          <div className="mt5ConfirmationList">
-            {(a.confirmations||[]).map(x=>
-              <div key={x.name}><i className={x.ok?"on":""}>{x.ok?"✓":"·"}</i><span>{x.name}</span><b>{x.ok?"CONFIRMED":"WAIT"}</b></div>
-            )}
-          </div>
-          <button type="button" className="mt5CopyPlan"
-            onClick={()=>navigator.clipboard?.writeText(`${a.planSide||a.signal} ${labelOf(selectedMarket)} ${tf} Entry ${a.entry} SL ${a.stop} TP1 ${a.tp1} TP2 ${a.tp2} TP3 ${a.tp3}`)}>
-            COPY MT5 TRADE PLAN
-          </button>
-        </section>
-
-        <section className="mt5Panel mt5IndicatorPanel">
-          <div className="mt5PanelTitle">CONFIRMATION ENGINE</div>
-          <div className="mt5LevelRow"><span>RSI 14</span><b>{a.rsi??"—"}</b></div>
-          <div className="mt5LevelRow"><span>MACD</span><b>{a.macdHistogram>=0?"BULLISH":"BEARISH"}</b></div>
-          <div className="mt5LevelRow"><span>ADX</span><b>{a.adx??"—"} {a.adx>=20?"TREND":"WEAK"}</b></div>
-          <div className="mt5LevelRow"><span>STOCH 14</span><b>{a.stoch??"—"}</b></div>
-          <div className="mt5LevelRow"><span>BOLLINGER</span><b>{a.bollinger?`${a.bollinger.lower.toFixed(2)} - ${a.bollinger.upper.toFixed(2)}`:"—"}</b></div>
-          <div className="mt5LevelRow"><span>CANDLE</span><b>{a.pattern||"NONE"}</b></div>
-          <div className="mt5LevelRow"><span>FIB 38.2 / 50 / 61.8</span><b>{a.fib?`${a.fib.level382.toFixed(2)} / ${a.fib.level50.toFixed(2)} / ${a.fib.level618.toFixed(2)}`:"—"}</b></div>
-          <div className="mt5LevelRow"><span>ORDER BLOCK</span><b>{a.orderBlock?`${a.orderBlock.type} · ${a.orderBlock.low.toFixed(2)}-${a.orderBlock.high.toFixed(2)}`:"NONE"}</b></div>
-        </section>
-
-        <section className="mt5Panel">
-          <div className="mt5PanelTitle">KEY LEVELS</div>
-          {["support","resistance","ema20","ema50","ema200","atr"].map(k=>
-            <div className="mt5LevelRow" key={k}>
-              <span>{k==="ema20"?"EMA 20":k==="ema50"?"EMA 50":k.toUpperCase()}</span>
-              <b>{a[k]??"—"}</b>
-            </div>
-          )}
-        </section>
-
-        <section className="mt5Panel mt5TradeMap">
-          <div className="mt5PanelTitle">SETUP MAP</div>
-          <div><span>BREAKOUT</span><b>{a.setup==="BREAKOUT"?"CONFIRMED":"WAIT"}</b></div>
-          <div><span>RETEST</span><b>{a.setup==="RETEST"?"CONFIRMED":"WAIT"}</b></div>
-          <div><span>LIQUIDITY</span><b>{a.liquidity}</b></div>
-          <div><span>REJECTION</span><b>{a.setup==="REJECTION"?"CONFIRMED":"WAIT"}</b></div>
-          <div><span>CONTINUATION</span><b>{a.setup==="CONTINUATION"?"CONFIRMED":"WAIT"}</b></div>
-          <div><span>FAKE / FAILED RETEST</span><b>{a.setup==="FAKE RETEST"?"DETECTED":"CLEAR"}</b></div>
-        </section>
-
-        <section className="mt5Panel mt5Scenarios">
-          <div className="mt5PanelTitle">SCENARIOS</div>
-          <div className="mt5Scenario bullish"><b>↗ BULLISH SCENARIO</b><span>Break above {a.bullTrigger ?? "—"} → retest → continuation toward resistance / next structure.</span></div>
-          <div className="mt5Scenario bearish"><b>↘ BEARISH SCENARIO</b><span>Break below {a.bearTrigger ?? "—"} → retest → continuation toward support / next structure.</span></div>
-        </section>
-
-        <section className="mt5Panel mt5Safety">
-          <div className="mt5PanelTitle">MANUAL EXECUTION</div>
-          <p>This desk does not place trades. Use the analysis plan as a manual reference, then execute yourself in MT5.</p>
-        </section>
+      <aside className="deskSetup">
+        <h2>CURRENT SETUP</h2><div className={`deskSignal ${signalClass}`}>{shownSignal}</div>
+        <p className="deskSubtitle">{directionLabel(a.direction)} · {confirmed?a.setup:"No confirmed entry"}</p>
+        <div className="deskTriggers"><div className="buy"><span>BUY ABOVE</span><b>{a.bullTrigger??"—"}</b></div><div className="sell"><span>SELL BELOW</span><b>{a.bearTrigger??"—"}</b></div></div>
+        {activeTrade && <small>Monitoring your saved {activeTrade.side} entry</small>}
+        <dl className="deskLevels"><div><dt>Entry</dt><dd>{plan?.entry??"—"}</dd></div><div><dt>Stop loss</dt><dd className="sell">{plan?.stop??"—"}</dd></div><div><dt>Take profit 1</dt><dd className="buy">{plan?.tp1??"—"}</dd></div></dl>
+        {tradeMonitor ? <div className="deskMonitor"><b>{connected?tradeMonitor.status:"OFFLINE — monitor paused"}</b><p>{connected?tradeMonitor.reason:"Reconnect to resume live monitoring."}</p><button type="button" onClick={stopTradeMonitor}>Stop monitor</button></div> : <p className="deskHint">{confirmed?"Plan confirmed. Enter manually in MT5.":"Levels appear when a setup is confirmed."}</p>}
+        {confirmed && !activeTrade && <button type="button" onClick={startTradeMonitor}>I entered {a.signal} · Monitor</button>}
+        <button type="button" className="deskAnalysisButton" onClick={()=>analysisDialog.current.showModal()}>View analysis <span>›</span></button>
       </aside>
     </div>
+    <footer className="deskFooter"><span>Manual trading</span><button type="button" onClick={()=>journalDialog.current.showModal()}>Signal journal</button></footer>
+    <dialog ref={analysisDialog} className="deskDialog"><form method="dialog"><h2>Analysis · {tf}</h2><button aria-label="Close analysis">✕</button></form>
+      <p>{a.reason}</p><p>{nextCondition}</p>
+      <dl className="deskLevels">{[["Strategy",a.strategy],["Higher timeframe bias",htfBias],["Structure",a.structure],["TP2",plan?.tp2],["TP3",plan?.tp3],["RSI",a.rsi],["ADX",a.adx]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v??"—"}</dd></div>)}</dl>
+      <h3>Confirmations</h3>{(a.confirmations||[]).map(x=><p key={x.name}>{x.ok?"✓":"○"} {x.name}</p>)}
+      {confirmed && <button type="button" onClick={savePlan}>Save plan to journal</button>}<p role="status">{journalNotice}</p>
+    </dialog>
+    <dialog ref={journalDialog} className="deskDialog deskJournal"><form method="dialog"><h2>Signal journal</h2><button aria-label="Close journal">✕</button></form>
+      <p>Saved on this browser. Results are recorded manually.</p>{confirmed && <button type="button" onClick={savePlan}>Save current plan</button>}<p role="status">{journalNotice}</p>
+      {journal.length?<div className="deskTableWrap"><table><thead><tr>{["Date","Market","TF","Side","Entry","SL","TP1","Result"].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{journal.map(row=><tr key={row.id}><td>{new Date(row.id).toLocaleString()}</td><td>{row.market}</td><td>{row.tf}</td><td>{row.side}</td><td>{row.entry}</td><td>{row.stop}</td><td>{row.tp1}</td><td><select aria-label={`Result for ${row.market}`} value={row.result} onChange={e=>updateResult(row.id,e.target.value)}>{["Open","Win","Loss","Breakeven","Cancelled"].map(x=><option key={x}>{x}</option>)}</select></td></tr>)}</tbody></table></div>:<p>No saved plans yet.</p>}
+    </dialog>
   </div>;
 }
-
