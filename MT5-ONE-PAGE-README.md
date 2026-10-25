@@ -19,3 +19,9 @@ Validation: 12 Node tests pass for both sides, tap/rejection lifecycle, chase pr
 Extract this ZIP. Run Apply-V4.ps1 with -Repo pointing to your existing DerivAI project. It backs up affected files, copies the patch, runs tests and builds. It does not commit or push. Review locally with npm.cmd run dev, then open /mt5.
 
 Manual validation: node --test tests/mt5ViewerState.test.mjs tests/volatilityTapEngine.test.mjs
+
+## V5 chart navigation
+
+Default autoscale fits candles instead of distant trade targets. Fit trade explicitly includes all targets; AUTO returns to candle fitting. Wheel/pinch zooms time; drag the bottom axis to adjust time spacing. Drag the right price axis, use Y+/Y-, or use Shift+wheel / wheel over the price axis for vertical zoom. Drag inside the chart to pan in both dimensions (freezes price autoscale). LIVE returns to the latest candles; RESET restores time and candle autoscale. New signals do not reset manual price zoom. Horizontal zoom has a wider 0.5–100 pixel bar-spacing range.
+
+V5 validation: production build and Chromium checks for price buttons, price-axis wheel, pan/reset, desktop/mobile layout, refresh and journal export. Touch gestures use the chart library's native support; physical touch-device testing was not performed.

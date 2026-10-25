@@ -842,6 +842,7 @@ function defaultVisibleBars(dataCount) {
 
 function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools}) {
   const el=useRef(null);
+  const fitLevelsRef=useRef(false);
   const planRef=useRef(focusedSignal);
   planRef.current=focusedSignal;
   const chartRef=useRef(null);
@@ -881,8 +882,8 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
         timeVisible:true,
         secondsVisible:false,
         barSpacing:8,
-        minBarSpacing:2,
-        maxBarSpacing:28,
+        minBarSpacing:0.5,
+        maxBarSpacing:100,
         rightOffset:8,
         shiftVisibleRangeOnNewBar:true,
         lockVisibleTimeRangeOnResize:true
@@ -926,13 +927,35 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
       lastValueVisible:true,
       priceLineVisible:true,
       borderVisible:false,
-      autoscaleInfoProvider:(base)=>fitPlanRange(base(),planRef.current),
+      autoscaleInfoProvider:(base)=>fitLevelsRef.current?fitPlanRange(base(),planRef.current):base(),
         priceFormat:chartPriceFormat(chartKey, 0)
     });
 
     chartRef.current=chart;
     seriesRef.current=series;
 
+    const host=el.current;
+    // Freeze the current Y range before dragging so native chart panning works
+    // in both dimensions. Axis dragging and pinch remain library-managed.
+    const freezePrice=(event)=>{
+      if(event.button!=null && event.button!==0)return;
+      chart.priceScale('right').setAutoScale(false);
+    };
+    const priceWheel=(event)=>{
+      const bounds=host.getBoundingClientRect();
+      const overPriceAxis=event.clientX-bounds.left>=bounds.width-chart.priceScale('right').width();
+      if(!event.shiftKey && !overPriceAxis)return;
+      event.preventDefault();event.stopImmediatePropagation();
+      const scale=chart.priceScale('right'),range=scale.getVisibleRange();
+      if(!range)return;
+      const anchor=series.coordinateToPrice(event.clientY-bounds.top)??(range.from+range.to)/2;
+      const factor=Math.exp(Math.max(-100,Math.min(100,event.deltaY))*.003);
+      scale.setAutoScale(false);
+      scale.setVisibleRange({from:anchor+(range.from-anchor)*factor,to:anchor+(range.to-anchor)*factor});
+    };
+    host.addEventListener('mousedown',freezePrice,true);
+    host.addEventListener('touchstart',freezePrice,{capture:true,passive:true});
+    host.addEventListener('wheel',priceWheel,{capture:true,passive:false});
     const ro=new ResizeObserver(()=>{
       if(el.current) {
         chart.resize(
@@ -951,6 +974,9 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
 
     return ()=>{
       try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(persistRange); } catch {}
+      host.removeEventListener('mousedown',freezePrice,true);
+      host.removeEventListener('touchstart',freezePrice,true);
+      host.removeEventListener('wheel',priceWheel,true);
       ro.disconnect();
       markerPrimitiveRef.current?.detach?.();
       markerPrimitiveRef.current=null;
@@ -1184,9 +1210,17 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
 
   useEffect(()=>{
     chartRef.current?.priceScale('right').applyOptions({autoScale:true});
-  },[focusedSignal?.id,chartKey]);
+    fitLevelsRef.current=false;
+  },[chartKey]);
 
-  const fitTrade=()=>chartRef.current?.priceScale('right').applyOptions({autoScale:true});
+  const autoPrice=()=>{fitLevelsRef.current=false;chartRef.current?.priceScale('right').setAutoScale(true);};
+  const fitTrade=()=>{fitLevelsRef.current=true;chartRef.current?.priceScale('right').setAutoScale(true);};
+  const zoomPrice=(factor)=>{
+    const scale=chartRef.current?.priceScale('right'),range=scale?.getVisibleRange();
+    if(!range)return;
+    const center=(range.from+range.to)/2,half=(range.to-range.from)*factor/2;
+    scale.setAutoScale(false);scale.setVisibleRange({from:center-half,to:center+half});
+  };
   const zoomBy=(factor)=>{
     const chart=chartRef.current;
     if(!chart) return;
@@ -1212,6 +1246,7 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
     const chart=chartRef.current;
     if(!chart) return;
 
+    autoPrice();
     chart.timeScale().fitContent();
     chart.timeScale().scrollToPosition(8,false);
     requestAnimationFrame(()=>saveChartRange(chartKeyRef.current, chart.timeScale().getVisibleLogicalRange(), candles.length));
@@ -1228,12 +1263,15 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
     <div className="mt5ChartToolbar">
       <div className="mt5ChartToolsLeft">
         <span>CHART</span>
-        <b>Price action</b>
+        <b title="Wheel: time zoom · Shift+wheel or wheel on price scale: price zoom · Drag chart: pan · Drag either axis: scale">Drag / zoom</b>
       </div>
       <div className="mt5ChartToolsRight">
         <button type="button" onClick={fitTrade} disabled={!focusedSignal} title="Fit Entry, SL and all targets">Fit trade</button>
         <button type="button" onClick={()=>zoomBy(0.78)} title="Zoom in">+</button>
         <button type="button" onClick={()=>zoomBy(1.28)} title="Zoom out">−</button>
+        <button type="button" onClick={()=>zoomPrice(0.78)} title="Zoom price in" aria-label="Zoom price in">Y+</button>
+        <button type="button" onClick={()=>zoomPrice(1.28)} title="Zoom price out" aria-label="Zoom price out">Y−</button>
+        <button type="button" onClick={autoPrice} title="Fit candles only; release manual price zoom">AUTO</button>
         <button type="button" onClick={goRealtime}>LIVE</button>
         <button type="button" onClick={resetZoom}>RESET</button>
       </div>
