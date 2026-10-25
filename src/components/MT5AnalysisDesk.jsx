@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
-import { readStored, writeStored, freshTick, captureSignal, advanceSignals, fitPlanRange, SIGNAL_KEY } from "../utils/mt5ViewerState";
+import { readStored, writeStored, freshTick, advanceSignals, fitPlanRange, SIGNAL_KEY } from "../utils/mt5ViewerState";
+import { TAP_VERSION, trendOf, tapCandidate, addTap, stepTap, tapStats, localModel } from "../utils/volatilityTapEngine";
 import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
 const TF = {
@@ -1105,8 +1106,9 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
       ["Support",analysis.support,"#27b9e7",1],
       ["Resistance",analysis.resistance,"#f3b756",1],
       ...(tools.scenarios?[["BUY trigger",analysis.bullTrigger,"#18d6a1",1],["SELL trigger",analysis.bearTrigger,"#ff6685",1]]:[]),
+      ...(plan?.engine===TAP_VERSION && !plan.entered?[["Tap zone low",plan.zoneLow,"#c398ff",1],["Tap zone high",plan.zoneHigh,"#c398ff",1]]:[]),
       ...(plan?[
-        [`${plan.side} entry`,plan.entry,plan.side==='BUY'?"#18d6a1":"#ff6685",2],
+        [`${plan.side} ${plan.engine===TAP_VERSION&&!plan.entered?'planned entry':'entry'}`,plan.entry,plan.side==='BUY'?"#18d6a1":"#ff6685",2],
         ["SL",plan.stop,"#ff6685",2],
         ["TP1",plan.tp1,"#18d6a1",1],
         ["TP2",plan.tp2,"#18d6a1",1],
@@ -1129,7 +1131,7 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
     const chartPad=Math.max(analysis?.atr*3 || 0, Math.abs(visibleHigh-visibleLow)*0.08, Math.abs(lastPrice||0)*0.002);
 
     for(const [title,price,color,width] of levels){
-      const tradeLevel=title.endsWith(' entry') || ['SL','TP1','TP2','TP3'].includes(title);
+      const tradeLevel=title.startsWith('Tap zone') || title.endsWith(' entry') || ['SL','TP1','TP2','TP3'].includes(title);
       if(price==null || !Number.isFinite(price)) continue;
       if(!tradeLevel && (!levelCompatible(price) || price < visibleLow-chartPad || price > visibleHigh+chartPad)) continue;
       if(tools.scenarios && ((title==='Support' && price===analysis.bearTrigger) || (title==='Resistance' && price===analysis.bullTrigger))) continue;
@@ -1167,7 +1169,13 @@ function Chart({candles,analysis,chartKey,signalHistory=[],focusedSignal,tools})
       }
     }
     const times=new Set(data.map(c=>c.time));
-    const entryMarkers=signalHistory.filter(row=>times.has(row.time)).map(row=>({time:row.time,position:row.side==='BUY'?'belowBar':'aboveBar',color:row.side==='BUY'?'#18d6a1':'#ff6685',shape:row.side==='BUY'?'arrowUp':'arrowDown',text:`${row.side} · ${row.entry}`}));
+    const entryMarkers=signalHistory.flatMap(row=>{
+      const time=row.confirmationTime || row.time;
+      const label=row.engine===TAP_VERSION?(row.entered?`${row.side} · ${row.status}`:`${row.side} ZONE · ${row.status}`):`${row.side} · legacy`;
+      const markers=times.has(time)?[{time,position:row.side==='BUY'?'belowBar':'aboveBar',color:row.side==='BUY'?'#18d6a1':'#ff6685',shape:row.side==='BUY'?'arrowUp':'arrowDown',text:label}]:[];
+      if(row.closedAt){const endTime=Math.floor(row.closedAt/TF_SECONDS_FOR_PATH(data))*TF_SECONDS_FOR_PATH(data);if(times.has(endTime))markers.push({time:endTime,position:'aboveBar',color:row.resultR>0?'#18d6a1':'#ff6685',shape:'circle',text:row.resultR>0?'TP2 · +2R':'SL · -1R'});}
+      return markers;
+    });
     const structure=tools.structure?structureEvents(data).slice(-4):[];
     const markers=[...structure,...entryMarkers].sort((a,b)=>a.time-b.time);
     if(markerPrimitiveRef.current) markerPrimitiveRef.current.setMarkers(markers);
@@ -1304,7 +1312,7 @@ export default function MT5AnalysisDesk(){
   const [clock,setClock]=useState(Date.now());
   useEffect(()=>{const timer=setInterval(()=>setClock(Date.now()),1000);return ()=>clearInterval(timer);},[]);
   useEffect(()=>{if(selected) writeStored('derivai:mt5:prefs:v2',{market:selected,tf});},[selected,tf]);
-  const [signals,setSignals]=useState(()=>{const rows=readStored(SIGNAL_KEY,[]);return Array.isArray(rows)?rows.filter(r=>r && r.id && r.market && TF[r.tf] && ['BUY','SELL'].includes(r.side) && [r.entry,r.stop,r.tp1,r.tp2,r.tp3,r.time,r.detectedAt,r.lastEpoch].every(Number.isFinite)).slice(0,120):[];});
+  const [signals,setSignals]=useState(()=>{const rows=readStored(SIGNAL_KEY,[]);return Array.isArray(rows)?rows.filter(r=>r && r.id && r.market && TF[r.tf] && ['BUY','SELL'].includes(r.side) && [r.entry,r.stop,r.tp1,r.tp2,r.tp3,r.time,r.detectedAt,r.lastEpoch].every(Number.isFinite)).slice(0,500):[];});
   const [signalWarning,setSignalWarning]=useState('');
   const signalsRef=useRef(signals);
   signalsRef.current=signals;
@@ -1382,39 +1390,38 @@ export default function MT5AnalysisDesk(){
   const cs=candlesByTf[tf]||[];
   const latestTick=tickRows.at(-1);
   const isLive=freshTick(connected,latestTick,clock);
-  const closedAnalysis=useMemo(()=>analyze(cs.slice(0,-1),selectedKey,labelOf(selectedMarket)),[cs,selectedKey,selectedMarket]);
-  const detector=useRef(readStored('derivai:mt5:detector:v2',{}));
+  const higherLabel={'1m':'5m','2m':'10m','3m':'15m','5m':'15m','10m':'30m','15m':'1h','30m':'2h','1h':'4h','2h':'8h','4h':'24h','8h':'24h','24h':'24h'}[tf];
+  const cutoff=cs.at(-1)?.time || 0;
+  const higherClosed=(candlesByTf[higherLabel]||[]).filter(c=>c.time+TF[higherLabel]<=cutoff);
+  const higherTrend=higherLabel===tf?'UNKNOWN':trendOf(higherClosed);
+  const detector=useRef({});
   useEffect(()=>{
-    if(!isLive || cs.length<36) return;
-    const key=`${selectedKey}:${tf}`;
-    const closedTime=cs.at(-2).time;
-    if(closedTime!==Math.floor(Number(latestTick?.epoch)/TF[tf])*TF[tf]-TF[tf]) return;
-    // Revisit once per closed candle; never generate signals from cached history.
-    if(detector.current[key]?.time===closedTime) return;
-    const signature=['BUY','SELL'].includes(closedAnalysis.signal)?`${closedAnalysis.signal}:${closedAnalysis.setup}`:'WAIT';
-    const previous=detector.current[key];
-    detector.current[key]={time:closedTime,signature};
-    writeStored('derivai:mt5:detector:v2',detector.current);
-    if(signature==='WAIT' || previous?.signature===signature) return;
-    const now=Date.now();
+    if(!isLive || cs.length<61 || higherTrend==='UNKNOWN') return;
+    const key=`${selectedKey}:${tf}`,closedTime=cs.at(-2).time;
+    if(closedTime!==Math.floor(Number(latestTick?.epoch)/TF[tf])*TF[tf]-TF[tf] || detector.current[key]===closedTime)return;
+    detector.current[key]=closedTime;
+    const candidate=tapCandidate(cs.slice(0,-1),{market:selectedKey,tf,seconds:TF[tf],higherTrend});
+    if(candidate)setSignals(rows=>{const next=addTap(rows,candidate);writeStored(SIGNAL_KEY,next);return next;});
+  },[isLive,cs,selectedKey,tf,higherTrend,latestTick]);
+  useEffect(()=>{
+    if(!latestTick || !isLive)return;
     setSignals(rows=>{
-      const next=captureSignal(rows,closedAnalysis,{market:selectedKey,tf,time:closedTime,now});
-      writeStored(SIGNAL_KEY,next);
+      const legacy=advanceSignals(rows.filter(r=>r.engine!==TAP_VERSION),selectedKey,latestTick,true);
+      const next=rows.map(r=>r.engine===TAP_VERSION?(r.market===selectedKey?stepTap(r,latestTick,(candlesByTf[r.tf]||[]).at(-2)):r):legacy.find(x=>x.id===r.id)||r);
+      const transition=next.some((r,i)=>r.status!==rows[i]?.status);
+      if(transition||Date.now()-signalPersistRef.current>5000){writeStored(SIGNAL_KEY,next);signalPersistRef.current=Date.now();}
       return next;
     });
-    setFocusId('');
-  },[isLive,cs,closedAnalysis,selectedKey,tf]);
-  useEffect(()=>{
-    if(!latestTick || !isLive) return;
-    setSignals(rows=>{
-      const next=advanceSignals(rows,selectedKey,latestTick,true);
-      const transition=next.some((r,i)=>r.status!==rows[i]?.status || r.entered!==rows[i]?.entered);
-      if(transition || Date.now()-signalPersistRef.current>5000){writeStored(SIGNAL_KEY,next);signalPersistRef.current=Date.now();}
-      return next;
-    });
-  },[latestTick,isLive,selectedKey]);
+  },[latestTick,isLive,selectedKey,candlesByTf]);
   const marketSignals=useMemo(()=>signals.filter(r=>r.market===selectedKey && r.tf===tf),[signals,selectedKey,tf]);
   const focusedSignal=marketSignals.find(r=>r.id===focusId)||marketSignals[0]||null;
+  const researchStats=useMemo(()=>tapStats(marketSignals),[marketSignals]);
+  const modelInput=JSON.stringify({rows:marketSignals.filter(r=>Number.isFinite(r.resultR)),features:focusedSignal?.features});
+  const model=useMemo(()=>{const data=JSON.parse(modelInput);return localModel(data.rows,data.features);},[modelInput]);
+  const exportSignals=()=>{
+    const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),policy:'Prospective quote simulation; fixed TP2 2R or SL -1R; costs excluded',signals},null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='DerivAI-setup-history.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
   useEffect(()=>{
     if(isLive || !selectedKey) return;
     let busy=false;
@@ -1489,7 +1496,7 @@ export default function MT5AnalysisDesk(){
   },[activeTrade,livePrice,a]);
 
   const startTradeMonitor=()=>{
-    if(!isLive || !focusedSignal) return;
+    if(!isLive || !focusedSignal || (focusedSignal.engine===TAP_VERSION && !focusedSignal.entered)) return;
     setActiveTrade({...focusedSignal,market:selectedKey,tf,startedAt:Date.now()});
   };
 
@@ -1526,7 +1533,7 @@ export default function MT5AnalysisDesk(){
           : `Wait for a clean break of ${a.bullTrigger} or ${a.bearTrigger}.`;
 
   const plan=activeTrade || focusedSignal;
-  const shownSignal=plan?.side || 'WAIT';
+  const shownSignal=plan?(plan.engine===TAP_VERSION && !plan.entered?`${plan.side} WATCH`:plan.side):'WAIT';
   const signalClass=plan?.side?.toLowerCase() || 'wait';
   const trackedStatus=activeTrade?(isLive?tradeMonitor?.status:'Monitor paused'):plan?(plan.status==='Watching entry'?'Awaiting entry':plan.status):'No saved setup';
   const directionLabel=(value)=>value==="UP"?"Bullish":value==="DOWN"?"Bearish":value==="BUILDING"?"Loading":"Range";
@@ -1548,7 +1555,7 @@ export default function MT5AnalysisDesk(){
     <div className="deskMain">
       <main className="deskChartColumn">
         <section className="deskChartPanel">
-          <div className="deskChartHeading"><h1>{labelOf(selectedMarket)}</h1><b>{cs.at(-1)?.close??"—"}</b></div>
+          <div className="deskChartHeading"><h1>{labelOf(selectedMarket)}</h1><b>{cs.at(-1)?.close==null?"—":Number(cs.at(-1).close.toFixed(5))}</b></div>
           <div className="deskToolRow">{[['ema','EMA 20/50'],['scenarios','BUY / SELL paths'],['structure','Structure']].map(([key,label])=><button type="button" key={key} aria-pressed={tools[key]} onClick={()=>setTools(value=>({...value,[key]:!value[key]}))}>{label}</button>)}<span>Dashed paths = conditional scenarios</span></div>
           <div className="deskChartArea"><Chart candles={cs} analysis={a} chartKey={`${selectedKey}:${tf}`} tools={tools} signalHistory={marketSignals} focusedSignal={activeTrade || focusedSignal}/>
           {!cs.length && <div className="deskEmpty">{loadingMarket?"Loading candles…":status||"Waiting for market data…"}</div>}</div>
@@ -1560,19 +1567,24 @@ export default function MT5AnalysisDesk(){
         <div className="deskTrackedHeading"><div className={`deskSignal ${signalClass}`}>{shownSignal}</div><span className="deskStatusBadge">{trackedStatus}</span></div>
         <div className="deskBias"><b className={a.direction==='UP'?'buy':a.direction==='DOWN'?'sell':'wait'}>{a.direction==='UP'?'↑':a.direction==='DOWN'?'↓':'↔'} {directionLabel(a.direction)} bias</b><span>{a.pathBias || 'Waiting for data'}</span></div>
         <div className="deskPlanBox">
-          <dl className="deskLevels">{[['Entry','entry',''],['Stop loss','stop','sell'],['Take profit 1','tp1','buy'],['Take profit 2','tp2','buy'],['Take profit 3','tp3','buy']].map(([label,key,color])=><div key={key}><dt>{label}</dt><dd className={color}>{plan?.[key]??'—'}</dd></div>)}</dl>
-          <small>{plan?`Saved ${new Date(plan.detectedAt || plan.startedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} · Fixed levels`:'Confirmed setups appear automatically'}{plan?.gapUnverified?' · Gap unverified':''}</small>
+          <dl className="deskLevels">{[['Entry','entry',''],['Stop loss','stop','sell'],['Take profit 1','tp1','buy'],['Take profit 2','tp2','buy'],['Take profit 3','tp3','buy']].map(([label,key,color])=><div key={key}><dt>{label}</dt><dd className={color}>{plan?.[key]==null?'—':Number(plan[key].toFixed(5))}</dd></div>)}</dl>
+          <small>{plan?`Saved ${new Date(plan.detectedAt || plan.startedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} · ${plan.engine===TAP_VERSION&&!plan.entered?'Proposed levels':'Fixed levels'}`:'Confirmed setups appear automatically'}{plan?.gapUnverified?' · Gap unverified':''}</small>
         </div>
         {marketSignals.length>1 && !activeTrade && <select className="deskSavedSelect" aria-label="Chart signal" value={focusedSignal.id} onChange={e=>setFocusId(e.target.value)}>{marketSignals.map(r=><option key={r.id} value={r.id}>{r.side} · {new Date(r.detectedAt).toLocaleTimeString()} · {r.status}</option>)}</select>}
-        <div className="deskScanner"><b><i className={isLive?'online':''}/> SCANNER</b><span>{isLive?'Searching for next setup':'Paused · awaiting live ticks'}<small>{isLive?'Updates automatically':'Saved levels remain visible'}</small></span></div>
+        <div className="deskScanner"><b><i className={isLive?'online':''}/> SCANNER</b><span>{isLive?'Searching for next setup':'Paused · awaiting live ticks'}<small>{isLive?`Local ML: ${model.state==='Collecting data'?`${model.samples}/60 outcomes`:model.state}`:'Saved levels remain visible'}</small></span></div>
         <section className="deskOtherScenarios"><h2>OTHER SCENARIOS</h2><div><span className="buy">BUY above</span><b>{a.bullTrigger??'—'}</b></div><div><span className="sell">SELL below</span><b>{a.bearTrigger??'—'}</b></div></section>
-        <div className="deskSetupActions"><button type="button" onClick={()=>analysisDialog.current.showModal()}>View analysis</button>{activeTrade?<button type="button" onClick={stopTradeMonitor}>Stop monitor</button>:<button type="button" className={signalClass} disabled={!isLive || !plan || ['SL touched','TP3 touched','Expired'].includes(plan.status)} title="Start monitoring only after entering manually in MT5" onClick={startTradeMonitor}>I entered {plan?.side || 'a trade'}</button>}</div>
+        <div className="deskSetupActions"><button type="button" onClick={()=>analysisDialog.current.showModal()}>View analysis</button>{activeTrade?<button type="button" onClick={stopTradeMonitor}>Stop monitor</button>:<button type="button" className={signalClass} disabled={!isLive || !plan || ['SL touched','TP2 touched','TP3 touched','Expired','Invalidated'].includes(plan.status) || (plan.engine===TAP_VERSION && !plan.entered)} title="Start monitoring only after entering manually in MT5" onClick={startTradeMonitor}>I entered {plan?.side || 'a trade'}</button>}</div>
 
       </aside>
     </div>
     <footer className="deskFooter"><span>{cacheWarning || signalWarning || (isLive?`Last tick ${new Date(latestTick.epoch*1000).toLocaleTimeString()} · Auto-scanning` : "Saved chart · awaiting fresh ticks")}</span><button type="button" onClick={()=>journalDialog.current.showModal()}>Signal journal</button></footer>
     <dialog ref={analysisDialog} className="deskDialog"><form method="dialog"><h2>Analysis · {tf}</h2><button aria-label="Close analysis">✕</button></form>
       {tradeMonitor && <div className="deskMonitor"><b>{isLive?tradeMonitor.status:'Monitor paused'}</b><p>{isLive?tradeMonitor.reason:'Waiting for fresh ticks.'}</p></div>}
+      <h3>Volatility tap engine · rules + local ML</h3>
+      <p>Selected market/timeframe only. Higher timeframe: {higherLabel} · {higherTrend}. New zones require trend alignment, an ATR-scaled retest or pullback, a live tap, then closed-candle rejection. No confirmation after a large move away from the rejection close.</p>
+      <p>{plan?.engine===TAP_VERSION?`${plan.setup}: tap zone ${plan.zoneLow.toFixed(2)}–${plan.zoneHigh.toFixed(2)}. ${plan.entered?'Confirmed at an observed live quote.':'Watch only; proposed entry is not confirmed.'}`:'Older signals use the previous engine and are excluded from tap statistics.'}</p>
+      <p>Local ML: {model.state} · {model.samples} eligible outcomes for this market/timeframe. {model.estimate!=null?`Experimental 2R-before-SL estimate: ${(model.estimate*100).toFixed(0)}%. Not calibrated or guaranteed.`:''}</p>
+      {model.test && <p>Chronological holdout: {model.test} samples. Brier {model.brier.toFixed(3)} vs baseline {model.baseline.toFixed(3)} (lower is better). Train {model.train}; overlapping outcomes removed.</p>}
       <p>{a.reason}</p><p>{nextCondition}</p>
       <dl className="deskLevels">{[["Strategy",a.strategy],["Higher timeframe bias",htfBias],["Structure",a.structure],["TP2",plan?.tp2],["TP3",plan?.tp3],["RSI",a.rsi],["ADX",a.adx]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v??"—"}</dd></div>)}</dl>
       <h3>Confirmations</h3>{(a.confirmations||[]).map(x=><p key={x.name}>{x.ok?"✓":"○"} {x.name}</p>)}
@@ -1580,7 +1592,7 @@ export default function MT5AnalysisDesk(){
     </dialog>
     <dialog ref={journalDialog} className="deskDialog deskJournal"><form method="dialog"><h2>Signal journal</h2><button aria-label="Close journal">✕</button></form>
       <p>Saved on this browser. Level touches describe observed quotes, not executed trades. Offline gaps cannot be verified.</p>
-      <h3>Automatic signals</h3>{signals.length?<div className="deskTableWrap"><table><thead><tr>{['Market','TF','Side','Entry','SL','TP1','Status'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{signals.map(r=><tr key={r.id}><td>{r.market}</td><td>{r.tf}</td><td>{r.side}</td><td>{r.entry}</td><td>{r.stop}</td><td>{r.tp1}</td><td>{r.status}{r.gapUnverified?' · Gap unverified':''}</td></tr>)}</tbody></table></div>:<p>Waiting for the first confirmed signal.</p>}<h3>Manual journal</h3>{focusedSignal && <button type="button" onClick={savePlan}>Save current plan</button>}<p role="status">{journalNotice}</p>
+      <h3>Tap performance · {labelOf(selectedMarket)} · {tf}</h3><p>{researchStats.total} zones · {researchStats.confirmed} confirmed · {researchStats.resolved} eligible closed · {researchStats.wins} TP2 / {researchStats.losses} SL · {researchStats.gaps} gap-flagged. Win rate: {researchStats.winRate==null?'—':`${(researchStats.winRate*100).toFixed(1)}%`}. Mean R: {researchStats.expectancy==null?'—':researchStats.expectancy.toFixed(2)}.</p><p>Quote simulation, not account profit. Fixed exit policy: TP2 +2R or SL -1R. Spread/slippage excluded; offline-gap results and legacy signals excluded. Small samples do not establish an edge.</p><button type="button" onClick={exportSignals}>Export full history (JSON)</button><h3>Automatic signals</h3>{signals.length?<div className="deskTableWrap"><table><thead><tr>{['Market','TF','Side','Entry','SL','TP1','Status'].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{signals.map(r=><tr key={r.id}><td>{r.market}</td><td>{r.tf}</td><td>{r.side}</td><td>{r.entry}</td><td>{r.stop}</td><td>{r.tp1}</td><td><details><summary>{r.status}{r.gapUnverified?' · Gap unverified':''}</summary>{(r.events||[]).map((event,i)=><p key={i}>{new Date(event.epoch*1000).toLocaleString()} · {event.type} · {event.price}</p>)}<p>{r.engine || 'Legacy'} · MFE {r.maxFavorableR?.toFixed(2)??'—'}R · MAE {r.maxAdverseR?.toFixed(2)??'—'}R</p></details></td></tr>)}</tbody></table></div>:<p>Waiting for the first confirmed signal.</p>}<h3>Manual journal</h3>{focusedSignal && <button type="button" onClick={savePlan}>Save current plan</button>}<p role="status">{journalNotice}</p>
       {journal.length?<div className="deskTableWrap"><table><thead><tr>{["Date","Market","TF","Side","Entry","SL","TP1","Result"].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{journal.map(row=><tr key={row.id}><td>{new Date(row.id).toLocaleString()}</td><td>{row.market}</td><td>{row.tf}</td><td>{row.side}</td><td>{row.entry}</td><td>{row.stop}</td><td>{row.tp1}</td><td><select aria-label={`Result for ${row.market}`} value={row.result} onChange={e=>updateResult(row.id,e.target.value)}>{["Open","Win","Loss","Breakeven","Cancelled"].map(x=><option key={x}>{x}</option>)}</select></td></tr>)}</tbody></table></div>:<p>No saved plans yet.</p>}
     </dialog>
   </div>;
