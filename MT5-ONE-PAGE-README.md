@@ -25,3 +25,15 @@ Manual validation: node --test tests/mt5ViewerState.test.mjs tests/volatilityTap
 Default autoscale fits candles instead of distant trade targets. Fit trade explicitly includes all targets; AUTO returns to candle fitting. Wheel/pinch zooms time; drag the bottom axis to adjust time spacing. Drag the right price axis, use Y+/Y-, or use Shift+wheel / wheel over the price axis for vertical zoom. Drag inside the chart to pan in both dimensions (freezes price autoscale). LIVE returns to the latest candles; RESET restores time and candle autoscale. New signals do not reset manual price zoom. Horizontal zoom has a wider 0.5–100 pixel bar-spacing range.
 
 V5 validation: production build and Chromium checks for price buttons, price-axis wheel, pan/reset, desktop/mobile layout, refresh and journal export. Touch gestures use the chart library's native support; physical touch-device testing was not performed.
+
+## V6 experimental sharp filter (supersedes earlier entry/stop behavior)
+
+New zones carry policy sharp-v6. Confirmation requires the observed quote within 0.15 ATR of the completed rejection close. Confirmed stop is beyond BOTH the rejection wick and zone edge by 0.15 ATR. A distance below 0.35 ATR or above 1.25 ATR invalidates the candidate rather than moving the stop inside the structure. These are research defaults, not optimized or proven profitable thresholds. They can reject more trades and do not guarantee small monetary losses. The feed does not provide broker spread, minimum stop distance or fill/slippage; check those separately.
+
+Entry and targets remain hidden while waiting for confirmation. Original plannedEntry/plannedStop are retained on confirmation, and transition events now snapshot entry/stop/targets. No confirmed levels are recalculated. A preconfirmation data gap invalidates the new-policy zone. Existing setups keep their original prices and appear as ARCHIVED; old-policy outcomes are excluded from sharp statistics and ML. No previous history is erased.
+
+The selected setup is pinned per market/timeframe and retained across refresh. A new record does not replace the selection automatically. Choose a newer setup explicitly in the selector. Dynamic BUY/SELL trigger lines, scenario paths and the second trigger panel have been removed. Manual monitoring reports observed fixed-level touches, not HOLD/EXIT commands, and does not know a user's actual MT5 fill.
+
+Validation: 15 Node tests pass, including both-side rejection stops, wide-stop rejection, original-plan audit snapshots, immutable confirmed prices and preconfirmation gap rejection. Build passes. Chromium checks cover zoom, layout, JSON export, hidden preconfirmation levels, pinned selection after a newer record and reload, and explicit selection retention. No broker/live strategy profitability validation.
+
+Install using Apply-V6.ps1 -Repo <existing project path>. Backup is automatic; commit/push are separate. Demo research only until execution assumptions and out-of-sample performance are established.
