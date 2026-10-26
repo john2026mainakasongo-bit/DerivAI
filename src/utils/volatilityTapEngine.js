@@ -34,9 +34,9 @@ export function tapCandidate(cs,{market,tf,seconds,higherTrend='UNKNOWN',now=Dat
 const terminal=r=>['SL touched','TP2 touched','Invalidated','Expired'].includes(r.status);
 export function addTap(rows,candidate){
  if(!candidate||rows.some(r=>r.id===candidate.id))return rows;
- if(rows.some(r=>r.engine===TAP_VERSION && r.market===candidate.market && r.tf===candidate.tf && !terminal(r)))return rows;
- if(rows.some(r=>r.engine===TAP_VERSION&&r.market===candidate.market&&r.tf===candidate.tf&&candidate.detectedAt-r.detectedAt<candidate.seconds*6000))return rows;
- return [candidate,...rows].slice(0,500);
+ if(rows.some(r=>r.engine===TAP_VERSION && r.policy===SHARP_POLICY && r.market===candidate.market && r.tf===candidate.tf && !terminal(r)))return rows;
+ if(rows.some(r=>r.engine===TAP_VERSION&&r.policy===SHARP_POLICY&&r.market===candidate.market&&r.tf===candidate.tf&&candidate.detectedAt-r.detectedAt<candidate.seconds*6000))return rows;
+ return [candidate,...rows];
 }
 export function stepTap(row,tick,closed){
  if(terminal(row)||tick.epoch<=row.lastEpoch||!Number.isFinite(tick.quote))return row;

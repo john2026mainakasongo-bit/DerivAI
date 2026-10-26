@@ -37,3 +37,13 @@ The selected setup is pinned per market/timeframe and retained across refresh. A
 Validation: 15 Node tests pass, including both-side rejection stops, wide-stop rejection, original-plan audit snapshots, immutable confirmed prices and preconfirmation gap rejection. Build passes. Chromium checks cover zoom, layout, JSON export, hidden preconfirmation levels, pinned selection after a newer record and reload, and explicit selection retention. No broker/live strategy profitability validation.
 
 Install using Apply-V6.ps1 -Repo <existing project path>. Backup is automatic; commit/push are separate. Demo research only until execution assumptions and out-of-sample performance are established.
+
+## V7 — Current setup and persistent event history
+- Current view ignores legacy policy records. Displays WAIT / WAIT ENTRY / BUY CONFIRMED / SELL CONFIRMED / FAILED / TARGET HIT / CANCELLED / EXPIRED. Never manufactures an entry to fill the panel.
+- Historical selection is explicit, dated and labelled HISTORY. Returning/reloading opens current view. Fixed levels and original event records are preserved.
+- Event markers use observed event epochs, aligned to their candles: zone, tap, confirmation, TP1, SL, target, cancellation, expiry. Historical level segments end at their last observed time. SL failure displays a red notice; this is a quote observation, not an MT5 execution or a predictive exit.
+- TP2 is the simulated terminal target. Price movement after terminal TP2 does not retroactively turn a win into a loss. Gap-flagged outcomes cannot establish the actual first crossing.
+- V7 saves setup candles from creation onward for history review. Older records have no original candle snapshot; the UI identifies that limitation. No invented backfill.
+- Removed automatic 500-record pruning. Browser storage remains finite: failures show a warning. Same-browser backup copy plus full JSON export/restore; imports merge by ID and preserve existing records. Export regularly. Clearing site data removes local history and backup; another device requires JSON restore. No server storage, broker link or always-on monitoring.
+- Monitoring covers the selected market while fresh data arrives. Switching markets, closing browser or losing connection can create gaps. Confirmed SL/entry/targets never move.
+- Install using Apply-V7.ps1. It backs up files before applying, then runs 19 tests and build. No automatic Git push.
