@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickSeries, LineSeries, createChart, createSeriesMarkers } from "lightweight-charts";
 import { readStored, writeStored, freshTick, advanceSignals, fitPlanRange, SIGNAL_KEY } from "../utils/mt5ViewerState";
 import { TAP_VERSION, SHARP_POLICY, trendOf, tapCandidate, addTap, stepTap, tapStats, localModel } from "../utils/volatilityTapEngine";
 import usePublicDerivTicks from "../hooks/usePublicDerivTicks";
 
 import { finished, currentSetup, setupLabel, historyMarkers, mergeHistory } from "../utils/setupHistory";
+
+import useServerScanner from "../hooks/useServerScanner";
 
 const TF = {
   "1m": 60, "2m": 120, "3m": 180, "5m": 300, "10m": 600,
@@ -1346,6 +1348,14 @@ export default function MT5AnalysisDesk(){
   useEffect(()=>{const timer=setInterval(()=>setClock(Date.now()),1000);return ()=>clearInterval(timer);},[]);
   useEffect(()=>{if(selected) writeStored('derivai:mt5:prefs:v2',{market:selected,tf});},[selected,tf]);
   const [signals,setSignals]=useState(()=>{const rows=readStored(SIGNAL_KEY,readStored(SIGNAL_KEY+':backup',[]));return Array.isArray(rows)?rows.filter(r=>r && r.id && r.market && TF[r.tf] && ['BUY','SELL'].includes(r.side) && [r.entry,r.stop,r.tp1,r.tp2,r.tp3,r.time,r.detectedAt,r.lastEpoch].every(Number.isFinite)):[];});
+  const acceptServerSignals=useCallback((remote)=>{
+    setSignals(previous=>{
+      const map=new Map(previous.map(r=>[r.id,r]));
+      for(const row of remote)map.set(row.id,row);
+      return [...map.values()].sort((a,b)=>b.detectedAt-a.detectedAt);
+    });
+  },[]);
+  const background=useServerScanner(acceptServerSignals);
   const [signalWarning,setSignalWarning]=useState('');
   const signalsRef=useRef(signals);
   signalsRef.current=signals;
@@ -1430,31 +1440,33 @@ export default function MT5AnalysisDesk(){
   const higherTrend=higherLabel===tf?'UNKNOWN':trendOf(higherClosed);
   const detector=useRef({});
   useEffect(()=>{
-    if(!isLive || cs.length<61 || higherTrend==='UNKNOWN') return;
+    if(background.mode!=='local' || !isLive || cs.length<61 || higherTrend==='UNKNOWN') return;
     const key=`${selectedKey}:${tf}`,closedTime=cs.at(-2).time;
     if(closedTime!==Math.floor(Number(latestTick?.epoch)/TF[tf])*TF[tf]-TF[tf] || detector.current[key]===closedTime)return;
     detector.current[key]=closedTime;
     const candidate=tapCandidate(cs.slice(0,-1),{market:selectedKey,tf,seconds:TF[tf],higherTrend});
     if(candidate)candidate.candles=cs.slice(-120);
     if(candidate)setSignals(rows=>{const next=addTap(rows,candidate);writeStored(SIGNAL_KEY,next);return next;});
-  },[isLive,cs,selectedKey,tf,higherTrend,latestTick]);
+  },[isLive,cs,selectedKey,tf,higherTrend,latestTick,background.mode]);
   useEffect(()=>{
-    if(!latestTick || !isLive)return;
+    if(background.mode==='checking')return;
     setSignals(rows=>{
-      const legacy=advanceSignals(rows.filter(r=>r.engine!==TAP_VERSION),selectedKey,latestTick,true);
-      let next=rows.map(r=>r.engine===TAP_VERSION?(r.market===selectedKey?stepTap(r,latestTick,(candlesByTf[r.tf]||[]).at(-2)):r):legacy.find(x=>x.id===r.id)||r);
-      next=next.map((r,i)=>{
-        if(r.market!==selectedKey || finished(rows[i]))return r;
-        const candles=candlesByTf[r.tf]||[];
-        const saved=new Map((r.candles||[]).map(c=>[c.time,c]));
-        for(const c of candles)if(c.time>=(r.time-60*TF[r.tf]))saved.set(c.time,c);
-        return {...r,candles:[...saved.values()].sort((a,b)=>a.time-b.time)};
+      // Existing browser records continue on every subscribed market, irrespective of the selected chart.
+      const next=rows.map(row=>{
+        if(row.source==='server' || finished(row))return row;
+        const ticks=marketTicks[row.market]||[],tick=ticks.at(-1);
+        if(!freshTick(connected,tick,clock)||tick.epoch<=row.lastEpoch)return row;
+        const candles=mergeLiveCandles(normalizeCandles(marketCandleHistory?.[row.market]?.[TF[row.tf]]||[]),ticks,TF[row.tf]);
+        const updated=row.engine===TAP_VERSION?stepTap(row,tick,candles.at(-2)):advanceSignals([row],row.market,tick,true)[0];
+        const saved=new Map((row.candles||[]).map(c=>[c.time,c]));
+        for(const c of candles)if(c.time>=row.time-60*TF[row.tf])saved.set(c.time,c);
+        return {...updated,candles:[...saved.values()].sort((a,b)=>a.time-b.time)};
       });
-      const transition=next.some((r,i)=>r.status!==rows[i]?.status);
-      if(transition||Date.now()-signalPersistRef.current>5000){writeStored(SIGNAL_KEY,next);signalPersistRef.current=Date.now();}
+      if(next.every((r,i)=>r===rows[i]))return rows;
+      if(next.some((r,i)=>r.status!==rows[i]?.status)||Date.now()-signalPersistRef.current>5000){writeStored(SIGNAL_KEY,next);signalPersistRef.current=Date.now();}
       return next;
     });
-  },[latestTick,isLive,selectedKey,candlesByTf]);
+  },[marketTicks,connected,marketCandleHistory,clock,background.mode]);
   const marketSignals=useMemo(()=>signals.filter(r=>r.market===selectedKey && r.tf===tf),[signals,selectedKey,tf]);
   const focusKey=`${selectedKey}:${tf}`;
   const focusId=focusByChart[focusKey];
@@ -1572,7 +1584,8 @@ export default function MT5AnalysisDesk(){
   const plan=historyView?focusedSignal:(activeTrade?marketSignals.find(r=>r.id===activeTrade.id)||activeTrade:focusedSignal);
   const shownSignal=historyView?'HISTORY':setupLabel(plan);
   const signalClass=plan?.status==='SL touched'?'sell':plan?.entered?plan.side.toLowerCase():'wait';
-  const trackedStatus=!isLive&&!historyView?'DATA STALE · monitoring paused':plan?.status || 'Waiting for setup';
+  const serverFresh=background.mode==='server' && background.receivedAt && clock-background.receivedAt<15000 && !background.storageError && background.markets?.some(m=>m.symbol===selectedKey&&m.fresh);
+  const trackedStatus=!(plan?.source==='server'?serverFresh:isLive)&&!historyView?'DATA STALE · monitoring paused':plan?.status || 'Waiting for setup';
   const directionLabel=(value)=>value==="UP"?"Bullish":value==="DOWN"?"Bearish":value==="BUILDING"?"Loading":"Range";
   return <div className="mt5Desk">
     <header className="deskHeader">
@@ -1605,22 +1618,22 @@ export default function MT5AnalysisDesk(){
         <div className="deskBias"><b className={a.direction==='UP'?'buy':a.direction==='DOWN'?'sell':'wait'}>{a.direction==='UP'?'↑':a.direction==='DOWN'?'↓':'↔'} {directionLabel(a.direction)} bias</b><span>{a.pathBias || 'Waiting for data'}</span></div>
         <div className="deskPlanBox">
           <dl className="deskLevels">{[['Entry','entry',''],['Stop loss','stop','sell'],['Take profit 1','tp1','buy'],['Take profit 2','tp2','buy'],['Take profit 3','tp3','buy']].map(([label,key,color])=><div key={key}><dt>{label}</dt><dd className={color}>{!plan?.entered||plan?.[key]==null?'—':Number(plan[key].toFixed(5))}</dd></div>)}</dl>
-          <small>{plan?`${new Date(plan.detectedAt || plan.startedAt).toLocaleString()} · ${!plan.entered?`${plan.side} zone · not an entry`:'Fixed levels'}`:'Confirmed setups appear automatically'}{plan?.gapUnverified?' · Gap unverified':''}</small>
+          <small>{plan?`${new Date(plan.detectedAt || plan.startedAt).toLocaleString()} · ${!plan.entered?`${plan.side} zone · not an entry`:'Fixed levels'}`:'Confirmed setups appear automatically'}{plan?` · ${plan.source==='server'?'Server record':'Browser record'}`:''}{plan?.gapUnverified?' · Gap unverified':''}</small>
         </div>
         <select className="deskSavedSelect" aria-label="Chart signal" value={focusId || ''} onChange={e=>setFocusId(e.target.value)}><option value="">Current setup / waiting entry</option>{marketSignals.map(r=><option key={r.id} value={r.id}>HISTORY · {r.side} · {new Date(r.detectedAt).toLocaleString()} · {r.status}</option>)}</select>
         {plan?.status==='SL touched' && <div className="deskFailure" role="alert">FAILED · {plan.side} SL quote touched. Setup invalid. Check your MT5 position; no order was closed by this desk.{plan.gapUnverified?' Data gap: first crossing time unknown.':''}</div>}
         {historyView && <small>Historical record — not a new entry.{!plan?.candles?.length?' Original candles were not saved by the older version.':''}</small>}
 
-        <div className="deskScanner"><b><i className={isLive?'online':''}/> SCANNER</b><span>{isLive?'Searching for next setup':'Paused · awaiting live ticks'}<small>{isLive?`Local ML: ${model.state==='Collecting data'?`${model.samples}/60 outcomes`:model.state}`:'Saved levels remain visible'}</small></span></div>
+        <div className="deskScanner"><b><i className={isLive?'online':''}/> SCANNER</b><span>{background.mode==='server'?`${background.status} · ${background.markets?.filter(m=>m.fresh).length||0} live markets`:background.status}<small>{isLive?`Local ML: ${model.state==='Collecting data'?`${model.samples}/60 outcomes`:model.state}`:'Saved levels remain visible'}</small></span></div>
         <small className="deskSetupNote">{historyView?'History view · scanner continues':liveSetup && !finished(liveSetup)?'Entry, SL and targets stay fixed after confirmation.':'Waiting for the next qualifying setup.'}</small>
         <div className="deskSetupActions"><button type="button" onClick={()=>analysisDialog.current.showModal()}>View analysis</button>{activeTrade?<button type="button" onClick={stopTradeMonitor}>Stop monitor</button>:<button type="button" className={signalClass} disabled={historyView || !isLive || !plan || plan.policy!==SHARP_POLICY || plan.gapUnverified || ['SL touched','TP2 touched','TP3 touched','Expired','Invalidated'].includes(plan.status) || (plan.engine===TAP_VERSION && !plan.entered)} title="Observes saved signal levels only; does not know your MT5 fill or place orders" onClick={startTradeMonitor}>Monitor saved setup</button>}</div>
 
       </aside>
     </div>
-    <footer className="deskFooter"><span>{cacheWarning || signalWarning || (isLive?`Last tick ${new Date(latestTick.epoch*1000).toLocaleTimeString()} · Auto-scanning` : "Saved chart · awaiting fresh ticks")}</span><button type="button" onClick={()=>journalDialog.current.showModal()}>Signal journal</button></footer>
+    <footer className="deskFooter"><span>{background.storageError || cacheWarning || signalWarning || (isLive?`Last tick ${new Date(latestTick.epoch*1000).toLocaleTimeString()} · Auto-scanning` : "Saved chart · awaiting fresh ticks")}</span><button type="button" onClick={()=>journalDialog.current.showModal()}>Signal journal</button></footer>
     <dialog ref={analysisDialog} className="deskDialog"><form method="dialog"><h2>Analysis · {tf}</h2><button aria-label="Close analysis">✕</button></form>
       {tradeMonitor && <div className="deskMonitor"><b>{isLive?tradeMonitor.status:'Monitor paused'}</b><p>{isLive?tradeMonitor.reason:'Waiting for fresh ticks.'}</p></div>}
-      <h3>Sharp entry filter · experimental rules + local ML</h3>
+      <h3>Background scanner</h3><p>{background.status}. {background.mode==='server'?'Server research runs independently of this browser. Existing browser-only records remain local. Daily candles are context only.':'Browser-only mode: existing setups on subscribed markets update while this page runs. New detection follows the selected chart until the server is deployed.'}</p>{background.mode==='server' && <p>{Object.entries(background.failures||{}).map(([market,error])=>`${market}: ${error}`).join('; ') || 'No market loading errors reported.'}</p>}<h3>Sharp entry filter · experimental rules + local ML</h3>
       <p>Selected market/timeframe only. Higher timeframe: {higherLabel} · {higherTrend}. New zones require trend alignment, an ATR-scaled retest or pullback, a live tap, then closed-candle rejection. New sharp setups confirm only within 0.15 ATR of the rejection close. SL sits beyond the rejection wick and tap zone with 0.15 ATR buffer. Stops outside 0.35–1.25 ATR are rejected, not forced closer. These thresholds are experimental and do not use broker spread or stop-distance restrictions.</p>
       <p>{plan?.engine===TAP_VERSION?`${plan.setup}: tap zone ${plan.zoneLow.toFixed(2)}–${plan.zoneHigh.toFixed(2)}. ${plan.entered?'Confirmed at an observed live quote.':'Watch only; proposed entry is not confirmed.'}`:'Older signals use the previous engine and are excluded from tap statistics.'}</p>
       <p>Local ML: {model.state} · {model.samples} eligible outcomes for this market/timeframe. {model.estimate!=null?`Experimental 2R-before-SL estimate: ${(model.estimate*100).toFixed(0)}%. Not calibrated or guaranteed.`:''}</p>
