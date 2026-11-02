@@ -5,12 +5,15 @@ import {fileURLToPath} from 'node:url';
 import {Scanner,FRAMES} from './scanner.js';
 import {Store} from './store.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const directory=process.env.SCANNER_DATA_DIR;
-if(!directory)throw Error('Set SCANNER_DATA_DIR to a persistent disk directory before starting');
+const directory=process.env.SCANNER_DATA_DIR || '/tmp/derivai-scanner';
+if(!process.env.SCANNER_DATA_DIR)console.warn('SCANNER_DATA_DIR not set: using ephemeral /tmp storage. Configure a writable persistent disk for production.');
 const store=new Store(directory),scanner=new Scanner(store.load());
 let status='Starting',error='',storageError='',socket,retry,stopping=false,sequence=0,lastMessage=Date.now();
 const ready=new Set(),failures={},pending=new Map();
 let warming=false;
+const PRIORITY=['R_100','R_75','R_50','R_25','R_10'];
+const REQUIRED=['1m','5m','15m','1h','4h','24h'];
+const orderedFrames=[...REQUIRED,...Object.keys(FRAMES).filter(tf=>!REQUIRED.includes(tf))];
 const save=()=>{try{store.save(scanner.signals);storageError='';}catch(e){storageError=e.message;console.error('Scanner storage failure:',e.message);}};
 save();if(storageError)throw Error(storageError);
 function request(body){
@@ -27,19 +30,20 @@ async function warm(ws){
  try{
  const response=await request({active_symbols:'brief'});
  const raw=response.active_symbols || response.data?.active_symbols || [];
- const symbols=raw.map(r=>r.underlying_symbol||r.symbol||r.id).filter(s=>/^R_\d+$|^\d+HZ\d+V$/i.test(s));
+ const symbols=[...new Set(raw.map(r=>r.underlying_symbol||r.symbol||r.id).filter(s=>/^R_\d+$|^\d+HZ\d+V$/i.test(s)))].sort((a,b)=>{const x=PRIORITY.indexOf(a),y=PRIORITY.indexOf(b);return (x<0?999:x)-(y<0?999:y);});
  if(!symbols.length)throw Error('No supported volatility symbols returned');
  for(const symbol of symbols){
   if(ws!==socket||ws.readyState!==1)return;
   if(ready.has(symbol))continue;
   try{
    // Serial, paced history requests avoid startup fan-out against the public feed.
-   for(const [tf,granularity] of Object.entries(FRAMES)){
+   for(const tf of orderedFrames){
+    const granularity=FRAMES[tf];
     const result=await request({ticks_history:symbol,style:'candles',count:300,end:'latest',granularity});
     const rows=result.candles||result.data?.candles||result.history?.candles||result.history?.ohlc;
     if(!Array.isArray(rows)||rows.length<61)throw Error(`Insufficient ${tf} history`);
     scanner.seed(symbol,tf,rows.map(c=>({time:Number(c.epoch??c.open_time??c.time),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})));
-    await delay(200);
+    await delay(60);
    }
    ready.add(symbol);
    await request({ticks:symbol,subscribe:1});delete failures[symbol];
@@ -76,7 +80,7 @@ const heartbeat=setInterval(()=>{
  if(socket?.readyState===1){socket.send(JSON.stringify({ping:1}));if(Date.now()-lastMessage>60000)socket.close();}
  else if(Date.now()-lastMessage>60000)socket?.close();
 },15000);
-const apiStatus=()=>({version:8,mode:'server',status,error,storageError,updatedAt:Date.now(),markets:[...ready].map(symbol=>({symbol,lastTick:scanner.last[symbol]||null,fresh:Date.now()/1000-(scanner.last[symbol]||0)<30})),failures,timeframes:Object.keys(FRAMES).filter(tf=>tf!=='24h')});
+const apiStatus=()=>({version:9,configuredPersistentStorage:Boolean(process.env.SCANNER_DATA_DIR),warming,readyCount:ready.size,mode:'server',status,error,storageError,updatedAt:Date.now(),markets:[...ready].map(symbol=>({symbol,lastTick:scanner.last[symbol]||null,fresh:Date.now()/1000-(scanner.last[symbol]||0)<30})),failures,timeframes:Object.keys(FRAMES).filter(tf=>tf!=='24h')});
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.ico':'image/x-icon'};
 const app=http.createServer((req,res)=>{
  if(req.method!=='GET'){res.writeHead(405);res.end();return;}
