@@ -83,6 +83,13 @@ const heartbeat=setInterval(()=>{
 const apiStatus=()=>({version:9,configuredPersistentStorage:Boolean(process.env.SCANNER_DATA_DIR),warming,readyCount:ready.size,mode:'server',status,error,storageError,updatedAt:Date.now(),markets:[...ready].map(symbol=>({symbol,lastTick:scanner.last[symbol]||null,fresh:Date.now()/1000-(scanner.last[symbol]||0)<30})),failures,timeframes:Object.keys(FRAMES).filter(tf=>tf!=='24h')});
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.ico':'image/x-icon'};
 const app=http.createServer((req,res)=>{
+ // Read-only public market research endpoints can be accessed by the separate MT5 frontend.
+ if(req.url?.startsWith('/api/scanner/')){
+  res.setHeader('Access-Control-Allow-Origin','*');
+  res.setHeader('Access-Control-Allow-Methods','GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers','Content-Type');
+  if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
+ }
  if(req.method!=='GET'){res.writeHead(405);res.end();return;}
  const url=new URL(req.url,'http://localhost');
  if(url.pathname==='/api/scanner/status'||url.pathname==='/api/scanner/signals'){
