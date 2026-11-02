@@ -6,7 +6,8 @@ const row={id:'a',market:'R_50',tf:'5m',side:'BUY',policy:SHARP_POLICY,engine:'t
 test('current setup ignores legacy but retains failed record until next setup',()=>{
  assert.equal(currentSetup([{...row,policy:'old'}]),null);
  const failed={...row,status:'SL touched'};
- assert.equal(setupLabel(currentSetup([failed])),'FAILED');
+ assert.equal(currentSetup([failed]),null);
+assert.equal(setupLabel(failed),'FAILED');
  assert.equal(currentSetup([{...row,id:'b',entered:false,status:'Awaiting tap'},failed]).id,'b');
  assert.equal(failed.entry,100);
 });
