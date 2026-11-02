@@ -1,0 +1,56 @@
+warning: in the working copy of 'src/App.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/AppHeader.jsx', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/src/App.jsx b/src/App.jsx[m
+[1mindex e81fa94..ad1d1fd 100644[m
+[1m--- a/src/App.jsx[m
+[1m+++ b/src/App.jsx[m
+[36m@@ -1,9 +1,10 @@[m
+[31m-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";[m
+[32m+[m[32m﻿import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";[m
+ import Dashboard from "./pages/Dashboard";[m
+ import Login from "./pages/Login";[m
+ import RiseFallPage from "./pages/RiseFallPage";[m
+ import TouchNoTouchPage from "./pages/TouchNoTouchPage";[m
+ import AdaptiveTrendPage from "./pages/AdaptiveTrendPage";[m
+[32m+[m[32mimport DigitOverRecoveryPage from "./pages/DigitOverRecoveryPage";[m
+ [m
+ export default function App() {[m
+   return <BrowserRouter><Routes>[m
+[36m@@ -12,6 +13,7 @@[m [mexport default function App() {[m
+     <Route path="/rise-fall" element={<RiseFallPage />} />[m
+     <Route path="/touch-no-touch" element={<TouchNoTouchPage />} />[m
+     <Route path="/adaptive-trend" element={<AdaptiveTrendPage />} />[m
+[32m+[m[32m    <Route path="/digit-over" element={<DigitOverRecoveryPage />} />[m
+     <Route path="/login" element={<Login />} />[m
+     <Route path="*" element={<Navigate to="/dashboard" replace />} />[m
+   </Routes></BrowserRouter>;[m
+[1mdiff --git a/src/components/AppHeader.jsx b/src/components/AppHeader.jsx[m
+[1mindex d13b07e..381fd04 100644[m
+[1m--- a/src/components/AppHeader.jsx[m
+[1m+++ b/src/components/AppHeader.jsx[m
+[36m@@ -1,4 +1,4 @@[m
+[31m-import { NavLink } from "react-router-dom";[m
+[32m+[m[32m﻿import { NavLink } from "react-router-dom";[m
+ [m
+ export default function AppHeader({ eyebrow = "DERIVAI TRADING DESK" }) {[m
+   return ([m
+[36m@@ -41,3 +41,5 @@[m [mexport default function AppHeader({ eyebrow = "DERIVAI TRADING DESK" }) {[m
+     </header>[m
+   );[m
+ }[m
+[41m+[m
+[41m+[m
+[1mdiff --git a/src/pages/Dashboard.jsx b/src/pages/Dashboard.jsx[m
+[1mindex 35ae709..896ded9 100644[m
+[1m--- a/src/pages/Dashboard.jsx[m
+[1m+++ b/src/pages/Dashboard.jsx[m
+[36m@@ -1,5 +1,6 @@[m
+[31m-import { Link } from "react-router-dom";[m
+[32m+[m[32m﻿import { Link } from "react-router-dom";[m
+ import AppHeader from "../components/AppHeader";[m
+ import AccountBar from "../components/AccountBar";[m
+[31m-const botCards=[{path:"/rise-fall",className:"botCard riseCard",icon:"↗",tag:"CORE",title:"Rise / Fall Bot",description:"Dedicated directional trading desk with live market analysis and best-entry timing.",points:["Live market analysis","Momentum and trend confirmation","Best entry detection","Demo and Real trading"],action:"Open Rise / Fall Bot"},{path:"/touch-no-touch",className:"botCard touchCard",icon:"◎",tag:"SEPARATE DESK",title:"Touch / No Touch Bot",description:"Dedicated barrier-contract desk for Touch and No Touch proposals, entry quality and execution.",points:["Touch and No Touch proposals","Dynamic barrier selection","AI entry timing","Demo and Real trading"],action:"Open Touch / No Touch Bot"},{path:"/adaptive-trend",className:"botCard adaptiveCard",icon:"A+",tag:"NEW STRATEGY",title:"Adaptive Trend Bot",description:"Independent directional strategy built around trend, momentum, pullback timing and hard risk gates.",points:["EMA 9 / EMA 21 regime","Momentum + RSI confirmation","Pullback-only A+ entries","Independent session risk engine"],action:"Open Adaptive Trend Bot"}];[m
+[31m-export default function Dashboard(){return <div className="appShell dashboardHome"><AppHeader eyebrow="TRADING CONTROL CENTER"/><main className="appMain"><AccountBar/><section className="dashboardHero"><div><span className="dashboardEyebrow">DERIVAI CONTROL CENTER</span><h1>Choose your trading desk</h1><p>Each strategy has its own screen, analysis, entry logic and risk controls.</p></div><div className="dashboardStatus"><span className="statusDot"/><span><b>READY</b><small>Choose a bot to continue</small></span></div></section><section className="botChoiceGrid">{botCards.map(bot=><article key={bot.path} className={bot.className}><div className="botCardTop"><div className="botIcon">{bot.icon}</div><span className="botTag">{bot.tag}</span></div><h2>{bot.title}</h2><p>{bot.description}</p><ul>{bot.points.map(p=><li key={p}><span>✓</span>{p}</li>)}</ul><Link to={bot.path} className="botOpenButton">{bot.action}<span>→</span></Link></article>)}</section><section className="dashboardNotice"><div className="noticeIcon">i</div><div><strong>One desk at a time</strong><p>Touch / No Touch, Rise / Fall and Adaptive Trend remain independent.</p></div></section></main></div>}[m
+[32m+[m[32mconst botCards=[{path:"/rise-fall",className:"botCard riseCard",icon:"â†—",tag:"CORE",title:"Rise / Fall Bot",description:"Dedicated directional trading desk with live market analysis and best-entry timing.",points:["Live market analysis","Momentum and trend confirmation","Best entry detection","Demo and Real trading"],action:"Open Rise / Fall Bot"},{path:"/touch-no-touch",className:"botCard touchCard",icon:"â—Ž",tag:"SEPARATE DESK",title:"Touch / No Touch Bot",description:"Dedicated barrier-contract desk for Touch and No Touch proposals, entry quality and execution.",points:["Touch and No Touch proposals","Dynamic barrier selection","AI entry timing","Demo and Real trading"],action:"Open Touch / No Touch Bot"},{path:"/adaptive-trend",className:"botCard adaptiveCard",icon:"A+",tag:"NEW STRATEGY",title:"Adaptive Trend Bot",description:"Independent directional strategy built around trend, momentum, pullback timing and hard risk gates.",points:["EMA 9 / EMA 21 regime","Momentum + RSI confirmation","Pullback-only A+ entries","Independent session risk engine"],action:"Open Adaptive Trend Bot"},{path:"/digit-over",className:"botCard adaptiveCard",icon:"⌁",tag:"NEW STRATEGY",title:"Digit Over Recovery Bot",description:"Over 2 / Over 3 digit desk with rolling 60-digit market analysis, volatility filters and capped recovery.",points:["Rolling 60-digit history","Over 2 / Over 3 analysis","10-second opportunity scanner","Deriv proposal + risk validation"],action:"Open Digit Over Bot"}];[m
+[32m+[m[32mexport default function Dashboard(){return <div className="appShell dashboardHome"><AppHeader eyebrow="TRADING CONTROL CENTER"/><main className="appMain"><AccountBar/><section className="dashboardHero"><div><span className="dashboardEyebrow">DERIVAI CONTROL CENTER</span><h1>Choose your trading desk</h1><p>Each strategy has its own screen, analysis, entry logic and risk controls.</p></div><div className="dashboardStatus"><span className="statusDot"/><span><b>READY</b><small>Choose a bot to continue</small></span></div></section><section className="botChoiceGrid">{botCards.map(bot=><article key={bot.path} className={bot.className}><div className="botCardTop"><div className="botIcon">{bot.icon}</div><span className="botTag">{bot.tag}</span></div><h2>{bot.title}</h2><p>{bot.description}</p><ul>{bot.points.map(p=><li key={p}><span>âœ“</span>{p}</li>)}</ul><Link to={bot.path} className="botOpenButton">{bot.action}<span>â†’</span></Link></article>)}</section><section className="dashboardNotice"><div className="noticeIcon">i</div><div><strong>One desk at a time</strong><p>Touch / No Touch, Rise / Fall and Adaptive Trend remain independent.</p></div></section></main></div>}[m
+[41m+[m
