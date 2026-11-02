@@ -1,6 +1,23 @@
-import { SHARP_POLICY } from './volatilityTapEngine.js';
+﻿import { SHARP_POLICY } from './volatilityTapEngine.js';
 export const finished = r => ['SL touched','TP2 touched','TP3 touched','Invalidated','Expired'].includes(r?.status);
-export const currentSetup = rows => rows.find(r=>r.policy===SHARP_POLICY && !finished(r)) || rows.find(r=>r.policy===SHARP_POLICY) || null;
+export const currentSetup = rows => {
+  if (!Array.isArray(rows)) return null;
+  const eligible = rows
+    .filter(r =>
+      r &&
+      r.policy === SHARP_POLICY &&
+      !finished(r) &&
+      !r.gapUnverified &&
+      ['BUY', 'SELL'].includes(r.side)
+    )
+    .sort((a, b) =>
+      (Number(b.detectedAt) || 0) -
+      (Number(a.detectedAt) || 0)
+    );
+  return eligible.find(r => r.entered === true) ||
+         eligible[0] ||
+         null;
+};
 export function setupLabel(r) {
  if(!r)return 'WAIT';
  if(r.status==='SL touched')return 'FAILED';
@@ -19,8 +36,8 @@ export function historyMarkers(rows, candles, seconds) {
    if(!times.has(time))continue;
    const failure=e.type==='SL touched';
    const confirmed=['Entry confirmed','Recorded entry'].includes(e.type);
-   const label=failure?'FAILED · SL touched':confirmed?`${r.side} CONFIRMED`:e.type==='Zone created'?`${r.side} SETUP`:e.type;
-   markers.push({time,position:r.side==='BUY'?'belowBar':'aboveBar',color:failure?'#ff6685':confirmed?'#18d6a1':'#b5a0dc',shape:confirmed?(r.side==='BUY'?'arrowUp':'arrowDown'):'circle',text:`${r.policy!==SHARP_POLICY?'OLD · ':''}${label} · ${new Date(e.epoch*1000).toLocaleString()}`});
+   const label=failure?'FAILED Â· SL touched':confirmed?`${r.side} CONFIRMED`:e.type==='Zone created'?`${r.side} SETUP`:e.type;
+   markers.push({time,position:r.side==='BUY'?'belowBar':'aboveBar',color:failure?'#ff6685':confirmed?'#18d6a1':'#b5a0dc',shape:confirmed?(r.side==='BUY'?'arrowUp':'arrowDown'):'circle',text:`${r.policy!==SHARP_POLICY?'OLD Â· ':''}${label} Â· ${new Date(e.epoch*1000).toLocaleString()}`});
   }
  }
  return markers.sort((a,b)=>a.time-b.time);
@@ -32,3 +49,4 @@ export function mergeHistory(existing, incoming) {
  for(const r of existing)map.set(r.id,r); // Never overwrite locally observed records with imports.
  return [...map.values()].sort((a,b)=>b.detectedAt-a.detectedAt);
 }
+
